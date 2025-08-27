@@ -1,25 +1,29 @@
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
+// eslint.config.mjs
+import next from "eslint-config-next";
+import js from "@eslint/js";
+import globals from "globals";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+export default [
+  // Ignore build artifacts
+  { ignores: [".next/**", "node_modules/**", "dist/**"] },
 
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+  // Next.js base rules (flat-config ready)
+  ...next,
 
-const eslintConfig = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  // Your project-wide language options + any extra rules
   {
-    ignores: [
-      "node_modules/**",
-      ".next/**",
-      "out/**",
-      "build/**",
-      "next-env.d.ts",
-    ],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "module",
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      // ✅ Use `globals`, not `env`
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+    rules: {
+      // add any custom rules here or keep empty
+    },
   },
 ];
-
-export default eslintConfig;
