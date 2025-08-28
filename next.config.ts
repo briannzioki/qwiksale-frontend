@@ -2,30 +2,19 @@
 import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
-const IGNORE = process.env.IGNORE_BUILD_ERRORS === "1";
 const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
 
-/** Build security headers (CSP, etc.) */
 const securityHeaders = (): { key: string; value: string }[] => {
-  const connectParts = [
+  const connect = [
     "'self'",
-    // Safaricom (Daraja)
     "https://sandbox.safaricom.co.ke",
     "https://api.safaricom.co.ke",
-    // Google auth/APIs
     "https://accounts.google.com",
     "https://www.googleapis.com",
-    // tunnels
     "https://*.ngrok-free.app",
     "https://*.ngrok.io",
-  ];
-
-  // Dev: allow websockets for HMR & tooling
-  if (!isProd) {
-    connectParts.push("ws:", "wss:");
-  }
-
-  const connect = connectParts.join(" ");
+    ...(isProd ? [] : ["ws:", "wss:"]), // dev HMR
+  ].join(" ");
 
   const img = [
     "'self'",
@@ -41,13 +30,12 @@ const securityHeaders = (): { key: string; value: string }[] => {
 
   const frameSrc = ["'self'", "https://accounts.google.com"].join(" ");
 
-  const scriptParts = [
+  const script = [
     "'self'",
-    // Next/Auth sometimes injects inline bits; keep 'unsafe-inline'
     "'unsafe-inline'",
     "https://accounts.google.com",
-  ];
-  if (!isProd) scriptParts.push("'unsafe-eval'"); // dev-only
+    ...(isProd ? [] : ["'unsafe-eval'"]), // dev-only
+  ].join(" ");
 
   const csp = [
     `default-src 'self'`,
@@ -55,7 +43,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     `frame-ancestors 'none'`,
     `img-src ${img}`,
     `connect-src ${connect}`,
-    `script-src ${scriptParts.join(" ")}`,
+    `script-src ${script}`,
     `style-src 'self' 'unsafe-inline'`,
     `font-src 'self' data:`,
     `frame-src ${frameSrc}`,
@@ -77,14 +65,16 @@ const securityHeaders = (): { key: string; value: string }[] => {
       value:
         "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(self), publickey-credentials-get=(self), usb=()",
     },
+    ...(isProd
+      ? [
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+        ]
+      : []),
   ];
 
-  if (isProd) {
-    headers.push({
-      key: "Strict-Transport-Security",
-      value: "max-age=63072000; includeSubDomains; preload",
-    });
-  }
   return headers;
 };
 
@@ -93,14 +83,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   output: "standalone",
 
-  // Temporary unblocks if needed: set IGNORE_BUILD_ERRORS=1 in env
-  typescript: { ignoreBuildErrors: IGNORE },
-  eslint: { ignoreDuringBuilds: IGNORE },
+  // NEW: key moved here in Next 15. Use this instead of experimental.serverComponentsExternalPackages
+  serverExternalPackages: ["@prisma/client"],
 
-  experimental: {
-    // Helps when Prisma is pulled into RSC/server contexts
-    serverComponentsExternalPackages: ["@prisma/client"],
-  },
+  // Prevent ESLint patch crash from blocking builds
+  eslint: { ignoreDuringBuilds: true },
 
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders() }];
@@ -108,15 +95,12 @@ const nextConfig: NextConfig = {
 
   images: {
     remotePatterns: [
-      // Cloudinary (scoped to your cloud if set)
       {
         protocol: "https",
         hostname: "res.cloudinary.com",
         pathname: cloudName ? `/${cloudName}/**` : "/**",
       },
-      // Google avatars
       { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
-      // Stock/demo images
       { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
       { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
       { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },

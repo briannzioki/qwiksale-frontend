@@ -1,6 +1,6 @@
 // src/app/lib/mpesa.ts
 import "server-only";
-import { mpesa as ENV, isDev } from "@/app/lib/env";
+import { mpesa as ENV, isDev } from "./env";
 
 export const MPESA = {
   ENV: ENV.environment,        // "sandbox" | "production"

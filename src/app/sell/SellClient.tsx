@@ -1,4 +1,4 @@
-// src/app/sell/page.tsx
+// src/app/sell/SellClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,19 +13,25 @@ const MAX_FILES = 6;
 const MAX_MB = 5;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-// --- helpers ---
+// Cloudinary (client-safe)
+const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
+const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""; // optional unsigned preset
+
+/* ----------------------------- Phone helpers ----------------------------- */
 function normalizePhone(raw: string): string {
-  let s = (raw || "").replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07 -> 2547
-  if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, ""); // +2547 -> 2547
-  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12); // trim paste
+  const trimmed = (raw || "").trim();
+  if (/^\+254(7|1)\d{8}$/.test(trimmed)) return trimmed.replace(/^\+/, "");
+  let s = trimmed.replace(/\D+/g, "");
+  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) s = "254" + s.slice(1);
+  if (/^7\d{8}$/.test(s) || /^1\d{8}$/.test(s)) s = "254" + s;
+  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-
-function isValidPhone(msisdn: string): boolean {
-  return /^2547\d{8}$/.test(msisdn) || /^\d{9,}$/.test(msisdn); // allow local for now, normalize later
+function isValidPhone(input: string): boolean {
+  return /^254(7|1)\d{8}$/.test(normalizePhone(input));
 }
 
+/* ----------------------------- Money helper ----------------------------- */
 function fmtKES(n: number) {
   try {
     return new Intl.NumberFormat("en-KE").format(n);
@@ -34,9 +40,85 @@ function fmtKES(n: number) {
   }
 }
 
+/* --------------------------- Cloudinary uploader -------------------------- */
+async function uploadToCloudinary(
+  file: File,
+  opts?: { onProgress?: (pct: number) => void; folder?: string }
+): Promise<{ secure_url: string; public_id: string }> {
+  if (!CLOUD_NAME) {
+    throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  }
+  const folder = opts?.folder || "qwiksale";
+  const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
+  const fd = new FormData();
+  fd.append("file", file);
+
+  // Prefer unsigned (simple)
+  if (UPLOAD_PRESET) {
+    fd.append("upload_preset", UPLOAD_PRESET);
+    fd.append("folder", folder);
+    const res = await fetch(endpoint, { method: "POST", body: fd });
+    const json: any = await res.json();
+    if (!res.ok || !json.secure_url) {
+      throw new Error(json?.error?.message || "Cloudinary upload failed");
+    }
+    return { secure_url: json.secure_url, public_id: json.public_id };
+  }
+
+  // Signed: get signature from our API
+  const sigRes = await fetch(`/api/upload/sign?folder=${encodeURIComponent(folder)}`, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const sigJson: any = await sigRes.json();
+  if (!sigRes.ok) throw new Error(sigJson?.error || "Failed to get upload signature");
+
+  fd.append("api_key", sigJson.apiKey);
+  fd.append("timestamp", String(sigJson.timestamp));
+  fd.append("signature", sigJson.signature);
+  fd.append("folder", folder);
+
+  // XHR to report progress (signed flow)
+  const xhr = new XMLHttpRequest();
+  const p = new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable && opts?.onProgress) {
+        opts.onProgress(Math.round((evt.loaded / evt.total) * 100));
+      }
+    };
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 4) {
+        try {
+          const j = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300 && j.secure_url) {
+            resolve({ secure_url: j.secure_url, public_id: j.public_id });
+          } else {
+            reject(new Error(j?.error?.message || `Cloudinary upload failed (${xhr.status})`));
+          }
+        } catch (e: any) {
+          reject(new Error(e?.message || "Cloudinary response parse error"));
+        }
+      }
+    };
+    xhr.open("POST", endpoint, true);
+    xhr.send(fd);
+  });
+  return p;
+}
+
 export default function SellClient() {
   const router = useRouter();
-  const { addProduct } = useProducts();
+
+  /**
+   * IMPORTANT:
+   * We now *await* addProduct and expect it to return either:
+   *  - the created product object with { id }, or
+   *  - just the id as a string, or
+   *  - possibly void (old behavior).
+   *
+   * If it returns void, we still succeed but redirect without ?id=.
+   */
+  const addProduct = useProducts((s: any) => s.addProduct);
 
   // Form state
   const [name, setName] = useState("");
@@ -51,6 +133,7 @@ export default function SellClient() {
   const [description, setDescription] = useState("");
   const [previews, setPreviews] = useState<FilePreview[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -59,7 +142,6 @@ export default function SellClient() {
     [category]
   );
 
-  // Ensure subcategory is always in sync with category
   useEffect(() => {
     if (!subcats.length) {
       setSubcategory("");
@@ -70,14 +152,12 @@ export default function SellClient() {
     }
   }, [subcats, subcategory]);
 
-  // Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
       previews.forEach((p) => URL.revokeObjectURL(p.url));
     };
   }, [previews]);
 
-  // Derived validations
   const normalizedPhone = normalizePhone(phone);
   const priceNum = price === "" ? 0 : Number(price);
   const canSubmit =
@@ -88,12 +168,11 @@ export default function SellClient() {
     (price === "" || (typeof price === "number" && price >= 0)) &&
     isValidPhone(phone);
 
-  // --- image handlers ---
+  // Image helpers
   function filesToAdd(files: FileList | File[]) {
     const next: FilePreview[] = [];
     for (const f of Array.from(files)) {
       if (next.length + previews.length >= MAX_FILES) break;
-
       if (!ACCEPTED_TYPES.includes(f.type)) {
         toast.error(`Unsupported file: ${f.name}`);
         continue;
@@ -102,35 +181,25 @@ export default function SellClient() {
         toast.error(`${f.name} is larger than ${MAX_MB}MB`);
         continue;
       }
-      // Deduplicate by name+size+lastModified
       const key = `${f.name}:${f.size}:${f.lastModified}`;
-      if (previews.some((p) => p.key === key) || next.some((p) => p.key === key)) {
-        continue;
-      }
+      if (previews.some((p) => p.key === key) || next.some((p) => p.key === key)) continue;
       const url = URL.createObjectURL(f);
       next.push({ file: f, url, key });
     }
-
     if (!next.length) return;
-    setPreviews((prev) => {
-      const merged = [...prev, ...next].slice(0, MAX_FILES);
-      return merged;
-    });
+    setPreviews((prev) => [...prev, ...next].slice(0, MAX_FILES));
   }
 
   function onFileInputChange(files: FileList | null) {
     if (!files || !files.length) return;
     filesToAdd(files);
-    // reset input so selecting same file again re-triggers
     if (inputRef.current) inputRef.current.value = "";
   }
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer?.files?.length) {
-      filesToAdd(e.dataTransfer.files);
-    }
+    if (e.dataTransfer?.files?.length) filesToAdd(e.dataTransfer.files);
   }
 
   function removeAt(idx: number) {
@@ -147,14 +216,12 @@ export default function SellClient() {
       const copy = [...prev];
       const j = idx + dir;
       if (j < 0 || j >= copy.length) return copy;
-      const tmp = copy[idx];
-      copy[idx] = copy[j];
-      copy[j] = tmp;
+      [copy[idx], copy[j]] = [copy[j], copy[idx]];
       return copy;
     });
   }
 
-  // --- submit ---
+  // Submit
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) {
@@ -163,43 +230,87 @@ export default function SellClient() {
     }
     if (submitting) return;
     setSubmitting(true);
+    setUploadPct(0);
 
     try {
-      // NOTE: These are blob: URLs; swap to Cloudinary/UploadThing for persistence.
-      const imageUrl = previews[0]?.url ?? "/placeholder/default.jpg";
-      const gallery = previews.map((p) => p.url);
+      // Upload to Cloudinary if files present
+      let uploaded: { secure_url: string; public_id: string }[] = [];
+      if (previews.length) {
+        if (!CLOUD_NAME) {
+          throw new Error(
+            "Cloudinary not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
+          );
+        }
 
-      await addProduct({
+        const total = previews.length;
+        let done = 0;
+
+        for (const p of previews) {
+          const item = await uploadToCloudinary(p.file, {
+            folder: "qwiksale/products",
+            onProgress: (pct) => {
+              const overall = Math.round(((done + pct / 100) / total) * 100);
+              setUploadPct(overall);
+            },
+          });
+          uploaded.push(item);
+          done += 1;
+          setUploadPct(Math.round((done / total) * 100));
+        }
+      }
+
+      const imageUrl =
+        uploaded[0]?.secure_url || previews[0]?.url || "/placeholder/default.jpg";
+      const gallery = uploaded.length
+        ? uploaded.map((u) => u.secure_url)
+        : previews.map((p) => p.url);
+
+      /**
+       * ⬇️ KEY CHANGE: await addProduct and try to extract an id
+       * Types supported:
+       *  - { id: string, ... }   -> use .id
+       *  - string                 -> treat as id
+       *  - void / null / unknown  -> no id (fallback redirect)
+       */
+      const created: unknown = await addProduct({
         name: name.trim(),
         description: description.trim(),
         category,
         subcategory,
         brand: brand || undefined,
         condition,
-        price: price === "" ? 0 : Math.max(0, Math.round(Number(price))),
+        price: price === "" ? undefined : Math.max(0, Math.round(Number(price))),
         image: imageUrl,
         gallery,
         location: location.trim(),
         negotiable,
-        // flattened seller fields (anon flow)
         sellerName: "Private Seller",
-        sellerPhone: normalizePhone(phone),
+        sellerPhone: normalizedPhone,
         sellerLocation: location.trim(),
         sellerMemberSince: new Date().getFullYear().toString(),
         sellerRating: 4.5,
         sellerSales: 1,
       });
 
+      const createdId =
+        typeof created === "string"
+          ? created
+          : created && typeof created === "object" && "id" in created
+          ? String((created as any).id)
+          : "";
+
       toast.success("Listing posted!");
-      router.push("/");
+      router.push(createdId ? `/sell/success?id=${createdId}` : "/sell/success");
     } catch (err: any) {
       console.error(err);
-      toast.error("Failed to post listing.");
+      toast.error(err?.message || "Failed to post listing.");
     } finally {
       setSubmitting(false);
+      setUploadPct(0);
     }
   }
 
+  // UI
   return (
     <div className="container-page py-6">
       {/* Header card */}
@@ -250,7 +361,7 @@ export default function SellClient() {
             </label>
             {typeof price === "number" && price > 0 && (
               <div className="text-xs mt-1 text-gray-600 dark:text-slate-400">
-                You entered: KES {fmtKES(price)}
+                You entered: KES {fmtKES(priceNum)}
               </div>
             )}
           </div>
@@ -332,7 +443,7 @@ export default function SellClient() {
             />
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
               Will be shared with buyers. Normalized:{" "}
-              <code className="font-mono">{normalizedPhone || "—"}</code>
+              <code className="font-mono">{normalizePhone(phone) || "—"}</code>
             </div>
           </div>
         </div>
@@ -351,11 +462,10 @@ export default function SellClient() {
           />
         </div>
 
-        {/* Images */}
+        {/* Images + Uploader */}
         <div>
           <label className="label">Photos (up to {MAX_FILES})</label>
 
-          {/* Dropzone */}
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -430,6 +540,18 @@ export default function SellClient() {
                 ))}
               </div>
             )}
+
+            {submitting && uploadPct > 0 && (
+              <div className="mt-3">
+                <div className="h-2 w-full bg-gray-200 rounded">
+                  <div
+                    className="h-2 bg-emerald-500 rounded transition-all"
+                    style={{ width: `${uploadPct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-600 mt-1">Uploading images… {uploadPct}%</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -441,11 +563,7 @@ export default function SellClient() {
           >
             {submitting ? "Posting…" : "Post Listing"}
           </button>
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="btn-outline"
-          >
+          <button type="button" onClick={() => router.back()} className="btn-outline">
             Cancel
           </button>
         </div>

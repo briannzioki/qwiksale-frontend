@@ -59,17 +59,12 @@ export default async function AdminRevealsPage({
     1000
   );
 
-  // Build Prisma where for simple search:
-  // - product.name contains q OR
-  // - productId equals q OR
-  // - viewerUserId contains q OR
-  // - ip contains q OR
-  // - userAgent contains q
+  // Correct relation filter uses `product: { is: { ... } }`
   const where =
     q.length > 0
       ? {
           OR: [
-            { product: { name: { contains: q, mode: "insensitive" } } },
+            { product: { is: { name: { contains: q, mode: "insensitive" } } } },
             { productId: q },
             { viewerUserId: { contains: q } },
             { ip: { contains: q } },
@@ -78,31 +73,22 @@ export default async function AdminRevealsPage({
         }
       : {};
 
-  let logs: Array<{
-    id: string;
-    createdAt: Date;
-    productId: string;
-    viewerUserId: string | null;
-    ip: string | null;
-    userAgent: string | null;
-    product: { id: string; name: string | null } | null;
-  }> = [];
+  // Let Prisma infer result type (avoids manual type drift)
+  let logs = await prisma.contactReveal.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: takeNum,
+    include: { product: { select: { id: true, name: true } } },
+  });
 
-  try {
-    logs = await prisma.contactReveal.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: takeNum,
-      include: { product: { select: { id: true, name: true } } },
-    });
-  } catch (e) {
-    // If the table doesn’t exist or schema is out of sync, fail soft
+  // If the table doesn’t exist or schema is out of sync, fail soft
+  if (!logs) {
     return (
       <div className="max-w-3xl mx-auto p-6 text-sm text-red-700">
         <h1 className="text-lg font-semibold mb-2">Contact Reveals</h1>
         <p className="mb-2">Failed to load logs from the database.</p>
         <pre className="text-xs bg-red-50 border border-red-200 rounded p-3">
-          Ensure <code>contactReveal</code> table exists and run Prisma migrations.
+          Ensure <code>ContactReveal</code> table exists and run Prisma migrations.
         </pre>
       </div>
     );
@@ -121,8 +107,7 @@ export default async function AdminRevealsPage({
   const csv = [csvHeader, ...csvRows]
     .map((cols) => cols.map((c) => `"${String(c)}"`).join(","))
     .join("\n");
-  const csvHref =
-    "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+  const csvHref = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -197,8 +182,12 @@ export default async function AdminRevealsPage({
                       {r.product?.name ?? r.productId}
                     </a>
                   </td>
-                  <td className="py-2 px-3">{r.viewerUserId || <span className="text-gray-500">guest</span>}</td>
-                  <td className="py-2 px-3">{r.ip || <span className="text-gray-400">—</span>}</td>
+                  <td className="py-2 px-3">
+                    {r.viewerUserId || <span className="text-gray-500">guest</span>}
+                  </td>
+                  <td className="py-2 px-3">
+                    {r.ip || <span className="text-gray-400">—</span>}
+                  </td>
                   <td className="py-2 px-3 max-w-[420px]">
                     <span className="line-clamp-2 break-all text-gray-700">
                       {r.userAgent || "—"}

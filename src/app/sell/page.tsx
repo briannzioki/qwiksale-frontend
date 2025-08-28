@@ -1,7 +1,11 @@
-// src/app/sell/page.tsx (SERVER COMPONENT – no "use client")
+// src/app/sell/page.tsx
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import { authOptions } from "../api/auth/[...nextauth]/authOptions"; // <- fixed
+import { authOptions } from "../api/auth/[...nextauth]/authOptions";
 import { prisma } from "../lib/prisma";
 import SellClient from "./SellClient";
 
@@ -24,6 +28,5 @@ export default async function SellPage() {
     redirect(`/account/complete-profile?missing=${missing}`);
   }
 
-  // All good – render the client form
   return <SellClient />;
 }

@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast"; // ✅ default import (not { toast })
 
 export default function SellSuccessPage() {
   const sp = useSearchParams();
