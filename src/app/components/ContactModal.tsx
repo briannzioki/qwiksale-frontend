@@ -1,3 +1,4 @@
+// src/app/components/ContactModal.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,12 +25,28 @@ type Props = {
   buttonLabel?: string;
 };
 
-function normalizeMsisdn(raw?: string | null): string | null {
+function normalizeKenyanMsisdn(raw?: string | null): string | null {
   if (!raw) return null;
-  let s = raw.replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
-  if (/^\+?2547\d{8}$/.test(raw)) s = raw.replace(/[^\d]/g, "").replace(/^+/, "");
-  return /^2547\d{8}$/.test(s) ? s : null;
+  let s = String(raw).trim();
+
+  // If it's already +2547/ +2541 form, just drop the plus
+  if (/^\+?254(7|1)\d{8}$/.test(s)) {
+    return s.replace(/^\+/, "");
+  }
+
+  // Remove all non-digits
+  s = s.replace(/\D+/g, "");
+
+  // 07XXXXXXXX / 01XXXXXXXX -> 2547XXXXXXXX / 2541XXXXXXXX
+  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) return "254" + s.slice(1);
+
+  // 7XXXXXXXX / 1XXXXXXXX -> 2547XXXXXXXX / 2541XXXXXXXX
+  if (/^(7|1)\d{8}$/.test(s)) return "254" + s;
+
+  // Already 254***********, trim to 12 just in case
+  if (s.startsWith("254") && s.length >= 12) return s.slice(0, 12);
+
+  return null;
 }
 
 export default function ContactModal({
@@ -52,7 +69,10 @@ export default function ContactModal({
   const phone = payload?.contact?.phone ?? "—";
   const location = payload?.contact?.location ?? fallbackLocation ?? "—";
 
-  const msisdn = useMemo(() => normalizeMsisdn(payload?.contact?.phone), [payload?.contact?.phone]);
+  const msisdn = useMemo(
+    () => normalizeKenyanMsisdn(payload?.contact?.phone),
+    [payload?.contact?.phone]
+  );
 
   const waLink = useMemo(() => {
     if (!msisdn) return null;
@@ -79,7 +99,7 @@ export default function ContactModal({
       }
       setPayload(json);
       setOpen(true);
-    } catch (e: any) {
+    } catch {
       setError("Network error. Please try again.");
       setOpen(true);
     } finally {
@@ -117,16 +137,16 @@ export default function ContactModal({
 
   // Click outside to close
   const onBackdropClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    // Only close if the click is on the backdrop, not on the panel
     if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
       setOpen(false);
     }
   };
 
   async function copyPhone() {
-    if (!payload?.contact?.phone) return;
+    const toCopy = payload?.contact?.phone || "";
+    if (!toCopy) return;
     try {
-      await navigator.clipboard.writeText(payload.contact.phone);
+      await navigator.clipboard.writeText(toCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     } catch {
