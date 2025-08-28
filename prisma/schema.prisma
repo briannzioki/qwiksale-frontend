@@ -1,0 +1,213 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/* ---------- Enums ---------- */
+
+/// Keep DB values the same as your current "FREE", but use BASIC in code.
+enum SubscriptionTier {
+  BASIC    @map("FREE")
+  GOLD
+  PLATINUM
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum ProductStatus {
+  ACTIVE
+  SOLD
+  HIDDEN
+  DRAFT
+}
+
+enum PaymentMethod {
+  MPESA
+}
+
+/* ---------- Models ---------- */
+
+model User {
+  id            String           @id @default(uuid())
+  // Case-insensitive unique (requires citext extension; see migration steps)
+  email         String?          @unique @db.Citext
+  emailVerified DateTime?
+  // Store normalized MSISDN (e.g. 2547XXXXXXXX); unique helps de-dupe
+  phone         String?          @unique @db.VarChar(15)
+
+  // Case-insensitive unique username
+  username      String?          @unique @db.Citext
+  name          String?
+  image         String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @default(now()) @updatedAt
+
+  subscription  SubscriptionTier @default(BASIC)
+  verified      Boolean          @default(false)
+  phoneVerified Boolean          @default(false)
+
+  products  Product[]  @relation("UserProducts")
+  favorites Favorite[]
+  payments  Payment[]  @relation("UserPayments")
+  Account   Account[]
+  Session   Session[]
+
+  @@index([createdAt])
+}
+
+model Product {
+  id          String        @id @default(uuid())
+  name        String
+  description String?       @db.Text
+  category    String
+  subcategory String
+  brand       String?
+  condition   String?
+  price       Int?
+  image       String?
+  gallery     String[]       @default([])
+  location    String?
+  negotiable  Boolean        @default(false)
+  status      ProductStatus  @default(ACTIVE)
+  soldAt      DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @default(now()) @updatedAt
+
+  sellerId String?
+  seller   User?   @relation("UserProducts", fields: [sellerId], references: [id])
+
+  // Snapshot fields (optional but handy for denormalized listing cards)
+  sellerName        String?
+  sellerPhone       String?
+  sellerLocation    String?
+  sellerMemberSince String?
+  sellerRating      Float?
+  sellerSales       Int?
+
+  featured Boolean @default(false)
+
+  favorites      Favorite[]
+  payments       Payment[]       @relation("ProductPayments")
+  contactReveals ContactReveal[]
+
+  @@index([category, subcategory])
+  @@index([brand])
+  @@index([price])
+  @@index([createdAt])
+  @@index([featured])
+  @@index([sellerId, createdAt])
+}
+
+model Favorite {
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@id([userId, productId])
+  @@index([productId])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  status            PaymentStatus @default(PENDING)
+  method            PaymentMethod @default(MPESA)
+  currency          String        @default("KES")
+
+  amount            Int
+  payerPhone        String        @db.VarChar(15)
+
+  // Generic paidAt, but mapped to your existing "transactionDate" column for painless migration
+  paidAt            DateTime?     @map("transactionDate")
+
+  // LNMO specifics (make these unique so callbacks can upsert safely)
+  mpesaReceipt      String?       @unique
+  checkoutRequestId String?       @unique
+  merchantRequestId String?       @unique
+
+  // LNMO AccountReference has a 12-char limit
+  accountRef        String?       @db.VarChar(12)
+
+  rawCallback       Json?
+
+  productId String?
+  product   Product? @relation("ProductPayments", fields: [productId], references: [id], onDelete: SetNull)
+
+  userId String?
+  user   User?   @relation("UserPayments", fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@index([productId, createdAt])
+  @@index([accountRef])
+}
+
+model ContactReveal {
+  id           String   @id @default(cuid())
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  viewerUserId String?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  // One reveal per (product, logged-in user); allows many guests (viewerUserId = null)
+  @@unique([productId, viewerUserId])
+
+  @@index([productId, createdAt])
+  @@index([viewerUserId, createdAt])
+  @@index([ip, createdAt])
+}
+
+/* ---------- NextAuth ---------- */
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@unique([token])
+}

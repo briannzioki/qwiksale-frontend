@@ -7,23 +7,24 @@ export default [
   // Ignore build artifacts
   { ignores: [".next/**", "node_modules/**", "dist/**"] },
 
-  // Next.js base rules (flat-config ready)
+  // Next.js base rules (flat-config)
   ...next,
 
-  // Your project-wide language options + any extra rules
+  // JS / Typescript files language options + any extra rules
   {
+    files: ["**/*.{js,jsx,ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
       parserOptions: { ecmaFeatures: { jsx: true } },
-      // ✅ Use `globals`, not `env`
+      // flat-config uses `globals` instead of `env`
       globals: {
         ...globals.browser,
         ...globals.node,
       },
     },
     rules: {
-      // add any custom rules here or keep empty
+      // add project rules here if needed
     },
   },
 ];

@@ -1,26 +1,53 @@
-@import "tailwindcss";
+/* src/app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* Respect system color-scheme for native widgets */
+:root { color-scheme: light dark; }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* Base: let layout/body set the page background */
+@layer base {
+  /* Keep form controls readable in both themes */
+  input, select, textarea, button {
+    @apply text-gray-900 dark:text-slate-100;
+  }
+  input::placeholder, textarea::placeholder {
+    @apply text-gray-500 dark:text-slate-400;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  /* Default control backgrounds (can be overridden per component) */
+  input, select, textarea {
+    @apply bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700;
+  }
+
+  /* Accessible focus */
+  input:focus, select:focus, textarea:focus, button:focus {
+    @apply outline-none ring-2 ring-[#39a0ca];
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Reusable surfaces — translucent so the page gradient shows */
+@layer components {
+  /* General translucent card */
+  .card-surface {
+    @apply bg-white/80 dark:bg-white/5
+           backdrop-blur-md
+           text-gray-900 dark:text-slate-100
+           border border-black/5 dark:border-white/10
+           rounded-2xl shadow-sm;
+  }
+
+  /* Hero-sized translucent surface (a little softer) */
+  .hero-surface {
+    @apply bg-white/70 dark:bg-white/5
+           backdrop-blur-md
+           text-gray-900 dark:text-slate-100
+           border border-black/5 dark:border-white/10
+           rounded-2xl shadow
+           p-6 md:p-8;
+  }
+
+  /* Optional utility for links on light surfaces */
+  .link { @apply text-[#161748] hover:text-[#f95d9b]; }
 }
