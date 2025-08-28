@@ -8,6 +8,7 @@ import { prisma } from "@/app/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/lib/auth";
 import { env } from "@/app/lib/env";
+import type { Prisma } from "@prisma/client";
 
 function allow(em?: string | null) {
   const list = (env.ADMIN_EMAILS || "")
@@ -59,13 +60,25 @@ export default async function AdminRevealsPage({
     1000
   );
 
-  // Correct relation filter uses `product: { is: { ... } }`
-  const where =
+  // ✅ Type the filter explicitly so Prisma gets correct literal types
+  const where: Prisma.ContactRevealWhereInput =
     q.length > 0
       ? {
           OR: [
-            { product: { is: { name: { contains: q, mode: "insensitive" } } } },
+            // Search on related product name (case-insensitive)
+            {
+              product: {
+                is: {
+                  name: {
+                    contains: q,
+                    mode: "insensitive" as Prisma.QueryMode,
+                  },
+                },
+              },
+            },
+            // Exact productId (handy for copy-pasted ids)
             { productId: q },
+            // Viewer id / IP / UA (omit mode here to avoid surprises)
             { viewerUserId: { contains: q } },
             { ip: { contains: q } },
             { userAgent: { contains: q } },
@@ -73,7 +86,7 @@ export default async function AdminRevealsPage({
         }
       : {};
 
-  // Let Prisma infer result type (avoids manual type drift)
+  // Let Prisma infer the result type
   let logs = await prisma.contactReveal.findMany({
     where,
     orderBy: { createdAt: "desc" },
@@ -81,20 +94,7 @@ export default async function AdminRevealsPage({
     include: { product: { select: { id: true, name: true } } },
   });
 
-  // If the table doesn’t exist or schema is out of sync, fail soft
-  if (!logs) {
-    return (
-      <div className="max-w-3xl mx-auto p-6 text-sm text-red-700">
-        <h1 className="text-lg font-semibold mb-2">Contact Reveals</h1>
-        <p className="mb-2">Failed to load logs from the database.</p>
-        <pre className="text-xs bg-red-50 border border-red-200 rounded p-3">
-          Ensure <code>ContactReveal</code> table exists and run Prisma migrations.
-        </pre>
-      </div>
-    );
-  }
-
-  // Build a tiny CSV data URL so you can “Export CSV” without extra routes
+  // CSV
   const csvHeader = ["createdAt", "productId", "productName", "viewerUserId", "ip", "userAgent"];
   const csvRows = logs.map((r) => [
     r.createdAt.toISOString(),
@@ -185,9 +185,7 @@ export default async function AdminRevealsPage({
                   <td className="py-2 px-3">
                     {r.viewerUserId || <span className="text-gray-500">guest</span>}
                   </td>
-                  <td className="py-2 px-3">
-                    {r.ip || <span className="text-gray-400">—</span>}
-                  </td>
+                  <td className="py-2 px-3">{r.ip || <span className="text-gray-400">—</span>}</td>
                   <td className="py-2 px-3 max-w-[420px]">
                     <span className="line-clamp-2 break-all text-gray-700">
                       {r.userAgent || "—"}
