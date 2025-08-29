@@ -41,13 +41,26 @@ export default function FiltersBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.query]);
 
+  // ✅ Cleanup must return void, never null
   useEffect(() => {
-    if (disabled) return;
+    if (disabled) {
+      if (debTimer.current) {
+        clearTimeout(debTimer.current);
+        debTimer.current = null;
+      }
+      return; // return void
+    }
+
     if (debTimer.current) clearTimeout(debTimer.current);
-    debTimer.current = setTimeout(() => {
+    const t = setTimeout(() => {
       if (qLocal !== (value.query ?? "")) onChange({ ...value, query: qLocal });
     }, Math.max(0, debounceMs));
-    return () => debTimer.current && clearTimeout(debTimer.current);
+    debTimer.current = t;
+
+    return () => {
+      clearTimeout(t);
+      if (debTimer.current === t) debTimer.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qLocal, debounceMs, disabled]);
 

@@ -1,5 +1,5 @@
 // src/app/dashboard/page.tsx
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/lib/auth";
@@ -19,7 +19,6 @@ async function getUserIdOrNull() {
   const email = session?.user?.email || undefined;
 
   if (!session?.user) return { session, userId: null };
-
   if (id) return { session, userId: id };
 
   if (email) {
@@ -52,7 +51,6 @@ export default async function DashboardPage() {
     );
   }
 
-  // Pull latest user snapshot (subscription etc.)
   const me = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, name: true, email: true, subscription: true, image: true, createdAt: true },
@@ -69,7 +67,6 @@ export default async function DashboardPage() {
     );
   }
 
-  // Parallel fetch stats + recent listings
   const [myListingsCount, favoritesCount, recentListings] = await Promise.all([
     prisma.product.count({ where: { sellerId: me.id } }),
     prisma.favorite.count({ where: { userId: me.id } }),
@@ -90,7 +87,12 @@ export default async function DashboardPage() {
     }),
   ]);
 
-  const isFree = me.subscription === "FREE";
+  // Subscription enum: BASIC (mapped from FREE), GOLD, PLATINUM
+  const isBasic = me.subscription === "BASIC";
+
+  // Pretty label
+  const subLabel =
+    me.subscription === "BASIC" ? "FREE" : me.subscription;
 
   return (
     <div className="p-6 space-y-6">
@@ -105,9 +107,9 @@ export default async function DashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-white/15 px-3 py-1 text-sm">
-              Subscription: <span className="font-semibold">{me.subscription}</span>
+              Subscription: <span className="font-semibold">{subLabel}</span>
             </span>
-            {isFree && (
+            {isBasic && (
               <Link
                 href="/settings/billing"
                 className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bg-white/90"

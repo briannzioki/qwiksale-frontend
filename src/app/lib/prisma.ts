@@ -16,11 +16,6 @@ type GlobalWithPrisma = typeof globalThis & {
 const g = globalThis as GlobalWithPrisma;
 
 /** ---- Logging controls --------------------------------------------------- */
-/**
- * Toggle query logging:
- *   PRISMA_LOG_QUERIES=1|true   -> include "query"
- *   DEBUG_PRISMA=1              -> include "query","info","warn","error"
- */
 const LOG_QUERIES =
   process.env.PRISMA_LOG_QUERIES === "1" ||
   process.env.PRISMA_LOG_QUERIES === "true" ||
@@ -33,7 +28,7 @@ const LOG_LEVELS = LOG_QUERIES
 /** ---- Client factory ----------------------------------------------------- */
 function createClient() {
   return new PrismaClient({
-    datasources: { db: { url: env.DATABASE_URL } }, // force-resolve URL from your env helper
+    datasources: { db: { url: env.DATABASE_URL } },
     errorFormat: isDev ? "pretty" : "minimal",
     log: [...LOG_LEVELS],
   });
@@ -50,17 +45,25 @@ if (isDev) {
 /** ---- Optional: slow query warning middleware (idempotent) --------------- */
 if (!g.__PRISMA_SLOW_MW__) {
   const SLOW_MS = Number(process.env.PRISMA_SLOW_QUERY_MS ?? 2000);
-  prisma.$use(async (params, next) => {
-    const start = Date.now();
-    const result = await next(params);
-    const ms = Date.now() - start;
-    if (ms > SLOW_MS) {
-      console.warn(
-        `[prisma] slow ${params.model ?? "raw"}.${params.action} took ${ms}ms`
-      );
-    }
-    return result;
-  });
+
+  // Guarded access to $use and avoid Prisma.Middleware typings
+  const maybeUse =
+    (prisma as any).$use as
+      | undefined
+      | ((mw: (params: any, next: (params: any) => Promise<any>) => Promise<any>) => void);
+
+  if (typeof maybeUse === "function") {
+    maybeUse(async (params: any, next: (params: any) => Promise<any>) => {
+      const start = Date.now();
+      const result = await next(params);
+      const ms = Date.now() - start;
+      if (ms > SLOW_MS) {
+        // eslint-disable-next-line no-console
+        console.warn(`[prisma] slow ${params.model ?? "raw"}.${params.action} took ${ms}ms`);
+      }
+      return result;
+    });
+  }
   g.__PRISMA_SLOW_MW__ = true;
 }
 
@@ -74,13 +77,11 @@ export async function prismaHealthcheck(): Promise<boolean> {
   }
 }
 
-/** Optional eager connect (handy for long-lived runtimes) */
 export async function prismaEnsureConnected(): Promise<void> {
   try {
-    // No-op if already connected
-    // @ts-ignore - $connect is safe to call repeatedly
     await prisma.$connect?.();
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.warn("[prisma] connect error:", e);
   }
 }

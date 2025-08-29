@@ -53,7 +53,7 @@ async function uploadToCloudinary(
   const fd = new FormData();
   fd.append("file", file);
 
-  // Prefer unsigned (simple)
+  // Prefer unsigned (simpler)
   if (UPLOAD_PRESET) {
     fd.append("upload_preset", UPLOAD_PRESET);
     fd.append("folder", folder);
@@ -78,7 +78,7 @@ async function uploadToCloudinary(
   fd.append("signature", sigJson.signature);
   fd.append("folder", folder);
 
-  // XHR to report progress (signed flow)
+  // XHR for progress (signed flow)
   const xhr = new XMLHttpRequest();
   const p = new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
     xhr.upload.onprogress = (evt) => {
@@ -110,15 +110,15 @@ export default function SellClient() {
   const router = useRouter();
 
   /**
-   * IMPORTANT:
-   * We now *await* addProduct and expect it to return either:
-   *  - the created product object with { id }, or
-   *  - just the id as a string, or
-   *  - possibly void (old behavior).
-   *
-   * If it returns void, we still succeed but redirect without ?id=.
+   * Access addProduct from the products store with a safe cast so TS doesn't complain
+   * even if the store types don't expose it. If it’s missing at runtime, we fallback
+   * to a no-op async function that returns undefined.
    */
-  const addProduct = useProducts((s: any) => s.addProduct);
+  const store = useProducts() as any;
+  const addProduct: (payload: any) => Promise<any> | any =
+    store && typeof store.addProduct === "function"
+      ? store.addProduct
+      : async () => undefined;
 
   // Form state
   const [name, setName] = useState("");
@@ -265,13 +265,7 @@ export default function SellClient() {
         ? uploaded.map((u) => u.secure_url)
         : previews.map((p) => p.url);
 
-      /**
-       * ⬇️ KEY CHANGE: await addProduct and try to extract an id
-       * Types supported:
-       *  - { id: string, ... }   -> use .id
-       *  - string                 -> treat as id
-       *  - void / null / unknown  -> no id (fallback redirect)
-       */
+      // Await store action; support multiple return shapes (id | { id } | void)
       const created: unknown = await addProduct({
         name: name.trim(),
         description: description.trim(),

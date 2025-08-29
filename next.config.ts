@@ -13,7 +13,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://www.googleapis.com",
     "https://*.ngrok-free.app",
     "https://*.ngrok.io",
-    ...(isProd ? [] : ["ws:", "wss:"]), // dev HMR
+    ...(isProd ? [] : ["ws:", "wss:"]),
   ].join(" ");
 
   const img = [
@@ -34,7 +34,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "'self'",
     "'unsafe-inline'",
     "https://accounts.google.com",
-    ...(isProd ? [] : ["'unsafe-eval'"]), // dev-only
+    ...(isProd ? [] : ["'unsafe-eval'"]),
   ].join(" ");
 
   const csp = [
@@ -53,46 +53,30 @@ const securityHeaders = (): { key: string; value: string }[] => {
     .filter(Boolean)
     .join("; ");
 
-  const headers: { key: string; value: string }[] = [
+  const headers = [
     { key: "Content-Security-Policy", value: csp },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "X-Frame-Options", value: "DENY" },
     { key: "X-DNS-Prefetch-Control", value: "on" },
     { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
-    {
-      key: "Permissions-Policy",
-      value:
-        "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(self), publickey-credentials-get=(self), usb=()",
-    },
     ...(isProd
-      ? [
-          {
-            key: "Strict-Transport-Security",
-            value: "max-age=63072000; includeSubDomains; preload",
-          },
-        ]
+      ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
       : []),
   ];
 
-  return headers;
+  return headers as { key: string; value: string }[];
 };
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   output: "standalone",
-
-  // NEW: key moved here in Next 15. Use this instead of experimental.serverComponentsExternalPackages
   serverExternalPackages: ["@prisma/client"],
-
-  // Prevent ESLint patch crash from blocking builds
   eslint: { ignoreDuringBuilds: true },
-
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders() }];
   },
-
   images: {
     remotePatterns: [
       {

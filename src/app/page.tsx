@@ -1,3 +1,4 @@
+// src/app/page.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -66,7 +67,7 @@ export default function HomePage() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // URL state
+  // URL state (initialize from current query)
   const [q, setQ] = useState(sp.get("q") || "");
   const [category, setCategory] = useState(sp.get("category") || "");
   const [subcategory, setSubcategory] = useState(sp.get("subcategory") || "");
@@ -76,7 +77,10 @@ export default function HomePage() {
   const [maxPrice, setMaxPrice] = useState(sp.get("maxPrice") || "");
   const [verifiedOnly, setVerifiedOnly] = useState((sp.get("verifiedOnly") || "false") === "true");
   const [sort, setSort] = useState(sp.get("sort") || "top");
-  const [page, setPage] = useState(Number(sp.get("page") || 1));
+  const [page, setPage] = useState(() => {
+    const n = Number(sp.get("page") || 1);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  });
 
   // Debounced inputs
   const dq = useDebounced(q);
@@ -132,10 +136,10 @@ export default function HomePage() {
   // Keep URL in sync (shallow)
   const lastUrlRef = useRef<string>("");
   useEffect(() => {
-    const next = `/?${queryString}`;
+    const next = queryString ? `/?${queryString}` : "/";
     if (next !== lastUrlRef.current) {
       lastUrlRef.current = next;
-      router.replace(next as any);
+      router.replace(next);
     }
   }, [router, queryString]);
 

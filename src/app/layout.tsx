@@ -12,8 +12,10 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+// Ensure no trailing slash so Metadata URLs compose correctly
 const siteUrl =
-  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "http://localhost:3000";
+  (process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") ||
+    "http://localhost:3000") as string;
 
 export const viewport: Viewport = {
   themeColor: [
@@ -28,9 +30,19 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: "QwikSale",
-  title: { default: "QwikSale", template: "%s · QwikSale" },
+  title: {
+    default: "QwikSale",
+    template: "%s · QwikSale",
+  },
   description: "QwikSale — Kenya’s trusted marketplace for all items.",
-  keywords: ["QwikSale", "Kenya", "marketplace", "buy and sell", "peer to peer", "mpesa"],
+  keywords: [
+    "QwikSale",
+    "Kenya",
+    "marketplace",
+    "buy and sell",
+    "peer to peer",
+    "mpesa",
+  ],
   alternates: { canonical: "/" },
   manifest: "/manifest.webmanifest",
   openGraph: {
@@ -65,6 +77,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
+        {/* Optional perf: preconnect to common CDNs you use (safe no-ops if unused) */}
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="" />
+        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+
         {/* Set initial theme BEFORE paint to avoid flicker */}
         <Script id="theme-script" strategy="beforeInteractive">
           {`try {

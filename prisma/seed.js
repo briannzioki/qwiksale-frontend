@@ -1,4 +1,5 @@
 // prisma/seed.ts
+/* eslint-disable no-console */
 import { PrismaClient, Prisma } from "@prisma/client";
 import path from "node:path";
 import fs from "node:fs";
@@ -45,7 +46,7 @@ type RawProduct = {
   condition?: "brand new" | "pre-owned" | string;
   price?: number | string | null;
   image?: string | null;
-  gallery?: string[];
+  gallery?: unknown; // be tolerant, we’ll coerce to string[]
   location?: string;
   negotiable?: boolean;
   createdAt?: string | Date;
@@ -60,15 +61,12 @@ type RawProduct = {
 };
 
 function log(msg: string) {
-  // eslint-disable-next-line no-console
   console.log(msg);
 }
 function warn(msg: string, ...rest: unknown[]) {
-  // eslint-disable-next-line no-console
   console.warn(msg, ...rest);
 }
 function errlog(msg: string, ...rest: unknown[]) {
-  // eslint-disable-next-line no-console
   console.error(msg, ...rest);
 }
 
@@ -81,6 +79,7 @@ function loadSeed(): RawProduct[] {
   if (SEED_SOURCE) {
     tryFiles.push(path.resolve(SEED_SOURCE));
   } else {
+    // Look in common places
     tryFiles.push(
       path.resolve(__dirname, "../src/app/data/products.ts"),
       path.resolve(__dirname, "../src/data/products.ts"),
@@ -94,26 +93,28 @@ function loadSeed(): RawProduct[] {
   for (const p of tryFiles) {
     if (!fs.existsSync(p)) continue;
 
-    if (p.endsWith(".json")) {
-      const json = JSON.parse(fs.readFileSync(p, "utf8"));
-      if (Array.isArray(json)) return json as RawProduct[];
-      if (Array.isArray(json?.products)) return json.products as RawProduct[];
-      continue;
-    }
+    try {
+      if (p.endsWith(".json")) {
+        const json = JSON.parse(fs.readFileSync(p, "utf8"));
+        if (Array.isArray(json)) return json as RawProduct[];
+        if (Array.isArray(json?.products)) return json.products as RawProduct[];
+        continue;
+      }
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require(p);
-    if (Array.isArray(mod?.products)) {
-      return mod.products as RawProduct[];
-    }
-    // some modules export default
-    if (Array.isArray(mod?.default)) {
-      return mod.default as RawProduct[];
+      // Try to require .js or transpiled .ts
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require(p);
+      const arr =
+        (Array.isArray(mod?.products) && mod.products) ||
+        (Array.isArray(mod?.default) && mod.default);
+      if (Array.isArray(arr)) return arr as RawProduct[];
+    } catch (e) {
+      warn(`Could not load seed file ${p}`, e);
     }
   }
 
   throw new Error(
-    "Could not find products data. Provide SEED_SOURCE or create src/app/data/products.(ts|js|json) that exports `products`."
+    "Could not find products data. Provide SEED_SOURCE or create src/app/data/products.(ts|js|json) exporting an array `products`."
   );
 }
 
@@ -173,21 +174,26 @@ function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
       price: clonePrice(toPrice(base.price), bump),
       brand: base.brand || pick(brands, i),
       createdAt: randomCreatedAt(),
-      image: base.image || "/placeholder/default.jpg",
-      gallery: Array.isArray(base.gallery) && base.gallery.length > 0
-        ? base.gallery
-        : ["/placeholder/default.jpg"],
+      image: typeof base.image === "string" && base.image ? base.image : "/placeholder/default.jpg",
+      gallery:
+        Array.isArray(base.gallery) && base.gallery.length > 0
+          ? (base.gallery as unknown[]).map(String)
+          : ["/placeholder/default.jpg"],
       sellerName: base.sellerName || base.seller?.name || "Private Seller",
       sellerPhone: normalizePhone(base.sellerPhone || base.seller?.phone || "254700000000") || undefined,
       sellerLocation: base.sellerLocation || base.seller?.location || "Nairobi",
       sellerMemberSince: base.sellerMemberSince || base.seller?.memberSince || "2024",
       sellerRating:
-        typeof base.sellerRating === "number" ? base.sellerRating
-          : typeof base.seller?.rating === "number" ? base.seller!.rating
+        typeof base.sellerRating === "number"
+          ? base.sellerRating
+          : typeof base.seller?.rating === "number"
+          ? base.seller!.rating
           : 4.5,
       sellerSales:
-        typeof base.sellerSales === "number" ? base.sellerSales
-          : typeof base.seller?.sales === "number" ? base.seller!.sales
+        typeof base.sellerSales === "number"
+          ? base.sellerSales
+          : typeof base.seller?.sales === "number"
+          ? base.seller!.sales
           : 1,
       featured: Boolean(base.featured && i % 3 !== 0), // keep some featured
     };
@@ -200,6 +206,11 @@ function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
 /* ============================
    Build ProductCreateManyInput
    ============================ */
+function coerceGallery(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((x) => String(x)).filter((s) => s.length > 0);
+}
+
 function mapToCreateMany(
   src: RawProduct[],
   attachSellerId?: string | null
@@ -208,13 +219,13 @@ function mapToCreateMany(
     const name = String(p.name);
     const category = String(p.category || "Misc");
     const subcategory = String(p.subcategory || "General");
+
+    const condRaw = (p.condition || "").toString().toLowerCase().trim();
     const condition =
-      p.condition && typeof p.condition === "string"
-        ? p.condition.toLowerCase() === "brand new" || p.condition.toLowerCase() === "brand-new" || p.condition.toLowerCase() === "brand_new"
-          ? "brand new"
-          : p.condition.toLowerCase() === "pre-owned" || p.condition.toLowerCase() === "pre owned" || p.condition.toLowerCase() === "pre_owned" || p.condition.toLowerCase() === "used"
-          ? "pre-owned"
-          : "pre-owned"
+      condRaw === "brand new" || condRaw === "brand-new" || condRaw === "brand_new"
+        ? "brand new"
+        : condRaw === "pre-owned" || condRaw === "pre owned" || condRaw === "pre_owned" || condRaw === "used"
+        ? "pre-owned"
         : "pre-owned";
 
     const normalizedPhone = normalizePhone(p.sellerPhone || p.seller?.phone || null);
@@ -230,12 +241,12 @@ function mapToCreateMany(
       brand: p.brand ?? null,
       condition,
       price: toPrice(p.price),
-      image: p.image ?? null,
-      gallery: Array.isArray(p.gallery) ? p.gallery.map(String) : [],
+      image: typeof p.image === "string" ? p.image : null,
+      gallery: coerceGallery(p.gallery),
       location: p.location ?? p.sellerLocation ?? p.seller?.location ?? null,
       negotiable: Boolean(p.negotiable ?? false),
       createdAt: p.createdAt ? new Date(p.createdAt) : randomCreatedAt(),
-      featured: Boolean(p.featured ?? (idx % 9 === 0)), // sprinkle a few featured
+      featured: Boolean(p.featured ?? (idx % 9 === 0)),
 
       // flattened seller fields remain for anonymous products
       sellerName: p.sellerName ?? p.seller?.name ?? (useDemoSeller ? null : "Private Seller"),
@@ -255,7 +266,7 @@ function mapToCreateMany(
           ? p.seller!.sales
           : (useDemoSeller ? null : 1),
 
-      sellerId: useDemoSeller ? attachSellerId! : null,
+      sellerId: useDemoSeller ? (attachSellerId as string) : null,
     };
   });
 }
@@ -290,7 +301,7 @@ async function main() {
   // 3) Build rows
   const rows = mapToCreateMany(expanded, demoSeller.id);
 
-  // 4) Optional reset (favorites -> payment -> products)
+  // 4) Optional reset (favorites -> payments -> products)
   if (SEED_RESET) {
     log("⚠️  Resetting test data…");
     await prisma.favorite.deleteMany({});
@@ -303,7 +314,7 @@ async function main() {
   let createdCount = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
-    const res = await prisma.product.createMany({ data: slice });
+    const res = await prisma.product.createMany({ data: slice, skipDuplicates: true });
     createdCount += res.count;
     log(`  …batch ${Math.floor(i / BATCH) + 1}: +${res.count}`);
   }
@@ -333,7 +344,11 @@ async function main() {
   });
   log("• Sample:");
   for (const s of sample) {
-    log(`  - ${s.id} :: ${s.name} :: KES ${s.price ?? "—"} :: ${s.featured ? "⭐" : "•"} :: seller=${s.sellerId ?? "anon"}`);
+    log(
+      `  - ${s.id} :: ${s.name} :: KES ${s.price ?? "—"} :: ${s.featured ? "⭐" : "•"} :: seller=${
+        s.sellerId ?? "anon"
+      }`
+    );
   }
 }
 

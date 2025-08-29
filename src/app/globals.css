@@ -6,14 +6,42 @@
 /* Respect system color-scheme for native widgets */
 :root { color-scheme: light dark; }
 
-/* Base: let layout/body set the page background */
+/* Brand color helpers (used by gradient utilities in markup) */
+:root {
+  --brand-navy: #161748;
+  --brand-green: #478559;
+  --brand-blue: #39a0ca;
+}
+
+/* Provide Tailwind-like gradient stop helpers for custom brand colors.
+   These mimic `from-*`, `via-*`, `to-*` classes for our brand palette. */
+.from-brandNavy {
+  --tw-gradient-from: var(--brand-navy) var(--tw-gradient-from-position);
+  --tw-gradient-to: color-mix(in oklab, var(--brand-navy) 0%, transparent) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+.via-brandGreen {
+  --tw-gradient-to: color-mix(in oklab, var(--brand-green) 0%, transparent) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--brand-green) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+.to-brandBlue {
+  --tw-gradient-to: var(--brand-blue) var(--tw-gradient-to-position);
+}
+
+/* Fallback utilities (commonly used but may need CSS support) */
+.text-balance { text-wrap: balance; }
+
+/* Base: keep controls readable in both themes; page bg handled by layout */
 @layer base {
+  /* Smooth fonts */
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
   /* Keep form controls readable in both themes */
   input, select, textarea, button {
     @apply text-gray-900 dark:text-slate-100;
   }
   input::placeholder, textarea::placeholder {
-    @apply text-gray-500 dark:text-slate-400;
+    @apply text-gray-500 dark:placeholder-slate-400;
   }
 
   /* Default control backgrounds (can be overridden per component) */
@@ -27,7 +55,7 @@
   }
 }
 
-/* Reusable surfaces — translucent so the page gradient shows */
+/* Reusable surfaces and UI atoms */
 @layer components {
   /* General translucent card */
   .card-surface {
@@ -48,6 +76,100 @@
            p-6 md:p-8;
   }
 
+  /* Solid card (used for lists, tables, panels) */
+  .card {
+    @apply bg-white dark:bg-slate-900/40
+           text-gray-900 dark:text-slate-100
+           border border-gray-200 dark:border-slate-800
+           rounded-2xl shadow-sm;
+  }
+
+  /* Container wrapper used across pages */
+  .container-page {
+    @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full rounded-lg px-3 py-2
+           bg-white dark:bg-slate-800
+           border border-gray-300 dark:border-slate-700
+           placeholder:text-gray-500 dark:placeholder:text-slate-400
+           focus:outline-none focus:ring-2 focus:ring-[#39a0ca];
+  }
+  .select {
+    @apply w-full rounded-lg px-3 py-2
+           bg-white dark:bg-slate-800
+           border border-gray-300 dark:border-slate-700
+           focus:outline-none focus:ring-2 focus:ring-[#39a0ca];
+  }
+  .textarea {
+    @apply w-full rounded-lg px-3 py-2
+           bg-white dark:bg-slate-800
+           border border-gray-300 dark:border-slate-700
+           placeholder:text-gray-500 dark:placeholder:text-slate-400
+           focus:outline-none focus:ring-2 focus:ring-[#39a0ca];
+  }
+  .label {
+    @apply block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-xl px-4 py-2 font-semibold
+           text-white bg-[#161748]
+           hover:opacity-90 active:opacity-95
+           shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#39a0ca]
+           disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-xl px-4 py-2 font-semibold
+           bg-white dark:bg-slate-800
+           text-gray-900 dark:text-slate-100
+           border border-gray-300 dark:border-slate-700
+           hover:bg-gray-50 dark:hover:bg-slate-700
+           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#39a0ca]
+           disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-lg border
+           bg-white dark:bg-slate-800
+           text-gray-700 dark:text-slate-200
+           border-gray-300 dark:border-slate-700
+           hover:bg-gray-50 dark:hover:bg-slate-700;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-lg px-3 py-1.5 text-sm
+           text-white bg-red-600 hover:bg-red-700
+           focus:outline-none focus:ring-2 focus:ring-red-400
+           disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-xl px-4 py-2 font-semibold
+           text-white bg-emerald-600 hover:bg-emerald-700
+           focus:outline-none focus:ring-2 focus:ring-emerald-400
+           disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+
+  /* Subtle shadow used by hero headers */
+  .shadow-soft { @apply shadow-[0_10px_30px_-10px_rgba(0,0,0,0.25)]; }
+
   /* Optional utility for links on light surfaces */
   .link { @apply text-[#161748] hover:text-[#f95d9b]; }
+}
+
+/* Utilities layer for tiny fallbacks/extensions */
+@layer utilities {
+  /* Fallback for line-clamp-2 if plugin is not enabled */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 }

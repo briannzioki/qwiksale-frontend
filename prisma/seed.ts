@@ -5,12 +5,19 @@ import fs from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
-const prisma = new PrismaClient();
-
-// ── ESM-safe __dirname / require ───────────────────────────────────────────────
+// ESM-safe __dirname / require
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
+
+// ✅ Use DIRECT_URL for seeds/migrations (primary), fall back to DATABASE_URL
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DIRECT_URL || process.env.DATABASE_URL!,
+    },
+  },
+});
 
 /* =============================
    Config via environment vars
@@ -83,7 +90,6 @@ function errlog(msg: string, ...rest: unknown[]) {
    Load products
    ============== */
 async function loadSeed(): Promise<RawProduct[]> {
-  // explicit file override supports .ts/.js/.json
   const tryFiles: string[] = [];
   if (SEED_SOURCE) {
     tryFiles.push(path.resolve(SEED_SOURCE));
@@ -101,7 +107,6 @@ async function loadSeed(): Promise<RawProduct[]> {
   for (const p of tryFiles) {
     if (!fs.existsSync(p)) continue;
 
-    // JSON straight from disk
     if (p.endsWith(".json")) {
       try {
         const json = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -113,20 +118,20 @@ async function loadSeed(): Promise<RawProduct[]> {
       continue;
     }
 
-    // Try ESM dynamic import first (works in ts-node ESM)
+    // Try ESM dynamic import first
     try {
       const mod = await import(pathToFileURL(p).href);
       if (Array.isArray(mod?.products)) return mod.products as RawProduct[];
       if (Array.isArray(mod?.default)) return mod.default as RawProduct[];
     } catch {
-      // Fall back to CJS require (using createRequire)
+      // Fall back to CJS require
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const cjs = require(p);
         if (Array.isArray(cjs?.products)) return cjs.products as RawProduct[];
         if (Array.isArray(cjs?.default)) return cjs.default as RawProduct[];
-      } catch (e2) {
-        // keep trying next candidate
+      } catch {
+        // continue to next file
       }
     }
   }
@@ -148,7 +153,7 @@ function toPrice(v: unknown): number | null {
 function normalizePhone(input?: string | null): string | null {
   if (!input) return null;
   let s = String(input).replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07XXXXXXXX -> 2547XXXXXXXX
+  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
   if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, "");
   if (!/^2547\d{8}$/.test(s)) return null;
   return s;
@@ -208,7 +213,7 @@ function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
         typeof base.sellerSales === "number" ? base.sellerSales
           : typeof base.seller?.sales === "number" ? base.seller!.sales
           : 1,
-      featured: Boolean(base.featured && i % 3 !== 0), // keep some featured
+      featured: Boolean(base.featured && i % 3 !== 0),
     };
     out.push(clone);
     i++;
@@ -237,8 +242,6 @@ function mapToCreateMany(
         : "pre-owned";
 
     const normalizedPhone = normalizePhone(p.sellerPhone || p.seller?.phone || null);
-
-    // 60% of rows owned by demo seller if provided
     const useDemoSeller = !!attachSellerId && idx % 5 !== 0;
 
     return {
@@ -254,9 +257,8 @@ function mapToCreateMany(
       location: p.location ?? p.sellerLocation ?? p.seller?.location ?? null,
       negotiable: Boolean(p.negotiable ?? false),
       createdAt: p.createdAt ? new Date(p.createdAt) : randomCreatedAt(),
-      featured: Boolean(p.featured ?? (idx % 9 === 0)), // sprinkle a few featured
+      featured: Boolean(p.featured ?? (idx % 9 === 0)),
 
-      // flattened seller fields remain for anonymous products
       sellerName: p.sellerName ?? p.seller?.name ?? (useDemoSeller ? null : "Private Seller"),
       sellerPhone: useDemoSeller ? null : (normalizedPhone || null),
       sellerLocation: p.sellerLocation ?? p.seller?.location ?? (useDemoSeller ? null : "Nairobi"),
@@ -285,7 +287,6 @@ function mapToCreateMany(
 async function main() {
   log("🔧 Seeding…");
 
-  // Guard destructive reset in production
   if (process.env.NODE_ENV === "production" && SEED_RESET && process.env.SEED_ALLOW_PROD !== "1") {
     throw new Error(
       "Refusing to RESET in production. Set SEED_ALLOW_PROD=1 to force (dangerous)."
@@ -313,11 +314,12 @@ async function main() {
   if (SEED_RESET) {
     log("⚠️  Resetting test data…");
     await prisma.favorite.deleteMany({});
+    // payments table may not exist in some schemas; ignore if so
     await (prisma as any).payment?.deleteMany?.({}).catch(() => {});
     await prisma.product.deleteMany({});
   }
 
-  // 5) Insert in batches for safety (createMany caps)
+  // 5) Insert in batches
   const BATCH = 250;
   let createdCount = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
