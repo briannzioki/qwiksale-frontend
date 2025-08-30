@@ -7,6 +7,9 @@ const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
 const securityHeaders = (): { key: string; value: string }[] => {
   const connect = [
     "'self'",
+    // Cloudinary uploads (unsigned or signed)
+    "https://api.cloudinary.com",
+    // Your existing endpoints
     "https://sandbox.safaricom.co.ke",
     "https://api.safaricom.co.ke",
     "https://accounts.google.com",
