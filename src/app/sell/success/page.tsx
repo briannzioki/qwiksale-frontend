@@ -4,16 +4,22 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import toast from "react-hot-toast"; // ✅ default import (not { toast })
+import toast from "react-hot-toast";
+
+const SITE_URL =
+  (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/+$/, ""); // no trailing slash
+const SUBSCRIPTIONS_ENABLED = process.env.NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED !== "0";
 
 export default function SellSuccessPage() {
   const sp = useSearchParams();
   const [origin, setOrigin] = useState<string>("");
+  const [canNativeShare, setCanNativeShare] = useState(false);
 
-  // Only available in the browser
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
+      // Prefer env base if provided; otherwise use current origin
+      setOrigin(SITE_URL || window.location.origin);
+      setCanNativeShare(typeof (navigator as any)?.share === "function");
     }
   }, []);
 
@@ -30,6 +36,19 @@ export default function SellSuccessPage() {
       toast.success("Link copied to clipboard");
     } catch {
       toast.error("Couldn't copy link");
+    }
+  }
+
+  async function shareNative() {
+    if (!productUrl || !canNativeShare) return;
+    try {
+      await (navigator as any).share({
+        title: "My QwikSale listing",
+        text: "Check out my new listing on QwikSale:",
+        url: productUrl,
+      });
+    } catch {
+      // user canceled or share not available
     }
   }
 
@@ -66,6 +85,7 @@ export default function SellSuccessPage() {
                 <Link href={`/product/${productId}`} className="btn-primary">
                   View listing
                 </Link>
+
                 <button
                   type="button"
                   onClick={copy}
@@ -74,6 +94,7 @@ export default function SellSuccessPage() {
                 >
                   Copy link
                 </button>
+
                 <a
                   href={waShare || "#"}
                   target="_blank"
@@ -83,11 +104,24 @@ export default function SellSuccessPage() {
                 >
                   Share on WhatsApp
                 </a>
+
+                {canNativeShare && (
+                  <button
+                    type="button"
+                    onClick={shareNative}
+                    className="btn-ghost"
+                    disabled={!productUrl}
+                  >
+                    Share…
+                  </button>
+                )}
               </div>
             </>
           ) : (
             <div className="text-sm text-gray-700 dark:text-slate-200">
-              Your listing was posted. (Tip: pass <code className="font-mono">?id=&lt;productId&gt;</code> to this page to enable share buttons.)
+              Your listing was posted. (Tip: pass{" "}
+              <code className="font-mono">?id=&lt;productId&gt;</code> to this page to enable share
+              buttons.)
             </div>
           )}
 
@@ -101,24 +135,26 @@ export default function SellSuccessPage() {
           </div>
         </div>
 
-        {/* Tips */}
-        <div className="card p-5 text-left">
-          <h2 className="text-base font-semibold mb-2">Boost your chances</h2>
-          <ul className="list-disc ml-5 space-y-1 text-sm text-gray-700 dark:text-slate-300">
-            <li>Add 3–6 clear photos from different angles.</li>
-            <li>Write an honest description and mention any accessories/warranty.</li>
-            <li>Enable WhatsApp on your phone number so buyers can reach you fast.</li>
-            <li>
-              Upgrade to <strong>Gold</strong> or <strong>Platinum</strong> for verified
-              badge and top placement in search results.
-            </li>
-          </ul>
-          <div className="mt-3">
-            <Link href="/settings/billing" className="btn-primary">
-              Upgrade subscription
-            </Link>
+        {/* Tips / upsell */}
+        {SUBSCRIPTIONS_ENABLED && (
+          <div className="card p-5 text-left">
+            <h2 className="text-base font-semibold mb-2">Boost your chances</h2>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-gray-700 dark:text-slate-300">
+              <li>Add 3–6 clear photos from different angles.</li>
+              <li>Write an honest description and mention any accessories/warranty.</li>
+              <li>Enable WhatsApp on your phone number so buyers can reach you fast.</li>
+              <li>
+                Upgrade to <strong>Gold</strong> or <strong>Platinum</strong> for a badge and top
+                placement in search results.
+              </li>
+            </ul>
+            <div className="mt-3">
+              <Link href="/settings/billing" className="btn-primary">
+                Upgrade subscription
+              </Link>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -126,12 +162,7 @@ export default function SellSuccessPage() {
 
 function CheckIcon() {
   return (
-    <svg
-      className="h-8 w-8 text-white"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden
-    >
+    <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
         d="M20 7L10 17l-6-6"
         stroke="currentColor"

@@ -15,7 +15,7 @@ const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 // Cloudinary (client-safe)
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
-const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""; // optional unsigned preset
+const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""; // unsigned preset if you have one
 
 /* ----------------------------- Phone helpers ----------------------------- */
 function normalizePhone(raw: string): string {
@@ -27,7 +27,7 @@ function normalizePhone(raw: string): string {
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-function isValidPhone(input: string): boolean {
+function looksLikeValidKePhone(input: string): boolean {
   return /^254(7|1)\d{8}$/.test(normalizePhone(input));
 }
 
@@ -109,11 +109,7 @@ async function uploadToCloudinary(
 export default function SellClient() {
   const router = useRouter();
 
-  /**
-   * Access addProduct from the products store with a safe cast so TS doesn't complain
-   * even if the store types don't expose it. If it’s missing at runtime, we fallback
-   * to a no-op async function that returns undefined.
-   */
+  // Zustand store (optional)
   const store = useProducts() as any;
   const addProduct: (payload: any) => Promise<any> | any =
     store && typeof store.addProduct === "function"
@@ -129,7 +125,7 @@ export default function SellClient() {
   const [subcategory, setSubcategory] = useState("");
   const [brand, setBrand] = useState("");
   const [location, setLocation] = useState("Nairobi");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(""); // OPTIONAL now
   const [description, setDescription] = useState("");
   const [previews, setPreviews] = useState<FilePreview[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -158,17 +154,21 @@ export default function SellClient() {
     };
   }, [previews]);
 
-  const normalizedPhone = normalizePhone(phone);
+  const normalizedPhone = phone ? normalizePhone(phone) : "";
   const priceNum = price === "" ? 0 : Number(price);
+
+  // Phone is optional; if provided, it must be valid
+  const phoneOk = !phone || looksLikeValidKePhone(phone);
+
   const canSubmit =
     name.trim().length >= 3 &&
     !!category &&
     !!subcategory &&
     description.trim().length >= 10 &&
     (price === "" || (typeof price === "number" && price >= 0)) &&
-    isValidPhone(phone);
+    phoneOk;
 
-  // Image helpers
+  /* ------------------------------ Image helpers ------------------------------ */
   function filesToAdd(files: FileList | File[]) {
     const next: FilePreview[] = [];
     for (const f of Array.from(files)) {
@@ -221,7 +221,7 @@ export default function SellClient() {
     });
   }
 
-  // Submit
+  /* --------------------------------- Submit --------------------------------- */
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) {
@@ -265,8 +265,8 @@ export default function SellClient() {
         ? uploaded.map((u) => u.secure_url)
         : previews.map((p) => p.url);
 
-      // Await store action; support multiple return shapes (id | { id } | void)
-      const created: unknown = await addProduct({
+      // Payload for creation (server will snapshot seller info)
+      const payload = {
         name: name.trim(),
         description: description.trim(),
         category,
@@ -278,19 +278,33 @@ export default function SellClient() {
         gallery,
         location: location.trim(),
         negotiable,
-        sellerName: "Private Seller",
-        sellerPhone: normalizedPhone,
-        sellerLocation: location.trim(),
-        sellerMemberSince: new Date().getFullYear().toString(),
-        sellerRating: 4.5,
-        sellerSales: 1,
-      });
+        // Optional: let server ignore or use later
+        sellerPhone: normalizedPhone || undefined,
+      };
+
+      // 1) Try Zustand store if present
+      let created: any = await addProduct(payload);
+
+      // 2) Fallback to server API if store doesn’t handle it
+      if (!created) {
+        const r = await fetch("/api/products/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j?.error) {
+          throw new Error(j?.error || `Failed to create (${r.status})`);
+        }
+        created = { id: j.productId };
+      }
 
       const createdId =
         typeof created === "string"
           ? created
           : created && typeof created === "object" && "id" in created
-          ? String((created as any).id)
+          ? String(created.id)
           : "";
 
       toast.success("Listing posted!");
@@ -304,7 +318,7 @@ export default function SellClient() {
     }
   }
 
-  // UI
+  /* ----------------------------------- UI ----------------------------------- */
   return (
     <div className="container-page py-6">
       {/* Header card */}
@@ -404,7 +418,7 @@ export default function SellClient() {
           </div>
         </div>
 
-        {/* Brand, Location, Phone */}
+        {/* Brand, Location, Phone (optional) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="label">Brand (optional)</label>
@@ -425,19 +439,17 @@ export default function SellClient() {
             />
           </div>
           <div>
-            <label className="label">Phone (WhatsApp)</label>
+            <label className="label">Phone (WhatsApp, optional)</label>
             <input
               className="input"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="07XXXXXXXX or 2547XXXXXXXX"
-              required
-              minLength={9}
-              aria-invalid={!isValidPhone(phone)}
+              aria-invalid={!!phone && !looksLikeValidKePhone(phone)}
             />
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              Will be shared with buyers. Normalized:{" "}
-              <code className="font-mono">{normalizePhone(phone) || "—"}</code>
+              If provided, we’ll normalize as{" "}
+              <code className="font-mono">{normalizedPhone || "—"}</code>
             </div>
           </div>
         </div>

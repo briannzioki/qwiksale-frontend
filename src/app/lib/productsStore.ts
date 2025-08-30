@@ -49,6 +49,8 @@ export type UseProductsReturn = {
   ready: boolean;
   error?: string | null;
   reload: () => void;
+  /** Create a product, update local caches, and return { id } */
+  addProduct: (payload: any) => Promise<{ id: string }>;
 };
 
 /* ------------------------------------------------------------------ */
@@ -168,6 +170,7 @@ function dedupeById(list: Product[]): Product[] {
  * - Returns cached list quickly (memory/session)
  * - Revalidates in background
  * - Revalidates on tab focus / online
+ * - Exposes addProduct() to create and locally cache a new listing
  */
 export function useProducts(): UseProductsReturn {
   const [products, setProducts] = useState<Product[]>(memory.list);
@@ -253,7 +256,58 @@ export function useProducts(): UseProductsReturn {
     void load(true);
   }, [load]);
 
-  return { products, ready, error, reload };
+  /** Create product, update caches, return { id } */
+  const addProduct = useCallback(
+    async (payload: any): Promise<{ id: string }> => {
+      const r = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j?.id) {
+        throw new Error(j?.error || `Failed to create product (${r.status})`);
+      }
+
+      // Build a local product for optimistic cache
+      const nowIso = new Date().toISOString();
+      const newItem: Product = {
+        id: String(j.id),
+        name: String(payload.name),
+        description: payload.description ?? null,
+        category: String(payload.category),
+        subcategory: String(payload.subcategory),
+        brand: payload.brand ?? null,
+        condition: payload.condition ?? null,
+        price:
+          typeof payload.price === "number"
+            ? payload.price
+            : payload.price === "" || payload.price == null
+            ? null
+            : Number(payload.price) || null,
+        image: payload.image ?? null,
+        gallery: Array.isArray(payload.gallery) ? payload.gallery.map(String) : [],
+        location: payload.location ?? null,
+        negotiable: !!payload.negotiable,
+        createdAt: nowIso,
+        featured: false,
+        sellerId: undefined,
+      };
+
+      // Update memory & session caches and state
+      const merged = dedupeById([newItem, ...memory.list]);
+      cacheListToMemory(merged);
+      saveListToSession(merged);
+      setProducts(merged);
+      setReady(true);
+
+      return { id: String(j.id) };
+    },
+    []
+  );
+
+  return { products, ready, error, reload, addProduct };
 }
 
 /**
