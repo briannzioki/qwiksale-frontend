@@ -121,14 +121,14 @@ export default function AuthTest() {
           <div className="flex items-center gap-2">
             {!isAuthed ? (
               <button
-                onClick={() => signIn("google")}
+                onClick={() => (window.location.href = "/signin?callbackUrl=" + encodeURIComponent("/auth-test"))}
                 className="rounded-lg bg-black text-white px-4 py-2 text-sm"
               >
                 Sign in with Google
               </button>
             ) : (
               <button
-                onClick={() => signOut()}
+                onClick={() => (window.location.href = "/signin?callbackUrl=" + encodeURIComponent("/auth-test"))}
                 className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
               >
                 Sign out

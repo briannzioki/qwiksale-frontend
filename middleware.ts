@@ -1,49 +1,32 @@
-// src/middleware.ts
-import { NextResponse, type NextRequest } from "next/server";
-import { getToken, type JWT } from "next-auth/jwt";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
 
-type AppJWT = JWT & {
-  phone?: string | null;
-  verified?: boolean;
-  username?: string | null;
-};
-
-const protectedPrefixes = ["/sell"];
+const protectedPaths = ["/sell"];
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
-  // Only guard the paths we intend to protect
-  const isProtected = protectedPrefixes.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`)
+  const shouldProtect = protectedPaths.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
   );
-  if (!isProtected) return NextResponse.next();
+  if (!shouldProtect) return NextResponse.next();
 
-  // Only act on navigations; don’t block non-GET (form posts, etc.)
-  if (req.method !== "GET") return NextResponse.next();
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 
-  // Read NextAuth JWT (works in Middleware with NEXTAUTH_SECRET)
-  const token = (await getToken({
-    req,
-    secret: process.env.NEXTAUTH_SECRET,
-  })) as AppJWT | null;
-
-  // Not signed in → send to /signin and return to original page after login
+  // Not signed in -> go to /signin
   if (!token) {
-    const loginUrl = new URL("/signin", req.url);
-    loginUrl.searchParams.set("callbackUrl", pathname + (search || ""));
-    return NextResponse.redirect(loginUrl);
+    const url = new URL("/signin", req.url);
+    url.searchParams.set("callbackUrl", pathname + search);
+    return NextResponse.redirect(url);
   }
 
-  // Sellers must have BOTH email and phone
-  const hasEmail = typeof token.email === "string" && token.email.length > 0;
-  const hasPhone = typeof token.phone === "string" && token.phone.length > 0;
-
-  if (!hasEmail || !hasPhone) {
-    const completeUrl = new URL("/account/complete-profile", req.url);
-    completeUrl.searchParams.set("reason", "missing-contact");
-    completeUrl.searchParams.set("return", pathname + (search || ""));
-    return NextResponse.redirect(completeUrl);
+  // Signed in but missing profile -> go to onboarding
+  const needsProfile = !!(token as any).needsProfile;
+  if (needsProfile) {
+    const url = new URL("/onboarding", req.url);
+    url.searchParams.set("return", pathname + search);
+    return NextResponse.redirect(url);
   }
 
   return NextResponse.next();

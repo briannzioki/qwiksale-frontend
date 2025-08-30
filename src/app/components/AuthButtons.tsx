@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSession, signIn, signOut } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 
 type Tier = "FREE" | "GOLD" | "PLATINUM";
@@ -48,10 +48,9 @@ function TierBadge({ tier }: { tier?: Tier }) {
 
 export default function AuthButtons() {
   const { data: session, status } = useSession();
-  const [working, setWorking] = useState<"in" | "out" | null>(null);
-  const [open, setOpen] = useState(false); // menu open for <details> polyfill
+  const [working, setWorking] = useState<"out" | null>(null);
+  const [open, setOpen] = useState(false);
 
-  // Close menu on route change (best-effort)
   useEffect(() => {
     const onHash = () => setOpen(false);
     window.addEventListener("hashchange", onHash);
@@ -69,11 +68,7 @@ export default function AuthButtons() {
 
   if (status === "loading") {
     return (
-      <button
-        className="px-3 py-2 rounded border text-sm opacity-80 cursor-default"
-        aria-busy="true"
-        disabled
-      >
+      <button className="px-3 py-2 rounded border text-sm opacity-80 cursor-default" disabled>
         Loading…
       </button>
     );
@@ -81,27 +76,17 @@ export default function AuthButtons() {
 
   if (!session) {
     return (
-      <button
+      <Link
+        href="/signin"
+        className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
         data-testid="auth-signin"
-        onClick={async () => {
-          if (working) return;
-          setWorking("in");
-          try {
-            await signIn("google", { callbackUrl: "/" });
-          } finally {
-            setWorking(null);
-          }
-        }}
-        className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition disabled:opacity-60"
-        title="Sign in with Google"
-        disabled={!!working}
+        title="Sign in"
       >
-        {working === "in" ? "Opening…" : "Sign in"}
-      </button>
+        Sign in
+      </Link>
     );
   }
 
-  // Logged in view
   return (
     <details
       className="relative group"
@@ -126,19 +111,11 @@ export default function AuthButtons() {
         )}
         <span className="hidden sm:inline">{displayName}</span>
         <TierBadge tier={tier} />
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          className={`ml-1 transition-transform ${open ? "rotate-180" : ""}`}
-          aria-hidden="true"
-          fill="currentColor"
-        >
+        <svg width="16" height="16" viewBox="0 0 24 24" className={`ml-1 ${open ? "rotate-180" : ""}`} fill="currentColor" aria-hidden="true">
           <path d="M7 10l5 5 5-5H7z" />
         </svg>
       </summary>
 
-      {/* Menu */}
       <div
         role="menu"
         className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200/70 bg-white text-gray-800 shadow-xl overflow-hidden z-50"
@@ -149,28 +126,9 @@ export default function AuthButtons() {
         </div>
 
         <nav className="py-1 text-sm">
-          <Link
-            href="/dashboard"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-3 py-2 hover:bg-gray-50"
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="/saved"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-3 py-2 hover:bg-gray-50"
-          >
-            Saved items
-          </Link>
-          <Link
-            href="/settings/billing"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-3 py-2 hover:bg-gray-50"
-          >
+          <Link href="/dashboard" role="menuitem" onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-gray-50">Dashboard</Link>
+          <Link href="/saved" role="menuitem" onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-gray-50">Saved items</Link>
+          <Link href="/settings/billing" role="menuitem" onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-gray-50">
             {tier && tier !== "FREE" ? "Manage subscription" : "Upgrade subscription"}
           </Link>
         </nav>

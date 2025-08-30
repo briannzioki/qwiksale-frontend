@@ -183,7 +183,7 @@ export default function BillingPage() {
           {!signedIn && (
             <button
               onClick={() =>
-                signIn("google", { callbackUrl: "/settings/billing" })
+                window.location.href = "/signin?callbackUrl=" + encodeURIComponent("/settings/billing")
               }
               className="btn-primary"
             >

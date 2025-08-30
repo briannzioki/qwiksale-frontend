@@ -1,54 +1,75 @@
-// src/app/api/auth/[...nextauth]/authOptions.ts
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/app/lib/prisma";
-import { normalizeKenyanPhone } from "@/app/lib/phone";
-import nodemailer from "nodemailer";
+import bcrypt from "bcryptjs";
 
-/** Allow linking same email from multiple providers in dev */
 const allowDangerousLinking =
   process.env.ALLOW_DANGEROUS_LINKING === "1" ||
   process.env.ALLOW_DANGEROUS_LINKING === "true";
 
-/** From header for emails */
-const emailFrom = process.env.EMAIL_FROM || "QwikSale <no-reply@qwiksale.sale>";
-
-/** Flexible EMAIL_SERVER parsing:
- *  - JSON string {host,port,auth:{user,pass}}
- *  - full URL: smtps://user:pass@host:465
- *  - short: user:pass@host:587
- */
-function getMailer() {
-  const raw = (process.env.EMAIL_SERVER || "").trim();
-  if (!raw) return null;
-  try {
-    if (raw.startsWith("{")) return nodemailer.createTransport(JSON.parse(raw));
-    if (/^smtps?:\/\//i.test(raw)) return nodemailer.createTransport(raw);
-    if (/^.+@.+:\d+$/i.test(raw)) return nodemailer.createTransport(`smtp://${raw}`);
-    console.warn("[email] Unrecognized EMAIL_SERVER format. Skipping transport.");
-    return null;
-  } catch (e) {
-    console.warn("[email] Invalid EMAIL_SERVER. Will log links instead. Error:", e);
-    return null;
-  }
-}
-
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-
   pages: { signIn: "/signin" },
 
-  // Use JWT strategy (lighter, works well with edge/serverless)
+  // JWT sessions work well on Vercel/Edge
   session: { strategy: "jwt" },
 
   secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NEXTAUTH_DEBUG === "1",
 
   providers: [
-    // Google OAuth
+    // Email + Password (creates account if it doesn't exist)
+    CredentialsProvider({
+      id: "credentials",
+      name: "Email & Password",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(creds) {
+        const email = (creds?.email || "").trim().toLowerCase();
+        const password = (creds?.password || "").trim();
+        if (!email || !password) return null;
+
+        const existing = await prisma.user.findUnique({
+          where: { email },
+          include: { Account: true },
+        });
+
+        // If user exists…
+        if (existing) {
+          if (!existing.passwordHash) {
+            // Google-only (or password never set) -> set password now
+            const hash = await bcrypt.hash(password, 10);
+            const updated = await prisma.user.update({
+              where: { id: existing.id },
+              data: { passwordHash: hash }, // keep emailVerified/verified as-is (likely false)
+            });
+            return updated;
+          }
+
+          const ok = await bcrypt.compare(password, existing.passwordHash);
+          if (!ok) throw new Error("Invalid email or password.");
+          return existing;
+        }
+
+        // Create a new unverified account with this email + password
+        const hash = await bcrypt.hash(password, 10);
+        const user = await prisma.user.create({
+          data: {
+            email,
+            passwordHash: hash,
+            verified: false,       // remains false until future seller verification
+            emailVerified: null,   // not verified
+          },
+        });
+        return user;
+      },
+    }),
+
+    // Google OAuth (optional sign-in path)
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
@@ -61,102 +82,66 @@ export const authOptions: NextAuthOptions = {
         },
       },
     }),
-
-    // Email magic-link (via Mailtrap or your SMTP)
-    EmailProvider({
-      // We'll send ourselves inside sendVerificationRequest
-      server: undefined,
-      from: emailFrom,
-      async sendVerificationRequest({ identifier, url }) {
-        const mailer = getMailer();
-        if (mailer) {
-          await mailer.sendMail({
-            to: identifier,
-            from: emailFrom,
-            subject: "Your QwikSale sign-in link",
-            text: `Sign in to QwikSale:\n${url}\n\nThis link expires soon.`,
-            html: `<p>Sign in to <b>QwikSale</b>:</p><p><a href="${url}">${url}</a></p><p>This link expires soon.</p>`,
-          });
-        } else {
-          console.log("[email] verify link:", url, "identifier:", identifier);
-        }
-      },
-    }),
-
-    // Optional: OTP credentials (email/phone + 6-digit code flow)
-    CredentialsProvider({
-      id: "otp",
-      name: "One-time code",
-      credentials: {
-        identifier: { label: "Email or Kenyan phone", type: "text" },
-        code: { label: "6-digit code", type: "text" },
-      },
-      async authorize(creds) {
-        const identifierRaw = (creds?.identifier || "").trim();
-        const code = (creds?.code || "").trim();
-        if (!identifierRaw || code.length !== 6) return null;
-
-        const phone = normalizeKenyanPhone(identifierRaw);
-        const identifier = phone ? `tel:${phone}` : identifierRaw.toLowerCase();
-
-        const vt = await prisma.verificationToken.findUnique({
-          where: { identifier_token: { identifier, token: code } },
-        });
-        if (!vt || vt.expires < new Date()) return null;
-
-        // Upsert a user by phone/email
-        const user = phone
-          ? await prisma.user.upsert({
-              where: { phone },
-              update: {},
-              create: { phone, verified: true },
-            })
-          : await prisma.user.upsert({
-              where: { email: identifier },
-              update: {},
-              create: { email: identifier, verified: true },
-            });
-
-        // Consume the token
-        await prisma.verificationToken.delete({
-          where: { identifier_token: { identifier, token: code } },
-        });
-
-        return user;
-      },
-    }),
   ],
 
   callbacks: {
-    async jwt({ token, user }) {
-      // On sign-in, copy fresh user fields into token
-      if (user) {
-        (token as any).uid = user.id;
-        const u = await prisma.user.findUnique({
-          where: { id: user.id },
-          select: { email: true, phone: true, name: true, username: true, verified: true },
-        });
-        token.email = u?.email ?? null;
-        (token as any).phone = u?.phone ?? null;
-        (token as any).name = u?.name ?? null;
-        (token as any).username = u?.username ?? null;
-        (token as any).verified = u?.verified ?? false;
-      }
-      return token;
-    },
+  async jwt({ token, user }) {
+    if (user) {
+      (token as any).uid = user.id;
+      const u = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: {
+          email: true,
+          phone: true,
+          name: true,
+          username: true,
+          verified: true,
+          whatsapp: true,
+          address: true,
+          postalCode: true,
+          city: true,
+          country: true,
+        },
+      });
 
-    async session({ session, token }) {
-      if (session.user) {
-        (session.user as any).id = (token as any).uid;
-        session.user.email = (token.email as string | null) || undefined;
-        (session.user as any).phone = (token as any).phone ?? null;
-        session.user.name = (token as any).name ?? session.user.name;
-        (session.user as any).username = (token as any).username ?? null;
-        (session as any).verified = (token as any).verified ?? false;
-      }
-      return session;
-    },
+      // Copy to token
+      token.email = u?.email ?? null;
+      (token as any).phone = u?.phone ?? null;
+      (token as any).name = u?.name ?? null;
+      (token as any).username = u?.username ?? null;
+      (token as any).verified = u?.verified ?? false;
+      (token as any).whatsapp = u?.whatsapp ?? null;
+      (token as any).address = u?.address ?? null;
+      (token as any).postalCode = u?.postalCode ?? null;
+      (token as any).city = u?.city ?? null;
+      (token as any).country = u?.country ?? null;
+
+      // Profile completeness: for now only username is required
+      (token as any).needsProfile = !(u?.username && u.username.trim().length >= 3);
+    }
+    return token;
   },
+
+  async session({ session, token }) {
+    if (session.user) {
+      (session.user as any).id = (token as any).uid;
+      session.user.email = (token.email as string | null) || undefined;
+      (session.user as any).phone = (token as any).phone ?? null;
+      (session.user as any).name = (token as any).name ?? session.user.name;
+      (session.user as any).username = (token as any).username ?? null;
+
+      (session as any).verified = (token as any).verified ?? false;
+      (session as any).whatsapp = (token as any).whatsapp ?? null;
+      (session as any).address = (token as any).address ?? null;
+      (session as any).postalCode = (token as any).postalCode ?? null;
+      (session as any).city = (token as any).city ?? null;
+      (session as any).country = (token as any).country ?? null;
+
+      (session as any).needsProfile = (token as any).needsProfile ?? false;
+    }
+    return session;
+  },
+},
 };
 
 export default authOptions;

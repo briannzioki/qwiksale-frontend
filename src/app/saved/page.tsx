@@ -161,7 +161,7 @@ export default function SavedPage() {
           </div>
           <button
             className="btn-primary"
-            onClick={() => signIn("google", { callbackUrl: "/saved" })}
+            onClick={() => (window.location.href = "/signin?callbackUrl=" + encodeURIComponent("/saved"))}
           >
             Sign in
           </button>
