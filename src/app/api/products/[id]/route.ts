@@ -2,10 +2,10 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { getServerSession, authOptions } from "@/app/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 // Small helper to ensure responses are never cached
 function noStore(json: unknown, init?: ResponseInit) {
@@ -14,18 +14,16 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-// ---- GET /api/products/:id ----
+/* ----------------------------- GET /api/products/:id ----------------------------- */
 export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _req: Request,
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params;
-    const productId = String(id || "").trim();
+    const productId = String(params.id || "").trim();
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
-    // Select only what the detail page needs (no raw seller phone here;
-    // phone is revealed via /api/products/[id]/contact)
+    // Select only what the detail page needs (no raw seller phone here; phone is revealed via /api/products/[id]/contact)
     const item = await prisma.product.findUnique({
       where: { id: productId },
       select: {
@@ -72,35 +70,28 @@ export async function GET(
   }
 }
 
-// ---- PATCH /api/products/:id ----
+/* ---------------------------- PATCH /api/products/:id ---------------------------- */
 export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  req: Request,
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params;
-    const productId = String(id || "").trim();
+    const productId = String(params.id || "").trim();
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
     const session = await getServerSession(authOptions);
-    const email = session?.user?.email;
-    if (!email) return noStore({ error: "Unauthorized" }, { status: 401 });
-
-    const me = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
-    if (!me) return noStore({ error: "Unauthorized" }, { status: 401 });
+    const userId = (session as any)?.user?.id as string | undefined;
+    if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const existing = await prisma.product.findUnique({ where: { id: productId } });
     if (!existing) return noStore({ error: "Not found" }, { status: 404 });
 
-    // If the product is owned, enforce owner edits
-    if (existing.sellerId && existing.sellerId !== me.id) {
+    // Enforce owner edits
+    if (existing.sellerId && existing.sellerId !== userId) {
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({} as any));
 
     // Sanitize/normalize fields
     const normCondition = (() => {
@@ -123,7 +114,7 @@ export async function PATCH(
       : undefined;
 
     const data = {
-      name: typeof body?.name === "string" ? body.name : undefined,
+      name: typeof body?.name === "string" ? body.name.trim() : undefined,
       description: typeof body?.description === "string" ? body.description : undefined,
       category: typeof body?.category === "string" ? body.category : undefined,
       subcategory: typeof body?.subcategory === "string" ? body.subcategory : undefined,
@@ -166,40 +157,30 @@ export async function PATCH(
   }
 }
 
-// ---- DELETE /api/products/:id ----
+/* --------------------------- DELETE /api/products/:id --------------------------- */
 export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _req: Request,
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params;
-    const productId = String(id || "").trim();
+    const productId = String(params.id || "").trim();
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
     const session = await getServerSession(authOptions);
-    const email = session?.user?.email;
-    if (!email) return noStore({ error: "Unauthorized" }, { status: 401 });
-
-    const me = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
-    if (!me) return noStore({ error: "Unauthorized" }, { status: 401 });
+    const userId = (session as any)?.user?.id as string | undefined;
+    if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const existing = await prisma.product.findUnique({ where: { id: productId } });
     if (!existing) return noStore({ error: "Not found" }, { status: 404 });
 
-    if (existing.sellerId && existing.sellerId !== me.id) {
+    if (existing.sellerId && existing.sellerId !== userId) {
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
 
     // Delete related rows first, then the product (transactional)
     await prisma.$transaction([
       prisma.favorite.deleteMany({ where: { productId } }),
-      // Optional Payment table cleanup if present
-      ...( (prisma as any).payment?.deleteMany
-        ? [(prisma as any).payment.deleteMany({ where: { productId } })]
-        : []),
+      // If you have a Payment table, add its cleanup here.
       prisma.product.delete({ where: { id: productId } }),
     ]);
 

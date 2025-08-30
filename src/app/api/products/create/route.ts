@@ -5,17 +5,19 @@ export const dynamic = "force-dynamic";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { getServerSession, authOptions } from "@/app/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
-type Tier = "FREE" | "GOLD" | "PLATINUM";
+type Tier = "BASIC" | "GOLD" | "PLATINUM";
 
 const LIMITS: Record<Tier, { listingLimit: number; canFeature: boolean }> = {
-  FREE: { listingLimit: 3, canFeature: false },
+  BASIC: { listingLimit: 3, canFeature: false },       // BASIC maps to DB "FREE"
   GOLD: { listingLimit: 30, canFeature: true },
   PLATINUM: { listingLimit: 999999, canFeature: true },
 };
 
-// ---------- helpers ----------
+/* ---------------- helpers ---------------- */
+
 const MAX = {
   name: 140,
   category: 64,
@@ -40,14 +42,13 @@ function s(v: unknown, max?: number): string | undefined {
 }
 
 function nPrice(v: unknown): number | null | undefined {
-  if (v === null) return null; // explicit "contact for price"
+  if (v === null) return null; // explicit “contact for price”
   if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.round(v));
-  return undefined; // don't set
+  return undefined;
 }
 
 function nBool(v: unknown): boolean | undefined {
-  if (typeof v === "boolean") return v;
-  return undefined;
+  return typeof v === "boolean" ? v : undefined;
 }
 
 function nCond(v: unknown): "brand new" | "pre-owned" | undefined {
@@ -68,13 +69,28 @@ function nGallery(v: unknown): string[] | undefined {
   return unique;
 }
 
-// Normalize phone to 2547XXXXXXXX
+/** Normalize Kenyan MSISDN to `2547XXXXXXXX` or `2541XXXXXXXX`. */
 function normalizeMsisdn(input: unknown): string | undefined {
   if (typeof input !== "string") return undefined;
-  let s = input.replace(/\D+/g, "");
+  let raw = input.trim();
+
+  // Already +2547… or +2541…
+  if (/^\+254(7|1)\d{8}$/.test(raw)) raw = raw.replace(/^\+/, "");
+
+  // Strip non-digits
+  let s = raw.replace(/\D+/g, "");
+
+  // 07… / 01… -> 2547… / 2541…
   if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
-  if (/^\+2547\d{8}$/.test(input)) s = input.replace(/^\+/, "");
+  if (/^01\d{8}$/.test(s)) s = "254" + s.slice(1);
+
+  // 7…… or 1…… -> 2547… / 2541…
+  if (/^7\d{8}$/.test(s)) s = "254" + s;
+  if (/^1\d{8}$/.test(s)) s = "254" + s;
+
+  // Truncate any accidental extra digits
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
+
   return s || undefined;
 }
 
@@ -86,69 +102,70 @@ function noStore(json: unknown, init?: ResponseInit) {
 
 async function getMe() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return null;
+  const email = session?.user?.email || null;
+  if (!email) return null;
   return prisma.user.findUnique({
-    where: { email: session.user.email },
+    where: { email },
     select: { id: true, name: true, subscription: true },
   });
 }
 
-// ---------- POST /api/products/create ----------
+/* --------------- POST /api/products/create --------------- */
+
 export async function POST(req: NextRequest) {
   try {
     const me = await getMe();
     if (!me) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    // Parse body (with safety)
-    const body = await req
-      .json()
-      .catch(() => ({} as Record<string, unknown>));
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
 
-    // Required core fields
-    const name = s(body.name as string, MAX.name);
-    const category = s(body.category as string, MAX.category);
-    const subcategory = s(body.subcategory as string, MAX.subcategory);
-    const brand = s(body.brand as string, MAX.brand);
+    // Required basics
+    const name = s(body.name, MAX.name);
+    const category = s(body.category, MAX.category);
+    const subcategory = s(body.subcategory, MAX.subcategory);
+
+    // Optional
+    const brand = s(body.brand, MAX.brand);
     const description = clampLen(
-      (typeof body.description === "string" ? body.description.trim() : undefined),
+      typeof body.description === "string" ? body.description.trim() : undefined,
       MAX.description
     );
     const condition = nCond(body.condition) ?? "pre-owned";
-    const price = nPrice(body.price); // undefined = don't set, null = "contact for price"
-    const image = s(body.image as string, MAX.imageUrl);
+    const price = nPrice(body.price); // null => contact for price
+    const image = s(body.image, MAX.imageUrl);
     const gallery = nGallery(body.gallery);
-    const location = s(body.location as string, MAX.location);
+    const location = s(body.location, MAX.location);
     const negotiable = nBool(body.negotiable);
     const featured = nBool(body.featured) ?? false;
 
-    // Seller fields (flattened on Product)
-    const sellerPhoneRaw = normalizeMsisdn(body.sellerPhone as string);
-    const sellerName = s(body.sellerName as string, 120) ?? me.name ?? undefined;
-    const sellerLocation = s(body.sellerLocation as string, MAX.location) ?? location;
+    // Seller snapshot
+    const sellerPhoneRaw = normalizeMsisdn(body.sellerPhone);
+    const sellerName = s(body.sellerName, 120) ?? me.name ?? undefined;
+    const sellerLocation = s(body.sellerLocation, MAX.location) ?? location;
 
-    // Validate presence
+    // Validate required
     if (!name) return noStore({ error: "name is required" }, { status: 400 });
     if (!category) return noStore({ error: "category is required" }, { status: 400 });
+    if (!subcategory)
+      return noStore({ error: "subcategory is required" }, { status: 400 });
+
     if (!sellerPhoneRaw) {
       return noStore(
-        { error: "sellerPhone is required (format 2547XXXXXXXX or 07XXXXXXXX)" },
+        { error: "sellerPhone is required (07/01, +2547/+2541, or 2547/2541)" },
         { status: 400 }
       );
     }
-    if (!/^2547\d{8}$/.test(sellerPhoneRaw)) {
-      return noStore({ error: "sellerPhone must be 2547XXXXXXXX" }, { status: 400 });
+    if (!/^254(7|1)\d{8}$/.test(sellerPhoneRaw)) {
+      return noStore({ error: "sellerPhone must be 2547XXXXXXXX or 2541XXXXXXXX" }, { status: 400 });
     }
 
     // Tier enforcement
-    const tier = (me.subscription as Tier) ?? "FREE";
+    const tier = (me.subscription as Tier) ?? "BASIC";
     const limits = LIMITS[tier];
 
     const myActiveCount = await prisma.product.count({ where: { sellerId: me.id } });
     if (myActiveCount >= limits.listingLimit) {
-      return noStore(
-        { error: `Listing limit reached for ${tier}` },
-        { status: 403 }
-      );
+      return noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 });
     }
     if (featured && !limits.canFeature) {
       return noStore(
@@ -157,10 +174,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Auto-derive gallery if empty but image provided
+    // Auto gallery
     const finalGallery = gallery ?? (image ? [image] : []);
 
-    // Build create data
+    // Build payload
     const data: any = {
       name,
       category,
@@ -180,8 +197,6 @@ export async function POST(req: NextRequest) {
       sellerLocation,
       createdAt: new Date(),
     };
-
-    // Strip undefined keys (keep null if explicitly set)
     Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
 
     const created = await prisma.product.create({
@@ -203,8 +218,6 @@ export async function POST(req: NextRequest) {
         sellerId: true,
         sellerName: true,
         sellerLocation: true,
-        // NOTE: we intentionally do NOT echo sellerPhone back widely in APIs,
-        // but returning it here (to the creator) is acceptable if you prefer.
       },
     });
 
