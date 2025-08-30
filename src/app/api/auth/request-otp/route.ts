@@ -1,4 +1,4 @@
-// src/app/api/auth/otp/start/route.ts
+// src/app/api/auth/request-otp/route.ts
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -6,25 +6,21 @@ import { prisma } from "@/app/lib/prisma";
 import { normalizeKenyanPhone } from "@/app/lib/phone";
 import nodemailer from "nodemailer";
 
-/** ---------- Email (Mailtrap / any SMTP) ---------- */
-const EMAIL_FROM = process.env.EMAIL_FROM || "QwikSale <no-reply@qwiksale.local>";
+/** ---------- Email (SMTP) ---------- */
+const EMAIL_FROM = process.env.EMAIL_FROM || "QwikSale <no-reply@qwiksale.sale>";
 
 function getMailer() {
   const raw = (process.env.EMAIL_SERVER || "").trim();
   if (!raw) return null;
   try {
-    // Accept JSON (Mailtrap dashboard sometimes shows JSON config)
-    if (raw.startsWith("{")) return nodemailer.createTransport(JSON.parse(raw));
-    // Accept full SMTP/SMTPS URL
-    if (/^smtps?:\/\//i.test(raw)) return nodemailer.createTransport(raw);
-    // Accept "host:port" (optionally with user:pass@host:port)
-    if (/^.+@.+:\d+$/.test(raw) || /^[^:]+:\d+$/.test(raw)) {
+    if (raw.startsWith("{")) return nodemailer.createTransport(JSON.parse(raw)); // JSON
+    if (/^smtps?:\/\//i.test(raw)) return nodemailer.createTransport(raw);       // URL
+    if (/^.+@.+:\d+$/.test(raw) || /^[^:]+:\d+$/.test(raw))                      // user:pass@host:port or host:port
       return nodemailer.createTransport(`smtp://${raw}`);
-    }
-    console.warn("[email] Unrecognized EMAIL_SERVER format. Skipping mail transport.");
+    console.warn("[OTP][EMAIL] Unrecognized EMAIL_SERVER format. Skipping transport.");
     return null;
   } catch (e) {
-    console.warn("[email] Invalid EMAIL_SERVER. Will log links instead. Error:", e);
+    console.warn("[OTP][EMAIL] Invalid EMAIL_SERVER. Will log instead. Error:", e);
     return null;
   }
 }
@@ -33,7 +29,7 @@ const mailer = getMailer();
 /** ---------- Africa's Talking (optional) ---------- */
 const AT_USERNAME = (process.env.AT_USERNAME || "").trim();
 const AT_API_KEY = (process.env.AT_API_KEY || "").trim();
-const AT_SENDER_ID = (process.env.AT_SENDER_ID || "").trim(); // optional, must be approved
+const AT_SENDER_ID = (process.env.AT_SENDER_ID || "").trim(); // optional
 const AT_ENV = (process.env.AT_ENV || "production").toLowerCase();
 const AT_HOST =
   AT_ENV === "sandbox"
@@ -45,14 +41,12 @@ function code6() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-async function sendSms(toMSISDN254: string, text: string) {
-  // If no AT creds, just log (dev)
+async function sendSms(msisdn254: string, text: string) {
   if (!AT_USERNAME || !AT_API_KEY) {
-    console.log(`[OTP][SMS][DEV] to ${toMSISDN254}: ${text}`);
+    console.log(`[OTP][SMS][DEV] to ${msisdn254}: ${text}`);
     return true;
   }
-
-  const to = toMSISDN254.startsWith("+") ? toMSISDN254 : `+${toMSISDN254}`;
+  const to = msisdn254.startsWith("+") ? msisdn254 : `+${msisdn254}`;
   const form = new URLSearchParams({
     username: AT_USERNAME,
     to,
@@ -61,7 +55,7 @@ async function sendSms(toMSISDN254: string, text: string) {
   });
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000); // 10s timeout
+  const timer = setTimeout(() => controller.abort(), 10000);
 
   try {
     const r = await fetch(`${AT_HOST}/version1/messaging`, {
@@ -75,10 +69,9 @@ async function sendSms(toMSISDN254: string, text: string) {
       signal: controller.signal,
     });
     clearTimeout(timer);
-
     if (!r.ok) {
       const body = await r.text().catch(() => "");
-      console.warn(`Africa's Talking send failed (${r.status}): ${body.slice(0, 200)}`);
+      console.warn(`[OTP][SMS] send failed (${r.status}): ${body.slice(0, 200)}`);
       return false;
     }
     return true;
@@ -89,14 +82,14 @@ async function sendSms(toMSISDN254: string, text: string) {
   }
 }
 
-async function sendEmail(toEmail: string, text: string) {
+async function sendEmail(to: string, text: string) {
   if (!mailer) {
-    console.log(`[OTP][EMAIL][DEV] to ${toEmail}: ${text}`);
+    console.log(`[OTP][EMAIL][DEV] to ${to}: ${text}`);
     return true;
   }
   try {
     await mailer.sendMail({
-      to: toEmail,
+      to,
       from: EMAIL_FROM,
       subject: "Your QwikSale code",
       text,
@@ -120,52 +113,43 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing identifier" }, { status: 400 });
     }
 
-    // Try phone first (Kenya); if not KE phone, treat as email
-    const phone254 = normalizeKenyanPhone(raw); // "2547XXXXXXXX" or "2541XXXXXXXX" or null
+    // Phone (Kenya) or email
+    const phone254 = normalizeKenyanPhone(raw); // returns "2547XXXXXXXX" / "2541XXXXXXXX" or null
     const isPhone = !!phone254;
     const email = isPhone ? "" : raw.toLowerCase();
 
     if (!isPhone && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json(
-        { error: "Enter a valid Kenyan phone or email address" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Enter a valid Kenyan phone or email" }, { status: 400 });
     }
 
     const idKey = isPhone ? `tel:${phone254}` : email;
 
-    // Generate a new code and ensure we only keep the latest one
+    // One valid code per identifier (clear old)
+    await prisma.verificationToken.deleteMany({ where: { identifier: idKey } });
+
     const token = code6();
     const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    // Clear any previous codes for this identifier
-    await prisma.verificationToken.deleteMany({ where: { identifier: idKey } });
     await prisma.verificationToken.create({
       data: { identifier: idKey, token, expires },
     });
 
     const message = `Your QwikSale code is ${token}. It expires in 10 minutes.`;
 
-    let sendOk = true;
+    let sent = true;
     if (isPhone) {
-      sendOk = await sendSms(phone254!, message);
-      if (!sendOk) {
-        // Fallback log so you can still sign in if SMS provider is down
-        console.log(`[OTP][SMS][fallback] ${phone254} -> ${token}`);
-      }
+      sent = await sendSms(phone254!, message);
+      if (!sent) console.log(`[OTP][SMS][fallback] ${phone254} -> ${token}`);
     } else {
-      sendOk = await sendEmail(email, message);
-      if (!sendOk) {
-        console.log(`[OTP][EMAIL][fallback] ${email} -> ${token}`);
-      }
+      sent = await sendEmail(email, message);
+      if (!sent) console.log(`[OTP][EMAIL][fallback] ${email} -> ${token}`);
     }
 
     return NextResponse.json(
       { ok: true, channel: isPhone ? "sms" : "email" },
       { headers: { "Cache-Control": "no-store" } }
     );
-  } catch (e: any) {
-    console.error("[/api/auth/otp/start] error:", e);
-    return NextResponse.json({ error: "Failed to start OTP" }, { status: 500 });
+  } catch (e) {
+    console.error("[/api/auth/request-otp] error:", e);
+    return NextResponse.json({ error: "Failed to request OTP" }, { status: 500 });
   }
 }
