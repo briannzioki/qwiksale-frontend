@@ -4,12 +4,11 @@ import type { NextConfig } from "next";
 const isProd = process.env.NODE_ENV === "production";
 const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
 
+/* ---------------- Security headers (CSP etc.) ---------------- */
 const securityHeaders = (): { key: string; value: string }[] => {
   const connect = [
     "'self'",
-    // Cloudinary uploads (unsigned or signed)
     "https://api.cloudinary.com",
-    // Your existing endpoints
     "https://sandbox.safaricom.co.ke",
     "https://api.safaricom.co.ke",
     "https://accounts.google.com",
@@ -56,7 +55,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     .filter(Boolean)
     .join("; ");
 
-  const headers = [
+  return [
     { key: "Content-Security-Policy", value: csp },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "X-Content-Type-Options", value: "nosniff" },
@@ -67,12 +66,38 @@ const securityHeaders = (): { key: string; value: string }[] => {
       ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
       : []),
   ];
-
-  return headers as { key: string; value: string }[];
 };
 
+/* ---------------- Next config ---------------- */
 const nextConfig: NextConfig = {
-  // …existing config…
+  images: {
+    remotePatterns: [
+      // Cloudinary (scope to your cloud if provided)
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+        pathname: cloudName ? `/${cloudName}/**` : "/**",
+      },
+      // Other hosts you use
+      { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
+      { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
+      { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
+      { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },
+      { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
+    ],
+    // You serve an SVG placeholder at a .jpg path; this prevents Next/Image from blocking it.
+    dangerouslyAllowSVG: true,
+  },
+
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders(),
+      },
+    ];
+  },
+
   async redirects() {
     return [
       {
@@ -84,4 +109,5 @@ const nextConfig: NextConfig = {
     ];
   },
 };
+
 export default nextConfig;

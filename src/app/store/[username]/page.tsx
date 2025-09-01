@@ -10,7 +10,7 @@ type StoreProduct = {
   name: string;
   image: string | null;
   price: number | null;
-  featured: boolean;
+  featured: boolean | null;
   category: string;
   subcategory: string;
   createdAt: Date;
@@ -31,7 +31,6 @@ export default async function StorePage({
   params: { username: string };
 }) {
   const username = decodeURIComponent(params.username || "").trim();
-
   if (!username) notFound();
 
   const user = await prisma.user.findUnique({
@@ -44,8 +43,8 @@ export default async function StorePage({
       city: true,
       country: true,
       createdAt: true,
-      // grab recent listings
-      Product: {
+      // recent listings
+      products: {
         orderBy: { createdAt: "desc" },
         take: 24,
         select: {
@@ -64,7 +63,7 @@ export default async function StorePage({
 
   if (!user) notFound();
 
-  const products = (user.Product || []) as StoreProduct[];
+  const products = (user.products || []) as StoreProduct[];
 
   return (
     <div className="space-y-6">
@@ -84,9 +83,7 @@ export default async function StorePage({
             </div>
           )}
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold">
-              @{user.username}
-            </h1>
+            <h1 className="text-2xl md:text-3xl font-extrabold">@{user.username}</h1>
             <p className="text-white/90 text-sm">
               {user.name ? `${user.name} • ` : ""}
               Member since {new Date(user.createdAt).getFullYear()}
@@ -98,7 +95,7 @@ export default async function StorePage({
           <div className="ml-auto">
             <Link
               href="/"
-              className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bg-white/90"
+              className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bg.white/90"
             >
               Back to Home
             </Link>
@@ -120,7 +117,7 @@ export default async function StorePage({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {products.map((p: StoreProduct) => (
+            {products.map((p) => (
               <Link key={p.id} href={`/product/${p.id}`} className="group">
                 <div className="relative bg-white rounded-xl shadow hover:shadow-lg transition overflow-hidden border border-gray-100">
                   {p.featured && (

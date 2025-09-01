@@ -1,31 +1,40 @@
 // src/types/next-auth.d.ts
-import type { SubscriptionTier } from "@prisma/client";
-import type { DefaultSession } from "next-auth";
+import { DefaultSession, DefaultUser } from "next-auth";
 
 declare module "next-auth" {
-  // What your client code sees via `useSession()` / `getServerSession()`
   interface Session {
     user: {
       id: string;
-      subscription: SubscriptionTier; // "FREE" | "GOLD" | "PLATINUM" (from Prisma)
-    } & DefaultSession["user"]; // name, email, image
+      username?: string | null;
+      image?: string | null;
+      subscription?: "FREE" | "GOLD" | "PLATINUM" | "BASIC" | null;
+    } & DefaultSession["user"];
+    verified?: boolean;
+    whatsapp?: string | null;
+    address?: string | null;
+    postalCode?: string | null;
+    city?: string | null;
+    country?: string | null;
+    needsProfile?: boolean;
   }
 
-  // What NextAuth stores for the user (adapter-backed)
-  interface User {
-    id: string;
-    subscription: SubscriptionTier;
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
+  interface User extends DefaultUser {
+    username?: string | null;
+    subscription?: "FREE" | "GOLD" | "PLATINUM" | "BASIC" | null;
   }
 }
 
-// Optional: JWT typing (useful even if session strategy = "database")
 declare module "next-auth/jwt" {
   interface JWT {
-    id?: string;
-    subscription?: SubscriptionTier;
+    uid?: string;
+    username?: string | null;
+    subscription?: "FREE" | "GOLD" | "PLATINUM" | "BASIC" | null;
+    verified?: boolean;
+    whatsapp?: string | null;
+    address?: string | null;
+    postalCode?: string | null;
+    city?: string | null;
+    country?: string | null;
+    needsProfile?: boolean;
   }
 }
-
