@@ -4,12 +4,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
 import { categories } from "../data/categories";
-import AuthButtons from "./AuthButtons";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const { data: session, status } = useSession();
+  const [signingOut, setSigningOut] = useState(false);
 
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -50,7 +52,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
 
-      {/* Translucent header (lets layout gradient show through) */}
+      {/* Translucent header */}
       <header
         className="
           sticky top-0 z-40
@@ -108,8 +110,49 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </Link>
             </nav>
 
-            {/* Auth */}
-            <AuthButtons />
+            {/* Auth quick actions */}
+            {status === "loading" ? (
+              <button
+                className="px-3 py-2 rounded border text-sm opacity-70 cursor-default"
+                disabled
+              >
+                Loading…
+              </button>
+            ) : session ? (
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/dashboard"
+                  className="px-3 py-2 rounded bg-black/5 dark:bg-white/10 text-sm border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
+                  title="Dashboard"
+                >
+                  Dashboard
+                </Link>
+                <button
+                  onClick={async () => {
+                    if (signingOut) return;
+                    setSigningOut(true);
+                    try {
+                      await signOut({ callbackUrl: "/" });
+                    } finally {
+                      setSigningOut(false);
+                    }
+                  }}
+                  className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
+                  disabled={signingOut}
+                  title="Sign out"
+                >
+                  {signingOut ? "Signing out…" : "Sign out"}
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/signin"
+                className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
+                title="Sign in"
+              >
+                Sign in
+              </Link>
+            )}
 
             {/* Sell */}
             <Link
@@ -144,12 +187,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* Main: DO NOT set a background; let layout gradient show */}
+      {/* Main */}
       <main id="main" className="flex-1">
         <div className="max-w-7xl mx-auto p-5">{children}</div>
       </main>
 
-      {/* Footer strip (thin gradient bar) */}
+      {/* Footer */}
       <footer
         className="mt-10 text-white"
         style={{

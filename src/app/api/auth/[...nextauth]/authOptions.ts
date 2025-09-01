@@ -10,8 +10,15 @@ const allowDangerousLinking =
   process.env.ALLOW_DANGEROUS_LINKING === "1" ||
   process.env.ALLOW_DANGEROUS_LINKING === "true";
 
-const isProd = process.env.NODE_ENV === "production";
-const COOKIE_DOMAIN = ".qwiksale.sale"; // only used in prod
+/** 
+ * IMPORTANT: On Vercel, NODE_ENV === "production" for both Preview and Prod.
+ * We must only pin cookie `domain` on REAL production, otherwise sessions won't
+ * stick on *.vercel.app previews. Use VERCEL_ENV to decide cookie domain.
+ */
+const isNodeProd = process.env.NODE_ENV === "production";
+const isVercelProd = process.env.VERCEL_ENV === "production"; // "preview" | "development" | "production"
+const COOKIE_DOMAIN = ".qwiksale.sale"; // apex domain for your prod site
+const cookieDomain = isVercelProd ? COOKIE_DOMAIN : undefined;
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -20,16 +27,19 @@ export const authOptions: NextAuthOptions = {
   // JWT sessions work well on Vercel/Edge
   session: { strategy: "jwt" },
 
-  /** 🔐 Cookies pinned to apex domain in prod only (so localhost works in dev). */
+  /** 🔐 Cookies:
+   *  - Use secure cookie names only on real prod (works under HTTPS).
+   *  - Pin cookie `domain` only on real prod. On previews/local, omit domain.
+   */
   cookies: {
     sessionToken: {
-      name: isProd ? "__Secure-next-auth.session-token" : "next-auth.session-token",
+      name: isVercelProd ? "__Secure-next-auth.session-token" : "next-auth.session-token",
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: isProd,
-        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
+        secure: isNodeProd,
+        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
       },
     },
     csrfToken: {
@@ -38,8 +48,8 @@ export const authOptions: NextAuthOptions = {
         httpOnly: false,
         sameSite: "lax",
         path: "/",
-        secure: isProd,
-        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
+        secure: isNodeProd,
+        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
       },
     },
     state: {
@@ -48,8 +58,8 @@ export const authOptions: NextAuthOptions = {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: isProd,
-        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
+        secure: isNodeProd,
+        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
       },
     },
     pkceCodeVerifier: {
@@ -58,8 +68,8 @@ export const authOptions: NextAuthOptions = {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: isProd,
-        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
+        secure: isNodeProd,
+        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
       },
     },
     nonce: {
@@ -68,8 +78,8 @@ export const authOptions: NextAuthOptions = {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: isProd,
-        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
+        secure: isNodeProd,
+        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
       },
     },
     callbackUrl: {
@@ -78,8 +88,8 @@ export const authOptions: NextAuthOptions = {
         httpOnly: false,
         sameSite: "lax",
         path: "/",
-        secure: isProd,
-        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
+        secure: isNodeProd,
+        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
       },
     },
   },
@@ -180,6 +190,7 @@ export const authOptions: NextAuthOptions = {
         (token as any).city = u?.city ?? null;
         (token as any).country = u?.country ?? null;
 
+        // mark incomplete if no username yet
         (token as any).needsProfile = !(u?.username && u.username.trim().length >= 3);
       }
       return token;
@@ -205,7 +216,7 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
 
-    // ⬇️ Ensure we return to /sell (or any relative callbackUrl) after sign-in
+    // keep relative callbackUrls on the same origin
     async redirect({ url, baseUrl }) {
       if (url.startsWith("/")) return `${baseUrl}${url}`;
       try {

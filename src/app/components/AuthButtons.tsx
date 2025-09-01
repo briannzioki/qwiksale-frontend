@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 
-type Tier = "FREE" | "GOLD" | "PLATINUM";
+// DB tier vs UI label tier
+type TierDb = "BASIC" | "GOLD" | "PLATINUM";
+type TierUi = "FREE" | "GOLD" | "PLATINUM";
 
 function Initials({ name }: { name?: string | null }) {
   const text =
@@ -24,7 +26,7 @@ function Initials({ name }: { name?: string | null }) {
   );
 }
 
-function TierBadge({ tier }: { tier?: Tier }) {
+function TierBadge({ tier }: { tier?: TierUi }) {
   if (!tier || tier === "FREE") {
     return (
       <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide border border-white/20">
@@ -58,7 +60,10 @@ export default function AuthButtons() {
   }, []);
 
   const user = session?.user;
-  const tier = (user as any)?.subscription as Tier | undefined;
+
+  // Normalize DB tiers (BASIC→FREE)
+  const dbTier = (user as any)?.subscription as TierDb | undefined;
+  const uiTier: TierUi = dbTier === "GOLD" || dbTier === "PLATINUM" ? dbTier : "FREE";
 
   const displayName = useMemo(() => {
     if (user?.name) return user.name;
@@ -110,7 +115,7 @@ export default function AuthButtons() {
           <Initials name={user?.name} />
         )}
         <span className="hidden sm:inline">{displayName}</span>
-        <TierBadge tier={tier} />
+        <TierBadge tier={uiTier} />
         <svg width="16" height="16" viewBox="0 0 24 24" className={`ml-1 ${open ? "rotate-180" : ""}`} fill="currentColor" aria-hidden="true">
           <path d="M7 10l5 5 5-5H7z" />
         </svg>
@@ -127,9 +132,10 @@ export default function AuthButtons() {
 
         <nav className="py-1 text-sm">
           <Link href="/dashboard" role="menuitem" onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-gray-50">Dashboard</Link>
+          <Link href="/account" role="menuitem" onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-gray-50">Edit profile</Link>
           <Link href="/saved" role="menuitem" onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-gray-50">Saved items</Link>
           <Link href="/settings/billing" role="menuitem" onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-gray-50">
-            {tier && tier !== "FREE" ? "Manage subscription" : "Upgrade subscription"}
+            {uiTier !== "FREE" ? "Manage subscription" : "Upgrade subscription"}
           </Link>
         </nav>
 
