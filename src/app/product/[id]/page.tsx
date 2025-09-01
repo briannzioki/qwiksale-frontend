@@ -1,12 +1,13 @@
-// src/app/product/[id]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { useProducts } from "@/app/lib/productsStore";
 import FavoriteButton from "@/app/components/FavoriteButton";
+import DeleteListingButton from "@/app/components/DeleteListingButton";
 
 type ProductFromStore = ReturnType<typeof useProducts> extends { products: infer U }
   ? U extends (infer V)[]
@@ -35,12 +36,14 @@ type FetchedProduct = Partial<ProductFromStore> & {
   location?: string | null;
   negotiable?: boolean;
   featured?: boolean;
+  sellerId?: string | null;          // ⬅️ needed to detect owner
   sellerName?: string | null;
   sellerPhone?: string | null;
   sellerLocation?: string | null;
   sellerMemberSince?: string | null;
   sellerRating?: number | null;
   sellerSales?: number | null;
+  seller?: { id?: string; name?: string | null } | null; // minimal fields we rely on
 };
 
 function fmtKES(n?: number | null) {
@@ -55,6 +58,10 @@ function fmtKES(n?: number | null) {
 export default function ProductPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ? String(params.id) : "";
+
+  const router = useRouter();
+  const { data: session } = useSession();
+  const viewerId = (session?.user as any)?.id as string | undefined;
 
   const { products, ready } = useProducts();
 
@@ -115,6 +122,7 @@ export default function ProductPage() {
   const seller = useMemo(() => {
     const nested: any = (display as any)?.seller || {};
     return {
+      id: nested?.id ?? display?.sellerId ?? null,
       name: nested?.name ?? display?.sellerName ?? "Private Seller",
       phone: nested?.phone ?? display?.sellerPhone ?? null,
       location: nested?.location ?? display?.sellerLocation ?? null,
@@ -133,6 +141,8 @@ export default function ProductPage() {
           : null,
     };
   }, [display]);
+
+  const isOwner = Boolean(viewerId && (viewerId === seller.id));
 
   async function handleReveal() {
     if (!id) return;
@@ -225,6 +235,28 @@ export default function ProductPage() {
               Copy link
             </button>
             <FavoriteButton productId={display.id} />
+
+            {/* Owner actions on the hero image */}
+            {isOwner && (
+              <>
+                <Link
+                  href={`/sell?id=${display.id}`}
+                  className="rounded bg-white/90 px-2 py-1 text-xs border hover:bg-white"
+                  title="Edit listing"
+                >
+                  Edit
+                </Link>
+                <DeleteListingButton
+                  id={display.id}
+                  className="rounded bg-red-600/90 text-white px-2 py-1 text-xs hover:bg-red-600"
+                  label="Delete"
+                  afterDelete={() => {
+                    toast.success("Listing deleted");
+                    router.push("/dashboard");
+                  }}
+                />
+              </>
+            )}
           </div>
         </div>
 

@@ -34,8 +34,6 @@ function looksLikeValidUsername(u: string) {
   return /^[a-zA-Z0-9._]{3,24}$/.test(u);
 }
 
-const PLACEHOLDER_AVATAR = "/avatar-placeholder.png";
-
 /* -------------------------------- Component -------------------------------- */
 export default function ProfileClient() {
   const [loading, setLoading] = useState(true);
@@ -71,7 +69,7 @@ export default function ProfileClient() {
         }
         const j = (await r.json().catch(() => null)) as Me | { user?: Me } | null;
         const u: Me | null =
-          j && typeof j === "object" && "user" in (j as any) ? (j as any).user : (j as Me | null);
+          j && "user" in (j as any) ? (j as any).user : (j as Me | null);
 
         if (!alive) return;
         if (!u?.email) {
@@ -126,26 +124,11 @@ export default function ProfileClient() {
           postalCode: postalCode || null,
           city: city || null,
           country: country || null,
-          image: image || null, // ✅ include avatar so Remove works when saved
+          image: image || null, // ✅ persist avatar URL
         }),
       });
-      const j: any = await r.json().catch(() => ({}));
+      const j = await r.json().catch(() => ({}));
       if (!r.ok || j?.error) throw new Error(j?.error || "Failed to save profile");
-
-      // Refresh local state with server response if provided
-      if (j.user) {
-        const u = j.user as Me;
-        setMe(u);
-        setDisplayName(u.name ?? "");
-        setUsername(u.username ?? "");
-        setWhatsapp(u.whatsapp ?? "");
-        setAddress(u.address ?? "");
-        setPostal(u.postalCode ?? "");
-        setCity(u.city ?? "");
-        setCountry(u.country ?? "");
-        setImage(u.image ?? null);
-      }
-
       toast.success("Profile saved.");
     } catch (e: any) {
       toast.error(e?.message || "Could not save profile");
@@ -174,12 +157,12 @@ export default function ProfileClient() {
         method: "POST",
         body: fd,
       });
-      const j = (await r.json().catch(() => ({}))) as any;
+      const j = await r.json().catch(() => ({} as any));
       if (!r.ok || !j?.url) {
         throw new Error(j?.error || "Upload failed");
       }
       setImage(j.url as string);
-      toast.success("Photo updated. Click “Save changes” to persist.");
+      toast.success("Photo updated. Don’t forget to Save.");
     } catch (e: any) {
       if (e?.message?.includes("404")) {
         toast.error("Avatar upload API not found. Create /api/account/profile/photo.");
@@ -208,6 +191,9 @@ export default function ProfileClient() {
     );
   }
 
+  const usernameInvalid = !looksLikeValidUsername(username);
+  const whatsappInvalid = !!whatsapp && !looksLikeValidKePhone(whatsapp);
+
   return (
     <div className="container-page py-8">
       <div className="mx-auto max-w-3xl space-y-6">
@@ -222,12 +208,9 @@ export default function ProfileClient() {
         <div className="card-surface p-4 flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={image || PLACEHOLDER_AVATAR}
+            src={image || "/avatar-placeholder.png"}
             alt="Profile photo"
             className="h-16 w-16 rounded-full object-cover border border-black/10 dark:border-white/10"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = PLACEHOLDER_AVATAR;
-            }}
           />
           <div className="flex items-center gap-3">
             <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-white/10">
@@ -235,7 +218,7 @@ export default function ProfileClient() {
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => onFileChange(e.currentTarget.files?.[0] || undefined)}
+                onChange={(e) => onFileChange(e.currentTarget.files?.[0])}
                 disabled={uploading}
               />
               {uploading ? "Uploading…" : "Change photo"}
@@ -243,11 +226,8 @@ export default function ProfileClient() {
             {image && (
               <button
                 className="text-sm text-red-600 hover:underline"
-                onClick={() => {
-                  setImage(null);
-                  toast("Photo cleared. Click “Save changes” to persist.", { icon: "ℹ️" });
-                }}
-                title="Clears the preview; Save to persist."
+                onClick={() => setImage(null)}
+                title="This only clears the preview. Save to persist."
               >
                 Remove
               </button>
@@ -276,6 +256,7 @@ export default function ProfileClient() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="e.g. brian254"
                 required
+                aria-invalid={usernameInvalid}
               />
               <p className="text-xs text-gray-500 mt-1">
                 3–24 chars. Letters, numbers, dot, underscore.
@@ -290,7 +271,7 @@ export default function ProfileClient() {
               value={whatsapp}
               onChange={(e) => setWhatsapp(e.target.value)}
               placeholder="07XXXXXXXX or 2547XXXXXXXX"
-              aria-invalid={!!whatsapp && !looksLikeValidKePhone(whatsapp)}
+              aria-invalid={whatsappInvalid}
             />
             <p className="text-xs text-gray-500 mt-1">
               Will be stored as{" "}
@@ -338,7 +319,11 @@ export default function ProfileClient() {
           </div>
 
           <div className="flex gap-2 pt-2">
-            <button type="submit" disabled={saving} className="btn-primary">
+            <button
+              type="submit"
+              disabled={saving || usernameInvalid || whatsappInvalid}
+              className="btn-primary disabled:opacity-60"
+            >
               {saving ? "Saving…" : "Save changes"}
             </button>
             <a href="/dashboard" className="btn-outline">Back to dashboard</a>
