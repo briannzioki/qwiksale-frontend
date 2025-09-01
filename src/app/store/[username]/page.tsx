@@ -10,7 +10,7 @@ type StoreProduct = {
   name: string;
   image: string | null;
   price: number | null;
-  featured: boolean | null;
+  featured: boolean;
   category: string;
   subcategory: string;
   createdAt: Date;
@@ -28,9 +28,11 @@ function fmtKES(n?: number | null) {
 export default async function StorePage({
   params,
 }: {
-  params: { username: string };
+  /** Next 15 type expectation: Promise for params */
+  params: Promise<{ username: string }>;
 }) {
-  const username = decodeURIComponent(params.username || "").trim();
+  const { username: raw } = await params;
+  const username = decodeURIComponent(raw || "").trim();
   if (!username) notFound();
 
   const user = await prisma.user.findUnique({
@@ -43,7 +45,7 @@ export default async function StorePage({
       city: true,
       country: true,
       createdAt: true,
-      // recent listings
+      // relation name should be lowercase "products"
       products: {
         orderBy: { createdAt: "desc" },
         take: 24,
@@ -95,7 +97,7 @@ export default async function StorePage({
           <div className="ml-auto">
             <Link
               href="/"
-              className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bg.white/90"
+              className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bg-white/90"
             >
               Back to Home
             </Link>
@@ -112,9 +114,7 @@ export default async function StorePage({
         </div>
 
         {products.length === 0 ? (
-          <div className="text-gray-600">
-            This store hasn’t posted any items yet.
-          </div>
+          <div className="text-gray-600">This store hasn’t posted any items yet.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {products.map((p) => (
@@ -132,15 +132,11 @@ export default async function StorePage({
                     className="w-full h-40 object-cover"
                   />
                   <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 line-clamp-1">
-                      {p.name}
-                    </h3>
+                    <h3 className="font-semibold text-gray-900 line-clamp-1">{p.name}</h3>
                     <p className="text-xs text-gray-500 line-clamp-1">
                       {p.category} • {p.subcategory}
                     </p>
-                    <p className="text-[#161748] font-bold mt-1">
-                      {fmtKES(p.price)}
-                    </p>
+                    <p className="text-[#161748] font-bold mt-1">{fmtKES(p.price)}</p>
                     <p className="text-[11px] text-gray-400 mt-1">
                       {new Date(p.createdAt).toLocaleDateString()}
                     </p>
