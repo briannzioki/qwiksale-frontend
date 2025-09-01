@@ -5,7 +5,6 @@ export const dynamic = "force-dynamic";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import type { Prisma } from "@prisma/client";
 
 /* utils */
 function noStore(json: unknown, init?: ResponseInit) {
@@ -19,7 +18,36 @@ function toInt(v: string | null, def: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
 
-/* GET /api/products — list (paginated) */
+/** Select for list items (no Prisma types needed) */
+const productListSelect = {
+  id: true,
+  name: true,
+  description: true,
+  category: true,
+  subcategory: true,
+  brand: true,
+  condition: true,
+  price: true,
+  image: true,
+  gallery: true,
+  location: true,
+  negotiable: true,
+  createdAt: true,
+  featured: true,
+  sellerId: true,
+
+  // flattened snapshot fields
+  sellerName: true,
+  sellerLocation: true,
+  sellerMemberSince: true,
+  sellerRating: true,
+  sellerSales: true,
+
+  // light linked seller info
+  seller: { select: { id: true, name: true, image: true, subscription: true } },
+} as const;
+
+/* -------- GET /api/products — list (paginated) -------- */
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -27,69 +55,34 @@ export async function GET(req: NextRequest) {
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), 60, 1, 200);
 
-    const where: Prisma.ProductWhereInput =
-      q.length > 0
-        ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { brand: { contains: q, mode: "insensitive" } },
-              { category: { contains: q, mode: "insensitive" } },
-              { subcategory: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {};
+    // Keep typing simple/robust across Prisma versions
+    let where: any = undefined;
+    if (q.length > 0) {
+      where = {
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { brand: { contains: q, mode: "insensitive" } },
+          { category: { contains: q, mode: "insensitive" } },
+          { subcategory: { contains: q, mode: "insensitive" } },
+        ],
+      };
+    }
 
-    const select = {
-      id: true,
-      name: true,
-      description: true,
-      category: true,
-      subcategory: true,
-      brand: true,
-      condition: true,
-      price: true,
-      image: true,
-      gallery: true,
-      location: true,
-      negotiable: true,
-      createdAt: true,
-      featured: true,
-      sellerId: true,
+    const total = await prisma.product.count({ where });
 
-      // flattened snapshot fields (safe)
-      sellerName: true,
-      sellerLocation: true,
-      sellerMemberSince: true,
-      sellerRating: true,
-      sellerSales: true,
+    const items = await prisma.product.findMany({
+      where,
+      select: productListSelect,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
 
-      // light linked seller info (no email/phone)
-      seller: {
-        select: {
-          id: true,
-          name: true,
-          image: true,
-          subscription: true,
-        },
-      },
-    } satisfies Prisma.ProductSelect;
-
-    const [total, items] = await Promise.all([
-      prisma.product.count({ where }),
-      prisma.product.findMany({
-        where,
-        select,
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-    ]);
-
-    type ProductRow = Prisma.ProductGetPayload<{ select: typeof select }>;
-
-    const mapped = items.map((p: ProductRow) => ({
+    // Avoid implicit-any by typing the callback param
+    const mapped = items.map((p: any) => ({
       ...p,
-      createdAt: p.createdAt.toISOString(),
+      createdAt:
+        p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? ""),
     }));
 
     return noStore({
@@ -103,4 +96,10 @@ export async function GET(req: NextRequest) {
     console.warn("[/api/products GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
+}
+
+/* -------- POST /api/products — create (delegate to existing creator) -------- */
+export async function POST(req: NextRequest) {
+  const { POST: createProduct } = await import("./create/route");
+  return createProduct(req);
 }

@@ -1,21 +1,18 @@
 // src/app/lib/auth.ts
-import { getServerSession as _getServerSession, type Session } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
-export { authOptions };
-export default authOptions;
+// Centralized NextAuth helpers (NextAuth v5 via src/auth.ts)
+import { auth, signIn, signOut } from "@/auth";
 
-// Typed helper so server routes can do: const session = await getServerSession();
-export const getServerSession = (opts = authOptions) => _getServerSession(opts);
+/** Re-export the canonical helpers for app-wide use */
+export { auth, signIn, signOut };
 
-/** Return the current user's id (or null if unauthenticated). */
-export async function getSessionUserId(): Promise<string | null> {
-  const session: Session | null = await getServerSession();
-  const id = (session?.user as { id?: string } | undefined)?.id ?? null;
-  return id;
+/** Backwards-compatible wrapper for legacy code that called getServerSession() */
+export async function getServerSession() {
+  return auth();
 }
 
-/** Convenience alias for guarded APIs: returns user id or null */
+/** Convenience helper used by API routes to grab the current user's id */
 export async function requireUserId(): Promise<string | null> {
-  return getSessionUserId();
+  const s = await auth();
+  return (s as any)?.user?.id ?? null;
 }

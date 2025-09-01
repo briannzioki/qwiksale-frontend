@@ -1,12 +1,12 @@
 // src/app/dashboard/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/prisma";
+import { auth } from "@/auth";
 
 // Always evaluate per-request (session-sensitive)
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Dashboard — QwikSale",
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 async function getUserIdOrNull() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   const id = (session?.user as any)?.id as string | undefined;
   const email = session?.user?.email || undefined;
 
@@ -89,10 +89,7 @@ export default async function DashboardPage() {
 
   // Subscription enum: BASIC (mapped from FREE), GOLD, PLATINUM
   const isBasic = me.subscription === "BASIC";
-
-  // Pretty label
-  const subLabel =
-    me.subscription === "BASIC" ? "FREE" : me.subscription;
+  const subLabel = me.subscription === "BASIC" ? "FREE" : me.subscription;
 
   return (
     <div className="p-6 space-y-6">
@@ -100,7 +97,9 @@ export default async function DashboardPage() {
       <div className="rounded-2xl p-8 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold">Welcome{me.name ? `, ${me.name}` : ""} 👋</h1>
+            <h1 className="text-2xl md:text-3xl font-extrabold">
+              Welcome{me.name ? `, ${me.name}` : ""} 👋
+            </h1>
             <p className="text-white/90">
               Manage your listings, favorites and subscription.
             </p>
@@ -177,15 +176,13 @@ export default async function DashboardPage() {
         </div>
 
         {recentListings.length === 0 ? (
-          <div className="text-gray-600">No listings yet. Get started by posting your first item.</div>
+          <div className="text-gray-600">
+            No listings yet. Get started by posting your first item.
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {recentListings.map((p) => (
-              <Link
-                key={p.id}
-                href={`/product/${p.id}`}
-                className="group"
-              >
+            {recentListings.map((p: (typeof recentListings)[number]) => (
+              <Link key={p.id} href={`/product/${p.id}`} className="group">
                 <div className="relative bg-white rounded-xl shadow hover:shadow-lg transition overflow-hidden border border-gray-100">
                   {p.featured && (
                     <span className="absolute top-2 left-2 z-10 rounded-md bg-[#161748] text-white text-xs px-2 py-1 shadow">

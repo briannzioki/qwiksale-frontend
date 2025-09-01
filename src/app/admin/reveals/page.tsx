@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 import Link from "next/link";
 import { prisma } from "@/app/lib/prisma";
-import { getServerSession } from "@/app/lib/auth"; // ⬅️ use your wrapper
+import { auth } from "@/auth";
 import { env } from "@/app/lib/env";
 
 function allow(em?: string | null) {
@@ -37,7 +37,7 @@ export default async function AdminRevealsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const session = await getServerSession(); // ⬅️ no args needed
+  const session = await auth();
   if (!allow(session?.user?.email ?? null)) {
     return (
       <div className="max-w-3xl mx-auto p-6 text-sm text-gray-700">
@@ -66,11 +66,17 @@ export default async function AdminRevealsPage({
     1000
   );
 
+  const INSENSITIVE = "insensitive" as const;
+
   const where =
     q.length > 0
       ? {
           OR: [
-            { product: { is: { name: { contains: q, mode: "insensitive" as any } } } },
+            {
+              product: {
+                is: { name: { contains: q, mode: INSENSITIVE } },
+              },
+            },
             { productId: q },
             { viewerUserId: { contains: q } },
             { ip: { contains: q } },
@@ -89,7 +95,14 @@ export default async function AdminRevealsPage({
   type LogRow = (typeof logs)[number];
 
   // CSV
-  const csvHeader = ["createdAt", "productId", "productName", "viewerUserId", "ip", "userAgent"] as const;
+  const csvHeader = [
+    "createdAt",
+    "productId",
+    "productName",
+    "viewerUserId",
+    "ip",
+    "userAgent",
+  ] as const;
   const csvRows = logs.map((r: LogRow) => [
     r.createdAt.toISOString(),
     r.productId,
@@ -115,7 +128,10 @@ export default async function AdminRevealsPage({
           >
             Export CSV
           </a>
-          <Link href="/admin/reveals" className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
+          <Link
+            href="/admin/reveals"
+            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
             Refresh
           </Link>
         </div>
@@ -129,14 +145,20 @@ export default async function AdminRevealsPage({
           placeholder="Search product, id, user id, IP, UA…"
           className="flex-1 rounded-lg border px-3 py-2"
         />
-        <select name="take" defaultValue={String(takeNum)} className="rounded-lg border px-3 py-2">
+        <select
+          name="take"
+          defaultValue={String(takeNum)}
+          className="rounded-lg border px-3 py-2"
+        >
           {[50, 100, 200, 500, 1000].map((n) => (
             <option key={n} value={n}>
               Show {n}
             </option>
           ))}
         </select>
-        <button className="rounded-lg border px-3 py-2 hover:bg-gray-50">Apply</button>
+        <button className="rounded-lg border px-3 py-2 hover:bg-gray-50">
+          Apply
+        </button>
       </form>
 
       {logs.length === 0 ? (
@@ -164,18 +186,29 @@ export default async function AdminRevealsPage({
                     </time>
                   </td>
                   <td className="py-2 px-3">
-                    <a className="underline" href={`/product/${r.productId}`} target="_blank" rel="noreferrer">
+                    <a
+                      className="underline"
+                      href={`/product/${r.productId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       {r.product?.name ?? r.productId}
                     </a>
                   </td>
                   <td className="py-2 px-3">
-                    {r.viewerUserId ? r.viewerUserId : <span className="text-gray-500">guest</span>}
+                    {r.viewerUserId ? (
+                      r.viewerUserId
+                    ) : (
+                      <span className="text-gray-500">guest</span>
+                    )}
                   </td>
                   <td className="py-2 px-3">
                     {r.ip ? <>{r.ip}</> : <span className="text-gray-400">—</span>}
                   </td>
                   <td className="py-2 px-3 max-w-[420px]">
-                    <span className="line-clamp-2 break-all text-gray-700">{r.userAgent || "—"}</span>
+                    <span className="line-clamp-2 break-all text-gray-700">
+                      {r.userAgent || "—"}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -185,7 +218,8 @@ export default async function AdminRevealsPage({
       )}
 
       <p className="mt-3 text-xs text-gray-500">
-        Showing {logs.length} of latest reveals{q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on the
+        Showing {logs.length} of latest reveals
+        {q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on the
         server.
       </p>
     </div>

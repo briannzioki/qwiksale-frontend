@@ -72,28 +72,16 @@ const securityHeaders = (): { key: string; value: string }[] => {
 };
 
 const nextConfig: NextConfig = {
-  reactStrictMode: true,
-  poweredByHeader: false,
-  output: "standalone",
-  serverExternalPackages: ["@prisma/client"],
-  eslint: { ignoreDuringBuilds: true },
-  async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders() }];
-  },
-  images: {
-    remotePatterns: [
+  // …existing config…
+  async redirects() {
+    return [
       {
-        protocol: "https",
-        hostname: "res.cloudinary.com",
-        pathname: cloudName ? `/${cloudName}/**` : "/**",
+        source: "/:path*",
+        has: [{ type: "host", value: "www.qwiksale.sale" }],
+        destination: "https://qwiksale.sale/:path*",
+        permanent: true,
       },
-      { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
-      { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
-      { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
-      { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },
-      { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
-    ],
+    ];
   },
 };
-
 export default nextConfig;

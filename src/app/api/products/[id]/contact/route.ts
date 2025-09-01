@@ -1,11 +1,12 @@
 // src/app/api/products/[id]/contact/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { auth } from "@/auth";
 
 // tiny helper to always disable caching
 function noStore(json: unknown, init?: ResponseInit) {
@@ -14,20 +15,20 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-export async function GET(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+type RouteCtx = { params: Promise<{ id: string }> };
+
+export async function GET(req: NextRequest, ctx: RouteCtx) {
   try {
-    const id = String(params.id || "").trim();
-    if (!id) return noStore({ error: "Missing id" }, { status: 400 });
+    const { id } = await ctx.params;
+    const productId = String(id || "").trim();
+    if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
     // Optional: who is viewing (guests allowed)
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     const viewerUserId = (session as any)?.user?.id as string | undefined;
 
     const p = await prisma.product.findUnique({
-      where: { id },
+      where: { id: productId },
       select: {
         id: true,
         name: true,
@@ -52,7 +53,7 @@ export async function GET(
     await prisma.contactReveal
       .create({
         data: {
-          productId: id,
+          productId,
           viewerUserId: viewerUserId ?? null,
           ip,
           userAgent: ua,

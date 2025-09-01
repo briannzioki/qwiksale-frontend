@@ -1,9 +1,10 @@
 // src/app/api/billing/upgrade/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { getServerSession, authOptions } from "@/app/lib/auth";
+import { auth } from "@/auth"; // ✅ use centralized NextAuth handlers
 import { getAccessToken, stkPassword, yyyymmddhhmmss, MPESA } from "@/app/lib/mpesa";
 import { prisma } from "@/app/lib/prisma";
 
@@ -22,8 +23,8 @@ function normalizeMsisdn(input: string): string {
 export async function POST(req: Request) {
   try {
     // --- Auth ---
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email;
+    const session = await auth();
+    const email = (session as any)?.user?.email as string | undefined;
     if (!email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const user = await prisma.user.findUnique({
@@ -33,13 +34,17 @@ export async function POST(req: Request) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // --- Parse body ---
-    const body = await req.json().catch(() => ({} as any));
+    const body = (await req.json().catch(() => ({}))) as {
+      tier?: string;
+      phone?: string;
+      mode?: "paybill" | "till";
+    };
+
     const rawTier = String(body?.tier || "GOLD").toUpperCase() as Tier;
-    const tier: Tier = rawTier === "PLATINUM" ? "PLATINUM" : "GOLD"; // clamp
+    const tier: Tier = rawTier === "PLATINUM" ? "PLATINUM" : "GOLD"; // clamp to allowed values
     const msisdn = normalizeMsisdn(String(body?.phone || ""));
 
-    // Optional: allow "mode" switch (defaults to paybill)
-    const mode = String(body?.mode || "paybill") as "paybill" | "till";
+    const mode = (body?.mode === "till" ? "till" : "paybill") as "paybill" | "till";
     const transactionType =
       mode === "till" ? "CustomerBuyGoodsOnline" : "CustomerPayBillOnline";
 
@@ -50,16 +55,15 @@ export async function POST(req: Request) {
     // --- Server-side amount (ignore client override) ---
     const amount = PRICE[tier];
 
-    // --- (Optional) dedupe very recent pending attempts if Payment model exists ---
+    // --- (Optional) dedupe recent pending attempts if Payment model exists ---
     let existingPending: any | null = null;
     try {
-      // @ts-ignore – optional model
       if ((prisma as any).payment?.findFirst) {
         existingPending = await (prisma as any).payment.findFirst({
           where: {
             userId: user.id,
             status: "PENDING",
-            // optional: createdAt within last 60s
+            // optionally add createdAt >= now-60s
           },
           orderBy: { createdAt: "desc" },
         });
@@ -71,7 +75,6 @@ export async function POST(req: Request) {
     // --- Pre-create Payment row (best effort) ---
     let paymentId: string | undefined;
     try {
-      // @ts-ignore – optional model
       const Payment = (prisma as any).payment;
       if (Payment?.create) {
         const created = await Payment.create({
@@ -80,9 +83,8 @@ export async function POST(req: Request) {
             payerPhone: msisdn,
             amount,
             status: "PENDING",
-            // These columns are optional in your schema; if missing, Prisma will throw and we’ll skip.
-            targetTier: tier,
-            mode,
+            targetTier: tier, // optional column
+            mode,            // optional column
           },
         });
         paymentId = created?.id;
@@ -109,8 +111,8 @@ export async function POST(req: Request) {
         Timestamp: timestamp,
         TransactionType: transactionType,
         Amount: amount,
-        PartyA: msisdn,                 // customer
-        PartyB: Number(MPESA.SHORTCODE),// your Paybill/Till
+        PartyA: msisdn,                     // customer
+        PartyB: Number(MPESA.SHORTCODE),    // your Paybill/Till
         PhoneNumber: msisdn,
         CallBackURL: MPESA.CALLBACK_URL,
         AccountReference: "Qwiksale",
@@ -122,7 +124,6 @@ export async function POST(req: Request) {
 
     // --- Persist STK IDs back to Payment (best effort) ---
     try {
-      // @ts-ignore – optional model
       if (paymentId && (prisma as any).payment?.update) {
         await (prisma as any).payment.update({
           where: { id: paymentId },
@@ -137,7 +138,6 @@ export async function POST(req: Request) {
     }
 
     // --- Respond ---
-    // Safaricom success usually has ResponseCode === "0"
     if (!res.ok) {
       return NextResponse.json(data, { status: res.status });
     }
@@ -147,9 +147,7 @@ export async function POST(req: Request) {
       tier,
       amount,
       mode,
-      message:
-        data?.CustomerMessage ||
-        "STK push sent. Confirm payment on your phone.",
+      message: data?.CustomerMessage || "STK push sent. Confirm payment on your phone.",
       mpesa: {
         MerchantRequestID: data?.MerchantRequestID,
         CheckoutRequestID: data?.CheckoutRequestID,
@@ -162,6 +160,6 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("POST /api/billing/upgrade error", e);
-    return NextResponse.json({ error: e.message || "Server error" }, { status: 500 });
+    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
   }
 }

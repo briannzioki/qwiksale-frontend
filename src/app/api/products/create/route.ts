@@ -1,19 +1,19 @@
 // src/app/api/products/create/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { auth } from "@/auth";
 
 type Tier = "BASIC" | "GOLD" | "PLATINUM";
 
 const LIMITS: Record<Tier, { listingLimit: number; canFeature: boolean }> = {
-  BASIC: { listingLimit: 3, canFeature: false },       // BASIC maps to DB "FREE"
+  BASIC: { listingLimit: 3, canFeature: false }, // BASIC maps to DB "FREE"
   GOLD: { listingLimit: 30, canFeature: true },
-  PLATINUM: { listingLimit: 999999, canFeature: true },
+  PLATINUM: { listingLimit: 999_999, canFeature: true },
 };
 
 /* ---------------- helpers ---------------- */
@@ -101,23 +101,30 @@ function noStore(json: unknown, init?: ResponseInit) {
 }
 
 async function getMe() {
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email || null;
-  if (!email) return null;
+  const session = await auth();
+  const userId = (session as any)?.user?.id as string | undefined;
+  if (!userId) return null;
   return prisma.user.findUnique({
-    where: { email },
+    where: { id: userId },
     select: { id: true, name: true, subscription: true },
   });
 }
 
-/* --------------- POST /api/products/create --------------- */
+function toTier(sub?: string | null): Tier {
+  const s = (sub || "").toUpperCase();
+  if (s === "GOLD") return "GOLD";
+  if (s === "PLATINUM") return "PLATINUM";
+  // Treat FREE/NULL/UNKNOWN as BASIC
+  return "BASIC";
+}
 
+/* --------------- POST /api/products/create --------------- */
 export async function POST(req: NextRequest) {
   try {
     const me = await getMe();
     if (!me) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
     // Required basics
     const name = s(body.name, MAX.name);
@@ -138,29 +145,31 @@ export async function POST(req: NextRequest) {
     const negotiable = nBool(body.negotiable);
     const featured = nBool(body.featured) ?? false;
 
-    // Seller snapshot
+    // Seller snapshot (phone is OPTIONAL now)
     const sellerPhoneRaw = normalizeMsisdn(body.sellerPhone);
+    if (typeof body.sellerPhone === "string" && !sellerPhoneRaw) {
+      return noStore(
+        { error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." },
+        { status: 400 }
+      );
+    }
+    if (sellerPhoneRaw && !/^254(7|1)\d{8}$/.test(sellerPhoneRaw)) {
+      return noStore(
+        { error: "sellerPhone must be 2547XXXXXXXX or 2541XXXXXXXX" },
+        { status: 400 }
+      );
+    }
+
     const sellerName = s(body.sellerName, 120) ?? me.name ?? undefined;
     const sellerLocation = s(body.sellerLocation, MAX.location) ?? location;
 
     // Validate required
     if (!name) return noStore({ error: "name is required" }, { status: 400 });
     if (!category) return noStore({ error: "category is required" }, { status: 400 });
-    if (!subcategory)
-      return noStore({ error: "subcategory is required" }, { status: 400 });
-
-    if (!sellerPhoneRaw) {
-      return noStore(
-        { error: "sellerPhone is required (07/01, +2547/+2541, or 2547/2541)" },
-        { status: 400 }
-      );
-    }
-    if (!/^254(7|1)\d{8}$/.test(sellerPhoneRaw)) {
-      return noStore({ error: "sellerPhone must be 2547XXXXXXXX or 2541XXXXXXXX" }, { status: 400 });
-    }
+    if (!subcategory) return noStore({ error: "subcategory is required" }, { status: 400 });
 
     // Tier enforcement
-    const tier = (me.subscription as Tier) ?? "BASIC";
+    const tier = toTier(me.subscription);
     const limits = LIMITS[tier];
 
     const myActiveCount = await prisma.product.count({ where: { sellerId: me.id } });
@@ -174,33 +183,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Auto gallery
+    // Auto gallery fallback
     const finalGallery = gallery ?? (image ? [image] : []);
 
-    // Build payload
-    const data: any = {
-      name,
-      category,
-      subcategory,
-      brand,
-      description,
-      condition,
-      price, // may be null
-      image,
-      gallery: finalGallery,
-      location,
-      negotiable,
-      featured,
-      sellerId: me.id,
-      sellerName,
-      sellerPhone: sellerPhoneRaw,
-      sellerLocation,
-      createdAt: new Date(),
-    };
-    Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
-
+    // ✅ Build data inline with conditional spreads so only defined fields are sent
     const created = await prisma.product.create({
-      data,
+      data: {
+        name,
+        category,
+        subcategory,
+        condition,
+        featured, // include explicit booleans
+        sellerId: me.id,
+        createdAt: new Date(),
+
+        ...(brand ? { brand } : {}),
+        ...(description ? { description } : {}),
+        ...(price !== undefined ? { price } : {}), // allow null for "contact for price"
+        ...(image ? { image } : {}),
+        ...(finalGallery.length ? { gallery: finalGallery } : {}),
+        ...(location ? { location } : {}),
+        ...(negotiable !== undefined ? { negotiable } : {}),
+        ...(sellerName ? { sellerName } : {}),
+        sellerPhone: sellerPhoneRaw ?? null, // store null if not provided
+        ...(sellerLocation ? { sellerLocation } : {}),
+      },
       select: {
         id: true,
         name: true,

@@ -11,7 +11,7 @@ const allowDangerousLinking =
   process.env.ALLOW_DANGEROUS_LINKING === "true";
 
 const isProd = process.env.NODE_ENV === "production";
-const COOKIE_DOMAIN = ".qwiksale.sale"; // share across apex + subdomains
+const COOKIE_DOMAIN = ".qwiksale.sale"; // only used in prod
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -20,9 +20,8 @@ export const authOptions: NextAuthOptions = {
   // JWT sessions work well on Vercel/Edge
   session: { strategy: "jwt" },
 
-  /** 🔐 Cookies pinned to apex domain so sessions survive www → apex, etc. */
+  /** 🔐 Cookies pinned to apex domain in prod only (so localhost works in dev). */
   cookies: {
-    // Session cookie (httpOnly)
     sessionToken: {
       name: isProd ? "__Secure-next-auth.session-token" : "next-auth.session-token",
       options: {
@@ -30,10 +29,9 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isProd,
-        domain: COOKIE_DOMAIN,
+        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
       },
     },
-    // CSRF cookie (must be readable by client)
     csrfToken: {
       name: "next-auth.csrf-token",
       options: {
@@ -41,10 +39,9 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isProd,
-        domain: COOKIE_DOMAIN,
+        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
       },
     },
-    // Used during OAuth
     state: {
       name: "next-auth.state",
       options: {
@@ -52,10 +49,9 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isProd,
-        domain: COOKIE_DOMAIN,
+        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
       },
     },
-    // PKCE verifier for OAuth
     pkceCodeVerifier: {
       name: "next-auth.pkce.code_verifier",
       options: {
@@ -63,10 +59,9 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isProd,
-        domain: COOKIE_DOMAIN,
+        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
       },
     },
-    // Nonce for OpenID Connect
     nonce: {
       name: "next-auth.nonce",
       options: {
@@ -74,10 +69,9 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isProd,
-        domain: COOKIE_DOMAIN,
+        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
       },
     },
-    // Where NextAuth stores/reads the intended return URL
     callbackUrl: {
       name: "next-auth.callback-url",
       options: {
@@ -85,7 +79,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isProd,
-        domain: COOKIE_DOMAIN,
+        ...(isProd ? { domain: COOKIE_DOMAIN } : {}),
       },
     },
   },
@@ -112,10 +106,8 @@ export const authOptions: NextAuthOptions = {
           include: { Account: true },
         });
 
-        // If user exists…
         if (existing) {
           if (!existing.passwordHash) {
-            // Password not set yet → set it now
             const hash = await bcrypt.hash(password, 10);
             const updated = await prisma.user.update({
               where: { id: existing.id },
@@ -123,27 +115,26 @@ export const authOptions: NextAuthOptions = {
             });
             return updated;
           }
-
           const ok = await bcrypt.compare(password, existing.passwordHash);
           if (!ok) throw new Error("Invalid email or password.");
           return existing;
         }
 
-        // Create a new unverified account with this email + password
+        // Create unverified account
         const hash = await bcrypt.hash(password, 10);
         const user = await prisma.user.create({
           data: {
             email,
             passwordHash: hash,
-            verified: false,       // remains false until future seller verification
-            emailVerified: null,   // not verified
+            verified: false,
+            emailVerified: null,
           },
         });
         return user;
       },
     }),
 
-    // Google OAuth (optional sign-in path)
+    // Google OAuth
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
@@ -178,7 +169,6 @@ export const authOptions: NextAuthOptions = {
           },
         });
 
-        // Copy to token
         token.email = u?.email ?? null;
         (token as any).phone = u?.phone ?? null;
         (token as any).name = u?.name ?? null;
@@ -190,7 +180,6 @@ export const authOptions: NextAuthOptions = {
         (token as any).city = u?.city ?? null;
         (token as any).country = u?.country ?? null;
 
-        // Profile completeness: for now only username is required
         (token as any).needsProfile = !(u?.username && u.username.trim().length >= 3);
       }
       return token;
@@ -214,6 +203,16 @@ export const authOptions: NextAuthOptions = {
         (session as any).needsProfile = (token as any).needsProfile ?? false;
       }
       return session;
+    },
+
+    // ⬇️ Ensure we return to /sell (or any relative callbackUrl) after sign-in
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      try {
+        const u = new URL(url);
+        if (u.origin === baseUrl) return url;
+      } catch {}
+      return baseUrl;
     },
   },
 };

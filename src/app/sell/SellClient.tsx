@@ -8,6 +8,7 @@ import { useProducts } from "../lib/productsStore";
 import toast from "react-hot-toast";
 
 type FilePreview = { file: File; url: string; key: string };
+type Me = { id: string; email: string | null; profileComplete: boolean };
 
 const MAX_FILES = 6;
 const MAX_MB = 5;
@@ -108,6 +109,45 @@ async function uploadToCloudinary(
 
 export default function SellClient() {
   const router = useRouter();
+
+  // ---------------------- Profile Gate (no server redirects) ----------------------
+  const [ready, setReady] = useState(false);
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/me", { cache: "no-store" });
+        if (cancelled) return;
+
+        if (res.status === 401) {
+          // Not signed in -> go to sign-in with return
+          router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell")}`);
+          return;
+        }
+
+        const me = (await res.json().catch(() => null)) as Me | null;
+
+        if (me && me.profileComplete === false) {
+          // Signed in but needs profile completion
+          router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell")}`);
+          return;
+        }
+
+        // OK to proceed
+        setAllowed(true);
+      } catch {
+        // Fail-open to avoid accidental loops if /api/me is down
+        setAllowed(true);
+      } finally {
+        setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   // Zustand store (optional)
   const store = useProducts() as any;
@@ -316,6 +356,18 @@ export default function SellClient() {
       setSubmitting(false);
       setUploadPct(0);
     }
+  }
+
+  /* ------------------------------- Gate loading ------------------------------ */
+  if (!ready || !allowed) {
+    return (
+      <div className="container-page py-10">
+        <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
+          <h1 className="text-2xl font-bold">Post a Listing</h1>
+          <p className="text-white/90">Checking your account…</p>
+        </div>
+      </div>
+    );
   }
 
   /* ----------------------------------- UI ----------------------------------- */

@@ -1,11 +1,12 @@
 // src/app/api/products/[id]/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { auth } from "@/auth";
 
 // Small helper to ensure responses are never cached
 function noStore(json: unknown, init?: ResponseInit) {
@@ -14,13 +15,13 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
+type RouteCtx = { params: Promise<{ id: string }> };
+
 /* ----------------------------- GET /api/products/:id ----------------------------- */
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const productId = String(params.id || "").trim();
+    const { id } = await ctx.params;
+    const productId = String(id || "").trim();
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
     // Select only what the detail page needs (no raw seller phone here; phone is revealed via /api/products/[id]/contact)
@@ -71,15 +72,13 @@ export async function GET(
 }
 
 /* ---------------------------- PATCH /api/products/:id ---------------------------- */
-export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
-    const productId = String(params.id || "").trim();
+    const { id } = await ctx.params;
+    const productId = String(id || "").trim();
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     const userId = (session as any)?.user?.id as string | undefined;
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
@@ -147,7 +146,7 @@ export async function PATCH(
         createdAt: true,
         featured: true,
         sellerId: true,
-      },
+    },
     });
 
     return noStore(updated);
@@ -158,15 +157,13 @@ export async function PATCH(
 }
 
 /* --------------------------- DELETE /api/products/:id --------------------------- */
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const productId = String(params.id || "").trim();
+    const { id } = await ctx.params;
+    const productId = String(id || "").trim();
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     const userId = (session as any)?.user?.id as string | undefined;
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 

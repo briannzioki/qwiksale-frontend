@@ -1,7 +1,10 @@
 // src/app/api/account/complete-profile/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
 /** Normalize Kenyan phone to 2547XXXXXXXX */
@@ -20,9 +23,8 @@ function isValidEmail(email: string): boolean {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-
   // Require an authenticated user (we key updates by user.id)
+  const session = await auth();
   const userId = (session as any)?.user?.id as string | undefined;
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -84,7 +86,10 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ ok: true, user });
+    return NextResponse.json(
+      { ok: true, user },
+      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
+    );
   } catch (e: any) {
     // Unique constraint conflict (e.g., username or phone already taken)
     if (e?.code === "P2002") {

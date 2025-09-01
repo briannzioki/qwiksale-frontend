@@ -40,9 +40,14 @@
   input, select, textarea, button {
     @apply text-gray-900 dark:text-slate-100;
   }
-  input::placeholder, textarea::placeholder {
-    @apply text-gray-500 dark:placeholder-slate-400;
-  }
+  input::placeholder,
+textarea::placeholder {
+  @apply text-gray-500;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  @apply text-slate-400;
+}
 
   /* Default control backgrounds (can be overridden per component) */
   input, select, textarea {

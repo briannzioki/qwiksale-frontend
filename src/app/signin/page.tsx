@@ -7,27 +7,38 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
+function isSafePath(p?: string | null): p is string {
+  // allow "/foo" but not "", not "//", not "http(s)://..."
+  return !!p && /^\/(?!\/)/.test(p);
+}
+
 export default function SignInPage() {
   const router = useRouter();
   const sp = useSearchParams();
-  const returnTo = sp.get("callbackUrl") || "/";
+  const returnToRaw = sp.get("callbackUrl");
+  const returnTo = isSafePath(returnToRaw) ? returnToRaw : "/";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [working, setWorking] = useState<"creds" | "google" | null>(null);
 
   async function afterLoginRedirect() {
-    // Always respect explicit callback destinations (e.g., /sell)
-    if (returnTo && returnTo.startsWith("/")) {
+    // If we have a safe callback target (e.g. /sell), go there directly
+    if (isSafePath(returnTo)) {
       router.replace(returnTo);
       return;
     }
 
-    // Otherwise, optionally suggest profile completion
-    const r = await fetch("/api/auth/session", { cache: "no-store" });
-    const s = await r.json().catch(() => null);
-    const needs = !!s?.needsProfile;
-    router.replace(needs ? "/account/complete-profile" : "/");
+    // Otherwise, you can optionally nudge to profile; or just go home:
+    // router.replace("/");
+    try {
+      const r = await fetch("/api/auth/session", { cache: "no-store" });
+      const s = await r.json().catch(() => null);
+      const needs = !!s?.needsProfile;
+      router.replace(needs ? "/account/complete-profile" : "/");
+    } catch {
+      router.replace("/");
+    }
   }
 
   async function onCreds(e: React.FormEvent) {
@@ -51,8 +62,7 @@ export default function SignInPage() {
   async function onGoogle() {
     setWorking("google");
     try {
-      // Send them back to where they came from (e.g., /sell)
-      await signIn("google", { callbackUrl: returnTo || "/" });
+      await signIn("google", { callbackUrl: returnTo });
     } finally {
       setWorking(null);
     }
