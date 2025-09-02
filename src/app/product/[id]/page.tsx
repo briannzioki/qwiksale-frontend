@@ -36,14 +36,15 @@ type FetchedProduct = Partial<ProductFromStore> & {
   location?: string | null;
   negotiable?: boolean;
   featured?: boolean;
-  sellerId?: string | null;          // ⬅️ needed to detect owner
+  sellerId?: string | null;          // needed to detect owner
   sellerName?: string | null;
   sellerPhone?: string | null;
   sellerLocation?: string | null;
   sellerMemberSince?: string | null;
   sellerRating?: number | null;
   sellerSales?: number | null;
-  seller?: { id?: string; name?: string | null } | null; // minimal fields we rely on
+  // ⬇️ include username coming from the API
+  seller?: { id?: string; username?: string | null; name?: string | null } | null;
 };
 
 function fmtKES(n?: number | null) {
@@ -123,6 +124,7 @@ export default function ProductPage() {
     const nested: any = (display as any)?.seller || {};
     return {
       id: nested?.id ?? display?.sellerId ?? null,
+      username: nested?.username ?? null, // ⬅️ username from API
       name: nested?.name ?? display?.sellerName ?? "Private Seller",
       phone: nested?.phone ?? display?.sellerPhone ?? null,
       location: nested?.location ?? display?.sellerLocation ?? null,
@@ -343,6 +345,17 @@ export default function ProductPage() {
               >
                 {revealLoading ? "Revealing…" : "Show Contact"}
               </button>
+            )}
+
+            {/* ⬇️ New: Visit Store button when seller has a username */}
+            {seller.username && (
+              <Link
+                href={`/store/${seller.username}`}
+                className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
+                title={`Visit @${seller.username}'s store`}
+              >
+                Visit Store
+              </Link>
             )}
 
             <Link href="/donate" className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800">

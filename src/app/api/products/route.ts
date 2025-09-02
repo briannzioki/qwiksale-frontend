@@ -30,8 +30,8 @@ function toBool(v: string | null): boolean | undefined {
 type SortKey = "newest" | "price_asc" | "price_desc" | "featured";
 function toSort(v: string | null): SortKey {
   const t = (v || "").trim().toLowerCase();
-  if (t === "price_asc" || t === "price-desc" || t === "price_desc") return "price_desc";
-  if (t === "price_asc") return "price_asc";
+  if (t === "price_asc" || t === "price-asc") return "price_asc";
+  if (t === "price_desc" || t === "price-desc") return "price_desc";
   if (t === "featured") return "featured";
   return "newest";
 }
@@ -61,18 +61,19 @@ const productListSelect = {
   sellerRating: true,
   sellerSales: true,
 
-  // light linked seller info
-  seller: { select: { id: true, name: true, image: true, subscription: true } },
+  // light linked seller info (⬅️ includes username now)
+  seller: { select: { id: true, username: true, name: true, image: true, subscription: true } },
 } as const;
 
 /* ------------------------- GET /api/products ------------------------- */
 /**
  * Supported query params:
- * - q               : text search on name/brand/category/subcategory
+ * - q               : text search on name/brand/category/subcategory/description
  * - category        : exact match (case-insensitive)
  * - subcategory     : exact match (case-insensitive)
  * - brand           : contains (case-insensitive)
- * - sellerId        : only products by this user
+ * - sellerId        : only products by this user id
+ * - seller          : only products by this username (case-insensitive)
  * - featured        : true/false
  * - minPrice, maxPrice : numeric KES filters
  * - sort            : newest | price_asc | price_desc | featured  (default: newest)
@@ -86,6 +87,7 @@ export async function GET(req: NextRequest) {
     const subcategory = (url.searchParams.get("subcategory") || "").trim();
     const brand = (url.searchParams.get("brand") || "").trim();
     const sellerId = (url.searchParams.get("sellerId") || "").trim();
+    const sellerUsername = (url.searchParams.get("seller") || "").trim(); // ⬅️ new
     const featured = toBool(url.searchParams.get("featured"));
     const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
     const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
@@ -121,6 +123,10 @@ export async function GET(req: NextRequest) {
     if (sellerId) {
       and.push({ sellerId });
     }
+    if (sellerUsername) {
+      // filter via relation on username (case-insensitive)
+      and.push({ seller: { username: { equals: sellerUsername, mode: "insensitive" } } });
+    }
     if (typeof featured === "boolean") {
       and.push({ featured });
     }
@@ -136,7 +142,8 @@ export async function GET(req: NextRequest) {
     let orderBy: any = { createdAt: "desc" as const };
     if (sort === "price_asc") orderBy = { price: "asc" as const };
     else if (sort === "price_desc") orderBy = { price: "desc" as const };
-    else if (sort === "featured") orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
+    else if (sort === "featured")
+      orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
 
     // Query
     const [total, items] = await Promise.all([
@@ -153,7 +160,8 @@ export async function GET(req: NextRequest) {
     // map dates to ISO to keep JSON stable
     const mapped = items.map((p: any) => ({
       ...p,
-      createdAt: p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? ""),
+      createdAt:
+        p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? ""),
     }));
 
     return noStore({

@@ -28,9 +28,10 @@ function fmtKES(n?: number | null) {
 export default async function StorePage({
   params,
 }: {
-  params: { username: string }; // ✅ plain object (no Promise)
+  params: Promise<{ username: string }>;
 }) {
-  const username = decodeURIComponent(params.username || "").trim();
+  const { username: rawUsername } = await params; // ✅ Next 15 expects this
+  const username = decodeURIComponent(rawUsername || "").trim();
   if (!username) notFound();
 
   const user = await prisma.user.findUnique({
@@ -43,7 +44,7 @@ export default async function StorePage({
       city: true,
       country: true,
       createdAt: true,
-      // ✅ relation name should match your Prisma schema (usually "products")
+      // Relation name should match your Prisma schema (usually "products")
       products: {
         orderBy: { createdAt: "desc" },
         take: 24,
@@ -97,7 +98,7 @@ export default async function StorePage({
           <div className="ml-auto">
             <Link
               href="/"
-              className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bgwhite/90"
+              className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bg-white/90"
             >
               Back to Home
             </Link>

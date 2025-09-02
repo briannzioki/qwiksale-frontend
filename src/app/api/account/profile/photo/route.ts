@@ -1,11 +1,9 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
-import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
 import { getServerSession } from "@/app/lib/auth";
+import { prisma } from "@/app/lib/prisma";
 
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
@@ -13,67 +11,56 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
     const session = await getServerSession();
-    const userId = (session as any)?.user?.id as string | undefined;
+    const sessionId = (session as any)?.user?.id as string | undefined;
+    const email = session?.user?.email || undefined;
+
+    if (!sessionId && !email) {
+      return noStore({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    let userId = sessionId;
+    if (!userId && email) {
+      const row = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+      userId = row?.id;
+    }
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-    const preset =
-      process.env.CLOUDINARY_UPLOAD_PRESET_AVATAR || "avatars_unsigned";
-    const folder = process.env.CLOUDINARY_FOLDER_AVATARS || "qwiksale/avatars";
+    const form = await req.formData().catch(() => null);
+    const file = form?.get("file") as File | null;
+    if (!file) return noStore({ error: "Missing file" }, { status: 400 });
 
-    if (!cloudName || !preset) {
-      return noStore(
-        { error: "Cloudinary is not configured (cloud name / preset missing)." },
-        { status: 500 }
-      );
+    const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+    const preset = process.env.NEXT_PUBLIC_CLOUDINARY_PRESET_AVATARS;
+    if (!cloud || !preset) {
+      return noStore({ error: "Cloudinary not configured" }, { status: 500 });
     }
 
-    const form = await req.formData();
-    const file = form.get("file") as File | null;
-    if (!file) return noStore({ error: "No file provided" }, { status: 400 });
+    // Forward the upload to Cloudinary
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("upload_preset", preset);
+    fd.append("folder", "qwiksale/avatars");
 
-    // Basic server-side validation
-    if (!/^image\//.test(file.type)) {
-      return noStore({ error: "Only image files are allowed" }, { status: 400 });
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      return noStore({ error: "Max file size is 2MB" }, { status: 400 });
-    }
+    const cloudinaryEndpoint = `https://api.cloudinary.com/v1_1/${cloud}/image/upload`;
+    const up = await fetch(cloudinaryEndpoint, { method: "POST", body: fd });
+    const cj = await up.json().catch(() => ({}));
 
-    // Prepare Cloudinary upload request
-    const cloudForm = new FormData();
-    cloudForm.append("file", file);
-    cloudForm.append("upload_preset", preset);
-    if (folder) cloudForm.append("folder", folder);
-    // If your preset requires/permits any transformations, you can also append them here.
-    // Otherwise rely on the preset’s default "Incoming transformation".
-
-    const res = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-      { method: "POST", body: cloudForm }
-    );
-
-    const data = (await res.json().catch(() => ({}))) as any;
-    if (!res.ok || !data?.secure_url) {
-      return noStore(
-        { error: data?.error?.message || "Cloudinary upload failed" },
-        { status: 400 }
-      );
+    if (!up.ok || !cj?.secure_url) {
+      return noStore({ error: cj?.error?.message || "Upload failed" }, { status: 502 });
     }
 
-    // Save avatar URL on the user
     const updated = await prisma.user.update({
       where: { id: userId },
-      data: { image: data.secure_url },
-      select: { id: true, image: true },
+      data: { image: cj.secure_url as string },
+      select: { image: true },
     });
 
-    return noStore({ ok: true, url: updated.image, publicId: data.public_id });
+    return noStore({ ok: true, url: updated.image });
   } catch (e) {
-    console.error("[avatar upload] error", e);
+    console.warn("[profile photo POST] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }

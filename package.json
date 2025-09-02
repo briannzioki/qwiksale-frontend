@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "db:purge": "tsx scripts/purge.ts",
     "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "postinstall": "prisma generate",
@@ -52,6 +53,7 @@
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.21",
     "cssnano": "^6.0.1",
+    "dotenv": "^17.2.1",
     "eslint": "^9.34.0",
     "eslint-config-next": "^15.5.2",
     "eslint-plugin-import": "^2.32.0",
