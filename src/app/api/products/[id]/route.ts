@@ -15,7 +15,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-// Support Next 15 variations where params can be an object or a Promise
+// Next 15: params may be object or Promise
 type CtxLike = { params?: { id: string } | Promise<{ id: string }> } | unknown;
 async function getId(ctx: CtxLike): Promise<string> {
   const p: any = (ctx as any)?.params;
@@ -48,7 +48,7 @@ export async function GET(_req: NextRequest, ctx: CtxLike) {
         featured: true,
         sellerId: true,
 
-        // flattened/snapshot fields (safe)
+        // flattened snapshot (safe)
         sellerName: true,
         sellerLocation: true,
         sellerMemberSince: true,
@@ -62,6 +62,7 @@ export async function GET(_req: NextRequest, ctx: CtxLike) {
             name: true,
             image: true,
             subscription: true,
+            username: true, // ← add username here
           },
         },
       },
@@ -87,7 +88,6 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
 
     const existing = await prisma.product.findUnique({ where: { id: productId } });
     if (!existing) return noStore({ error: "Not found" }, { status: 404 });
-
     if (existing.sellerId && existing.sellerId !== userId) {
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
@@ -146,6 +146,15 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
         createdAt: true,
         featured: true,
         sellerId: true,
+        seller: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+            subscription: true,
+            username: true, // ← and here for PATCH response
+          },
+        },
       },
     });
 
@@ -171,7 +180,6 @@ export async function DELETE(_req: NextRequest, ctx: CtxLike) {
       select: { id: true, sellerId: true },
     });
     if (!existing) return noStore({ error: "Not found" }, { status: 404 });
-
     if (existing.sellerId && existing.sellerId !== userId) {
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
