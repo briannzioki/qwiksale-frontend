@@ -1,45 +1,35 @@
 // prisma/seed.ts
+/* eslint-disable no-console */
 import { PrismaClient, Prisma } from "@prisma/client";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
-// ESM-safe __dirname / require
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 
-// ✅ Use DIRECT_URL for seeds/migrations (primary), fall back to DATABASE_URL
+// ✅ Prefer DIRECT_URL for scripts (primary), fallback to DATABASE_URL
 const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DIRECT_URL || process.env.DATABASE_URL!,
-    },
-  },
+  datasources: { db: { url: process.env.DIRECT_URL || process.env.DATABASE_URL! } },
 });
 
 /* =============================
    Config via environment vars
-   =============================
-
-   SEED_RESET=1            -> delete test products/favorites/payments first
-   SEED_MIN=40             -> minimum number of products after cloning
-   SEED_SOURCE=/abs/file   -> optional override path to a products module/json
-   SEED_DEMO_USER_EMAIL    -> email for demo seller (default seller@qwiksale.test)
-   SEED_DEMO_USER_NAME     -> name for demo seller (default Demo Seller)
-   SEED_ALLOW_PROD=1       -> allow RESET in production (use with caution!)
-*/
-
+   ============================= */
 const SEED_RESET = process.env.SEED_RESET === "1";
 const SEED_MIN = Number.isFinite(Number(process.env.SEED_MIN))
   ? Math.max(1, Number(process.env.SEED_MIN))
-  : 40;
+  : 48;
 
 const SEED_SOURCE = process.env.SEED_SOURCE || ""; // optional explicit file
 const DEMO_EMAIL = process.env.SEED_DEMO_USER_EMAIL || "seller@qwiksale.test";
-const DEMO_NAME = process.env.SEED_DEMO_USER_NAME || "Demo Seller";
+const DEMO_NAME  = process.env.SEED_DEMO_USER_NAME  || "Demo Seller";
 
+/* =============================
+   Types
+   ============================= */
 type RawSeller = {
   name?: string;
   phone?: string;
@@ -73,18 +63,39 @@ type RawProduct = {
   featured?: boolean;
 };
 
-function log(msg: string) {
-  // eslint-disable-next-line no-console
-  console.log(msg);
-}
-function warn(msg: string, ...rest: unknown[]) {
-  // eslint-disable-next-line no-console
-  console.warn(msg, ...rest);
-}
-function errlog(msg: string, ...rest: unknown[]) {
-  // eslint-disable-next-line no-console
-  console.error(msg, ...rest);
-}
+/* =============================
+   Logging helpers
+   ============================= */
+const log    = (...a: any[]) => console.log(...a);
+const warn   = (...a: any[]) => console.warn(...a);
+const errlog = (...a: any[]) => console.error(...a);
+
+/* =============================
+   Built-in fallback dataset
+   ============================= */
+const builtinProducts: RawProduct[] = [
+  // Phones & Tablets
+  { name: "Samsung Galaxy A24",  category: "Phones & Tablets", subcategory: "Android Phones", brand: "Samsung", condition: "pre-owned", price: 24500, image: "https://picsum.photos/seed/galaxy-a24/800/600", featured: true,  sellerLocation: "Nairobi" },
+  { name: "Apple iPhone 12",     category: "Phones & Tablets", subcategory: "iPhones",        brand: "Apple",   condition: "pre-owned", price: 58000, image: "https://picsum.photos/seed/iphone-12/800/600", sellerLocation: "Nairobi" },
+  { name: "Lenovo Tab M10",      category: "Phones & Tablets", subcategory: "Tablets",        brand: "Lenovo",  condition: "brand new", price: 28500, image: "https://picsum.photos/seed/lenovo-m10/800/600", sellerLocation: "Mombasa" },
+
+  // Electronics
+  { name: "Sony Bravia 55\" 4K TV", category: "Electronics", subcategory: "TVs", brand: "Sony",   condition: "pre-owned", price: 68000, image: "https://picsum.photos/seed/bravia-55/800/600", featured: true, sellerLocation: "Nakuru" },
+  { name: "HP EliteBook 840 G6",    category: "Electronics", subcategory: "Laptops", brand: "HP", condition: "pre-owned", price: 52000, image: "https://picsum.photos/seed/elitebook-840/800/600", sellerLocation: "Eldoret" },
+  { name: "LG Soundbar SN5",        category: "Electronics", subcategory: "Audio",   brand: "LG", condition: "brand new", price: 28500, image: "https://picsum.photos/seed/lg-sn5/800/600", sellerLocation: "Kisumu" },
+
+  // Cars
+  { name: "Toyota Axio 2014",   category: "Cars", subcategory: "Sedan",      brand: "Toyota", condition: "pre-owned", price: 1_150_000, image: "https://picsum.photos/seed/axio2014/800/600", sellerLocation: "Nairobi" },
+  { name: "Nissan X-Trail 2015",category: "Cars", subcategory: "SUV",        brand: "Nissan", condition: "pre-owned", price: 1_650_000, image: "https://picsum.photos/seed/xtrail2015/800/600", featured: true, sellerLocation: "Nairobi" },
+
+  // Furniture
+  { name: "6-Seater Fabric Sofa", category: "Furniture", subcategory: "Sofas", brand: "Custom", condition: "brand new", price: 78000, image: "https://picsum.photos/seed/sofa-6/800/600", sellerLocation: "Thika" },
+  { name: "4x6 Bed (Mahogany)",   category: "Furniture", subcategory: "Beds",  brand: "Custom", condition: "brand new", price: 42000, image: "https://picsum.photos/seed/bed-4x6/800/600", sellerLocation: "Nairobi" },
+
+  // Services
+  { name: "Private Tuition",      category: "Services", subcategory: "Education",     brand: "Private", condition: "pre-owned", price: null, image: "https://picsum.photos/seed/tuition/800/600", sellerLocation: "Nairobi", featured: true },
+  { name: "Plumbing Services",    category: "Services", subcategory: "Home Services", brand: "Private", condition: "pre-owned", price: null, image: "https://picsum.photos/seed/plumbing/800/600", sellerLocation: "Nairobi" },
+];
 
 /* ==============
    Load products
@@ -122,23 +133,23 @@ async function loadSeed(): Promise<RawProduct[]> {
     try {
       const mod = await import(pathToFileURL(p).href);
       if (Array.isArray(mod?.products)) return mod.products as RawProduct[];
-      if (Array.isArray(mod?.default)) return mod.default as RawProduct[];
+      if (Array.isArray(mod?.default))  return mod.default  as RawProduct[];
     } catch {
       // Fall back to CJS require
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const cjs = require(p);
         if (Array.isArray(cjs?.products)) return cjs.products as RawProduct[];
-        if (Array.isArray(cjs?.default)) return cjs.default as RawProduct[];
+        if (Array.isArray(cjs?.default))  return cjs.default  as RawProduct[];
       } catch {
-        // continue to next file
+        // move on
       }
     }
   }
 
-  throw new Error(
-    "Could not find products data. Provide SEED_SOURCE or create src/app/data/products.(ts|js|json) that exports `products`."
-  );
+  // ↘️ No external file — use built-in set
+  warn("No external seed file found; using built-in demo dataset.");
+  return builtinProducts;
 }
 
 /* =================
@@ -159,7 +170,7 @@ function normalizePhone(input?: string | null): string | null {
   return s;
 }
 
-function randomCreatedAt(daysBack = 45) {
+function randomCreatedAt(daysBack = 60) {
   const now = Date.now();
   const delta = Math.floor(Math.random() * daysBack * 24 * 60 * 60 * 1000);
   return new Date(now - delta);
@@ -175,47 +186,53 @@ function pick<T>(arr: T[], i: number) {
   return arr[i % arr.length];
 }
 
-/** Ensure we have at least `minCount` rows by lightly cloning with small diffs. */
+/** Expand to at least `minCount` rows with gentle variations. */
 function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
   if (seed.length >= minCount) return seed;
 
   const brands = [
-    "Samsung", "Apple", "Tecno", "HP", "Dell", "Toyota", "Nissan",
-    "LG", "Sony", "Generic", "Local", "Chicco", "Coleman",
-    "Yamaha", "Pioneer", "Nike", "Adidas",
+    "Samsung","Apple","Tecno","Infinix","HP","Dell","Lenovo","Sony","LG",
+    "Toyota","Nissan","Mazda","Subaru","Generic","Custom",
   ];
 
   const out: RawProduct[] = [...seed];
   let i = 0;
   while (out.length < minCount) {
     const base = pick(seed, i);
-    const bump = ((i % 7) - 3) * 0.03; // -9% … +9%
-    const clone: RawProduct = {
+    const bump = ((i % 7) - 3) * 0.04; // -12% … +12%
+    out.push({
       ...base,
       id: undefined,
       name: `${base.name} • Batch ${Math.floor(i / Math.max(seed.length, 1)) + 1}`,
       price: clonePrice(toPrice(base.price), bump),
       brand: base.brand || pick(brands, i),
       createdAt: randomCreatedAt(),
-      image: base.image || "/placeholder/default.jpg",
-      gallery: Array.isArray(base.gallery) && base.gallery.length > 0
-        ? base.gallery
-        : ["/placeholder/default.jpg"],
+      image: base.image || `https://picsum.photos/seed/qwiksale-${i}/800/600`,
+      gallery:
+        Array.isArray(base.gallery) && base.gallery.length > 0
+          ? base.gallery
+          : [
+              `https://picsum.photos/seed/qwiksale-${i}-1/800/600`,
+              `https://picsum.photos/seed/qwiksale-${i}-2/800/600`,
+            ],
       sellerName: base.sellerName || base.seller?.name || "Private Seller",
       sellerPhone: normalizePhone(base.sellerPhone || base.seller?.phone || "254700000000") || undefined,
       sellerLocation: base.sellerLocation || base.seller?.location || "Nairobi",
       sellerMemberSince: base.sellerMemberSince || base.seller?.memberSince || "2024",
       sellerRating:
-        typeof base.sellerRating === "number" ? base.sellerRating
-          : typeof base.seller?.rating === "number" ? base.seller!.rating
+        typeof base.sellerRating === "number"
+          ? base.sellerRating
+          : typeof base.seller?.rating === "number"
+          ? base.seller!.rating
           : 4.5,
       sellerSales:
-        typeof base.sellerSales === "number" ? base.sellerSales
-          : typeof base.seller?.sales === "number" ? base.seller!.sales
+        typeof base.sellerSales === "number"
+          ? base.sellerSales
+          : typeof base.seller?.sales === "number"
+          ? base.seller!.sales
           : 1,
       featured: Boolean(base.featured && i % 3 !== 0),
-    };
-    out.push(clone);
+    });
     i++;
   }
   return out;
@@ -232,17 +249,14 @@ function mapToCreateMany(
     const name = String(p.name);
     const category = String(p.category || "Misc");
     const subcategory = String(p.subcategory || "General");
+    const condStr = (p.condition || "pre-owned").toString().toLowerCase();
     const condition =
-      p.condition && typeof p.condition === "string"
-        ? p.condition.toLowerCase() === "brand new" || p.condition.toLowerCase() === "brand-new" || p.condition.toLowerCase() === "brand_new"
-          ? "brand new"
-          : p.condition.toLowerCase() === "pre-owned" || p.condition.toLowerCase() === "pre owned" || p.condition.toLowerCase() === "pre_owned" || p.condition.toLowerCase() === "used"
-          ? "pre-owned"
-          : "pre-owned"
-        : "pre-owned";
+      ["brand new", "brand-new", "brand_new"].includes(condStr) ? "brand new"
+      : ["pre-owned","pre owned","pre_owned","used"].includes(condStr) ? "pre-owned"
+      : "pre-owned";
 
     const normalizedPhone = normalizePhone(p.sellerPhone || p.seller?.phone || null);
-    const useDemoSeller = !!attachSellerId && idx % 5 !== 0;
+    const useDemoSeller = !!attachSellerId && idx % 5 !== 0; // 80% attached to demo seller
 
     return {
       name,
@@ -288,9 +302,7 @@ async function main() {
   log("🔧 Seeding…");
 
   if (process.env.NODE_ENV === "production" && SEED_RESET && process.env.SEED_ALLOW_PROD !== "1") {
-    throw new Error(
-      "Refusing to RESET in production. Set SEED_ALLOW_PROD=1 to force (dangerous)."
-    );
+    throw new Error("Refusing to RESET in production. Set SEED_ALLOW_PROD=1 to force (dangerous).");
   }
 
   // 1) Demo seller (stable id)
@@ -301,7 +313,7 @@ async function main() {
   });
   log(`✓ Demo seller: ${demoSeller.email} (${demoSeller.id})`);
 
-  // 2) Load & expand products
+  // 2) Load & expand
   const base = await loadSeed();
   log(`• Loaded ${base.length} base products`);
   const expanded = makeAtLeast(base, SEED_MIN);
@@ -310,11 +322,10 @@ async function main() {
   // 3) Build rows
   const rows = mapToCreateMany(expanded, demoSeller.id);
 
-  // 4) Optional reset (favorites -> payment -> products)
+  // 4) Optional reset
   if (SEED_RESET) {
     log("⚠️  Resetting test data…");
     await prisma.favorite.deleteMany({});
-    // payments table may not exist in some schemas; ignore if so
     await (prisma as any).payment?.deleteMany?.({}).catch(() => {});
     await prisma.product.deleteMany({});
   }
@@ -329,7 +340,7 @@ async function main() {
     log(`  …batch ${Math.floor(i / BATCH) + 1}: +${res.count}`);
   }
 
-  // 6) Seed favorites for demo seller
+  // 6) Seed a couple of favorites for the demo seller
   const firstTwo = await prisma.product.findMany({
     orderBy: { createdAt: "desc" },
     take: 2,
@@ -343,7 +354,7 @@ async function main() {
     });
   }
 
-  // 7) Summaries
+  // 7) Summary
   const total = await prisma.product.count();
   log(`✅ Seed complete. Inserted: ${createdCount}. Total in DB: ${total}`);
 
@@ -354,11 +365,7 @@ async function main() {
   });
   log("• Sample:");
   for (const s of sample) {
-    log(
-      `  - ${s.id} :: ${s.name} :: KES ${s.price ?? "—"} :: ${s.featured ? "⭐" : "•"} :: seller=${
-        s.sellerId ?? "anon"
-      }`
-    );
+    log(`  - ${s.id} :: ${s.name} :: KES ${s.price ?? "—"} :: ${s.featured ? "⭐" : "•"} :: seller=${s.sellerId ?? "anon"}`);
   }
 }
 

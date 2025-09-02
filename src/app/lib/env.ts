@@ -1,9 +1,9 @@
 // src/app/lib/env.ts
-import "server-only";
 
 /**
  * Prefer explicit hosted URLs (Neon/Vercel) over any accidental local/OS env.
  * Falls back to DATABASE_URL if it is not a localhost address.
+ * Safe to import from Node/tsx scripts (no `server-only`).
  */
 function resolveDatabaseUrl(): string {
   const candidates = [
@@ -41,6 +41,7 @@ export const isDev = NODE_ENV !== "production";
  * App-wide env bag (add keys here if you read them in TS code).
  * - APP_URL: public URL of the app (Vercel/custom domain). Used as a fallback for callbacks.
  * - ADMIN_EMAILS: comma-separated list of admin emails (optional).
+ * - Cloudinary keys are included because both client and API use them.
  */
 export const env = {
   NODE_ENV,
@@ -50,6 +51,20 @@ export const env = {
     process.env.APP_URL ||
     "http://localhost:3000",
   ADMIN_EMAILS: process.env.ADMIN_EMAILS || "",
+
+  // Cloudinary
+  NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME:
+    process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "",
+  NEXT_PUBLIC_CLOUDINARY_PRESET_AVATARS:
+    process.env.NEXT_PUBLIC_CLOUDINARY_PRESET_AVATARS || "",
+  NEXT_PUBLIC_CLOUDINARY_PRESET_PRODUCTS:
+    process.env.NEXT_PUBLIC_CLOUDINARY_PRESET_PRODUCTS || "",
+  CLOUDINARY_UPLOAD_FOLDER_AVATARS:
+    process.env.CLOUDINARY_UPLOAD_FOLDER_AVATARS || "",
+
+  // Optional Prisma logging controls
+  PRISMA_LOG_QUERIES: process.env.PRISMA_LOG_QUERIES,
+  PRISMA_SLOW_QUERY_MS: process.env.PRISMA_SLOW_QUERY_MS,
 } as const;
 
 /** Optional: print where we are connecting (sanitized) in dev */
@@ -106,9 +121,7 @@ export const mpesa = {
   // Public callback URL for STK push results
   callbackUrl:
     process.env.MPESA_CALLBACK_URL ||
-    `${(process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.APP_URL ||
-      "http://localhost:3000")}/api/mpesa/callback`,
+    `${env.APP_URL}/api/mpesa/callback`,
 
   // Default transaction mode ("paybill" for LNMO sandbox 174379; "till" for BuyGoods)
   mode: (process.env.MPESA_MODE || "paybill").toLowerCase() as "till" | "paybill",

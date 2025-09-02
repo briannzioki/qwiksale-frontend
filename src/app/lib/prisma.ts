@@ -1,5 +1,4 @@
 // src/app/lib/prisma.ts
-import "server-only";
 import { PrismaClient } from "@prisma/client";
 import { env, isDev, logDbTargetOnce } from "./env";
 
@@ -8,12 +7,13 @@ import { env, isDev, logDbTargetOnce } from "./env";
  * In prod (serverless), a fresh client per invocation is fine; the platform
  * reuses warm instances so this is still efficient.
  */
-type GlobalWithPrisma = typeof globalThis & {
-  __PRISMA__?: PrismaClient;
-  __PRISMA_SLOW_MW__?: boolean;
-};
 
-const g = globalThis as GlobalWithPrisma;
+declare global {
+  // eslint-disable-next-line no-var
+  var __PRISMA__: PrismaClient | undefined;
+  // eslint-disable-next-line no-var
+  var __PRISMA_SLOW_MW__: boolean | undefined;
+}
 
 /** ---- Logging controls --------------------------------------------------- */
 const LOG_QUERIES =
@@ -23,30 +23,39 @@ const LOG_QUERIES =
 
 const LOG_LEVELS = LOG_QUERIES
   ? (["query", "info", "warn", "error"] as const)
-  : (isDev ? (["info", "warn", "error"] as const) : (["warn", "error"] as const));
+  : isDev
+  ? (["info", "warn", "error"] as const)
+  : (["warn", "error"] as const);
 
 /** ---- Client factory ----------------------------------------------------- */
 function createClient() {
+  // Be resilient if `env` isn’t available in plain Node scripts
+  const databaseUrl =
+    (env as any)?.DATABASE_URL ?? process.env.DATABASE_URL ?? "";
+
   return new PrismaClient({
-    datasources: { db: { url: env.DATABASE_URL } },
+    datasources: databaseUrl ? { db: { url: databaseUrl } } : undefined,
     errorFormat: isDev ? "pretty" : "minimal",
     log: [...LOG_LEVELS],
   });
 }
 
-export const prisma = g.__PRISMA__ ?? createClient();
+export const prisma = globalThis.__PRISMA__ ?? createClient();
 
 /** Cache the client in dev so hot-reloads don’t spawn new connections */
 if (isDev) {
-  g.__PRISMA__ = prisma;
-  logDbTargetOnce();
+  globalThis.__PRISMA__ = prisma;
+  try {
+    logDbTargetOnce?.();
+  } catch {
+    // optional helper; ignore if not available
+  }
 }
 
 /** ---- Optional: slow query warning middleware (idempotent) --------------- */
-if (!g.__PRISMA_SLOW_MW__) {
+if (!globalThis.__PRISMA_SLOW_MW__) {
   const SLOW_MS = Number(process.env.PRISMA_SLOW_QUERY_MS ?? 2000);
 
-  // Guarded access to $use and avoid Prisma.Middleware typings
   const maybeUse =
     (prisma as any).$use as
       | undefined
@@ -59,12 +68,14 @@ if (!g.__PRISMA_SLOW_MW__) {
       const ms = Date.now() - start;
       if (ms > SLOW_MS) {
         // eslint-disable-next-line no-console
-        console.warn(`[prisma] slow ${params.model ?? "raw"}.${params.action} took ${ms}ms`);
+        console.warn(
+          `[prisma] slow ${params.model ?? "raw"}.${params.action} took ${ms}ms`
+        );
       }
       return result;
     });
   }
-  g.__PRISMA_SLOW_MW__ = true;
+  globalThis.__PRISMA_SLOW_MW__ = true;
 }
 
 /** ---- Healthcheck helpers ------------------------------------------------ */

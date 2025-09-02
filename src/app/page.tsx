@@ -75,8 +75,10 @@ export default function HomePage() {
   const [condition, setCondition] = useState(sp.get("condition") || "");
   const [minPrice, setMinPrice] = useState(sp.get("minPrice") || "");
   const [maxPrice, setMaxPrice] = useState(sp.get("maxPrice") || "");
-  const [verifiedOnly, setVerifiedOnly] = useState((sp.get("verifiedOnly") || "false") === "true");
-  const [sort, setSort] = useState(sp.get("sort") || "top");
+  // 🔁 use API’s flag name: featured
+  const [featuredOnly, setFeaturedOnly] = useState((sp.get("featured") || "false") === "true");
+  // 🔁 use API’s sort keys: newest | price_asc | price_desc | featured
+  const [sort, setSort] = useState(sp.get("sort") || "newest");
   const [page, setPage] = useState(() => {
     const n = Number(sp.get("page") || 1);
     return Number.isFinite(n) && n > 0 ? n : 1;
@@ -90,7 +92,7 @@ export default function HomePage() {
   const dcondition = useDebounced(condition);
   const dminPrice = useDebounced(minPrice);
   const dmaxPrice = useDebounced(maxPrice);
-  const dverifiedOnly = useDebounced(verifiedOnly);
+  const dfeaturedOnly = useDebounced(featuredOnly);
   const dsort = useDebounced(sort);
   const dpage = useDebounced(page);
 
@@ -113,8 +115,8 @@ export default function HomePage() {
     if (dcondition) params.set("condition", dcondition);
     if (dminPrice) params.set("minPrice", dminPrice);
     if (dmaxPrice) params.set("maxPrice", dmaxPrice);
-    if (dverifiedOnly) params.set("verifiedOnly", "true");
-    if (dsort && dsort !== "top") params.set("sort", dsort);
+    if (dfeaturedOnly) params.set("featured", "true"); // ✅ correct flag the API understands
+    if (dsort && dsort !== "newest") params.set("sort", dsort); // API default = newest
     if (dpage && dpage !== 1) params.set("page", String(dpage));
     params.set("pageSize", String(PAGE_SIZE));
     if (includeFacets) params.set("facets", "true");
@@ -127,7 +129,7 @@ export default function HomePage() {
     dcondition,
     dminPrice,
     dmaxPrice,
-    dverifiedOnly,
+    dfeaturedOnly,
     dsort,
     dpage,
     includeFacets,
@@ -217,8 +219,8 @@ export default function HomePage() {
     setCondition("");
     setMinPrice("");
     setMaxPrice("");
-    setVerifiedOnly(false);
-    setSort("top");
+    setFeaturedOnly(false);
+    setSort("newest");
     setPage(1);
   };
 
@@ -315,7 +317,7 @@ export default function HomePage() {
           {/* Price range */}
           <div className="md:col-span-2 grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+              <label className="block text xs font-semibold text-gray-600 dark:text-slate-300">
                 Min (KES)
               </label>
               <input
@@ -346,19 +348,19 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Verified + Sort */}
+          {/* Featured + Sort */}
           <div className="md:col-span-2 flex items-center gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={verifiedOnly}
+                checked={featuredOnly}
                 onChange={(e) => {
                   setPage(1);
-                  setVerifiedOnly(e.target.checked);
+                  setFeaturedOnly(e.target.checked);
                 }}
                 className="rounded border-gray-300 dark:border-slate-600"
               />
-              Verified only
+              Featured only
             </label>
             <select
               value={sort}
@@ -369,8 +371,8 @@ export default function HomePage() {
               className="rounded-lg border px-3 py-2"
               title="Sort"
             >
-              <option value="top">Top</option>
-              <option value="new">Newest</option>
+              <option value="newest">Newest</option>
+              <option value="featured">Featured first</option>
               <option value="price_asc">Price: Low → High</option>
               <option value="price_desc">Price: High → Low</option>
             </select>
@@ -386,7 +388,7 @@ export default function HomePage() {
               {condition && chip(`condition: ${condition}`)}
               {minPrice && chip(`min: ${minPrice}`)}
               {maxPrice && chip(`max: ${maxPrice}`)}
-              {verifiedOnly && chip("verified only")}
+              {featuredOnly && chip("featured only")}
               {(q ||
                 category ||
                 subcategory ||
@@ -394,7 +396,7 @@ export default function HomePage() {
                 condition ||
                 minPrice ||
                 maxPrice ||
-                verifiedOnly) && (
+                featuredOnly) && (
                 <button
                   onClick={clearAll}
                   className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 transition"
