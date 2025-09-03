@@ -26,20 +26,12 @@ function fmtKES(n?: number | null) {
   }
 }
 
-// Support both Next 15 param shapes: params or Promise<params>
-async function unwrapParams(
-  paramsOrPromise: { username: string } | Promise<{ username: string }>
-) {
-  const maybe = paramsOrPromise as any;
-  return typeof maybe?.then === "function" ? await maybe : maybe;
-}
-
-export default async function StorePage(
-  props:
-    | { params: { username: string } }
-    | { params: Promise<{ username: string }> }
-) {
-  const { username: rawUsername } = await unwrapParams((props as any).params);
+export default async function StorePage({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}) {
+  const { username: rawUsername } = await params; // ✅ Next 15 expects a Promise here
   const username = decodeURIComponent(rawUsername || "").trim();
   if (!username) notFound();
 
@@ -51,6 +43,8 @@ export default async function StorePage(
       name: true,
       username: true,
       image: true,
+      city: true,
+      country: true,
       createdAt: true,
       products: {
         orderBy: { createdAt: "desc" },
@@ -95,6 +89,9 @@ export default async function StorePage(
             <p className="text-white/90 text-sm">
               {user.name ? `${user.name} • ` : ""}
               Member since {new Date(user.createdAt).getFullYear()}
+              {user.city || user.country
+                ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}`
+                : ""}
             </p>
           </div>
           <div className="ml-auto">
