@@ -62,7 +62,7 @@ export async function GET(_req: NextRequest, ctx: CtxLike) {
             name: true,
             image: true,
             subscription: true,
-            username: true, // ← add username here
+            username: true, // ← include username
           },
         },
       },
@@ -152,7 +152,7 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
             name: true,
             image: true,
             subscription: true,
-            username: true, // ← and here for PATCH response
+            username: true, // ← include username in PATCH response
           },
         },
       },

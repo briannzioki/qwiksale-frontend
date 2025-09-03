@@ -3,17 +3,30 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
-import { prisma } from "@/app/lib/prisma";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+
+/**
+ * IMPORTANT:
+ * We use a fully-typed PrismaClient *only in this file* for NextAuth.
+ * Elsewhere we keep the lightweight client from src/app/lib/prisma.ts.
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __PRISMA_AUTH__: PrismaClient | undefined;
+}
+const prismaAuth = globalThis.__PRISMA_AUTH__ ?? new PrismaClient();
+if (process.env.NODE_ENV !== "production") {
+  globalThis.__PRISMA_AUTH__ = prismaAuth;
+}
 
 const allowDangerousLinking =
   process.env.ALLOW_DANGEROUS_LINKING === "1" ||
   process.env.ALLOW_DANGEROUS_LINKING === "true";
 
-/** 
- * IMPORTANT: On Vercel, NODE_ENV === "production" for both Preview and Prod.
- * We must only pin cookie `domain` on REAL production, otherwise sessions won't
- * stick on *.vercel.app previews. Use VERCEL_ENV to decide cookie domain.
+/**
+ * On Vercel, NODE_ENV is "production" for both Preview and Prod.
+ * Use VERCEL_ENV to decide whether to pin cookie domain.
  */
 const isNodeProd = process.env.NODE_ENV === "production";
 const isVercelProd = process.env.VERCEL_ENV === "production"; // "preview" | "development" | "production"
@@ -21,16 +34,12 @@ const COOKIE_DOMAIN = ".qwiksale.sale"; // apex domain for your prod site
 const cookieDomain = isVercelProd ? COOKIE_DOMAIN : undefined;
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  // ⬇️ Use the fully-typed client here
+  adapter: PrismaAdapter(prismaAuth),
   pages: { signIn: "/signin" },
 
-  // JWT sessions work well on Vercel/Edge
   session: { strategy: "jwt" },
 
-  /** 🔐 Cookies:
-   *  - Use secure cookie names only on real prod (works under HTTPS).
-   *  - Pin cookie `domain` only on real prod. On previews/local, omit domain.
-   */
   cookies: {
     sessionToken: {
       name: isVercelProd ? "__Secure-next-auth.session-token" : "next-auth.session-token",
@@ -39,7 +48,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isNodeProd,
-        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
+        ...(cookieDomain ? ({ domain: cookieDomain } as const) : {}),
       },
     },
     csrfToken: {
@@ -49,7 +58,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isNodeProd,
-        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
+        ...(cookieDomain ? ({ domain: cookieDomain } as const) : {}),
       },
     },
     state: {
@@ -59,7 +68,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isNodeProd,
-        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
+        ...(cookieDomain ? ({ domain: cookieDomain } as const) : {}),
       },
     },
     pkceCodeVerifier: {
@@ -69,7 +78,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isNodeProd,
-        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
+        ...(cookieDomain ? ({ domain: cookieDomain } as const) : {}),
       },
     },
     nonce: {
@@ -79,7 +88,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isNodeProd,
-        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
+        ...(cookieDomain ? ({ domain: cookieDomain } as const) : {}),
       },
     },
     callbackUrl: {
@@ -89,7 +98,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: isNodeProd,
-        ...(cookieDomain ? { domain: cookieDomain } as const : {}),
+        ...(cookieDomain ? ({ domain: cookieDomain } as const) : {}),
       },
     },
   },
@@ -98,7 +107,7 @@ export const authOptions: NextAuthOptions = {
   debug: process.env.NEXTAUTH_DEBUG === "1",
 
   providers: [
-    // Email + Password (creates account if it doesn't exist)
+    // Email + Password via Credentials; store hash in NextAuth Account.refresh_token
     CredentialsProvider({
       id: "credentials",
       name: "Email & Password",
@@ -111,36 +120,68 @@ export const authOptions: NextAuthOptions = {
         const password = (creds?.password || "").trim();
         if (!email || !password) return null;
 
-        const existing = await prisma.user.findUnique({
+        const user = await prismaAuth.user.findUnique({
           where: { email },
-          include: { Account: true },
+          include: { accounts: true }, // correct relation name
         });
 
-        if (existing) {
-          if (!existing.passwordHash) {
-            const hash = await bcrypt.hash(password, 10);
-            const updated = await prisma.user.update({
-              where: { id: existing.id },
-              data: { passwordHash: hash },
+        const hashPassword = (pwd: string) => bcrypt.hash(pwd, 10);
+
+        if (user) {
+          // Type the accounts array so the `.find` callback param isn’t implicit `any`
+          const accounts = (user.accounts ?? []) as Array<{
+            provider: string;
+            providerAccountId: string | null;
+            refresh_token: string | null;
+          }>;
+
+          const credAccount = accounts.find(
+            (a) => a.provider === "credentials" && a.providerAccountId === email
+          );
+
+          if (!credAccount) {
+            // Block creating a password if the account is already linked to socials,
+            // unless ALLOW_DANGEROUS_LINKING is enabled.
+            const hasNonCred = accounts.some((a) => a.provider !== "credentials");
+            if (hasNonCred && !allowDangerousLinking) {
+              throw new Error(
+                "This email is already linked to a social login. Use that provider to sign in."
+              );
+            }
+            await prismaAuth.account.create({
+              data: {
+                userId: user.id,
+                provider: "credentials",
+                providerAccountId: email,
+                type: "credentials",
+                refresh_token: await hashPassword(password), // store the hash here
+              },
             });
-            return updated;
+          } else {
+            const storedHash = credAccount.refresh_token || "";
+            const ok = storedHash && (await bcrypt.compare(password, storedHash));
+            if (!ok) throw new Error("Invalid email or password.");
           }
-          const ok = await bcrypt.compare(password, existing.passwordHash);
-          if (!ok) throw new Error("Invalid email or password.");
-          return existing;
+
+          return { id: user.id, email: user.email ?? undefined, name: user.name ?? undefined };
         }
 
-        // Create unverified account
-        const hash = await bcrypt.hash(password, 10);
-        const user = await prisma.user.create({
+        // Create user + credentials account
+        const newUser = await prismaAuth.user.create({
+          data: { email },
+        });
+
+        await prismaAuth.account.create({
           data: {
-            email,
-            passwordHash: hash,
-            verified: false,
-            emailVerified: null,
+            userId: newUser.id,
+            provider: "credentials",
+            providerAccountId: email,
+            type: "credentials",
+            refresh_token: await hashPassword(password),
           },
         });
-        return user;
+
+        return { id: newUser.id, email: newUser.email ?? undefined, name: newUser.name ?? undefined };
       },
     }),
 
@@ -162,36 +203,28 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        (token as any).uid = user.id;
-        const u = await prisma.user.findUnique({
-          where: { id: user.id },
+        (token as any).uid = (user as any).id;
+
+        const dbUser = await prismaAuth.user.findUnique({
+          where: { id: (user as any).id },
           select: {
             email: true,
-            phone: true,
             name: true,
             username: true,
-            verified: true,
-            whatsapp: true,
-            address: true,
-            postalCode: true,
-            city: true,
-            country: true,
+            subscription: true,
+            subscriptionUntil: true,
+            role: true,
           },
         });
 
-        token.email = u?.email ?? null;
-        (token as any).phone = u?.phone ?? null;
-        (token as any).name = u?.name ?? null;
-        (token as any).username = u?.username ?? null;
-        (token as any).verified = u?.verified ?? false;
-        (token as any).whatsapp = u?.whatsapp ?? null;
-        (token as any).address = u?.address ?? null;
-        (token as any).postalCode = u?.postalCode ?? null;
-        (token as any).city = u?.city ?? null;
-        (token as any).country = u?.country ?? null;
+        token.email = dbUser?.email ?? null;
+        (token as any).name = dbUser?.name ?? null;
+        (token as any).username = dbUser?.username ?? null;
+        (token as any).subscription = dbUser?.subscription ?? "BASIC";
+        (token as any).subscriptionUntil = dbUser?.subscriptionUntil ?? null;
+        (token as any).role = dbUser?.role ?? "USER";
 
-        // mark incomplete if no username yet
-        (token as any).needsProfile = !(u?.username && u.username.trim().length >= 3);
+        (token as any).needsProfile = !(dbUser?.username && dbUser.username.trim().length >= 3);
       }
       return token;
     },
@@ -200,23 +233,18 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).id = (token as any).uid;
         session.user.email = (token.email as string | null) || undefined;
-        (session.user as any).phone = (token as any).phone ?? null;
         (session.user as any).name = (token as any).name ?? session.user.name;
         (session.user as any).username = (token as any).username ?? null;
 
-        (session as any).verified = (token as any).verified ?? false;
-        (session as any).whatsapp = (token as any).whatsapp ?? null;
-        (session as any).address = (token as any).address ?? null;
-        (session as any).postalCode = (token as any).postalCode ?? null;
-        (session as any).city = (token as any).city ?? null;
-        (session as any).country = (token as any).country ?? null;
+        (session as any).subscription = (token as any).subscription ?? "BASIC";
+        (session as any).subscriptionUntil = (token as any).subscriptionUntil ?? null;
+        (session as any).role = (token as any).role ?? "USER";
 
         (session as any).needsProfile = (token as any).needsProfile ?? false;
       }
       return session;
     },
 
-    // keep relative callbackUrls on the same origin
     async redirect({ url, baseUrl }) {
       if (url.startsWith("/")) return `${baseUrl}${url}`;
       try {

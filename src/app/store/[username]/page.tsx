@@ -1,3 +1,4 @@
+// src/app/store/[username]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/lib/prisma";
@@ -25,29 +26,35 @@ function fmtKES(n?: number | null) {
   }
 }
 
-export default async function StorePage({
-  params,
-}: {
-  params: Promise<{ username: string }>;
-}) {
-  const { username: rawUsername } = await params; // ✅ Next 15 expects this
+// Support both Next 15 param shapes: params or Promise<params>
+async function unwrapParams(
+  paramsOrPromise: { username: string } | Promise<{ username: string }>
+) {
+  const maybe = paramsOrPromise as any;
+  return typeof maybe?.then === "function" ? await maybe : maybe;
+}
+
+export default async function StorePage(
+  props:
+    | { params: { username: string } }
+    | { params: Promise<{ username: string }> }
+) {
+  const { username: rawUsername } = await unwrapParams((props as any).params);
   const username = decodeURIComponent(rawUsername || "").trim();
   if (!username) notFound();
 
-  const user = await prisma.user.findUnique({
-    where: { username },
+  // Case-insensitive lookup so /store/VONs works the same as /store/vons
+  const user = await prisma.user.findFirst({
+    where: { username: { equals: username, mode: "insensitive" } },
     select: {
       id: true,
       name: true,
       username: true,
       image: true,
-      city: true,
-      country: true,
       createdAt: true,
-      // Relation name should match your Prisma schema (usually "products")
       products: {
         orderBy: { createdAt: "desc" },
-        take: 24,
+        take: 48,
         select: {
           id: true,
           name: true,
@@ -84,15 +91,10 @@ export default async function StorePage({
             </div>
           )}
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold">
-              @{user.username}
-            </h1>
+            <h1 className="text-2xl md:text-3xl font-extrabold">@{user.username}</h1>
             <p className="text-white/90 text-sm">
               {user.name ? `${user.name} • ` : ""}
               Member since {new Date(user.createdAt).getFullYear()}
-              {user.city || user.country
-                ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}`
-                : ""}
             </p>
           </div>
           <div className="ml-auto">
@@ -115,9 +117,7 @@ export default async function StorePage({
         </div>
 
         {products.length === 0 ? (
-          <div className="text-gray-600">
-            This store hasn’t posted any items yet.
-          </div>
+          <div className="text-gray-600">This store hasn’t posted any items yet.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {products.map((p) => (
@@ -135,15 +135,11 @@ export default async function StorePage({
                     className="w-full h-40 object-cover"
                   />
                   <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 line-clamp-1">
-                      {p.name}
-                    </h3>
+                    <h3 className="font-semibold text-gray-900 line-clamp-1">{p.name}</h3>
                     <p className="text-xs text-gray-500 line-clamp-1">
                       {p.category} • {p.subcategory}
                     </p>
-                    <p className="text-[#161748] font-bold mt-1">
-                      {fmtKES(p.price)}
-                    </p>
+                    <p className="text-[#161748] font-bold mt-1">{fmtKES(p.price)}</p>
                     <p className="text-[11px] text-gray-400 mt-1">
                       {new Date(p.createdAt).toLocaleDateString()}
                     </p>

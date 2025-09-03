@@ -61,8 +61,10 @@ const productListSelect = {
   sellerRating: true,
   sellerSales: true,
 
-  // light linked seller info (⬅️ includes username now)
-  seller: { select: { id: true, username: true, name: true, image: true, subscription: true } },
+  // light linked seller info (includes username for store links)
+  seller: {
+    select: { id: true, username: true, name: true, image: true, subscription: true },
+  },
 } as const;
 
 /* ------------------------- GET /api/products ------------------------- */
@@ -75,9 +77,11 @@ const productListSelect = {
  * - sellerId        : only products by this user id
  * - seller          : only products by this username (case-insensitive)
  * - featured        : true/false
+ * - verifiedOnly    : alias for featured=true
  * - minPrice, maxPrice : numeric KES filters
  * - sort            : newest | price_asc | price_desc | featured  (default: newest)
  * - page, pageSize  : pagination (default: 1, 60)
+ * - facets          : "true" to include facet counts (categories/brands/conditions)
  */
 export async function GET(req: NextRequest) {
   try {
@@ -87,11 +91,13 @@ export async function GET(req: NextRequest) {
     const subcategory = (url.searchParams.get("subcategory") || "").trim();
     const brand = (url.searchParams.get("brand") || "").trim();
     const sellerId = (url.searchParams.get("sellerId") || "").trim();
-    const sellerUsername = (url.searchParams.get("seller") || "").trim(); // ⬅️ new
+    const sellerUsername = (url.searchParams.get("seller") || "").trim(); // username
     const featured = toBool(url.searchParams.get("featured"));
+    const verifiedOnly = toBool(url.searchParams.get("verifiedOnly")); // alias
     const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
     const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
     const sort = toSort(url.searchParams.get("sort"));
+    const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
 
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), 60, 1, 200);
@@ -111,31 +117,25 @@ export async function GET(req: NextRequest) {
         ],
       });
     }
-    if (category) {
-      and.push({ category: { equals: category, mode: "insensitive" } });
-    }
-    if (subcategory) {
-      and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
-    }
-    if (brand) {
-      and.push({ brand: { contains: brand, mode: "insensitive" } });
-    }
-    if (sellerId) {
-      and.push({ sellerId });
-    }
+    if (category) and.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (brand) and.push({ brand: { contains: brand, mode: "insensitive" } });
+    if (sellerId) and.push({ sellerId });
     if (sellerUsername) {
-      // filter via relation on username (case-insensitive)
-      and.push({ seller: { username: { equals: sellerUsername, mode: "insensitive" } } });
+      // relation filter via username (case-insensitive)
+      and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
     }
-    if (typeof featured === "boolean") {
-      and.push({ featured });
-    }
+    if (typeof featured === "boolean") and.push({ featured });
+    // alias: verifiedOnly=true means featured=true
+    if (typeof verifiedOnly === "boolean" && verifiedOnly === true) and.push({ featured: true });
+
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
       const price: any = {};
       if (Number.isFinite(minPrice)) price.gte = minPrice;
       if (Number.isFinite(maxPrice)) price.lte = maxPrice;
       and.push({ price });
     }
+
     if (and.length > 0) where.AND = and;
 
     // Sorting
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
       orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
 
     // Query
-    const [total, items] = await Promise.all([
+    const [total, items, facets] = await Promise.all([
       prisma.product.count({ where }),
       prisma.product.findMany({
         where,
@@ -155,6 +155,7 @@ export async function GET(req: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
+      wantFacets ? computeFacets(where) : Promise.resolve(undefined),
     ]);
 
     // map dates to ISO to keep JSON stable
@@ -171,6 +172,7 @@ export async function GET(req: NextRequest) {
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       sort,
       items: mapped,
+      facets,
     });
   } catch (e) {
     console.warn("[/api/products GET] error:", e);
@@ -183,4 +185,53 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { POST: createProduct } = await import("./create/route");
   return createProduct(req);
+}
+
+/* ------------------------------ facets -------------------------------- */
+type CatRow = { category: string | null; _count: { _all: number } };
+type BrandRow = { brand: string | null; _count: { _all: number } };
+type CondRow = { condition: string | null; _count: { _all: number } };
+
+async function computeFacets(where: any) {
+  try {
+    const [catsRaw, brandsRaw, condsRaw] = await Promise.all([
+      prisma.product.groupBy({
+        by: ["category"],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.product.groupBy({
+        by: ["brand"],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.product.groupBy({
+        by: ["condition"],
+        where,
+        _count: { _all: true },
+      }),
+    ]);
+
+    const cats = (catsRaw as CatRow[])
+      .filter((x: CatRow) => !!x.category)
+      .sort((a: CatRow, b: CatRow) => b._count._all - a._count._all)
+      .slice(0, 10)
+      .map((x: CatRow) => ({ value: String(x.category), count: x._count._all }));
+
+    const brands = (brandsRaw as BrandRow[])
+      .filter((x: BrandRow) => !!x.brand)
+      .sort((a: BrandRow, b: BrandRow) => b._count._all - a._count._all)
+      .slice(0, 10)
+      .map((x: BrandRow) => ({ value: String(x.brand), count: x._count._all }));
+
+    const conditions = (condsRaw as CondRow[])
+      .filter((x: CondRow) => !!x.condition)
+      .sort((a: CondRow, b: CondRow) => b._count._all - a._count._all)
+      .slice(0, 10)
+      .map((x: CondRow) => ({ value: String(x.condition), count: x._count._all }));
+
+    return { categories: cats, brands, conditions };
+  } catch {
+    return undefined;
+  }
 }

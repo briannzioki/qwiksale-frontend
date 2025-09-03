@@ -12,10 +12,17 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-// Ensure no trailing slash so Metadata URLs compose correctly
-const siteUrl =
-  (process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") ||
-    "http://localhost:3000") as string;
+// Build a robust site URL (strip trailing slash)
+const envAppUrl =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+  "http://localhost:3000";
+const siteUrl = envAppUrl.replace(/\/+$/, "");
+
+// Mark preview/temporary environments as noindex
+const isPreview =
+  process.env.VERCEL_ENV === "preview" ||
+  process.env.NEXT_PUBLIC_NOINDEX === "1";
 
 export const viewport: Viewport = {
   themeColor: [
@@ -53,6 +60,7 @@ export const metadata: Metadata = {
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
     images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "QwikSale" }],
+    locale: "en_KE",
   },
   twitter: {
     card: "summary_large_image",
@@ -69,18 +77,64 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
+  robots: isPreview
+    ? {
+        index: false,
+        follow: false,
+        googleBot: {
+          index: false,
+          follow: false,
+          noimageindex: true,
+        },
+      }
+    : {
+        index: true,
+        follow: true,
+        googleBot: {
+          index: true,
+          follow: true,
+        },
+      },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "QwikSale" },
   category: "marketplace",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const orgJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "QwikSale",
+    url: siteUrl,
+    logo: `${siteUrl}/icon-512.png`,
+    sameAs: [
+      `${siteUrl}/about`,
+      `${siteUrl}/contact`,
+      `${siteUrl}/help`,
+    ],
+  };
+
+  const siteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "QwikSale",
+    url: siteUrl,
+    potentialAction: {
+      "@type": "SearchAction",
+      target: `${siteUrl}/?q={search_term_string}`,
+      "query-input": "required name=search_term_string",
+    },
+  };
+
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
-        {/* Optional perf: preconnect to common CDNs you use (safe no-ops if unused) */}
-        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="" />
-        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        {/* Prefer a consistent color-scheme hint */}
+        <meta name="color-scheme" content="light dark" />
+
+        {/* Optional perf: preconnect to common CDNs (safe no-ops if unused) */}
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 
         {/* Set initial theme BEFORE paint to avoid flicker */}
         <Script id="theme-script" strategy="beforeInteractive">
@@ -90,6 +144,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const shouldDark = ls ? (ls === 'dark') : !!mq?.matches;
   document.documentElement.classList.toggle('dark', shouldDark);
 } catch {}`}
+        </Script>
+
+        {/* JSON-LD: Organization + WebSite */}
+        <Script id="ld-org" type="application/ld+json">
+          {JSON.stringify(orgJsonLd)}
+        </Script>
+        <Script id="ld-site" type="application/ld+json">
+          {JSON.stringify(siteJsonLd)}
         </Script>
       </head>
       <body

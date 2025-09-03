@@ -1,6 +1,4 @@
-// scripts/purge.ts
 import * as dotenv from "dotenv";
-// Try .env.local first (dev), then .env (prod/CI)
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
@@ -17,24 +15,20 @@ async function main() {
     u ? u.replace(/:(\/\/)?[^@]*@/, "://***:***@") : "(unset)";
   console.log("Using DATABASE_URL =", mask(process.env.DATABASE_URL));
 
-  // Purge in a safe order. Some tables may not exist; ignore errors.
   async function wipe(label: string, fn: () => Promise<any>) {
     try {
       const r = await fn();
       const count = typeof r?.count === "number" ? r.count : 0;
       console.log(`✓ ${label} deleted: ${count}`);
-    } catch (e) {
+    } catch {
       console.log(`- ${label} skipped`);
     }
   }
 
   await wipe("favorites", () => (prisma as any).favorite.deleteMany({}));
-  await wipe("products", () => (prisma as any).product.deleteMany({}));
+  await wipe("products",  () => (prisma as any).product.deleteMany({}));
 
-  // NextAuth tables (present if you used the Prisma adapter)
-  await wipe("verification tokens", () =>
-    (prisma as any).verificationToken?.deleteMany({})
-  );
+  await wipe("verification tokens", () => (prisma as any).verificationToken?.deleteMany({}));
   await wipe("sessions", () => (prisma as any).session?.deleteMany({}));
   await wipe("accounts", () => (prisma as any).account.deleteMany({}));
   await wipe("users", () => (prisma as any).user.deleteMany({}));
@@ -48,5 +42,6 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    // ✅ optional chaining fixes "possibly undefined"
+    await prisma.$disconnect?.();
   });

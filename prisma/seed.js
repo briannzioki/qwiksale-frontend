@@ -1,8 +1,8 @@
-// prisma/seed.ts
+// prisma/seed.js
 /* eslint-disable no-console */
-import { PrismaClient, Prisma } from "@prisma/client";
-import path from "node:path";
-import fs from "node:fs";
+const { PrismaClient } = require("@prisma/client");
+const path = require("node:path");
+const fs = require("node:fs");
 
 const prisma = new PrismaClient();
 
@@ -27,59 +27,64 @@ const SEED_SOURCE = process.env.SEED_SOURCE || ""; // optional explicit file
 const DEMO_EMAIL = process.env.SEED_DEMO_USER_EMAIL || "seller@qwiksale.test";
 const DEMO_NAME = process.env.SEED_DEMO_USER_NAME || "Demo Seller";
 
-type RawSeller = {
-  name?: string;
-  phone?: string;
-  location?: string;
-  memberSince?: string;
-  rating?: number;
-  sales?: number;
-};
+/* =============================
+   Types (JS comments only)
+   =============================
+  RawProduct = {
+    id?: string|number,
+    name: string,
+    description?: string,
+    category: string,
+    subcategory: string,
+    brand?: string,
+    condition?: "brand new" | "pre-owned" | string,
+    price?: number | string | null,
+    image?: string | null,
+    gallery?: any,
+    location?: string,
+    negotiable?: boolean,
+    createdAt?: string|Date,
+    seller?: { name?, phone?, location?, memberSince?, rating?, sales? },
+    sellerName?, sellerPhone?, sellerLocation?, sellerMemberSince?, sellerRating?, sellerSales?,
+    featured?: boolean
+  }
+*/
 
-type RawProduct = {
-  id?: string | number;
-  name: string;
-  description?: string;
-  category: string;
-  subcategory: string;
-  brand?: string;
-  condition?: "brand new" | "pre-owned" | string;
-  price?: number | string | null;
-  image?: string | null;
-  gallery?: unknown; // be tolerant, we’ll coerce to string[]
-  location?: string;
-  negotiable?: boolean;
-  createdAt?: string | Date;
-  seller?: RawSeller;
-  sellerName?: string;
-  sellerPhone?: string;
-  sellerLocation?: string;
-  sellerMemberSince?: string;
-  sellerRating?: number;
-  sellerSales?: number;
-  featured?: boolean;
-};
+/* ==============
+   Built-in sample
+   ============== */
+const builtinProducts = [
+  // Phones & Tablets
+  { name: "Samsung Galaxy A24",  category: "Phones & Tablets", subcategory: "Android Phones", brand: "Samsung", condition: "pre-owned", price: 24500, image: "https://picsum.photos/seed/galaxy-a24/800/600", featured: true,  sellerLocation: "Nairobi" },
+  { name: "Apple iPhone 12",     category: "Phones & Tablets", subcategory: "iPhones",        brand: "Apple",   condition: "pre-owned", price: 58000, image: "https://picsum.photos/seed/iphone-12/800/600", sellerLocation: "Nairobi" },
+  { name: "Lenovo Tab M10",      category: "Phones & Tablets", subcategory: "Tablets",        brand: "Lenovo",  condition: "brand new", price: 28500, image: "https://picsum.photos/seed/lenovo-m10/800/600", sellerLocation: "Mombasa" },
 
-function log(msg: string) {
-  console.log(msg);
-}
-function warn(msg: string, ...rest: unknown[]) {
-  console.warn(msg, ...rest);
-}
-function errlog(msg: string, ...rest: unknown[]) {
-  console.error(msg, ...rest);
-}
+  // Electronics
+  { name: "Sony Bravia 55\" 4K TV", category: "Electronics", subcategory: "TVs", brand: "Sony",   condition: "pre-owned", price: 68000, image: "https://picsum.photos/seed/bravia-55/800/600", featured: true, sellerLocation: "Nakuru" },
+  { name: "HP EliteBook 840 G6",    category: "Electronics", subcategory: "Laptops", brand: "HP", condition: "pre-owned", price: 52000, image: "https://picsum.photos/seed/elitebook-840/800/600", sellerLocation: "Eldoret" },
+  { name: "LG Soundbar SN5",        category: "Electronics", subcategory: "Audio",   brand: "LG", condition: "brand new", price: 28500, image: "https://picsum.photos/seed/lg-sn5/800/600", sellerLocation: "Kisumu" },
+
+  // Cars
+  { name: "Toyota Axio 2014",   category: "Cars", subcategory: "Sedan",      brand: "Toyota", condition: "pre-owned", price: 1150000, image: "https://picsum.photos/seed/axio2014/800/600", sellerLocation: "Nairobi" },
+  { name: "Nissan X-Trail 2015",category: "Cars", subcategory: "SUV",        brand: "Nissan", condition: "pre-owned", price: 1650000, image: "https://picsum.photos/seed/xtrail2015/800/600", featured: true, sellerLocation: "Nairobi" },
+
+  // Furniture
+  { name: "6-Seater Fabric Sofa", category: "Furniture", subcategory: "Sofas", brand: "Custom", condition: "brand new", price: 78000, image: "https://picsum.photos/seed/sofa-6/800/600", sellerLocation: "Thika" },
+  { name: "4x6 Bed (Mahogany)",   category: "Furniture", subcategory: "Beds",  brand: "Custom", condition: "brand new", price: 42000, image: "https://picsum.photos/seed/bed-4x6/800/600", sellerLocation: "Nairobi" },
+
+  // Services
+  { name: "Private Tuition",      category: "Services", subcategory: "Education",     brand: "Private", condition: "pre-owned", price: null, image: "https://picsum.photos/seed/tuition/800/600", sellerLocation: "Nairobi", featured: true },
+  { name: "Plumbing Services",    category: "Services", subcategory: "Home Services", brand: "Private", condition: "pre-owned", price: null, image: "https://picsum.photos/seed/plumbing/800/600", sellerLocation: "Nairobi" },
+];
 
 /* ==============
    Load products
    ============== */
-function loadSeed(): RawProduct[] {
-  // explicit file override supports .ts/.js/.json
-  const tryFiles: string[] = [];
+function loadSeed() {
+  const tryFiles = [];
   if (SEED_SOURCE) {
     tryFiles.push(path.resolve(SEED_SOURCE));
   } else {
-    // Look in common places
     tryFiles.push(
       path.resolve(__dirname, "../src/app/data/products.ts"),
       path.resolve(__dirname, "../src/data/products.ts"),
@@ -96,8 +101,8 @@ function loadSeed(): RawProduct[] {
     try {
       if (p.endsWith(".json")) {
         const json = JSON.parse(fs.readFileSync(p, "utf8"));
-        if (Array.isArray(json)) return json as RawProduct[];
-        if (Array.isArray(json?.products)) return json.products as RawProduct[];
+        if (Array.isArray(json)) return json;
+        if (Array.isArray(json?.products)) return json.products;
         continue;
       }
 
@@ -107,27 +112,26 @@ function loadSeed(): RawProduct[] {
       const arr =
         (Array.isArray(mod?.products) && mod.products) ||
         (Array.isArray(mod?.default) && mod.default);
-      if (Array.isArray(arr)) return arr as RawProduct[];
+      if (Array.isArray(arr)) return arr;
     } catch (e) {
-      warn(`Could not load seed file ${p}`, e);
+      console.warn(`Could not load seed file ${p}`, e?.message || e);
     }
   }
 
-  throw new Error(
-    "Could not find products data. Provide SEED_SOURCE or create src/app/data/products.(ts|js|json) exporting an array `products`."
-  );
+  console.warn("No external seed file found; using built-in demo dataset.");
+  return builtinProducts;
 }
 
 /* =================
    Helper utilities
    ================= */
-function toPrice(v: unknown): number | null {
+function toPrice(v) {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : null;
 }
 
-function normalizePhone(input?: string | null): string | null {
+function normalizePhone(input) {
   if (!input) return null;
   let s = String(input).replace(/\D+/g, "");
   if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07XXXXXXXX -> 2547XXXXXXXX
@@ -142,18 +146,18 @@ function randomCreatedAt(daysBack = 45) {
   return new Date(now - delta);
 }
 
-function clonePrice(n: number | null, bumpFactor: number): number | null {
+function clonePrice(n, bumpFactor) {
   if (n === null) return null;
   const d = Math.round(n * bumpFactor);
   return Math.max(0, n + d);
 }
 
-function pick<T>(arr: T[], i: number) {
+function pick(arr, i) {
   return arr[i % arr.length];
 }
 
 /** Ensure we have at least `minCount` rows by lightly cloning with small diffs. */
-function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
+function makeAtLeast(seed, minCount) {
   if (seed.length >= minCount) return seed;
 
   const brands = [
@@ -162,23 +166,23 @@ function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
     "Yamaha", "Pioneer", "Nike", "Adidas",
   ];
 
-  const out: RawProduct[] = [...seed];
+  const out = [...seed];
   let i = 0;
   while (out.length < minCount) {
     const base = pick(seed, i);
     const bump = ((i % 7) - 3) * 0.03; // -9% … +9%
-    const clone: RawProduct = {
+    const clone = {
       ...base,
       id: undefined,
       name: `${base.name} • Batch ${Math.floor(i / Math.max(seed.length, 1)) + 1}`,
       price: clonePrice(toPrice(base.price), bump),
       brand: base.brand || pick(brands, i),
       createdAt: randomCreatedAt(),
-      image: typeof base.image === "string" && base.image ? base.image : "/placeholder/default.jpg",
+      image: typeof base.image === "string" && base.image ? base.image : "https://picsum.photos/seed/qwiksale-default/800/600",
       gallery:
         Array.isArray(base.gallery) && base.gallery.length > 0
-          ? (base.gallery as unknown[]).map(String)
-          : ["/placeholder/default.jpg"],
+          ? base.gallery.map(String)
+          : ["https://picsum.photos/seed/qwiksale-1/800/600"],
       sellerName: base.sellerName || base.seller?.name || "Private Seller",
       sellerPhone: normalizePhone(base.sellerPhone || base.seller?.phone || "254700000000") || undefined,
       sellerLocation: base.sellerLocation || base.seller?.location || "Nairobi",
@@ -187,13 +191,13 @@ function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
         typeof base.sellerRating === "number"
           ? base.sellerRating
           : typeof base.seller?.rating === "number"
-          ? base.seller!.rating
+          ? base.seller.rating
           : 4.5,
       sellerSales:
         typeof base.sellerSales === "number"
           ? base.sellerSales
           : typeof base.seller?.sales === "number"
-          ? base.seller!.sales
+          ? base.seller.sales
           : 1,
       featured: Boolean(base.featured && i % 3 !== 0), // keep some featured
     };
@@ -203,18 +207,13 @@ function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
   return out;
 }
 
-/* ============================
-   Build ProductCreateManyInput
-   ============================ */
-function coerceGallery(v: unknown): string[] {
+function coerceGallery(v) {
   if (!Array.isArray(v)) return [];
   return v.map((x) => String(x)).filter((s) => s.length > 0);
 }
 
-function mapToCreateMany(
-  src: RawProduct[],
-  attachSellerId?: string | null
-): Prisma.ProductCreateManyInput[] {
+/* Map RawProduct -> ProductCreateMany row */
+function mapToCreateMany(src, attachSellerId) {
   return src.map((p, idx) => {
     const name = String(p.name);
     const category = String(p.category || "Misc");
@@ -230,7 +229,7 @@ function mapToCreateMany(
 
     const normalizedPhone = normalizePhone(p.sellerPhone || p.seller?.phone || null);
 
-    // 60% of rows owned by demo seller if provided
+    // 80% of rows owned by demo seller if provided
     const useDemoSeller = !!attachSellerId && idx % 5 !== 0;
 
     return {
@@ -248,7 +247,7 @@ function mapToCreateMany(
       createdAt: p.createdAt ? new Date(p.createdAt) : randomCreatedAt(),
       featured: Boolean(p.featured ?? (idx % 9 === 0)),
 
-      // flattened seller fields remain for anonymous products
+      // flattened snapshot fields
       sellerName: p.sellerName ?? p.seller?.name ?? (useDemoSeller ? null : "Private Seller"),
       sellerPhone: useDemoSeller ? null : (normalizedPhone || null),
       sellerLocation: p.sellerLocation ?? p.seller?.location ?? (useDemoSeller ? null : "Nairobi"),
@@ -257,16 +256,16 @@ function mapToCreateMany(
         typeof p.sellerRating === "number"
           ? p.sellerRating
           : typeof p.seller?.rating === "number"
-          ? p.seller!.rating
+          ? p.seller.rating
           : (useDemoSeller ? null : 4.5),
       sellerSales:
         typeof p.sellerSales === "number"
           ? p.sellerSales
           : typeof p.seller?.sales === "number"
-          ? p.seller!.sales
+          ? p.seller.sales
           : (useDemoSeller ? null : 1),
 
-      sellerId: useDemoSeller ? (attachSellerId as string) : null,
+      sellerId: useDemoSeller ? String(attachSellerId) : null,
     };
   });
 }
@@ -275,7 +274,7 @@ function mapToCreateMany(
    Main runner
    ============ */
 async function main() {
-  log("🔧 Seeding…");
+  console.log("🔧 Seeding…");
 
   // Guard destructive reset in production
   if (process.env.NODE_ENV === "production" && SEED_RESET && process.env.SEED_ALLOW_PROD !== "1") {
@@ -284,39 +283,39 @@ async function main() {
     );
   }
 
-  // 1) Demo seller (stable id)
+  // 1) Demo seller (only fields that exist in your User schema)
   const demoSeller = await prisma.user.upsert({
     where: { email: DEMO_EMAIL },
     update: { name: DEMO_NAME, subscription: "GOLD" },
     create: { email: DEMO_EMAIL, name: DEMO_NAME, subscription: "GOLD", image: null },
   });
-  log(`✓ Demo seller: ${demoSeller.email} (${demoSeller.id})`);
+  console.log(`✓ Demo seller: ${demoSeller.email} (${demoSeller.id})`);
 
   // 2) Load & expand products
   const base = loadSeed();
-  log(`• Loaded ${base.length} base products`);
+  console.log(`• Loaded ${base.length} base products`);
   const expanded = makeAtLeast(base, SEED_MIN);
-  log(`• Using ${expanded.length} products after expansion (min=${SEED_MIN})`);
+  console.log(`• Using ${expanded.length} products after expansion (min=${SEED_MIN})`);
 
   // 3) Build rows
   const rows = mapToCreateMany(expanded, demoSeller.id);
 
-  // 4) Optional reset (favorites -> payments -> products)
+  // 4) Optional reset
   if (SEED_RESET) {
-    log("⚠️  Resetting test data…");
+    console.log("⚠️  Resetting test data…");
     await prisma.favorite.deleteMany({});
-    await (prisma as any).payment?.deleteMany?.({}).catch(() => {});
+    await (prisma.payment?.deleteMany?.({}).catch(() => {}));
     await prisma.product.deleteMany({});
   }
 
-  // 5) Insert in batches for safety (createMany caps)
+  // 5) Insert in batches
   const BATCH = 250;
   let createdCount = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
     const res = await prisma.product.createMany({ data: slice, skipDuplicates: true });
-    createdCount += res.count;
-    log(`  …batch ${Math.floor(i / BATCH) + 1}: +${res.count}`);
+    createdCount += res.count || 0;
+    console.log(`  …batch ${Math.floor(i / BATCH) + 1}: +${res.count}`);
   }
 
   // 6) Seed favorites for demo seller
@@ -335,28 +334,28 @@ async function main() {
 
   // 7) Summaries
   const total = await prisma.product.count();
-  log(`✅ Seed complete. Inserted: ${createdCount}. Total in DB: ${total}`);
+  console.log(`✅ Seed complete. Inserted: ${createdCount}. Total in DB: ${total}`);
 
   const sample = await prisma.product.findMany({
     orderBy: { createdAt: "desc" },
     take: 3,
     select: { id: true, name: true, price: true, featured: true, sellerId: true },
   });
-  log("• Sample:");
+  console.log("• Sample:");
   for (const s of sample) {
-    log(
-      `  - ${s.id} :: ${s.name} :: KES ${s.price ?? "—"} :: ${s.featured ? "⭐" : "•"} :: seller=${
-        s.sellerId ?? "anon"
-      }`
+    console.log(
+      `  - ${s.id} :: ${s.name} :: KES ${s.price ?? "—"} :: ${s.featured ? "⭐" : "•"} :: seller=${s.sellerId ?? "anon"}`
     );
   }
 }
 
 main()
   .catch((e) => {
-    errlog("❌ Seed failed:", e?.message || e);
+    console.error("❌ Seed failed:", e?.message || e);
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    try {
+      await prisma.$disconnect();
+    } catch {}
   });

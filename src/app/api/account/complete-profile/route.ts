@@ -1,4 +1,3 @@
-// src/app/api/account/complete-profile/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -7,19 +6,19 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
-/** Normalize Kenyan phone to 2547XXXXXXXX */
-function normalizePhoneKenya(raw: string): string | null {
-  let s = (raw || "").trim().replace(/\D+/g, "");
-  if (!s) return null;
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);        // 07 -> 2547
-  if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, "");   // +2547 -> 2547
-  if (/^2547\d{8}$/.test(s)) return s;
-  return null;
+function noStore(json: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(json, init);
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  return res;
 }
 
 function isValidEmail(email: string): boolean {
-  // simple, safe check
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// keep username rules consistent with your other endpoint if you want
+function looksLikeValidUsername(u: string) {
+  return /^[a-zA-Z0-9._]{3,24}$/.test(u);
 }
 
 export async function POST(req: Request) {
@@ -27,13 +26,12 @@ export async function POST(req: Request) {
   const session = await auth();
   const userId = (session as any)?.user?.id as string | undefined;
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return noStore({ error: "Unauthorized" }, { status: 401 });
   }
 
   const body = await req.json().catch(() => ({} as any));
-  const { username, phone, email } = body as {
+  const { username, email } = body as {
     username?: string;
-    phone?: string;
     email?: string;
   };
 
@@ -41,34 +39,27 @@ export async function POST(req: Request) {
   const data: Record<string, any> = {};
 
   if (typeof username === "string" && username.trim()) {
-    // Adjust casing policy if you prefer preserving case
-    data.username = username.trim();
-  }
-
-  if (typeof phone === "string" && phone.trim()) {
-    const normalized = normalizePhoneKenya(phone);
-    if (!normalized) {
-      return NextResponse.json(
-        { error: "Invalid Kenyan phone. Use 07XXXXXXXX or 2547XXXXXXXX." },
+    const u = username.trim();
+    if (!looksLikeValidUsername(u)) {
+      return noStore(
+        { error: "Username must be 3–24 chars (letters, numbers, dot, underscore)." },
         { status: 400 }
       );
     }
-    data.phone = normalized;
-    // Do NOT auto-set phoneVerified here; keep your OTP flow in charge of that.
+    data.username = u;
   }
 
   if (typeof email === "string" && email.trim()) {
     const e = email.trim().toLowerCase();
     if (!isValidEmail(e)) {
-      return NextResponse.json({ error: "Invalid email address." }, { status: 400 });
+      return noStore({ error: "Invalid email address." }, { status: 400 });
     }
     data.email = e;
-    // Leave emailVerified as-is; your magic-link provider will set it.
   }
 
   if (Object.keys(data).length === 0) {
-    return NextResponse.json(
-      { error: "Nothing to update. Provide at least one of username, phone, or email." },
+    return noStore(
+      { error: "Nothing to update. Provide at least one of username or email." },
       { status: 400 }
     );
   }
@@ -81,23 +72,25 @@ export async function POST(req: Request) {
         id: true,
         email: true,
         username: true,
-        phone: true,
-        phoneVerified: true,
+        name: true,
+        // NOTE: No `emailVerified`, `verified`, or `phone` here since they
+        // are not present in your current User schema.
       },
     });
 
-    return NextResponse.json(
+    return noStore(
       { ok: true, user },
       { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
     );
   } catch (e: any) {
-    // Unique constraint conflict (e.g., username or phone already taken)
+    // Unique constraint conflict (e.g., username or email already taken)
     if (e?.code === "P2002") {
       const target =
         Array.isArray(e.meta?.target) ? e.meta.target.join(", ") : String(e.meta?.target || "");
-      return NextResponse.json({ error: `Already in use: ${target}` }, { status: 409 });
+      return noStore({ error: `Already in use: ${target}` }, { status: 409 });
     }
+    // eslint-disable-next-line no-console
     console.error("[complete-profile] POST error:", e);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    return noStore({ error: "Server error" }, { status: 500 });
   }
 }

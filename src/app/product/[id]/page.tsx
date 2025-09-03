@@ -1,3 +1,4 @@
+// src/app/product/[id]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -36,15 +37,14 @@ type FetchedProduct = Partial<ProductFromStore> & {
   location?: string | null;
   negotiable?: boolean;
   featured?: boolean;
-  sellerId?: string | null;          // needed to detect owner
+  sellerId?: string | null;
   sellerName?: string | null;
   sellerPhone?: string | null;
   sellerLocation?: string | null;
   sellerMemberSince?: string | null;
   sellerRating?: number | null;
   sellerSales?: number | null;
-  // ⬇️ include username coming from the API
-  seller?: { id?: string; username?: string | null; name?: string | null } | null;
+  seller?: { id?: string; username?: string | null; name?: string | null } | null; // ⬅️ username included
 };
 
 function fmtKES(n?: number | null) {
@@ -124,7 +124,7 @@ export default function ProductPage() {
     const nested: any = (display as any)?.seller || {};
     return {
       id: nested?.id ?? display?.sellerId ?? null,
-      username: nested?.username ?? null, // ⬅️ username from API
+      username: (nested?.username || "").trim() || null,
       name: nested?.name ?? display?.sellerName ?? "Private Seller",
       phone: nested?.phone ?? display?.sellerPhone ?? null,
       location: nested?.location ?? display?.sellerLocation ?? null,
@@ -144,7 +144,7 @@ export default function ProductPage() {
     };
   }, [display]);
 
-  const isOwner = Boolean(viewerId && (viewerId === seller.id));
+  const isOwner = Boolean(viewerId && viewerId === seller.id);
 
   async function handleReveal() {
     if (!id) return;
@@ -207,7 +207,11 @@ export default function ProductPage() {
   }
 
   if (!display && (fetching || fetchErr)) {
-    return <div className="text-gray-600 dark:text-slate-300">{fetching ? "Loading…" : fetchErr || "Product not found."}</div>;
+    return (
+      <div className="text-gray-600 dark:text-slate-300">
+        {fetching ? "Loading…" : fetchErr || "Product not found."}
+      </div>
+    );
   }
 
   if (!display) {
@@ -323,17 +327,52 @@ export default function ProductPage() {
         {/* Seller box */}
         <div className="rounded-xl border dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
           <h3 className="font-semibold mb-3">Seller</h3>
+
           <div className="space-y-1 text-gray-700 dark:text-slate-200">
-            <p><span className="font-medium">Name:</span> {seller.name || "Private Seller"}</p>
-            {seller.location && <p><span className="font-medium">Location:</span> {seller.location}</p>}
-            {seller.memberSince && <p><span className="font-medium">Member since:</span> {seller.memberSince}</p>}
-            {typeof seller.rating === "number" && <p><span className="font-medium">Rating:</span> {seller.rating} / 5</p>}
-            {typeof seller.sales === "number" && <p><span className="font-medium">Completed sales:</span> {seller.sales}</p>}
+            <p className="flex items-center gap-2">
+              <span className="font-medium">Name:</span>
+              <span>{seller.name || "Private Seller"}</span>
+              {/* inline @username link if present */}
+              {seller.username && (
+                <Link
+                  href={`/store/${seller.username}`}
+                  className="text-sm text-[#39a0ca] hover:underline"
+                  title={`Visit @${seller.username}'s store`}
+                >
+                  @{seller.username}
+                </Link>
+              )}
+            </p>
+            {seller.location && (
+              <p>
+                <span className="font-medium">Location:</span> {seller.location}
+              </p>
+            )}
+            {seller.memberSince && (
+              <p>
+                <span className="font-medium">Member since:</span> {seller.memberSince}
+              </p>
+            )}
+            {typeof seller.rating === "number" && (
+              <p>
+                <span className="font-medium">Rating:</span> {seller.rating} / 5
+              </p>
+            )}
+            {typeof seller.sales === "number" && (
+              <p>
+                <span className="font-medium">Completed sales:</span> {seller.sales}
+              </p>
+            )}
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             {wa ? (
-              <a href={wa} target="_blank" rel="noreferrer" className="rounded-lg px-5 py-3 text-white font-semibold shadow bg-[#25D366] hover:opacity-90">
+              <a
+                href={wa}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg px-5 py-3 text-white font-semibold shadow bg-[#25D366] hover:opacity-90"
+              >
                 Contact on WhatsApp
               </a>
             ) : (
@@ -347,18 +386,22 @@ export default function ProductPage() {
               </button>
             )}
 
-            {/* ⬇️ New: Visit Store button when seller has a username */}
+            {/* Visit Store CTA if username exists */}
             {seller.username && (
               <Link
                 href={`/store/${seller.username}`}
                 className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
                 title={`Visit @${seller.username}'s store`}
+                aria-label={`Visit ${seller.username}'s store`}
               >
                 Visit Store
               </Link>
             )}
 
-            <Link href="/donate" className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800">
+            <Link
+              href="/donate"
+              className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
+            >
               Donate
             </Link>
 
@@ -388,20 +431,37 @@ export default function ProductPage() {
             )}
             <h3 className="font-semibold mb-2">Seller Contact</h3>
             <div className="space-y-1 text-sm">
-              <div><span className="font-medium">Name:</span> {revealed?.contact?.name ?? seller.name ?? "—"}</div>
-              <div><span className="font-medium">Phone:</span> {revealed?.contact?.phone ?? "—"}</div>
-              <div><span className="font-medium">Location:</span> {revealed?.contact?.location ?? seller.location ?? "—"}</div>
+              <div>
+                <span className="font-medium">Name:</span>{" "}
+                {revealed?.contact?.name ?? seller.name ?? "—"}
+              </div>
+              <div>
+                <span className="font-medium">Phone:</span>{" "}
+                {revealed?.contact?.phone ?? "—"}
+              </div>
+              <div>
+                <span className="font-medium">Location:</span>{" "}
+                {revealed?.contact?.location ?? seller.location ?? "—"}
+              </div>
             </div>
 
             {revealError && <div className="mt-3 text-sm text-red-600">{revealError}</div>}
 
             <div className="mt-4 flex justify-end gap-2">
               {wa && (
-                <a href={wa} target="_blank" rel="noreferrer" className="px-3 py-1 rounded-xl bg-[#25D366] text-white text-sm">
+                <a
+                  href={wa}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1 rounded-xl bg-[#25D366] text-white text-sm"
+                >
                   WhatsApp
                 </a>
               )}
-              <button onClick={() => setRevealOpen(false)} className="px-3 py-1 rounded-xl border dark:border-slate-700">
+              <button
+                onClick={() => setRevealOpen(false)}
+                className="px-3 py-1 rounded-xl border dark:border-slate-700"
+              >
                 Close
               </button>
             </div>

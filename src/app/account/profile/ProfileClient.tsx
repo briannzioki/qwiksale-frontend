@@ -1,10 +1,8 @@
-// src/app/account/profile/ProfileClient.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 
-/* ----------------------------- Types & helpers ----------------------------- */
 type Me = {
   id: string;
   email: string | null;
@@ -34,7 +32,6 @@ function looksLikeValidUsername(u: string) {
   return /^[a-zA-Z0-9._]{3,24}$/.test(u);
 }
 
-/* -------------------------------- Component -------------------------------- */
 export default function ProfileClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,12 +48,17 @@ export default function ProfileClient() {
   const [image, setImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  // socials (for now stored re-using address fields / or extend API later)
+  const [website, setWebsite] = useState("");
+  const [instagram, setInstagram] = useState("");
+  const [facebook, setFacebook] = useState("");
+  const [xhandle, setXHandle] = useState("");
+
   const whatsappNormalized = useMemo(
     () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
     [whatsapp]
   );
 
-  /* --------------------------------- Load me -------------------------------- */
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -68,8 +70,7 @@ export default function ProfileClient() {
           return;
         }
         const j = (await r.json().catch(() => null)) as Me | { user?: Me } | null;
-        const u: Me | null =
-          j && "user" in (j as any) ? (j as any).user : (j as Me | null);
+        const u: Me | null = j && "user" in (j as any) ? (j as any).user : (j as Me | null);
 
         if (!alive) return;
         if (!u?.email) {
@@ -87,6 +88,12 @@ export default function ProfileClient() {
         setCity(u.city ?? "");
         setCountry(u.country ?? "");
         setImage(u.image ?? null);
+
+        // If you later add real columns for socials, populate here
+        setWebsite("");
+        setInstagram("");
+        setFacebook("");
+        setXHandle("");
       } catch {
         toast.error("Could not load your profile.");
       } finally {
@@ -98,7 +105,6 @@ export default function ProfileClient() {
     };
   }, []);
 
-  /* ------------------------------- Save profile ----------------------------- */
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
 
@@ -124,11 +130,15 @@ export default function ProfileClient() {
           postalCode: postalCode || null,
           city: city || null,
           country: country || null,
-          image: image || null, // ✅ persist avatar URL
+          // TODO: add socials to backend when you add columns
+          website: website || null,
+          instagram: instagram || null,
+          facebook: facebook || null,
+          x: xhandle || null,
         }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || j?.error) throw new Error(j?.error || "Failed to save profile");
+      if (!r.ok || (j as any)?.error) throw new Error((j as any)?.error || "Failed to save profile");
       toast.success("Profile saved.");
     } catch (e: any) {
       toast.error(e?.message || "Could not save profile");
@@ -137,7 +147,6 @@ export default function ProfileClient() {
     }
   }
 
-  /* ------------------------------ Avatar upload ----------------------------- */
   async function onFileChange(file?: File) {
     if (!file) return;
     if (!/^image\//.test(file.type)) {
@@ -162,10 +171,10 @@ export default function ProfileClient() {
         throw new Error(j?.error || "Upload failed");
       }
       setImage(j.url as string);
-      toast.success("Photo updated. Don’t forget to Save.");
+      toast.success("Photo updated.");
     } catch (e: any) {
-      if (e?.message?.includes("404")) {
-        toast.error("Avatar upload API not found. Create /api/account/profile/photo.");
+      if (e?.message?.includes("Cloudinary")) {
+        toast.error("Cloudinary not configured. Check env vars & redeploy.");
       } else {
         toast.error(e?.message || "Upload failed");
       }
@@ -174,7 +183,21 @@ export default function ProfileClient() {
     }
   }
 
-  /* --------------------------------- UI ------------------------------------ */
+  async function deleteAccount() {
+    if (!confirm("Delete your account permanently? This removes your listings and favorites. This cannot be undone.")) {
+      return;
+    }
+    try {
+      const r = await fetch("/api/account/delete", { method: "DELETE" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || (j as any)?.error) throw new Error((j as any)?.error || "Delete failed");
+      toast.success("Account deleted. Goodbye!");
+      window.location.href = "/";
+    } catch (e: any) {
+      toast.error(e?.message || "Unable to delete account right now");
+    }
+  }
+
   if (loading) {
     return (
       <div className="container-page py-8">
@@ -190,9 +213,6 @@ export default function ProfileClient() {
       </div>
     );
   }
-
-  const usernameInvalid = !looksLikeValidUsername(username);
-  const whatsappInvalid = !!whatsapp && !looksLikeValidKePhone(whatsapp);
 
   return (
     <div className="container-page py-8">
@@ -256,7 +276,6 @@ export default function ProfileClient() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="e.g. brian254"
                 required
-                aria-invalid={usernameInvalid}
               />
               <p className="text-xs text-gray-500 mt-1">
                 3–24 chars. Letters, numbers, dot, underscore.
@@ -271,7 +290,7 @@ export default function ProfileClient() {
               value={whatsapp}
               onChange={(e) => setWhatsapp(e.target.value)}
               placeholder="07XXXXXXXX or 2547XXXXXXXX"
-              aria-invalid={whatsappInvalid}
+              aria-invalid={!!whatsapp && !looksLikeValidKePhone(whatsapp)}
             />
             <p className="text-xs text-gray-500 mt-1">
               Will be stored as{" "}
@@ -318,17 +337,45 @@ export default function ProfileClient() {
             </div>
           </div>
 
+          {/* Socials anchor */}
+          <h2 id="socials" className="text-base font-semibold pt-4">Social links (optional)</h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label className="label">Website</label>
+              <input className="input" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://…" />
+            </div>
+            <div>
+              <label className="label">Instagram</label>
+              <input className="input" value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@handle" />
+            </div>
+            <div>
+              <label className="label">Facebook</label>
+              <input className="input" value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="Page or profile" />
+            </div>
+            <div>
+              <label className="label">X (Twitter)</label>
+              <input className="input" value={xhandle} onChange={(e) => setXHandle(e.target.value)} placeholder="@handle" />
+            </div>
+          </div>
+
           <div className="flex gap-2 pt-2">
-            <button
-              type="submit"
-              disabled={saving || usernameInvalid || whatsappInvalid}
-              className="btn-primary disabled:opacity-60"
-            >
+            <button type="submit" disabled={saving} className="btn-primary">
               {saving ? "Saving…" : "Save changes"}
             </button>
             <a href="/dashboard" className="btn-outline">Back to dashboard</a>
           </div>
         </form>
+
+        {/* Danger zone */}
+        <div className="card-surface p-4 border-red-200">
+          <h3 className="font-semibold text-red-700 mb-2">Danger zone</h3>
+          <p className="text-sm text-red-700/90 mb-3">
+            Deleting your account removes your listings and favorites permanently.
+          </p>
+          <button onClick={deleteAccount} className="rounded-lg bg-red-600 text-white px-4 py-2 hover:bg-red-700">
+            Delete my account
+          </button>
+        </div>
       </div>
     </div>
   );

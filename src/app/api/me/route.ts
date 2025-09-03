@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getServerSession } from "@/app/lib/auth";
+import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
 function noStore(json: unknown, init?: ResponseInit) {
@@ -12,31 +12,31 @@ function noStore(json: unknown, init?: ResponseInit) {
 }
 
 export async function GET() {
-  const session = await getServerSession();
-  const id = (session as any)?.user?.id as string | undefined;
-  const email = session?.user?.email || undefined;
+  try {
+    const session = await auth();
+    const userId = (session as any)?.user?.id as string | undefined;
+    if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-  if (!id && !email) {
-    return noStore({ error: "Unauthorized" }, { status: 401 });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        image: true,
+        subscription: true,
+        subscriptionUntil: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) return noStore({ error: "Not found" }, { status: 404 });
+    return noStore({ user });
+  } catch (e) {
+    console.warn("[/api/me GET] error:", e);
+    return noStore({ error: "Server error" }, { status: 500 });
   }
-
-  const user = await prisma.user.findFirst({
-    where: id ? { id } : { email: email! },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      image: true,
-      username: true,
-      whatsapp: true,
-      address: true,
-      postalCode: true,
-      city: true,
-      country: true,
-    },
-  });
-
-  if (!user) return noStore({ error: "Unauthorized" }, { status: 401 });
-
-  return noStore({ user });
 }
