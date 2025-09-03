@@ -27,6 +27,15 @@ function toBool(v: string | null): boolean | undefined {
   return undefined;
 }
 
+// normalize string params: treat "", "any", "all", "*" as undefined
+function optStr(v: string | null): string | undefined {
+  const t = (v ?? "").trim();
+  if (!t) return undefined;
+  const l = t.toLowerCase();
+  if (l === "any" || l === "all" || l === "*") return undefined;
+  return t;
+}
+
 type SortKey = "newest" | "price_asc" | "price_desc" | "featured";
 function toSort(v: string | null): SortKey {
   const t = (v || "").trim().toLowerCase();
@@ -68,42 +77,37 @@ const productListSelect = {
 } as const;
 
 /* ------------------------- GET /api/products ------------------------- */
-/**
- * Supported query params:
- * - q               : text search on name/brand/category/subcategory/description
- * - category        : exact match (case-insensitive)
- * - subcategory     : exact match (case-insensitive)
- * - brand           : contains (case-insensitive)
- * - sellerId        : only products by this user id
- * - seller          : only products by this username (case-insensitive)
- * - featured        : true/false
- * - verifiedOnly    : alias for featured=true
- * - minPrice, maxPrice : numeric KES filters
- * - sort            : newest | price_asc | price_desc | featured  (default: newest)
- * - page, pageSize  : pagination (default: 1, 60)
- * - facets          : "true" to include facet counts (categories/brands/conditions)
- */
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
+
+    // text query
     const q = (url.searchParams.get("q") || "").trim();
-    const category = (url.searchParams.get("category") || "").trim();
-    const subcategory = (url.searchParams.get("subcategory") || "").trim();
-    const brand = (url.searchParams.get("brand") || "").trim();
-    const sellerId = (url.searchParams.get("sellerId") || "").trim();
-    const sellerUsername = (url.searchParams.get("seller") || "").trim(); // username
+
+    // optional filters (ignore "any"/"*"/"")
+    const category = optStr(url.searchParams.get("category"));
+    const subcategory = optStr(url.searchParams.get("subcategory"));
+    const brand = optStr(url.searchParams.get("brand"));
+    const condition = optStr(url.searchParams.get("condition"));
+    const sellerId = optStr(url.searchParams.get("sellerId"));
+    const sellerUsername = optStr(url.searchParams.get("seller")); // username
+
+    // featured / verifiedOnly
     const featured = toBool(url.searchParams.get("featured"));
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly")); // alias
+
+    // price range
     const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
     const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
+
+    // sorting & pagination
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
-
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), 60, 1, 200);
 
-    // Build where
-    const where: any = {};
+    // Build where (default to ACTIVE items)
+    const where: any = { status: "ACTIVE" };
     const and: any[] = [];
 
     if (q.length > 0) {
@@ -120,14 +124,13 @@ export async function GET(req: NextRequest) {
     if (category) and.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (brand) and.push({ brand: { contains: brand, mode: "insensitive" } });
+    if (condition) and.push({ condition: { equals: condition, mode: "insensitive" } });
     if (sellerId) and.push({ sellerId });
     if (sellerUsername) {
-      // relation filter via username (case-insensitive)
       and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
     }
     if (typeof featured === "boolean") and.push({ featured });
-    // alias: verifiedOnly=true means featured=true
-    if (typeof verifiedOnly === "boolean" && verifiedOnly === true) and.push({ featured: true });
+    if (verifiedOnly === true) and.push({ featured: true }); // alias
 
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
       const price: any = {};
@@ -181,7 +184,6 @@ export async function GET(req: NextRequest) {
 }
 
 /* ------------------------- POST /api/products ------------------------- */
-/** Delegate to /api/products/create/route.ts to keep one creator code path. */
 export async function POST(req: NextRequest) {
   const { POST: createProduct } = await import("./create/route");
   return createProduct(req);
@@ -195,40 +197,28 @@ type CondRow = { condition: string | null; _count: { _all: number } };
 async function computeFacets(where: any) {
   try {
     const [catsRaw, brandsRaw, condsRaw] = await Promise.all([
-      prisma.product.groupBy({
-        by: ["category"],
-        where,
-        _count: { _all: true },
-      }),
-      prisma.product.groupBy({
-        by: ["brand"],
-        where,
-        _count: { _all: true },
-      }),
-      prisma.product.groupBy({
-        by: ["condition"],
-        where,
-        _count: { _all: true },
-      }),
+      prisma.product.groupBy({ by: ["category"], where, _count: { _all: true } }),
+      prisma.product.groupBy({ by: ["brand"], where, _count: { _all: true } }),
+      prisma.product.groupBy({ by: ["condition"], where, _count: { _all: true } }),
     ]);
 
     const cats = (catsRaw as CatRow[])
-      .filter((x: CatRow) => !!x.category)
-      .sort((a: CatRow, b: CatRow) => b._count._all - a._count._all)
+      .filter((x) => !!x.category)
+      .sort((a, b) => b._count._all - a._count._all)
       .slice(0, 10)
-      .map((x: CatRow) => ({ value: String(x.category), count: x._count._all }));
+      .map((x) => ({ value: String(x.category), count: x._count._all }));
 
     const brands = (brandsRaw as BrandRow[])
-      .filter((x: BrandRow) => !!x.brand)
-      .sort((a: BrandRow, b: BrandRow) => b._count._all - a._count._all)
+      .filter((x) => !!x.brand)
+      .sort((a, b) => b._count._all - a._count._all)
       .slice(0, 10)
-      .map((x: BrandRow) => ({ value: String(x.brand), count: x._count._all }));
+      .map((x) => ({ value: String(x.brand), count: x._count._all }));
 
     const conditions = (condsRaw as CondRow[])
-      .filter((x: CondRow) => !!x.condition)
-      .sort((a: CondRow, b: CondRow) => b._count._all - a._count._all)
+      .filter((x) => !!x.condition)
+      .sort((a, b) => b._count._all - a._count._all)
       .slice(0, 10)
-      .map((x: CondRow) => ({ value: String(x.condition), count: x._count._all }));
+      .map((x) => ({ value: String(x.condition), count: x._count._all }));
 
     return { categories: cats, brands, conditions };
   } catch {
