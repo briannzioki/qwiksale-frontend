@@ -75,9 +75,9 @@ export default function HomePage() {
   const [condition, setCondition] = useState(sp.get("condition") || "");
   const [minPrice, setMinPrice] = useState(sp.get("minPrice") || "");
   const [maxPrice, setMaxPrice] = useState(sp.get("maxPrice") || "");
-  // 🔁 use API’s flag name: featured
+  // use API’s flag name: featured
   const [featuredOnly, setFeaturedOnly] = useState((sp.get("featured") || "false") === "true");
-  // 🔁 use API’s sort keys: newest | price_asc | price_desc | featured
+  // use API’s sort keys: newest | price_asc | price_desc | featured
   const [sort, setSort] = useState(sp.get("sort") || "newest");
   const [page, setPage] = useState(() => {
     const n = Number(sp.get("page") || 1);
@@ -115,7 +115,7 @@ export default function HomePage() {
     if (dcondition) params.set("condition", dcondition);
     if (dminPrice) params.set("minPrice", dminPrice);
     if (dmaxPrice) params.set("maxPrice", dmaxPrice);
-    if (dfeaturedOnly) params.set("featured", "true"); // ✅ correct flag the API understands
+    if (dfeaturedOnly) params.set("featured", "true"); // API flag
     if (dsort && dsort !== "newest") params.set("sort", dsort); // API default = newest
     if (dpage && dpage !== 1) params.set("page", String(dpage));
     params.set("pageSize", String(PAGE_SIZE));
@@ -317,7 +317,7 @@ export default function HomePage() {
           {/* Price range */}
           <div className="md:col-span-2 grid grid-cols-2 gap-2">
             <div>
-              <label className="block text xs font-semibold text-gray-600 dark:text-slate-300">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
                 Min (KES)
               </label>
               <input
@@ -533,7 +533,7 @@ export default function HomePage() {
                     height={440}
                     className="w-full h-44 object-cover bg-gray-100 dark:bg-slate-800"
                     priority={false}
-                    unoptimized={p.image?.endsWith(".svg") || undefined}
+                    unoptimized={Boolean(p.image?.endsWith(".svg"))}
                   />
                   <div className="absolute top-2 right-2 z-10">
                     <FavoriteButton productId={p.id} />

@@ -8,7 +8,9 @@ export type Filters = {
   condition: "all" | "brand new" | "pre-owned";
   minPrice?: number | "";
   maxPrice?: number | "";
-  sort: "newest" | "priceLow" | "priceHigh";
+  // ⬇️ match API sort keys
+  sort: "newest" | "price_asc" | "price_desc" | "featured";
+  // ⬇️ keeps the old name, but this maps to API `featured=true`
   verifiedOnly?: boolean;
 };
 
@@ -41,14 +43,13 @@ export default function FiltersBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.query]);
 
-  // ✅ Cleanup must return void, never null
   useEffect(() => {
     if (disabled) {
       if (debTimer.current) {
         clearTimeout(debTimer.current);
         debTimer.current = null;
       }
-      return; // return void
+      return;
     }
 
     if (debTimer.current) clearTimeout(debTimer.current);
@@ -200,8 +201,9 @@ export default function FiltersBar({
               disabled={disabled}
             >
               <option value="newest">Newest</option>
-              <option value="priceLow">Price: Low to High</option>
-              <option value="priceHigh">Price: High to Low</option>
+              <option value="featured">Featured first</option>
+              <option value="price_asc">Price: Low → High</option>
+              <option value="price_desc">Price: High → Low</option>
             </select>
           </div>
 
@@ -261,7 +263,7 @@ export default function FiltersBar({
                 border border-gray-300 dark:border-slate-700
                 px-3 py-2 text-sm select-none
               "
-              title="Verified sellers only"
+              title="Featured (verified) listings only"
             >
               <input
                 id={idVerified}
@@ -271,7 +273,7 @@ export default function FiltersBar({
                 className="rounded border-gray-300 dark:border-slate-600"
                 disabled={disabled}
               />
-              Verified only
+              Featured only
             </label>
           )}
         </div>
