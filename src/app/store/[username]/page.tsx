@@ -31,11 +31,10 @@ export default async function StorePage({
 }: {
   params: Promise<{ username: string }>;
 }) {
-  const { username: rawUsername } = await params; // ✅ Next 15 expects a Promise here
+  const { username: rawUsername } = await params; // ✅ Next 15 expects Promise here
   const username = decodeURIComponent(rawUsername || "").trim();
   if (!username) notFound();
 
-  // Case-insensitive lookup so /store/VONs works the same as /store/vons
   const user = await prisma.user.findFirst({
     where: { username: { equals: username, mode: "insensitive" } },
     select: {
@@ -69,7 +68,6 @@ export default async function StorePage({
 
   return (
     <div className="space-y-6">
-      {/* Store header */}
       <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
         <div className="flex items-center gap-4">
           {user.image ? (
@@ -105,7 +103,6 @@ export default async function StorePage({
         </div>
       </div>
 
-      {/* Listings */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
