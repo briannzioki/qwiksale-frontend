@@ -164,12 +164,24 @@ model Product {
   contactReveals ContactReveal[]
   tickets        SupportTicket[] @relation("TicketProducts")
 
-  @@index([category, subcategory])
-  @@index([brand])
-  @@index([price])
-  @@index([createdAt])
-  @@index([featured])
-  @@index([sellerId, createdAt])
+  /// ---------- Indexes tuned for your queries ----------
+  // Home/search: ACTIVE first, then featured/newest
+  @@index([status, featured, createdAt(sort: Desc)])
+
+  // Default browse: newest ACTIVE
+  @@index([status, createdAt(sort: Desc)])
+
+  // Browse by category/subcategory: newest ACTIVE in that bucket
+  @@index([status, category, subcategory, createdAt(sort: Desc)])
+
+  // Price filter/sort within ACTIVE
+  @@index([status, price])
+
+  // Seller store pages & dashboards: seller’s ACTIVE, newest
+  @@index([sellerId, status, createdAt(sort: Desc)])
+
+  // Brand faceting/filtering within ACTIVE (optional but cheap)
+  @@index([status, brand])
 }
 
 model Favorite {
