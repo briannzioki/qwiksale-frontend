@@ -1,10 +1,11 @@
 // src/app/api/favorites/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { auth } from "@/auth"; // ✅ v5 helper
+import { auth } from "@/auth";
 
 function noStore<T>(res: NextResponse<T>) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -27,7 +28,7 @@ async function requireUserId() {
 }
 
 /**
- * GET /api/favorites?format=ids|full
+ * GET /api/favorites?format=ids|full&includeInactive=0|1
  */
 export async function GET(req: Request) {
   try {
@@ -38,10 +39,17 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const format = (url.searchParams.get("format") || "ids").toLowerCase();
+    const includeInactive =
+      (url.searchParams.get("includeInactive") || "0").trim() === "1";
 
     if (format === "full") {
       const favorites = await prisma.favorite.findMany({
-        where: { userId },
+        where: {
+          userId,
+          ...(includeInactive
+            ? {}
+            : { product: { status: "ACTIVE" as const } }),
+        },
         orderBy: { createdAt: "desc" },
         include: {
           product: {
@@ -57,6 +65,10 @@ export async function GET(req: Request) {
               createdAt: true,
               featured: true,
               location: true,
+              status: true, // handy when includeInactive=1
+              seller: {
+                select: { id: true, username: true, name: true, image: true },
+              },
             },
           },
         },
@@ -64,16 +76,19 @@ export async function GET(req: Request) {
       return noStore(NextResponse.json({ items: favorites }));
     }
 
-    // default: ids only
+    // default: ids only (fast path)
     const rows = await prisma.favorite.findMany({
-      where: { userId },
+      where: {
+        userId,
+        ...(includeInactive
+          ? {}
+          : { product: { status: "ACTIVE" as const } }),
+      },
       orderBy: { createdAt: "desc" },
       select: { productId: true },
     });
 
-    // 👇 add explicit param type to avoid implicit any
     const ids = rows.map((r: { productId: string }) => r.productId);
-
     return noStore(NextResponse.json({ items: ids }));
   } catch (e: any) {
     console.error("GET /api/favorites error:", e);
@@ -94,7 +109,10 @@ export async function POST(req: Request) {
       return noStore(NextResponse.json({ error: "productId is required" }, { status: 400 }));
     }
 
-    const exists = await prisma.product.findUnique({ where: { id: pid }, select: { id: true } });
+    const exists = await prisma.product.findUnique({
+      where: { id: pid },
+      select: { id: true },
+    });
     if (!exists) {
       return noStore(NextResponse.json({ error: "Invalid productId" }, { status: 400 }));
     }

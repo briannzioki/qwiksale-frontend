@@ -1,9 +1,12 @@
+// src/app/dashboard/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getServerSession } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
 
 export const metadata: Metadata = {
   title: "Dashboard — QwikSale",
@@ -19,6 +22,7 @@ type RecentListing = {
   featured: boolean;
   category: string;
   subcategory: string;
+  status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
 };
 
 async function getUserIdOrNull() {
@@ -87,10 +91,11 @@ export default async function DashboardPage() {
     likesOnMyListings,
     topCats30,
   ] = await Promise.all([
+    // Show ALL your listings count (not just ACTIVE)
     prisma.product.count({ where: { sellerId: me.id } }),
     prisma.favorite.count({ where: { userId: me.id } }),
     prisma.product.findMany({
-      where: { sellerId: me.id },
+      where: { sellerId: me.id }, // all statuses so you can edit drafts/hidden
       orderBy: { createdAt: "desc" },
       take: 6,
       select: {
@@ -102,20 +107,22 @@ export default async function DashboardPage() {
         featured: true,
         category: true,
         subcategory: true,
+        status: true, // ← show status badge
       },
     }),
     prisma.product.count({ where: { sellerId: me.id, createdAt: { gte: since7d } } }),
     prisma.favorite.count({ where: { product: { sellerId: me.id } } }),
-    // top categories last 30d
+    // Market snapshot should only consider ACTIVE (publicly visible) items
     prisma.product.groupBy({
       by: ["category"],
-      where: { createdAt: { gte: since30d } },
+      where: { status: "ACTIVE", createdAt: { gte: since30d } },
       _count: { category: true },
     }),
   ]);
 
-  // Sort top categories by count desc (do it in JS to avoid tricky orderBy typings)
-  const topCategoriesSorted = [...topCats30].sort((a, b) => (b._count.category ?? 0) - (a._count.category ?? 0)).slice(0, 5);
+  const topCategoriesSorted = [...topCats30]
+    .sort((a, b) => (b._count.category ?? 0) - (a._count.category ?? 0))
+    .slice(0, 5);
 
   const recentListings = recentListingsRaw as unknown as RecentListing[];
   const isBasic = me.subscription === "BASIC";
@@ -238,6 +245,12 @@ export default async function DashboardPage() {
                   {p.featured && (
                     <span className="absolute top-2 left-2 z-10 rounded-md bg-[#161748] text-white text-xs px-2 py-1 shadow">
                       Verified
+                    </span>
+                  )}
+                  {/* Status badge (only when not ACTIVE) */}
+                  {p.status !== "ACTIVE" && (
+                    <span className="absolute top-2 right-2 z-10 rounded-md bg-gray-800 text-white text-xs px-2 py-1 shadow">
+                      {p.status}
                     </span>
                   )}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
