@@ -14,12 +14,11 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-
     "verbatimModuleSyntax": true,
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["src/*"]
     },
 
     "forceConsistentCasingInFileNames": true,
