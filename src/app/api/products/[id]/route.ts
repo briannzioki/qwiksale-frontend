@@ -23,53 +23,67 @@ async function getId(ctx: CtxLike): Promise<string> {
   return String(value?.id ?? "").trim();
 }
 
+const productSelect = {
+  id: true,
+  name: true,
+  description: true,
+  category: true,
+  subcategory: true,
+  brand: true,
+  condition: true,
+  price: true,
+  image: true,
+  gallery: true,
+  location: true,
+  negotiable: true,
+  createdAt: true,
+  featured: true,
+  sellerId: true,
+
+  // flattened snapshot (safe)
+  sellerName: true,
+  sellerLocation: true,
+  sellerMemberSince: true,
+  sellerRating: true,
+  sellerSales: true,
+
+  // linked seller (no email/phone)
+  seller: {
+    select: {
+      id: true,
+      name: true,
+      image: true,
+      subscription: true,
+      username: true,
+    },
+  },
+} as const;
+
 /* -------------------- GET /api/products/:id ------------------- */
 export async function GET(_req: NextRequest, ctx: CtxLike) {
   try {
     const productId = await getId(ctx);
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
-    const item = await prisma.product.findUnique({
-      where: { id: productId },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        category: true,
-        subcategory: true,
-        brand: true,
-        condition: true,
-        price: true,
-        image: true,
-        gallery: true,
-        location: true,
-        negotiable: true,
-        createdAt: true,
-        featured: true,
-        sellerId: true,
-
-        // flattened snapshot (safe)
-        sellerName: true,
-        sellerLocation: true,
-        sellerMemberSince: true,
-        sellerRating: true,
-        sellerSales: true,
-
-        // linked seller (no email/phone)
-        seller: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            subscription: true,
-            username: true, // ← include username
-          },
-        },
-      },
+    // 1) Try public (ACTIVE) fetch first
+    const activeItem = await prisma.product.findFirst({
+      where: { id: productId, status: "ACTIVE" },
+      select: productSelect,
     });
+    if (activeItem) return noStore(activeItem);
 
-    if (!item) return noStore({ error: "Not found" }, { status: 404 });
-    return noStore(item);
+    // 2) Allow owner to view non-ACTIVE items (draft/hidden/sold)
+    const session = await auth();
+    const userId = (session as any)?.user?.id as string | undefined;
+    if (!userId) return noStore({ error: "Not found" }, { status: 404 });
+
+    const ownerItem = await prisma.product.findFirst({
+      where: { id: productId, sellerId: userId },
+      select: productSelect,
+    });
+    if (!ownerItem) return noStore({ error: "Not found" }, { status: 404 });
+
+    return noStore(ownerItem);
   } catch (e) {
     console.warn("[products/:id GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
@@ -125,37 +139,13 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
       gallery: normGallery,
       location: typeof body?.location === "string" ? body.location : undefined,
       negotiable: typeof body?.negotiable === "boolean" ? body.negotiable : undefined,
+      // status intentionally NOT changeable here (keep separate admin/owner flow)
     };
 
     const updated = await prisma.product.update({
       where: { id: productId },
       data,
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        category: true,
-        subcategory: true,
-        brand: true,
-        condition: true,
-        price: true,
-        image: true,
-        gallery: true,
-        location: true,
-        negotiable: true,
-        createdAt: true,
-        featured: true,
-        sellerId: true,
-        seller: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            subscription: true,
-            username: true, // ← include username in PATCH response
-          },
-        },
-      },
+      select: productSelect,
     });
 
     return noStore(updated);

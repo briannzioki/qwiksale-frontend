@@ -31,10 +31,12 @@ export default async function StorePage({
 }: {
   params: Promise<{ username: string }>;
 }) {
-  const { username: rawUsername } = await params; // ✅ Next 15 expects Promise here
+  // Next 15: params is a Promise
+  const { username: rawUsername } = await params;
   const username = decodeURIComponent(rawUsername || "").trim();
   if (!username) notFound();
 
+  // 1) Find the user (case-insensitive)
   const user = await prisma.user.findFirst({
     where: { username: { equals: username, mode: "insensitive" } },
     select: {
@@ -45,29 +47,34 @@ export default async function StorePage({
       city: true,
       country: true,
       createdAt: true,
-      products: {
-        orderBy: { createdAt: "desc" },
-        take: 48,
-        select: {
-          id: true,
-          name: true,
-          image: true,
-          price: true,
-          featured: true,
-          category: true,
-          subcategory: true,
-          createdAt: true,
-        },
-      },
     },
   });
-
   if (!user) notFound();
 
-  const products = (user.products || []) as StoreProduct[];
+  // 2) Only show REAL products (owned by this user) that are ACTIVE
+  //    Sort: featured first, then newest
+  const products = (await prisma.product.findMany({
+    where: {
+      sellerId: user.id,            // owned by the store owner
+      status: "ACTIVE",             // public/active only
+    },
+    orderBy: [{ featured: "desc" }, { createdAt: "desc" }],
+    take: 48,
+    select: {
+      id: true,
+      name: true,
+      image: true,
+      price: true,
+      featured: true,
+      category: true,
+      subcategory: true,
+      createdAt: true,
+    },
+  })) as StoreProduct[];
 
   return (
     <div className="space-y-6">
+      {/* Store header */}
       <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
         <div className="flex items-center gap-4">
           {user.image ? (
@@ -103,6 +110,7 @@ export default async function StorePage({
         </div>
       </div>
 
+      {/* Listings */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
@@ -111,7 +119,9 @@ export default async function StorePage({
         </div>
 
         {products.length === 0 ? (
-          <div className="text-gray-600">This store hasn’t posted any items yet.</div>
+          <div className="text-gray-600">
+            This store hasn’t posted any items yet.
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {products.map((p) => (
@@ -129,11 +139,15 @@ export default async function StorePage({
                     className="w-full h-40 object-cover"
                   />
                   <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 line-clamp-1">{p.name}</h3>
+                    <h3 className="font-semibold text-gray-900 line-clamp-1">
+                      {p.name}
+                    </h3>
                     <p className="text-xs text-gray-500 line-clamp-1">
                       {p.category} • {p.subcategory}
                     </p>
-                    <p className="text-[#161748] font-bold mt-1">{fmtKES(p.price)}</p>
+                    <p className="text-[#161748] font-bold mt-1">
+                      {fmtKES(p.price)}
+                    </p>
                     <p className="text-[11px] text-gray-400 mt-1">
                       {new Date(p.createdAt).toLocaleDateString()}
                     </p>

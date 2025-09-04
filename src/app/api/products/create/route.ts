@@ -114,8 +114,7 @@ function toTier(sub?: string | null): Tier {
   const s = (sub || "").toUpperCase();
   if (s === "GOLD") return "GOLD";
   if (s === "PLATINUM") return "PLATINUM";
-  // Treat FREE/NULL/UNKNOWN as BASIC
-  return "BASIC";
+  return "BASIC"; // Treat FREE/NULL/UNKNOWN as BASIC
 }
 
 /* --------------- POST /api/products/create --------------- */
@@ -143,9 +142,9 @@ export async function POST(req: NextRequest) {
     const gallery = nGallery(body.gallery);
     const location = s(body.location, MAX.location);
     const negotiable = nBool(body.negotiable);
-    const featured = nBool(body.featured) ?? false;
+    let featured = nBool(body.featured) ?? false;
 
-    // Seller snapshot (phone is OPTIONAL now)
+    // Seller snapshot (phone is OPTIONAL)
     const sellerPhoneRaw = normalizeMsisdn(body.sellerPhone);
     if (typeof body.sellerPhone === "string" && !sellerPhoneRaw) {
       return noStore(
@@ -172,29 +171,30 @@ export async function POST(req: NextRequest) {
     const tier = toTier(me.subscription);
     const limits = LIMITS[tier];
 
-    const myActiveCount = await prisma.product.count({ where: { sellerId: me.id } });
+    // Count only ACTIVE listings for limits
+    const myActiveCount = await prisma.product.count({
+      where: { sellerId: me.id, status: "ACTIVE" },
+    });
     if (myActiveCount >= limits.listingLimit) {
       return noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 });
     }
-    if (featured && !limits.canFeature) {
-      return noStore(
-        { error: `Your ${tier} tier cannot mark items as featured.` },
-        { status: 403 }
-      );
-    }
+
+    // Enforce featured permission
+    if (!limits.canFeature && featured) featured = false;
 
     // Auto gallery fallback
     const finalGallery = gallery ?? (image ? [image] : []);
 
-    // ✅ Build data inline with conditional spreads so only defined fields are sent
+    // Create
     const created = await prisma.product.create({
       data: {
         name,
         category,
         subcategory,
         condition,
-        featured, // include explicit booleans
+        featured,
         sellerId: me.id,
+        // status defaults to ACTIVE in schema
         createdAt: new Date(),
 
         ...(brand ? { brand } : {}),

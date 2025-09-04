@@ -76,6 +76,12 @@ const productListSelect = {
   },
 } as const;
 
+/** email of the demo/seed user we want to hide by default (set in Vercel env) */
+const DEMO_EMAIL =
+  process.env.SEED_DEMO_USER_EMAIL ||
+  process.env.DEMO_SELLER_EMAIL ||
+  "";
+
 /* ------------------------- GET /api/products ------------------------- */
 export async function GET(req: NextRequest) {
   try {
@@ -105,6 +111,10 @@ export async function GET(req: NextRequest) {
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), 60, 1, 200);
+
+    // flags controlling demo visibility & search-like detection
+    const includeDemo = toBool(url.searchParams.get("includeDemo")) === true;
+    const isSearchLike = q.length > 0 || !!category || !!subcategory || !!brand;
 
     // Build where (default to ACTIVE items)
     const where: any = { status: "ACTIVE" };
@@ -139,14 +149,33 @@ export async function GET(req: NextRequest) {
       and.push({ price });
     }
 
+    // Hide demo/seeded data unless explicitly included
+    if (!includeDemo) {
+      if (DEMO_EMAIL) {
+        and.push({
+          NOT: { seller: { is: { email: { equals: DEMO_EMAIL, mode: "insensitive" } } } },
+        });
+      }
+      // Filter out obvious seeded clones
+      and.push({ NOT: { name: { contains: "• Batch" } } });
+    }
+
     if (and.length > 0) where.AND = and;
 
     // Sorting
-    let orderBy: any = { createdAt: "desc" as const };
-    if (sort === "price_asc") orderBy = { price: "asc" as const };
-    else if (sort === "price_desc") orderBy = { price: "desc" as const };
-    else if (sort === "featured")
+    let orderBy: any;
+    if (sort === "price_asc") {
+      orderBy = { price: "asc" as const };
+    } else if (sort === "price_desc") {
+      orderBy = { price: "desc" as const };
+    } else if (sort === "featured") {
       orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
+    } else {
+      // default: on searches, surface featured first; on home, newest first
+      orderBy = isSearchLike
+        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }]
+        : { createdAt: "desc" as const };
+    }
 
     // Query
     const [total, items, facets] = await Promise.all([

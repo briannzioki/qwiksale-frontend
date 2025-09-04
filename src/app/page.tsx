@@ -51,6 +51,86 @@ const DEBOUNCE_MS = 300;
 const fmtKES = (n?: number | null) =>
   typeof n === "number" && n > 0 ? `KES ${n.toLocaleString()}` : "Contact for price";
 
+/** Small on-device gazetteer for Kenyan towns/cities (extend as needed) */
+const KENYA_PLACES: Array<{ name: string; lat: number; lng: number; aliases?: string[] }> = [
+  { name: "Nairobi", lat: -1.2921, lng: 36.8219, aliases: ["nai", "nrb"] },
+  { name: "Mombasa", lat: -4.0435, lng: 39.6682 },
+  { name: "Kisumu", lat: -0.0917, lng: 34.7680 },
+  { name: "Nakuru", lat: -0.3031, lng: 36.0800 },
+  { name: "Eldoret", lat: 0.5143, lng: 35.2698 },
+  { name: "Thika", lat: -1.0333, lng: 37.0693 },
+  { name: "Naivasha", lat: -0.7167, lng: 36.4333 },
+  { name: "Nyeri", lat: -0.4176, lng: 36.9510 },
+  { name: "Meru", lat: 0.0463, lng: 37.6559 },
+  { name: "Machakos", lat: -1.5167, lng: 37.2667 },
+  { name: "Kakamega", lat: 0.2827, lng: 34.7519 },
+  { name: "Kericho", lat: -0.3677, lng: 35.2831 },
+  { name: "Kitale", lat: 1.0157, lng: 35.0061 },
+  { name: "Malindi", lat: -3.2192, lng: 40.1169 },
+  { name: "Garissa", lat: -0.4569, lng: 39.6583 },
+  { name: "Embu", lat: -0.5333, lng: 37.4500 },
+  { name: "Nanyuki", lat: 0.0167, lng: 37.0667 },
+  { name: "Lamu", lat: -2.2717, lng: 40.9020 },
+  { name: "Kilifi", lat: -3.6333, lng: 39.8500 },
+  { name: "Voi", lat: -3.3961, lng: 38.5561 },
+];
+
+/** Build a quick lowercase lookup (includes aliases) */
+const PLACE_LUT: Record<string, { name: string; lat: number; lng: number }> = (() => {
+  const lut: Record<string, { name: string; lat: number; lng: number }> = {};
+  for (const p of KENYA_PLACES) {
+    lut[p.name.toLowerCase()] = { name: p.name, lat: p.lat, lng: p.lng };
+    (p.aliases || []).forEach(a => (lut[a.toLowerCase()] = { name: p.name, lat: p.lat, lng: p.lng }));
+  }
+  return lut;
+})();
+
+function normPlaceString(s: string) {
+  // keep only letters, numbers, comma & space; collapse spaces
+  return s.toLowerCase().replace(/[^a-z0-9,\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Try to resolve a product's free-text `location` to a known Kenyan town */
+function resolveKenyaPlace(free: string | null | undefined):
+  | { name: string; lat: number; lng: number }
+  | null {
+  if (!free) return null;
+  const t = normPlaceString(free);
+  if (!t) return null;
+
+  // try comma-separated tokens first: "South B, Nairobi", "Kilimani Nairobi", etc.
+  const tokens = t.split(/[,\s]+/).filter(Boolean); // order matters: prefer rightmost broader area
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const hit = PLACE_LUT[tokens[i]];
+    if (hit) return hit;
+  }
+
+  // fallback: substring match against full names (e.g., "Nairobi CBD")
+  for (const key of Object.keys(PLACE_LUT)) {
+    if (t.includes(key)) return PLACE_LUT[key];
+  }
+  return null;
+}
+
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371; // km
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLon = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLon = Math.sin(dLon / 2);
+  const c =
+    2 *
+    Math.asin(
+      Math.sqrt(sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon)
+    );
+  return Math.round(R * c);
+}
+
+/* ======================
+   Debounce
+   ====================== */
 function useDebounced<T>(value: T, delay = DEBOUNCE_MS) {
   const [debounced, setDebounced] = useState<T>(value);
   useEffect(() => {
@@ -75,9 +155,9 @@ export default function HomePage() {
   const [condition, setCondition] = useState(sp.get("condition") || "");
   const [minPrice, setMinPrice] = useState(sp.get("minPrice") || "");
   const [maxPrice, setMaxPrice] = useState(sp.get("maxPrice") || "");
-  // use API’s flag name: featured
+  // API flag name: featured
   const [featuredOnly, setFeaturedOnly] = useState((sp.get("featured") || "false") === "true");
-  // use API’s sort keys: newest | price_asc | price_desc | featured
+  // API sort keys: newest | price_asc | price_desc | featured
   const [sort, setSort] = useState(sp.get("sort") || "newest");
   const [page, setPage] = useState(() => {
     const n = Number(sp.get("page") || 1);
@@ -101,6 +181,21 @@ export default function HomePage() {
   const [facets, setFacets] = useState<Facets | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Buyer geolocation (optional)
+  const [myLoc, setMyLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoDenied, setGeoDenied] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!("geolocation" in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setMyLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      () => setGeoDenied(true),
+      { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 8000 }
+    );
+  }, []);
 
   // Only compute facets on page 1 (faster)
   const includeFacets = dpage === 1;
@@ -223,6 +318,18 @@ export default function HomePage() {
     setSort("newest");
     setPage(1);
   };
+
+  // Distance computer (resolved per item)
+  const computeDistanceText = useCallback(
+    (loc: string | null | undefined): { place: string; distanceKm?: number } | null => {
+      const resolved = resolveKenyaPlace(loc);
+      if (!resolved) return loc ? { place: loc } : null;
+      if (!myLoc) return { place: resolved.name };
+      const km = haversineKm(myLoc, resolved);
+      return { place: resolved.name, distanceKm: km };
+    },
+    [myLoc]
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -517,45 +624,69 @@ export default function HomePage() {
         <div className="text-gray-500 dark:text-slate-400">No items found.</div>
       ) : (
         <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-          {items.map((p) => (
-            <Link key={p.id} href={`/product/${p.id}`} className="relative group">
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800">
-                <div className="relative">
-                  {p.featured && (
-                    <span className="absolute top-2 left-2 z-10 rounded-md bg-[#161748] text-white text-xs px-2 py-1 shadow">
-                      Verified
-                    </span>
-                  )}
-                  <Image
-                    alt={p.name}
-                    src={p.image || "/placeholder/default.jpg"}
-                    width={800}
-                    height={440}
-                    className="w-full h-44 object-cover bg-gray-100 dark:bg-slate-800"
-                    priority={false}
-                    unoptimized={Boolean(p.image?.endsWith(".svg"))}
-                  />
-                  <div className="absolute top-2 right-2 z-10">
-                    <FavoriteButton productId={p.id} />
+          {items.map((p) => {
+            const locInfo = computeDistanceText(p.location);
+            return (
+              <Link key={p.id} href={`/product/${p.id}`} className="relative group">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800">
+                  <div className="relative">
+                    {p.featured && (
+                      <span className="absolute top-2 left-2 z-10 rounded-md bg-[#161748] text-white text-xs px-2 py-1 shadow">
+                        Verified
+                      </span>
+                    )}
+                    <Image
+                      alt={p.name}
+                      src={p.image || "/placeholder/default.jpg"}
+                      width={800}
+                      height={440}
+                      className="w-full h-44 object-cover bg-gray-100 dark:bg-slate-800"
+                      priority={false}
+                      unoptimized={Boolean(p.image?.endsWith?.(".svg"))}
+                    />
+                    <div className="absolute top-2 right-2 z-10">
+                      <FavoriteButton productId={p.id} />
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <h3 className="font-semibold text-gray-900 dark:text-slate-100 line-clamp-1">
+                      {p.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 line-clamp-1">
+                      {p.category} • {p.subcategory}
+                    </p>
+                    {p.brand && (
+                      <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                        Brand: {p.brand}
+                      </p>
+                    )}
+
+                    {/* Price */}
+                    <p className="text-[#161748] dark:text-[#39a0ca] font-bold mt-2">
+                      {fmtKES(p.price)}
+                    </p>
+
+                    {/* Location + Distance (Kenya-only) */}
+                    { (p.location || locInfo) && (
+                      <p className="mt-1 text-xs text-gray-600 dark:text-slate-300 flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border px-2 py-0.5">
+                          {locInfo?.place || p.location}
+                        </span>
+                        {locInfo?.distanceKm !== undefined && (
+                          <span className="inline-flex items-center rounded-full border px-2 py-0.5">
+                            ~{locInfo.distanceKm} km away
+                          </span>
+                        )}
+                        {geoDenied && (
+                          <span className="text-[11px] opacity-60">(enable location for distance)</span>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
-                <div className="p-4">
-                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 line-clamp-1">
-                    {p.name}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-slate-400 line-clamp-1">
-                    {p.category} • {p.subcategory}
-                  </p>
-                  {p.brand && (
-                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                      Brand: {p.brand}
-                    </p>
-                  )}
-                  <p className="text-[#161748] dark:text-[#39a0ca] font-bold mt-2">{fmtKES(p.price)}</p>
-                </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </section>
       )}
     </div>
