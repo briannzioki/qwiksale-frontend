@@ -33,3 +33,16 @@ Sentry.init({
 
 // Required by Sentry to instrument navigations in Next 15+
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
+
+/**
+ * Expose Sentry on window/globalThis for console testing:
+ * - Always in development (`npm run dev`)
+ * - In production ONLY if NEXT_PUBLIC_SENTRY_DEBUG=1 is set
+ */
+if (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_SENTRY_DEBUG === "1") {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).Sentry = Sentry;
+  if (typeof console !== "undefined" && console.info) {
+    console.info("[Sentry] Exposed on window/globalThis for console testing.");
+  }
+}
