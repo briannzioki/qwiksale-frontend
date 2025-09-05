@@ -1,13 +1,19 @@
 // src/app/layout.tsx
-import { headers } from "next/headers";
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { headers } from "next/headers";
 import Script from "next/script";
 import crypto from "crypto";
+import dynamic from "next/dynamic"; // ⬅️ added
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
 import AppShell from "./components/AppShell";
 import Providers from "./providers";
+
+// ⬅️ client-only mount (no SSR)
+const DevSentryTest = dynamic(() => import("./components/DevSentryTest"), {
+  ssr: false,
+});
 
 const inter = Inter({
   subsets: ["latin"],
@@ -15,7 +21,7 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-// Robust site URL (strip trailing slash)
+/* ----------------------------- Site URL helpers ---------------------------- */
 const envAppUrl =
   process.env.NEXT_PUBLIC_APP_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
@@ -26,6 +32,7 @@ const isPreview =
   process.env.VERCEL_ENV === "preview" ||
   process.env.NEXT_PUBLIC_NOINDEX === "1";
 
+/* -------------------------------- Viewport -------------------------------- */
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
@@ -36,6 +43,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
+/* ------------------------------- Site metadata ----------------------------- */
 export const metadata: Metadata = {
   metadataBase: (() => {
     try {
@@ -45,19 +53,44 @@ export const metadata: Metadata = {
     }
   })(),
   applicationName: "QwikSale",
-  title: { default: "QwikSale", template: "%s · QwikSale" },
-  description: "QwikSale — Kenya’s trusted marketplace for all items.",
-  keywords: ["QwikSale", "Kenya", "marketplace", "buy and sell", "peer to peer", "mpesa"],
-  alternates: { canonical: "/" },
+  title: {
+    default: "QwikSale",
+    template: "%s · QwikSale",
+  },
+  description:
+    "QwikSale — Kenya’s trusted marketplace for all items. List your items, find great deals, and contact sellers directly.",
+  keywords: [
+    "QwikSale",
+    "Kenya",
+    "marketplace",
+    "buy and sell",
+    "peer to peer",
+    "mpesa",
+  ],
+  // Make canonical absolute (clearer for crawlers)
+  alternates: {
+    canonical: siteUrl + "/",
+    languages: {
+      "en-KE": "/",
+      en: "/",
+    },
+  },
   manifest: "/manifest.webmanifest",
   openGraph: {
     type: "website",
-    url: siteUrl,
+    url: siteUrl + "/",
     siteName: "QwikSale",
     title: "QwikSale — Kenya’s trusted marketplace for all items.",
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
-    images: [{ url: `${siteUrl}/og-image.png`, width: 1200, height: 630, alt: "QwikSale" }],
+    images: [
+      {
+        url: `${siteUrl}/og-image.png`,
+        width: 1200,
+        height: 630,
+        alt: "QwikSale",
+      },
+    ],
     locale: "en_KE",
   },
   twitter: {
@@ -76,22 +109,53 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   robots: isPreview
-    ? { index: false, follow: false, googleBot: { index: false, follow: false, noimageindex: true } }
-    : { index: true, follow: true, googleBot: { index: true, follow: true } },
+    ? {
+        index: false,
+        follow: false,
+        nocache: true,
+        googleBot: {
+          index: false,
+          follow: false,
+          noimageindex: true,
+        },
+      }
+    : {
+        index: true,
+        follow: true,
+        googleBot: {
+          index: true,
+          follow: true,
+          "max-image-preview": "large",
+          "max-video-preview": -1,
+          "max-snippet": -1,
+        },
+      },
+  // Use built-in verification keys
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
+    other: {
+      "msvalidate.01": process.env.BING_SITE_VERIFICATION || "",
+    },
+  },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "QwikSale" },
   category: "marketplace",
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Get CSP nonce from middleware (fallback locally)
+export default async function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // CSP nonce from middleware (or local fallback)
   let nonce: string;
   try {
-    const h = await headers(); // Next 15: headers() can be awaited in RSC
+    const h = await headers();
     nonce = h.get("x-nonce") ?? crypto.randomBytes(16).toString("base64");
   } catch {
     nonce = crypto.randomBytes(16).toString("base64");
   }
 
+  // JSON-LD (site-wide)
   const orgJsonLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -121,13 +185,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <meta name="color-scheme" content="light dark" />
 
-        {/* Site verification (optional) */}
-        <meta name="google-site-verification" content={process.env.GOOGLE_SITE_VERIFICATION || ""} />
-        <meta name="msvalidate.01" content={process.env.BING_SITE_VERIFICATION || ""} />
-
-        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Performance hints */}
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="" />
+        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
 
         {/* Set initial theme BEFORE paint to avoid flicker */}
         <Script id="theme-script" strategy="beforeInteractive" nonce={nonce}>
@@ -181,17 +242,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               />
               <Script id="ga-init" nonce={nonce} strategy="afterInteractive">
                 {`
-                  window.dataLayer = window.dataLayer || [];
-                  function gtag(){dataLayer.push(arguments);}
-                  gtag('js', new Date());
-                  gtag('config', '${GA_ID}', {
-                    anonymize_ip: true,
-                    send_page_view: true,
-                  });
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: true });
                 `}
               </Script>
             </>
           ) : null}
+
+          {/* ⬇️ Dev-only Sentry tester (client-only) */}
+          <DevSentryTest />
         </div>
       </body>
     </html>
