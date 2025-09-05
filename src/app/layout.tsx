@@ -5,15 +5,10 @@ import { Inter } from "next/font/google";
 import { headers } from "next/headers";
 import Script from "next/script";
 import crypto from "crypto";
-import dynamic from "next/dynamic"; // ⬅️ added
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
 import AppShell from "./components/AppShell";
 import Providers from "./providers";
-
-// ⬅️ client-only mount (no SSR)
-const DevSentryTest = dynamic(() => import("./components/DevSentryTest"), {
-  ssr: false,
-});
+import DevToolsMount from "./components/DevToolsMount"; // ✅ client-only mount wrapper
 
 const inter = Inter({
   subsets: ["latin"],
@@ -113,11 +108,7 @@ export const metadata: Metadata = {
         index: false,
         follow: false,
         nocache: true,
-        googleBot: {
-          index: false,
-          follow: false,
-          noimageindex: true,
-        },
+        googleBot: { index: false, follow: false, noimageindex: true },
       }
     : {
         index: true,
@@ -130,7 +121,7 @@ export const metadata: Metadata = {
           "max-snippet": -1,
         },
       },
-  // Use built-in verification keys
+  // Built-in verification keys
   verification: {
     google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
     other: {
@@ -251,8 +242,8 @@ export default async function RootLayout({
             </>
           ) : null}
 
-          {/* ⬇️ Dev-only Sentry tester (client-only) */}
-          <DevSentryTest />
+          {/* ✅ Client-only dev widget mount (safe for Server Components) */}
+          <DevToolsMount />
         </div>
       </body>
     </html>
