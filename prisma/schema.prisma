@@ -1,12 +1,14 @@
 // prisma/schema.prisma
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"] // <-- required for `extensions = [...]`
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [citext()] // enables @db.Citext on fields
 }
 
 /**
@@ -66,10 +68,10 @@ enum TicketStatus {
 
 model User {
   id            String    @id @default(cuid())
-  email         String?   @unique
+  email         String?   @unique @db.Citext
   emailVerified DateTime?
   name          String?
-  username      String?   @unique
+  username      String?   @unique @db.Citext
   image         String?
 
   // Credentials login (optional)
@@ -89,14 +91,14 @@ model User {
   subscriptionUntil DateTime?
   role              Role         @default(USER)
 
-  // Simple self-referral link (who referred me?)
+  // Self-referral
   referralCode      String? @unique
   referredById      String?
   referredBy        User?   @relation("ReferralsTo", fields: [referredById], references: [id])
   referrals         User[]  @relation("ReferralsTo")
   referralQualified Int     @default(0)
 
-  // Explicit referral edges (separate model below)
+  // Explicit referral edges
   referralsSent     Referral[] @relation("ReferralInviter")
   referralsReceived Referral[] @relation("ReferralInvitee")
 
@@ -167,19 +169,14 @@ model Product {
   /// ---------- Indexes tuned for your queries ----------
   // Home/search: ACTIVE first, then featured/newest
   @@index([status, featured, createdAt(sort: Desc)])
-
   // Default browse: newest ACTIVE
   @@index([status, createdAt(sort: Desc)])
-
   // Browse by category/subcategory: newest ACTIVE in that bucket
   @@index([status, category, subcategory, createdAt(sort: Desc)])
-
   // Price filter/sort within ACTIVE
   @@index([status, price])
-
   // Seller store pages & dashboards: seller’s ACTIVE, newest
   @@index([sellerId, status, createdAt(sort: Desc)])
-
   // Brand faceting/filtering within ACTIVE (optional but cheap)
   @@index([status, brand])
 }
@@ -211,8 +208,8 @@ model Payment {
   checkoutRequestId String? @unique
   merchantRequestId String? @unique
 
-  accountRef String? @db.VarChar(12)
-
+  accountRef  String? @db.VarChar(12)
+  resultDesc  String?            // short human/MPesa message (fail/ok)
   rawCallback Json?
 
   productId String?
@@ -259,6 +256,11 @@ model SupportTicket {
   url        String?
   productId  String?
   reporterId String?
+
+  // Optional telemetry (captured by API if columns exist)
+  clientIp  String?
+  userAgent String?
+  referer   String?
 
   product  Product? @relation("TicketProducts", fields: [productId], references: [id], onDelete: SetNull)
   reporter User?    @relation("ReporterTickets", fields: [reporterId], references: [id], onDelete: SetNull)

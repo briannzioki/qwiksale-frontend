@@ -333,21 +333,22 @@ export default function SellClient() {
           cache: "no-store",
           body: JSON.stringify(payload),
         });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || j?.error) {
-          throw new Error(j?.error || `Failed to create (${r.status})`);
+        const j = await r.json().catch(() => ({} as any));
+        if (!r.ok || (j as any)?.error) {
+          throw new Error((j as any)?.error || `Failed to create (${r.status})`);
         }
-        created = { id: j.productId };
+        created = { id: (j as any).productId };
       }
 
       const createdId =
         typeof created === "string"
           ? created
           : created && typeof created === "object" && "id" in created
-          ? String(created.id)
+          ? String((created as any).id)
           : "";
 
       toast.success("Listing posted!");
+      // Prefer push over replace so back button returns to form if needed
       router.push(createdId ? `/sell/success?id=${createdId}` : "/sell/success");
     } catch (err: any) {
       console.error(err);
@@ -618,6 +619,7 @@ export default function SellClient() {
             type="submit"
             disabled={!canSubmit || submitting}
             className={`btn-primary ${(!canSubmit || submitting) && "opacity-60"}`}
+            onClick={onSubmit}
           >
             {submitting ? "Posting…" : "Post Listing"}
           </button>

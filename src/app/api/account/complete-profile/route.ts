@@ -9,15 +9,19 @@ import { prisma } from "@/app/lib/prisma";
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
   return res;
 }
 
 function isValidEmail(email: string): boolean {
+  // basic RFC5322-lite check
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-// keep username rules consistent with your other endpoint if you want
+// Keep username rules consistent across the app
 function looksLikeValidUsername(u: string) {
+  // 3–24 chars: letters, numbers, dot, underscore; no spaces
   return /^[a-zA-Z0-9._]{3,24}$/.test(u);
 }
 
@@ -29,10 +33,20 @@ export async function POST(req: Request) {
     return noStore({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => ({} as any));
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return noStore({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  if (typeof body !== "object" || body === null) {
+    return noStore({ error: "Body must be a JSON object." }, { status: 400 });
+  }
+
   const { username, email } = body as {
-    username?: string;
-    email?: string;
+    username?: unknown;
+    email?: unknown;
   };
 
   // Build the update payload based on what was provided
@@ -42,11 +56,13 @@ export async function POST(req: Request) {
     const u = username.trim();
     if (!looksLikeValidUsername(u)) {
       return noStore(
-        { error: "Username must be 3–24 chars (letters, numbers, dot, underscore)." },
+        { error: "Username must be 3–24 characters using letters, numbers, dot, or underscore." },
         { status: 400 }
       );
     }
     data.username = u;
+  } else if (username !== undefined && username !== null && username !== "") {
+    return noStore({ error: "username must be a non-empty string." }, { status: 400 });
   }
 
   if (typeof email === "string" && email.trim()) {
@@ -55,6 +71,8 @@ export async function POST(req: Request) {
       return noStore({ error: "Invalid email address." }, { status: 400 });
     }
     data.email = e;
+  } else if (email !== undefined && email !== null && email !== "") {
+    return noStore({ error: "email must be a non-empty string." }, { status: 400 });
   }
 
   if (Object.keys(data).length === 0) {
@@ -73,22 +91,20 @@ export async function POST(req: Request) {
         email: true,
         username: true,
         name: true,
-        // NOTE: No `emailVerified`, `verified`, or `phone` here since they
-        // are not present in your current User schema.
+        // If you later add fields like emailVerified/phone, include/select/update them here.
       },
     });
 
-    return noStore(
-      { ok: true, user },
-      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
-    );
+    return noStore({ ok: true, user });
   } catch (e: any) {
     // Unique constraint conflict (e.g., username or email already taken)
     if (e?.code === "P2002") {
-      const target =
-        Array.isArray(e.meta?.target) ? e.meta.target.join(", ") : String(e.meta?.target || "");
+      const target = Array.isArray(e.meta?.target)
+        ? e.meta.target.join(", ")
+        : String(e.meta?.target || "field");
       return noStore({ error: `Already in use: ${target}` }, { status: 409 });
     }
+
     // eslint-disable-next-line no-console
     console.error("[complete-profile] POST error:", e);
     return noStore({ error: "Server error" }, { status: 500 });

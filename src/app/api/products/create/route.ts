@@ -8,6 +8,27 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 
+/* ---------------- analytics (console-only for now) ---------------- */
+type AnalyticsEvent =
+  | "product_create_attempt"
+  | "product_create_validation_error"
+  | "product_create_limit_reached"
+  | "product_create_success"
+  | "product_create_error";
+
+function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
+  try {
+    // keep it simple + non-PII; swap this for GA/Plausible/PostHog later
+    // eslint-disable-next-line no-console
+    console.log(`[track] ${event}`, {
+      ts: new Date().toISOString(),
+      ...props,
+    });
+  } catch {
+    /* no-op */
+  }
+}
+
 type Tier = "BASIC" | "GOLD" | "PLATINUM";
 
 const LIMITS: Record<Tier, { listingLimit: number; canFeature: boolean }> = {
@@ -119,9 +140,25 @@ function toTier(sub?: string | null): Tier {
 
 /* --------------- POST /api/products/create --------------- */
 export async function POST(req: NextRequest) {
+  const reqId =
+    (globalThis as any).crypto?.randomUUID?.() ??
+    Math.random().toString(36).slice(2);
+
   try {
     const me = await getMe();
-    if (!me) return noStore({ error: "Unauthorized" }, { status: 401 });
+    if (!me) {
+      track("product_create_validation_error", {
+        reqId,
+        reason: "unauthorized",
+      });
+      return noStore({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    track("product_create_attempt", {
+      reqId,
+      userId: me.id,
+      tier: toTier(me.subscription),
+    });
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
@@ -147,12 +184,24 @@ export async function POST(req: NextRequest) {
     // Seller snapshot (phone is OPTIONAL)
     const sellerPhoneRaw = normalizeMsisdn(body.sellerPhone);
     if (typeof body.sellerPhone === "string" && !sellerPhoneRaw) {
+      track("product_create_validation_error", {
+        reqId,
+        userId: me.id,
+        field: "sellerPhone",
+        reason: "invalid_format",
+      });
       return noStore(
         { error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." },
         { status: 400 }
       );
     }
     if (sellerPhoneRaw && !/^254(7|1)\d{8}$/.test(sellerPhoneRaw)) {
+      track("product_create_validation_error", {
+        reqId,
+        userId: me.id,
+        field: "sellerPhone",
+        reason: "wrong_length_or_prefix",
+      });
       return noStore(
         { error: "sellerPhone must be 2547XXXXXXXX or 2541XXXXXXXX" },
         { status: 400 }
@@ -163,9 +212,30 @@ export async function POST(req: NextRequest) {
     const sellerLocation = s(body.sellerLocation, MAX.location) ?? location;
 
     // Validate required
-    if (!name) return noStore({ error: "name is required" }, { status: 400 });
-    if (!category) return noStore({ error: "category is required" }, { status: 400 });
-    if (!subcategory) return noStore({ error: "subcategory is required" }, { status: 400 });
+    if (!name) {
+      track("product_create_validation_error", {
+        reqId,
+        userId: me.id,
+        field: "name",
+      });
+      return noStore({ error: "name is required" }, { status: 400 });
+    }
+    if (!category) {
+      track("product_create_validation_error", {
+        reqId,
+        userId: me.id,
+        field: "category",
+      });
+      return noStore({ error: "category is required" }, { status: 400 });
+    }
+    if (!subcategory) {
+      track("product_create_validation_error", {
+        reqId,
+        userId: me.id,
+        field: "subcategory",
+      });
+      return noStore({ error: "subcategory is required" }, { status: 400 });
+    }
 
     // Tier enforcement
     const tier = toTier(me.subscription);
@@ -176,6 +246,12 @@ export async function POST(req: NextRequest) {
       where: { sellerId: me.id, status: "ACTIVE" },
     });
     if (myActiveCount >= limits.listingLimit) {
+      track("product_create_limit_reached", {
+        reqId,
+        userId: me.id,
+        tier,
+        limit: limits.listingLimit,
+      });
       return noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 });
     }
 
@@ -228,9 +304,24 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    track("product_create_success", {
+      reqId,
+      userId: me.id,
+      tier,
+      productId: created.id,
+      featured: created.featured,
+      hasPrice: created.price != null,
+      gallerySize: created.gallery?.length ?? 0,
+    });
+
     return noStore(created, { status: 201 });
   } catch (e: any) {
+    // eslint-disable-next-line no-console
     console.error("POST /api/products/create error", e);
+    track("product_create_error", {
+      reqId,
+      message: e?.message ?? String(e),
+    });
     return noStore({ error: e?.message || "Server error" }, { status: 500 });
   }
 }

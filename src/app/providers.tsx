@@ -7,11 +7,10 @@ import { Toaster } from "react-hot-toast";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider
-      refetchOnWindowFocus={false}
-      refetchInterval={0}
-    >
-      <Suspense fallback={<PageLoader />}>{children}</Suspense>
+    <SessionProvider refetchOnWindowFocus={false} refetchInterval={0}>
+      <Suspense fallback={<PageLoader />}>
+        {children}
+      </Suspense>
 
       <Toaster
         position="top-right"
@@ -35,9 +34,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
 function PageLoader() {
   return (
-    <div className="grid min-h-[40vh] place-items-center">
+    <div
+      className="grid min-h-[40vh] place-items-center"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
       <div
-        className="h-6 w-6 animate-spin rounded-full border-2 border-brandNavy border-t-transparent"
+        className="h-6 w-6 rounded-full border-2 border-brandNavy border-t-transparent motion-safe:animate-spin"
         aria-label="Loading"
       />
     </div>

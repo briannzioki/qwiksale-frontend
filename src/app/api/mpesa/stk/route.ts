@@ -6,6 +6,29 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { logMpesaBootOnce, normalizeMsisdn, stkPush } from "@/app/lib/mpesa";
 
+/* ---------------- analytics (console-only for now) ---------------- */
+type AnalyticsEvent =
+  | "mpesa_stk_attempt"
+  | "mpesa_stk_invalid_json"
+  | "mpesa_stk_invalid_amount"
+  | "mpesa_stk_invalid_msisdn"
+  | "mpesa_stk_payment_precreate"
+  | "mpesa_stk_push_error"
+  | "mpesa_stk_upsert"
+  | "mpesa_stk_dedupe_deleted"
+  | "mpesa_stk_success"
+  | "mpesa_stk_error"
+  | "mpesa_stk_ping";
+
+function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
+  try {
+    // eslint-disable-next-line no-console
+    console.log(`[track] ${event}`, { ts: new Date().toISOString(), ...props });
+  } catch {
+    /* no-op */
+  }
+}
+
 type Body = {
   amount: number;
   msisdn: string;                 // accepts 07/01/+254/254 forms
@@ -16,38 +39,63 @@ type Body = {
   description?: string;           // optional override (<=32)
 };
 
-function json(body: unknown, init: ResponseInit = {}) {
-  const res = new NextResponse(JSON.stringify(body), init);
+function noStore(json: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.headers.set("Content-Type", "application/json; charset=utf-8");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
   return res;
 }
 
 export async function POST(req: Request) {
+  const reqId =
+    (globalThis as any).crypto?.randomUUID?.() ??
+    Math.random().toString(36).slice(2);
+
   try {
     logMpesaBootOnce();
 
+    // ---- parse & validate ---------------------------------------------------
     let parsed: Body;
     try {
       parsed = (await req.json()) as Body;
     } catch {
-      return json({ error: "Invalid JSON body" }, { status: 400 });
+      track("mpesa_stk_invalid_json", { reqId });
+      return noStore({ error: "Invalid JSON body" }, { status: 400 });
     }
 
     const amount = Math.round(Number(parsed?.amount));
     if (!Number.isFinite(amount) || amount < 1) {
-      return json({ error: "Invalid amount (min 1 KES)" }, { status: 400 });
+      track("mpesa_stk_invalid_amount", { reqId, amount });
+      return noStore({ error: "Invalid amount (min 1 KES)" }, { status: 400 });
     }
 
-    const phone = normalizeMsisdn(String(parsed?.msisdn ?? ""));
+    const phoneRaw = String(parsed?.msisdn ?? "");
+    const phone = normalizeMsisdn(phoneRaw); // 07/01/+254/254 -> 2547/2541…
     if (!/^254(7|1)\d{8}$/.test(phone)) {
-      return json({ error: "Invalid msisdn (use 2547XXXXXXXX or 2541XXXXXXXX)" }, { status: 400 });
+      track("mpesa_stk_invalid_msisdn", { reqId });
+      return noStore(
+        { error: "Invalid msisdn (use 2547XXXXXXXX or 2541XXXXXXXX)" },
+        { status: 400 }
+      );
     }
 
-    const accountRef = (parsed?.accountRef ?? "Qwiksale").slice(0, 12);
-    const description = (parsed?.description ?? "Qwiksale payment").slice(0, 32);
+    const accountRef =
+      (parsed?.accountRef ?? "QWIKSALE").toString().slice(0, 12);
+    const description =
+      (parsed?.description ?? "Qwiksale payment").toString().slice(0, 32);
 
-    // 1) Create a PENDING row *before* calling LNMO
+    track("mpesa_stk_attempt", {
+      reqId,
+      hasProductId: !!parsed?.productId,
+      hasUserId: !!parsed?.userId,
+      mode: parsed?.mode ?? "paybill",
+      accountRefLength: accountRef.length,
+      descriptionLength: description.length,
+      amount,
+    });
+
+    // ---- 1) pre-create PENDING row -----------------------------------------
     const pending = await prisma.payment.create({
       data: {
         status: "PENDING",
@@ -61,21 +109,42 @@ export async function POST(req: Request) {
       },
       select: { id: true },
     });
+    track("mpesa_stk_payment_precreate", { reqId, paymentId: pending.id });
 
-    // 2) Call LNMO
-    const data = await stkPush({
-      amount,
-      phone,
-      accountReference: accountRef,
-      description,
-      mode: parsed?.mode,
-    });
+    // ---- 2) call STK push ---------------------------------------------------
+    let data: any;
+    try {
+      data = await stkPush({
+        amount,
+        phone,
+        accountReference: accountRef,
+        description,
+        mode: parsed?.mode,
+      });
+    } catch (err: any) {
+      // Best effort: mark the pre-created row as FAILED so ops has a breadcrumb
+      await prisma.payment
+        .update({
+          where: { id: pending.id },
+          data: {
+            status: "FAILED",
+            resultDesc: err?.message?.slice?.(0, 200) || "STK push error",
+          },
+        })
+        .catch(() => {});
+      track("mpesa_stk_push_error", { reqId, paymentId: pending.id, message: String(err?.message || err) });
+      return noStore({ error: err?.message || "Failed to initiate STK" }, { status: 502 });
+    }
 
-    // 3) Upsert by CheckoutRequestID (handles race if callback arrived first)
+    // Safety: ensure IDs exist
+    const checkoutId = data?.CheckoutRequestID || "";
+    const merchantId = data?.MerchantRequestID || "";
+
+    // ---- 3) upsert by CheckoutRequestID (handle callback race) --------------
     const saved = await prisma.payment.upsert({
-      where: { checkoutRequestId: data.CheckoutRequestID },
+      where: { checkoutRequestId: checkoutId },
       update: {
-        merchantRequestId: data.MerchantRequestID,
+        merchantRequestId: merchantId,
       },
       create: {
         status: "PENDING",
@@ -84,32 +153,56 @@ export async function POST(req: Request) {
         amount,
         payerPhone: phone,
         accountRef,
-        checkoutRequestId: data.CheckoutRequestID,
-        merchantRequestId: data.MerchantRequestID,
+        checkoutRequestId: checkoutId,
+        merchantRequestId: merchantId,
         productId: parsed?.productId ?? null,
         userId: parsed?.userId ?? null,
       },
       select: { id: true },
     });
+    track("mpesa_stk_upsert", {
+      reqId,
+      pendingId: pending.id,
+      savedId: saved.id,
+      hasCheckoutId: !!checkoutId,
+      hasMerchantId: !!merchantId,
+    });
 
-    // 4) If a different row was upserted (because callback created it first),
-    //    delete the extra pending row to avoid duplicates.
+    // ---- 4) de-dupe if callback created it first ----------------------------
     if (saved.id !== pending.id) {
       await prisma.payment.delete({ where: { id: pending.id } }).catch(() => {});
+      track("mpesa_stk_dedupe_deleted", { reqId, pendingId: pending.id, savedId: saved.id });
     }
 
-    return json({ ok: true, ...data }, { status: 200 });
+    // ---- 5) respond ---------------------------------------------------------
+    track("mpesa_stk_success", { reqId, paymentId: saved.id });
+    return noStore({
+      ok: true,
+      message: data?.CustomerMessage || "STK push sent. Confirm on your phone.",
+      paymentId: saved.id,
+      mpesa: {
+        MerchantRequestID: merchantId || null,
+        CheckoutRequestID: checkoutId || null,
+        ResponseCode: data?.ResponseCode ?? null,
+        ResponseDescription: data?.ResponseDescription ?? null,
+        CustomerMessage: data?.CustomerMessage ?? null,
+      },
+    });
   } catch (e: any) {
+    // eslint-disable-next-line no-console
     console.warn("[mpesa] /api/mpesa/stk error:", e?.message || e);
-    return json({ error: e?.message || "Server error" }, { status: 500 });
+    track("mpesa_stk_error", { reqId, message: e?.message ?? String(e) });
+    return noStore({ error: e?.message || "Server error" }, { status: 500 });
   }
 }
 
 export async function GET() {
-  return json({ status: "stk alive" }, { status: 200 });
+  track("mpesa_stk_ping", { method: "GET" });
+  return noStore({ status: "stk alive" }, { status: 200 });
 }
 
 export async function HEAD() {
+  track("mpesa_stk_ping", { method: "HEAD" });
   return new NextResponse(null, {
     status: 204,
     headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },

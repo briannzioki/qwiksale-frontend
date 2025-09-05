@@ -1,52 +1,32 @@
+// middleware.ts
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 
+/**
+ * Protect only /sell and /account paths.
+ * Public pages (/, /signin, /api/search, etc.) bypass middleware entirely.
+ */
 export default withAuth(
-  function middleware(req) {
-    // If you didn't use next.config redirects, uncomment this:
-    // const host = req.headers.get("host");
-    // if (host?.startsWith("www.")) {
-    //   const url = req.nextUrl.clone();
-    //   url.host = host.replace(/^www\./, "");
-    //   return NextResponse.redirect(url, 308);
-    // }
-
+  function middleware(_req) {
     return NextResponse.next();
   },
   {
     callbacks: {
-      /**
-       * Only require auth on protected routes.
-       * DO NOT redirect to /account/complete-profile here (that caused the loop).
-       */
-      authorized: ({ token, req }) => {
-        const p = req.nextUrl.pathname;
-
-        // Public paths:
-        const isPublic =
-          p === "/" ||
-          p.startsWith("/signin") ||
-          p.startsWith("/auth") ||
-          p.startsWith("/api/auth") ||
-          p.startsWith("/_next") ||
-          p.startsWith("/favicon") ||
-          p.startsWith("/robots.txt") ||
-          p.startsWith("/sitemap.xml");
-
-        if (isPublic) return true;
-
-        // Protected paths:
-        if (p.startsWith("/sell") || p.startsWith("/account")) {
-          return !!token; // must be logged in
-        }
-
-        return true;
-      },
+      authorized: ({ token }) => !!token, // must be logged in on matched routes
     },
   }
 );
 
-// Match everything except _next/static etc. (be conservative)
+// Run middleware only on these routes:
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/auth).*)"],
+  matcher: ["/sell/:path*", "/account/:path*"],
 };
+
+/**
+ * NOTE:
+ * - Do NOT redirect to /account/complete-profile here (causes loops).
+ * - If you still want www→apex, do it in Vercel → Settings → Redirects, e.g.:
+ *   Source: https://www.qwiksale.sale/(.*)
+ *   Dest:   https://qwiksale.sale/$1
+ *   Code:   308
+ */

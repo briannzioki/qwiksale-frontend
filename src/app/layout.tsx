@@ -1,8 +1,11 @@
 // src/app/layout.tsx
+import { headers } from "next/headers";
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import Script from "next/script";
+import crypto from "crypto";
+import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
 import AppShell from "./components/AppShell";
 import Providers from "./providers";
 
@@ -12,14 +15,13 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-// Build a robust site URL (strip trailing slash)
+// Robust site URL (strip trailing slash)
 const envAppUrl =
   process.env.NEXT_PUBLIC_APP_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
   "http://localhost:3000";
 const siteUrl = envAppUrl.replace(/\/+$/, "");
 
-// Mark preview/temporary environments as noindex
 const isPreview =
   process.env.VERCEL_ENV === "preview" ||
   process.env.NEXT_PUBLIC_NOINDEX === "1";
@@ -35,21 +37,17 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: (() => {
+    try {
+      return new URL(siteUrl);
+    } catch {
+      return new URL("http://localhost:3000");
+    }
+  })(),
   applicationName: "QwikSale",
-  title: {
-    default: "QwikSale",
-    template: "%s · QwikSale",
-  },
+  title: { default: "QwikSale", template: "%s · QwikSale" },
   description: "QwikSale — Kenya’s trusted marketplace for all items.",
-  keywords: [
-    "QwikSale",
-    "Kenya",
-    "marketplace",
-    "buy and sell",
-    "peer to peer",
-    "mpesa",
-  ],
+  keywords: ["QwikSale", "Kenya", "marketplace", "buy and sell", "peer to peer", "mpesa"],
   alternates: { canonical: "/" },
   manifest: "/manifest.webmanifest",
   openGraph: {
@@ -59,7 +57,7 @@ export const metadata: Metadata = {
     title: "QwikSale — Kenya’s trusted marketplace for all items.",
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "QwikSale" }],
+    images: [{ url: `${siteUrl}/og-image.png`, width: 1200, height: 630, alt: "QwikSale" }],
     locale: "en_KE",
   },
   twitter: {
@@ -67,7 +65,7 @@ export const metadata: Metadata = {
     title: "QwikSale — Kenya’s trusted marketplace for all items.",
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
-    images: ["/og-image.png"],
+    images: [`${siteUrl}/og-image.png`],
   },
   icons: {
     icon: [
@@ -78,39 +76,29 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   robots: isPreview
-    ? {
-        index: false,
-        follow: false,
-        googleBot: {
-          index: false,
-          follow: false,
-          noimageindex: true,
-        },
-      }
-    : {
-        index: true,
-        follow: true,
-        googleBot: {
-          index: true,
-          follow: true,
-        },
-      },
+    ? { index: false, follow: false, googleBot: { index: false, follow: false, noimageindex: true } }
+    : { index: true, follow: true, googleBot: { index: true, follow: true } },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "QwikSale" },
   category: "marketplace",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Get CSP nonce from middleware (fallback locally)
+  let nonce: string;
+  try {
+    const h = await headers(); // Next 15: headers() can be awaited in RSC
+    nonce = h.get("x-nonce") ?? crypto.randomBytes(16).toString("base64");
+  } catch {
+    nonce = crypto.randomBytes(16).toString("base64");
+  }
+
   const orgJsonLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: "QwikSale",
     url: siteUrl,
     logo: `${siteUrl}/icon-512.png`,
-    sameAs: [
-      `${siteUrl}/about`,
-      `${siteUrl}/contact`,
-      `${siteUrl}/help`,
-    ],
+    sameAs: [`${siteUrl}/about`, `${siteUrl}/contact`, `${siteUrl}/help`],
   };
 
   const siteJsonLd = {
@@ -125,19 +113,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     },
   };
 
+  const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+  const PLAUSIBLE_DOMAIN = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN;
+
   return (
-    <html lang="en" className="h-full" suppressHydrationWarning>
+    <html lang="en" dir="ltr" className="h-full" suppressHydrationWarning>
       <head>
-        {/* Prefer a consistent color-scheme hint */}
         <meta name="color-scheme" content="light dark" />
 
-        {/* Optional perf: preconnect to common CDNs (safe no-ops if unused) */}
+        {/* Site verification (optional) */}
+        <meta name="google-site-verification" content={process.env.GOOGLE_SITE_VERIFICATION || ""} />
+        <meta name="msvalidate.01" content={process.env.BING_SITE_VERIFICATION || ""} />
+
         <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 
         {/* Set initial theme BEFORE paint to avoid flicker */}
-        <Script id="theme-script" strategy="beforeInteractive">
+        <Script id="theme-script" strategy="beforeInteractive" nonce={nonce}>
           {`try {
   const ls = localStorage.getItem('theme');
   const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -146,11 +139,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 } catch {}`}
         </Script>
 
-        {/* JSON-LD: Organization + WebSite */}
-        <Script id="ld-org" type="application/ld+json">
+        {/* JSON-LD */}
+        <Script id="ld-org" type="application/ld+json" nonce={nonce}>
           {JSON.stringify(orgJsonLd)}
         </Script>
-        <Script id="ld-site" type="application/ld+json">
+        <Script id="ld-site" type="application/ld+json" nonce={nonce}>
           {JSON.stringify(siteJsonLd)}
         </Script>
       </head>
@@ -162,6 +155,43 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Providers>
             <AppShell>{children}</AppShell>
           </Providers>
+
+          {/* Vercel Analytics */}
+          <VercelAnalytics />
+
+          {/* Plausible (optional) */}
+          {PLAUSIBLE_DOMAIN ? (
+            <Script
+              id="plausible"
+              nonce={nonce}
+              strategy="afterInteractive"
+              src="https://plausible.io/js/script.js"
+              data-domain={PLAUSIBLE_DOMAIN}
+            />
+          ) : null}
+
+          {/* Google Analytics 4 (optional) */}
+          {GA_ID ? (
+            <>
+              <Script
+                id="ga-loader"
+                nonce={nonce}
+                strategy="afterInteractive"
+                src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+              />
+              <Script id="ga-init" nonce={nonce} strategy="afterInteractive">
+                {`
+                  window.dataLayer = window.dataLayer || [];
+                  function gtag(){dataLayer.push(arguments);}
+                  gtag('js', new Date());
+                  gtag('config', '${GA_ID}', {
+                    anonymize_ip: true,
+                    send_page_view: true,
+                  });
+                `}
+              </Script>
+            </>
+          ) : null}
         </div>
       </body>
     </html>

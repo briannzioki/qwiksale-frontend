@@ -5,11 +5,14 @@ export const dynamic = "force-dynamic";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
+import { auth } from "@/auth";
 
 /* ----------------------------- tiny helpers ----------------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
   return res;
 }
 
@@ -177,12 +180,39 @@ export async function GET(req: NextRequest) {
         : { createdAt: "desc" as const };
     }
 
+    // Resolve current user id (optional)
+    const session = await auth().catch(() => null);
+    const sessionUserId = (session?.user as any)?.id as string | undefined;
+    let userId: string | null = sessionUserId ?? null;
+    if (!userId && session?.user?.email) {
+      const u = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true },
+      });
+      userId = u?.id ?? null;
+    }
+
+    // Build Prisma select dynamically to add favorites/_count only when useful
+    const select: any = { ...productListSelect };
+
+    // Always compute total favorites via _count
+    select._count = { select: { favorites: true } };
+
+    // Only fetch per-user favorites relation when we have a userId
+    if (userId) {
+      select.favorites = {
+        where: { userId },
+        select: { productId: true },
+        take: 1, // we only need to know if at least one exists
+      };
+    }
+
     // Query
-    const [total, items, facets] = await Promise.all([
+    const [total, productsRaw, facets] = await Promise.all([
       prisma.product.count({ where }),
       prisma.product.findMany({
         where,
-        select: productListSelect,
+        select,
         orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -190,12 +220,23 @@ export async function GET(req: NextRequest) {
       wantFacets ? computeFacets(where) : Promise.resolve(undefined),
     ]);
 
-    // map dates to ISO to keep JSON stable
-    const mapped = items.map((p: any) => ({
-      ...p,
-      createdAt:
-        p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? ""),
-    }));
+    // Shape response: add favoritesCount & isFavoritedByMe, strip helpers
+    const items = (productsRaw as Array<any>).map((p) => {
+      const favoritesCount: number = p?._count?.favorites ?? 0;
+      const isFavoritedByMe: boolean = Array.isArray(p?.favorites) ? p.favorites.length > 0 : false;
+
+      // map createdAt to ISO and remove helper fields
+      const createdAt =
+        p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
+
+      const { _count, favorites, ...rest } = p;
+      return {
+        ...rest,
+        createdAt,
+        favoritesCount,
+        isFavoritedByMe,
+      };
+    });
 
     return noStore({
       page,
@@ -203,10 +244,11 @@ export async function GET(req: NextRequest) {
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       sort,
-      items: mapped,
+      items,
       facets,
     });
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.warn("[/api/products GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
