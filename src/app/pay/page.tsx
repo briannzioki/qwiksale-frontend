@@ -4,16 +4,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 
-// Build-time injected (safe on client only with NEXT_PUBLIC_)
-const DEFAULT_MSISDN =
-  (process.env.NEXT_PUBLIC_TEST_MSISDN as string | undefined) || "";
+/* ------------------------------------------------------------------ */
+/* Config (client-safe via NEXT_PUBLIC_)                               */
+/* ------------------------------------------------------------------ */
 
-// ----- helpers -----
+const DEFAULT_MSISDN =
+  (process.env["NEXT_PUBLIC_TEST_MSISDN"] as string | undefined) || "";
+const PUBLIC_ENV =
+  (process.env["NEXT_PUBLIC_MPESA_ENV"] as "sandbox" | "production" | undefined) ||
+  "sandbox";
+
+const PRESETS = [10, 50, 100, 200, 500] as const;
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
 function normalizeMsisdn(input: string): string {
   let s = (input || "").replace(/\D+/g, "");
   if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07 -> 2547
   if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, ""); // +2547 -> 2547
-  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12); // trim paste
+  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12); // guard paste
   return s;
 }
 function isValidMsisdn(msisdn: string) {
@@ -29,26 +40,51 @@ function prettyJson(x: unknown) {
     return String(x);
   }
 }
+function lsGet(key: string, fallback = "") {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function lsSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
 
 type Mode = "paybill" | "till";
 
+/* ------------------------------------------------------------------ */
+/* Page                                                                */
+/* ------------------------------------------------------------------ */
+
 export default function PayPage() {
-  const [msisdn, setMsisdn] = useState(DEFAULT_MSISDN);
+  const [msisdn, setMsisdn] = useState<string>("");
   const normalized = useMemo(() => normalizeMsisdn(msisdn), [msisdn]);
   const validPhone = isValidMsisdn(normalized);
 
-  const [amount, setAmount] = useState<number>(1);
+  const [amount, setAmount] = useState<number>(PRESETS[0]);
   const [mode, setMode] = useState<Mode>("paybill");
+
   const [loading, setLoading] = useState(false);
   const [resp, setResp] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+
   const abortRef = useRef<AbortController | null>(null);
 
-  // Keep default from env if user clears and refocuses
+  // Prefill msisdn: last used -> env default
   useEffect(() => {
-    if (!msisdn && DEFAULT_MSISDN) setMsisdn(DEFAULT_MSISDN);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const last = lsGet("qs_last_msisdn", DEFAULT_MSISDN);
+    if (last) setMsisdn(last);
   }, []);
+
+  useEffect(() => {
+    // Persist when valid
+    if (validPhone) lsSet("qs_last_msisdn", normalized);
+  }, [validPhone, normalized]);
 
   function setAmountSafe(v: string) {
     const n = Number(v);
@@ -61,16 +97,19 @@ export default function PayPage() {
     setResp(null);
 
     if (!validPhone) {
-      setErr("Please enter a valid phone like 2547XXXXXXXX.");
+      const msg = "Please enter a valid phone like 2547XXXXXXXX.";
+      setErr(msg);
       toast.error("Invalid phone");
       return;
     }
     if (!(amount >= 1)) {
-      setErr("Amount must be at least KES 1.");
+      const msg = "Amount must be at least KES 1.";
+      setErr(msg);
       toast.error("Invalid amount");
       return;
     }
 
+    if (loading) return; // guard double-click
     setLoading(true);
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -98,13 +137,17 @@ export default function PayPage() {
       setResp(j);
 
       if (!r.ok) {
-        const msg = j?.error || j?.errorMessage || `Request failed (${r.status})`;
+        const msg =
+          j?.error ||
+          j?.errorMessage ||
+          j?.ResponseDescription ||
+          `Request failed (${r.status})`;
         setErr(msg);
         toast.error(msg);
         return;
       }
 
-      // Daraja typical success: ResponseCode === "0"
+      // Typical Daraja success
       const code = String(j?.ResponseCode ?? j?.responseCode ?? "");
       if (code === "0") {
         toast.success("STK push sent. Check your phone!");
@@ -122,12 +165,14 @@ export default function PayPage() {
     }
   }
 
-  // Derived fields for nice summary
+  // derived for summary card
   const summary = useMemo(() => {
     if (!resp) return null;
     return {
       responseCode:
-        resp?.ResponseCode ?? resp?.responseCode ?? resp?.Body?.stkCallback?.ResultCode,
+        resp?.ResponseCode ??
+        resp?.responseCode ??
+        resp?.Body?.stkCallback?.ResultCode,
       responseDesc:
         resp?.ResponseDescription ??
         resp?.responseDescription ??
@@ -135,9 +180,13 @@ export default function PayPage() {
         resp?.customerMessage ??
         resp?.Body?.stkCallback?.ResultDesc,
       merchantRequestId:
-        resp?.MerchantRequestID ?? resp?.merchantRequestId ?? resp?.Body?.stkCallback?.MerchantRequestID,
+        resp?.MerchantRequestID ??
+        resp?.merchantRequestId ??
+        resp?.Body?.stkCallback?.MerchantRequestID,
       checkoutRequestId:
-        resp?.CheckoutRequestID ?? resp?.checkoutRequestId ?? resp?.Body?.stkCallback?.CheckoutRequestID,
+        resp?.CheckoutRequestID ??
+        resp?.checkoutRequestId ??
+        resp?.Body?.stkCallback?.CheckoutRequestID,
     };
   }, [resp]);
 
@@ -147,18 +196,17 @@ export default function PayPage() {
       <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
         <h1 className="text-2xl font-bold">Test M-Pesa STK Push</h1>
         <p className="text-white/90">
-          Sends an STK prompt to your phone. Use sandbox credentials unless you’ve
-          switched to production.
+          Environment: <b className="underline">{PUBLIC_ENV}</b>. Use sandbox credentials unless you’ve switched to production.
         </p>
       </div>
 
       {/* Form */}
-      <div className="card p-5 space-y-4">
+      <div className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
         {/* Phone */}
         <div>
-          <label className="label">Phone (2547XXXXXXXX)</label>
+          <label className="block text-sm font-semibold mb-1">Phone (2547XXXXXXXX)</label>
           <input
-            className="input"
+            className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
             placeholder="2547XXXXXXXX"
             value={msisdn}
             onChange={(e) => setMsisdn(e.target.value)}
@@ -169,7 +217,7 @@ export default function PayPage() {
             Normalized: <code className="font-mono">{normalized || "—"}</code>
           </div>
           {!validPhone && msisdn && (
-            <div className="text-xs text-red-600 mt-1">
+            <div className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">
               Must match <code className="font-mono">2547XXXXXXXX</code>
             </div>
           )}
@@ -177,25 +225,26 @@ export default function PayPage() {
 
         {/* Amount + quick chips */}
         <div>
-          <label className="label">Amount (KES)</label>
-          <div className="flex gap-2">
+          <label className="block text-sm font-semibold mb-1">Amount (KES)</label>
+          <div className="flex flex-wrap gap-2 items-center">
             <input
               type="number"
               min={1}
               step={1}
-              className="input"
+              className="w-36 rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
               value={amount}
               onChange={(e) => setAmountSafe(e.target.value)}
             />
             <div className="flex gap-2">
-              {[10, 50, 100, 200].map((v) => (
+              {PRESETS.map((v) => (
                 <button
                   key={v}
                   type="button"
-                  className="btn-ghost px-3 py-2 text-sm"
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold transition
+                    ${amount === v ? "bg-brandNavy text-white border-brandNavy" : "bg-white hover:bg-gray-50 dark:bg-slate-900 dark:hover:bg-slate-800"}`}
                   onClick={() => setAmount(v)}
                 >
-                  {v}
+                  {v.toLocaleString()}
                 </button>
               ))}
             </div>
@@ -204,9 +253,9 @@ export default function PayPage() {
 
         {/* Mode */}
         <div>
-          <label className="label">Mode</label>
+          <label className="block text-sm font-semibold mb-1">Mode</label>
           <select
-            className="select"
+            className="w-64 rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
             value={mode}
             onChange={(e) => setMode(e.target.value as Mode)}
           >
@@ -220,17 +269,18 @@ export default function PayPage() {
           <button
             onClick={pay}
             disabled={loading || !validPhone || amount < 1}
-            className={`btn-primary ${(!validPhone || amount < 1) && "opacity-60"}`}
+            className={`rounded-xl bg-[#161748] text-white px-4 py-2 font-semibold hover:opacity-95 disabled:opacity-60`}
           >
             {loading ? "Processing…" : "Send STK Push"}
           </button>
           <button
             type="button"
-            className="btn-outline"
+            className="rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
             onClick={() => {
               setResp(null);
               setErr(null);
             }}
+            disabled={loading}
           >
             Clear
           </button>
@@ -238,7 +288,7 @@ export default function PayPage() {
             href="/api/mpesa/callback"
             target="_blank"
             rel="noreferrer"
-            className="btn-ghost"
+            className="rounded-xl px-4 py-2 font-semibold hover:underline text-sm"
             title="Callback health check (GET)"
           >
             Callback status
@@ -247,7 +297,11 @@ export default function PayPage() {
 
         {/* Error */}
         {err && (
-          <div className="p-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-200">
+          <div
+            className="p-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-200"
+            role="alert"
+            aria-live="polite"
+          >
             {err}
           </div>
         )}
@@ -261,28 +315,30 @@ export default function PayPage() {
                 <span className="text-gray-500 dark:text-slate-400">Response Code:</span>{" "}
                 <span className="font-medium">{String(summary.responseCode ?? "—")}</span>
               </div>
-              <div className="sm:col-span-1">
+              <div>
                 <span className="text-gray-500 dark:text-slate-400">Response:</span>{" "}
                 <span className="font-medium">{summary.responseDesc ?? "—"}</span>
               </div>
-              <div className="sm:col-span-1">
+              <div>
                 <span className="text-gray-500 dark:text-slate-400">MerchantRequestID:</span>{" "}
                 <span className="font-medium">{summary.merchantRequestId ?? "—"}</span>
               </div>
-              <div className="sm:col-span-1">
+              <div>
                 <span className="text-gray-500 dark:text-slate-400">CheckoutRequestID:</span>{" "}
                 <span className="font-medium break-all">{summary.checkoutRequestId ?? "—"}</span>
                 {summary.checkoutRequestId && (
                   <button
-                    className="ml-2 btn-ghost px-2 py-0.5 text-xs"
+                    className="ml-2 rounded-md border px-2 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-800"
                     onClick={async () => {
                       try {
-                        await navigator.clipboard.writeText(summary.checkoutRequestId as string);
+                        await navigator.clipboard.writeText(String(summary.checkoutRequestId));
                         toast.success("CheckoutRequestID copied");
                       } catch {
                         toast.error("Couldn't copy");
                       }
                     }}
+                    type="button"
+                    title="Copy CheckoutRequestID"
                   >
                     Copy
                   </button>
@@ -304,8 +360,9 @@ export default function PayPage() {
 
         {/* Tips */}
         <div className="text-xs text-gray-600 dark:text-slate-400">
-          Tip: ensure your <code className="font-mono">MPESA_CALLBACK_URL</code> is a public URL
-          (e.g., ngrok) that points to <code className="font-mono">/api/mpesa/callback</code>.
+          Ensure <code className="font-mono">MPESA_CALLBACK_URL</code> is publicly reachable (e.g., Vercel prod domain or an ngrok URL)
+          pointing to <code className="font-mono">/api/mpesa/callback</code>. In sandbox, the default shortcode is{" "}
+          <code className="font-mono">174379</code> and mode is <code className="font-mono">paybill</code>.
         </div>
       </div>
     </div>

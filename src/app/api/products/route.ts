@@ -81,8 +81,8 @@ const productListSelect = {
 
 /** email of the demo/seed user we want to hide by default (set in Vercel env) */
 const DEMO_EMAIL =
-  process.env.SEED_DEMO_USER_EMAIL ||
-  process.env.DEMO_SELLER_EMAIL ||
+  process.env["SEED_DEMO_USER_EMAIL"] ||
+  process.env["DEMO_SELLER_EMAIL"] ||
   "";
 
 /* ------------------------- GET /api/products ------------------------- */
@@ -221,11 +221,14 @@ export async function GET(req: NextRequest) {
     ]);
 
     // Shape response: add favoritesCount & isFavoritedByMe, strip helpers
-    const items = (productsRaw as Array<any>).map((p) => {
+    const items = (productsRaw as unknown as Array<any>).map((p) => {
       const favoritesCount: number = p?._count?.favorites ?? 0;
-      const isFavoritedByMe: boolean = Array.isArray(p?.favorites) ? p.favorites.length > 0 : false;
 
-      // map createdAt to ISO and remove helper fields
+      // SAFETY: never assume `favorites` exists on the type — check at runtime.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const rel = (p as any)?.favorites;
+      const isFavoritedByMe: boolean = Array.isArray(rel) && rel.length > 0;
+
       const createdAt =
         p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
 

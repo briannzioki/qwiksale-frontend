@@ -10,13 +10,24 @@ export type Facets = {
 
 type Props = {
   facets?: Facets | null;
+
   /**
-   * Called when a chip is clicked. You can hook this to your router/search state.
-   * Example: onPick("category", v)
+   * Optional callback when a chip is clicked.
+   * Rename ends with "Action" to satisfy Next.js 15 serialization rules if passed from a Server Component.
+   * You can also skip this and just listen to the client event "qs:facet:pick".
    */
-  onPick?: (kind: "category" | "brand" | "condition", value: string) => void;
+  onPickAction?: (
+    kind: "category" | "brand" | "condition",
+    value: string
+  ) => void | Promise<void>;
+
   className?: string;
+
+  /** Maximum chips per section (default 12) */
+  maxPerSection?: number;
 };
+
+/* -------------------- helpers -------------------- */
 
 function hasAnyFacets(f?: Facets | null) {
   if (!f) return false;
@@ -27,8 +38,23 @@ function hasAnyFacets(f?: Facets | null) {
   return total > 0;
 }
 
-export default function FacetBar({ facets, onPick, className = "" }: Props) {
-  // If nothing to show, render nothing (this is the main fix for the blank white tab)
+function emit<T = unknown>(name: string, detail?: T) {
+  // eslint-disable-next-line no-console
+  console.log(`[qs:event] ${name}`, detail);
+  if (typeof window !== "undefined" && "CustomEvent" in window) {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  }
+}
+
+/* -------------------- component -------------------- */
+
+export default function FacetBar({
+  facets,
+  onPickAction,
+  className = "",
+  maxPerSection = 12,
+}: Props) {
+  // If nothing to show, render nothing (prevents blank white area)
   if (!hasAnyFacets(facets)) return null;
 
   const Section = ({
@@ -37,36 +63,52 @@ export default function FacetBar({ facets, onPick, className = "" }: Props) {
     kind,
   }: {
     title: string;
-    items?: Facet[];
+    items: Facet[]; // required; callers pass [] if empty
     kind: "category" | "brand" | "condition";
   }) => {
-    if (!items?.length) return null;
+    if (!items.length) return null;
+
+    const top = items.slice(0, Math.max(0, maxPerSection));
+
+    async function pick(value: string) {
+      emit("qs:facet:pick", { kind, value });
+      try {
+        await onPickAction?.(kind, value);
+      } catch (e) {
+        console.error("[FacetBar] onPickAction error:", e);
+      }
+    }
+
     return (
       <div>
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
           {title}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {items.slice(0, 12).map((f) => (
-            <button
-              key={`${kind}:${f.value}`}
-              onClick={() => onPick?.(kind, f.value)}
-              className="
-                inline-flex items-center gap-2
-                rounded-full px-3 py-1.5 text-sm
-                bg-white/70 dark:bg-white/10
-                text-gray-800 dark:text-slate-100
-                border border-black/5 dark:border-white/10
-                hover:bg-white/90 dark:hover:bg-white/15
-                transition
-              "
-              title={`${f.value} (${f.count})`}
-            >
-              <span className="truncate max-w-[12rem]">{f.value}</span>
-              <span className="text-xs opacity-70">{f.count}</span>
-            </button>
+        <ul className="flex flex-wrap gap-2" role="list">
+          {top.map((f) => (
+            <li key={`${kind}:${f.value}`}>
+              <button
+                type="button"
+                onClick={() => pick(f.value)}
+                className="
+                  inline-flex items-center gap-2
+                  rounded-full px-3 py-1.5 text-sm
+                  bg-white/70 dark:bg-white/[0.08]
+                  text-gray-800 dark:text-slate-100
+                  border border-black/5 dark:border-white/10
+                  hover:bg-white/90 dark:hover:bg-white/[0.12]
+                  focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39a0ca]
+                  transition
+                "
+                title={`${f.value} (${f.count})`}
+                aria-label={`${title}: ${f.value} (${f.count})`}
+              >
+                <span className="truncate max-w-[12rem]">{f.value}</span>
+                <span className="text-xs opacity-70">{f.count}</span>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     );
   };
@@ -84,9 +126,9 @@ export default function FacetBar({ facets, onPick, className = "" }: Props) {
       `}
     >
       <div className="grid gap-4 md:gap-5 md:grid-cols-3">
-        <Section title="Top Categories" items={facets?.categories} kind="category" />
-        <Section title="Top Brands" items={facets?.brands} kind="brand" />
-        <Section title="Condition" items={facets?.conditions} kind="condition" />
+        <Section title="Top Categories" items={(facets?.categories ?? [])} kind="category" />
+        <Section title="Top Brands" items={(facets?.brands ?? [])} kind="brand" />
+        <Section title="Condition" items={(facets?.conditions ?? [])} kind="condition" />
       </div>
     </section>
   );

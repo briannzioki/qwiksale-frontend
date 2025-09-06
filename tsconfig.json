@@ -1,54 +1,42 @@
 {
   "compilerOptions": {
-    /* Language / emit */
     "target": "ES2022",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "jsx": "preserve",
     "noEmit": true,
     "verbatimModuleSyntax": true,
-    /* Type checking */
+
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    /* Modules / resolution (Next 15) */
+
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "isolatedModules": true,
-    /* Incremental/JS */
+
     "incremental": true,
     "allowJs": true,
-    /* Path aliases */
+
     "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "src/*"
-      ]
-    },
-    /* Next.js plugin & types */
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "types": [
-      "@types/node"
-    ]
+    "paths": { "@/*": ["src/*"] },
+
+    "plugins": [{ "name": "next" }],
+    "types": ["@types/node"],
+
+    /* extra safety (opt-in) */
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "useUnknownInCatchVariables": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true
   },
   "include": [
     "next-env.d.ts",
     "src",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    "src/types/*.d.ts"
+    "src/types/**/*.d.ts",
+    ".next/types/**/*.ts"
   ],
-  "exclude": [
-    "node_modules"
-  ]
+  "exclude": ["node_modules"]
 }

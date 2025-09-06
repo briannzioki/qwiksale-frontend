@@ -1,10 +1,11 @@
 // next.config.ts
-import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const isProd = process.env.NODE_ENV === "production";
 const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
+const APEX_DOMAIN = process.env.NEXT_PUBLIC_APEX_DOMAIN || "qwiksale.sale";
 
-/* ---------------- Security headers (CSP etc.) ---------------- */
+/* --------------------- Security headers (CSP etc.) --------------------- */
 const securityHeaders = (): { key: string; value: string }[] => {
   const connect = [
     "'self'",
@@ -13,8 +14,10 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://api.safaricom.co.ke",
     "https://accounts.google.com",
     "https://www.googleapis.com",
-    "https://*.ngrok-free.app",
-    "https://*.ngrok.io",
+    "https://plausible.io",
+    "https://www.googletagmanager.com",
+    "https://www.google-analytics.com",
+    "https://region1.google-analytics.com",
     ...(isProd ? [] : ["ws:", "wss:"]),
   ].join(" ");
 
@@ -30,14 +33,19 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://picsum.photos",
   ].join(" ");
 
-  const frameSrc = ["'self'", "https://accounts.google.com"].join(" ");
-
   const script = [
     "'self'",
     "'unsafe-inline'",
+    "https://plausible.io",
+    "https://www.googletagmanager.com",
+    "https://www.google-analytics.com",
     "https://accounts.google.com",
     ...(isProd ? [] : ["'unsafe-eval'"]),
   ].join(" ");
+
+  const style = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"].join(" ");
+  const font = ["'self'", "data:", "https://fonts.gstatic.com"].join(" ");
+  const frameSrc = ["'self'", "https://accounts.google.com"].join(" ");
 
   const csp = [
     `default-src 'self'`,
@@ -46,8 +54,8 @@ const securityHeaders = (): { key: string; value: string }[] => {
     `img-src ${img}`,
     `connect-src ${connect}`,
     `script-src ${script}`,
-    `style-src 'self' 'unsafe-inline'`,
-    `font-src 'self' data:`,
+    `style-src ${style}`,
+    `font-src ${font}`,
     `frame-src ${frameSrc}`,
     `form-action 'self' https://accounts.google.com`,
     isProd ? `upgrade-insecure-requests` : ``,
@@ -68,28 +76,37 @@ const securityHeaders = (): { key: string; value: string }[] => {
   ];
 };
 
-/* ---------------- Next config ---------------- */
-const nextConfig: NextConfig = {
+/* ------------- Optional Sentry tunnel rewrite (/monitoring) ------------- */
+function getSentryTunnelRewrite() {
+  const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN || "";
+  const m = dsn.match(/^https?:\/\/[^@]+@([^/]+)\/(\d+)$/i);
+  if (!m) return null;
+  const host = m[1];      // e.g. o123456.ingest.sentry.io
+  const projectId = m[2]; // e.g. 4509963654922320
+  return {
+    source: "/monitoring",
+    destination: `https://${host}/api/${projectId}/envelope/`,
+  };
+}
+
+/* ---------------------------- Next.js config ---------------------------- */
+const nextConfig = {
   images: {
     remotePatterns: [
-      // Cloudinary (scope to your cloud if provided)
       {
         protocol: "https",
         hostname: "res.cloudinary.com",
         pathname: cloudName ? `/${cloudName}/**` : "/**",
       },
-      // Other hosts you use
       { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
       { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
       { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
       { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },
       { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
     ],
-    // Your placeholder is an SVG served from a .jpg route → allow SVG in <Image>
     dangerouslyAllowSVG: true,
   },
 
-  // Don’t fail the CI build because of the ESLint “patch” warning
   eslint: { ignoreDuringBuilds: true },
 
   async headers() {
@@ -101,16 +118,41 @@ const nextConfig: NextConfig = {
     ];
   },
 
+  // NOTE: Avoid importing Next types here; their internal unions vary between versions.
   async redirects() {
-    return [
-      {
+    const rules: any[] = [];
+
+    if (APEX_DOMAIN) {
+      rules.push({
         source: "/:path*",
-        has: [{ type: "host", value: "www.qwiksale.sale" }],
-        destination: "https://qwiksale.sale/:path*",
+        destination: `https://${APEX_DOMAIN}/:path*`,
         permanent: true,
-      },
-    ];
+        has: [
+          {
+            type: "host",
+            key: "host", // required by Next’s route matching for 'has'
+            value: `www.${APEX_DOMAIN}`,
+          },
+        ],
+      });
+    }
+
+    return rules as any;
+  },
+
+  async rewrites() {
+    const out: any[] = [];
+    const tunnel = getSentryTunnelRewrite();
+    if (tunnel) out.push(tunnel);
+    return out as any;
   },
 };
 
-export default nextConfig;
+/* ------------------------------ Sentry wrap ------------------------------ */
+// v8+: exactly two args
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  silent: true,
+  widenClientFileUpload: true,
+});

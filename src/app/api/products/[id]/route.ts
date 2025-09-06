@@ -31,7 +31,6 @@ type AnalyticsEvent =
 
 function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
   try {
-    // keep it simple + non-PII; swap this for GA/Plausible/PostHog later
     // eslint-disable-next-line no-console
     console.log(`[track] ${event}`, { ts: new Date().toISOString(), ...props });
   } catch {
@@ -45,6 +44,17 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  return res;
+}
+
+// CORS (optional)
+export function OPTIONS() {
+  const res = new NextResponse(null, { status: 204 });
+  res.headers.set("Access-Control-Allow-Origin", process.env["NEXT_PUBLIC_APP_URL"] || "*");
+  res.headers.set("Access-Control-Allow-Methods", "GET, PATCH, DELETE, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.headers.set("Access-Control-Max-Age", "86400");
+  res.headers.set("Cache-Control", "no-store");
   return res;
 }
 
@@ -93,16 +103,18 @@ const productBaseSelect = {
   },
 } as const;
 
+/** Runtime-safe shaper: never assume `_count` or `favorites` exist */
 function shapeProduct(p: any) {
-  const favoritesCount: number = p?._count?.favorites ?? 0;
-  const isFavoritedByMe: boolean = Array.isArray(p?.favorites)
-    ? p.favorites.length > 0
-    : false;
+  const favoritesCount: number = p?.["_count"]?.favorites ?? 0;
+
+  // only true if we selected the relation and a row exists
+  const rel = (p as any)?.favorites;
+  const isFavoritedByMe = Array.isArray(rel) && rel.length > 0;
 
   const createdAt =
     p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
 
-  const { _count, favorites, ...rest } = p || {};
+  const { _count: _c, favorites: _f, ...rest } = p || {};
   return {
     ...rest,
     createdAt,
@@ -151,22 +163,22 @@ export async function GET(_req: NextRequest, ctx: CtxLike) {
       };
     }
 
-    // 1) Try public (ACTIVE) fetch first
+    // 1) Try public (ACTIVE)
     const activeItem = await prisma.product.findFirst({
       where: { id: productId, status: "ACTIVE" },
       select,
     });
     if (activeItem) {
       track("product_read_public_hit", {
-        reqId,
-        productId,
-        favoritesCount: activeItem?._count?.favorites ?? 0,
-      });
+    reqId,
+    productId,
+    favoritesCount: (activeItem as any)?.["_count"]?.favorites ?? 0,
+    });
       return noStore(shapeProduct(activeItem));
     }
 
-    // 2) Allow owner to view non-ACTIVE items (draft/hidden/sold)
-    const ownerId = userId; // userId derived above
+    // 2) Owner may view non-ACTIVE
+    const ownerId = userId;
     if (!ownerId) {
       track("product_read_unauthorized_owner_check", { reqId, productId });
       return noStore({ error: "Not found" }, { status: 404 });
@@ -216,7 +228,10 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
       return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const existing = await prisma.product.findUnique({ where: { id: productId } });
+    const existing = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, sellerId: true },
+    });
     if (!existing) {
       track("product_update_not_found", { reqId, productId, reason: "no_existing" });
       return noStore({ error: "Not found" }, { status: 404 });
@@ -226,14 +241,19 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
 
+    const ctype = req.headers.get("content-type") || "";
+    if (!ctype.toLowerCase().includes("application/json")) {
+      return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
+    }
+
     const body: any = await req.json().catch(() => ({}));
 
     const normCondition = (() => {
       const t = String(body?.condition ?? "").trim().toLowerCase();
-      if (!t) return undefined;
-      if (["brand new", "brand-new", "brand_new"].includes(t)) return "brand new";
+      if (!t) return undefined; // undefined means "don't touch"
+      if (["brand new", "brand-new", "brand_new", "new"].includes(t)) return "brand new";
       if (["pre-owned", "pre owned", "pre_owned", "used"].includes(t)) return "pre-owned";
-      return undefined;
+      return undefined; // ignore unknown condition values
     })();
 
     const normPrice =
@@ -247,31 +267,44 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
       ? body.gallery.map((x: unknown) => String(x || "")).filter(Boolean)
       : undefined;
 
-    const data = {
-      name: typeof body?.name === "string" ? body.name.trim() : undefined,
-      description: typeof body?.description === "string" ? body.description : undefined,
-      category: typeof body?.category === "string" ? body.category : undefined,
-      subcategory: typeof body?.subcategory === "string" ? body.subcategory : undefined,
-      brand: typeof body?.brand === "string" ? body.brand : undefined,
-      condition: normCondition,
-      price: normPrice,
-      image: typeof body?.image === "string" ? body.image : undefined,
-      gallery: normGallery,
-      location: typeof body?.location === "string" ? body.location : undefined,
-      negotiable: typeof body?.negotiable === "boolean" ? body.negotiable : undefined,
-      // status intentionally NOT changeable here (keep separate admin/owner flow)
-    };
+    // IMPORTANT: only set keys that are defined (TS exactOptionalPropertyTypes)
+    const data: {
+      name?: string;
+      description?: string;
+      category?: string;
+      subcategory?: string;
+      brand?: string;
+      condition?: string | null; // allow null if you plan to clear; we keep undefined unless matched
+      price?: number | null;
+      image?: string;
+      gallery?: string[];
+      location?: string;
+      negotiable?: boolean;
+    } = {};
 
-    // use same select to keep response consistent (adds favorites fields)
+    if (typeof body?.name === "string") data.name = body.name.trim().slice(0, 140);
+    if (typeof body?.description === "string") data.description = body.description.slice(0, 5000);
+    if (typeof body?.category === "string") data.category = body.category.slice(0, 64);
+    if (typeof body?.subcategory === "string") data.subcategory = body.subcategory.slice(0, 64);
+    if (typeof body?.brand === "string") data.brand = body.brand.slice(0, 64);
+    if (normCondition !== undefined) data.condition = normCondition; // either valid string or undefined (ignore)
+    if (normPrice !== undefined) data.price = normPrice;             // number | null | undefined
+    if (typeof body?.image === "string") data.image = body.image.slice(0, 2048);
+    if (normGallery !== undefined) data.gallery = normGallery;
+    if (typeof body?.location === "string") data.location = body.location.slice(0, 120);
+    if (typeof body?.negotiable === "boolean") data.negotiable = body.negotiable;
+
     const select: any = {
       ...productBaseSelect,
       _count: { select: { favorites: true } },
-      favorites: {
+    };
+    if (userId) {
+      select.favorites = {
         where: { userId },
         select: { productId: true },
         take: 1,
-      },
-    };
+      };
+    }
 
     const updated = await prisma.product.update({
       where: { id: productId },
@@ -280,9 +313,9 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     });
 
     track("product_update_success", {
-      reqId,
-      productId,
-      favoritesCount: updated?._count?.favorites ?? 0,
+   reqId,
+   productId,
+   favoritesCount: (updated as any)?.["_count"]?.favorites ?? 0,
     });
 
     return noStore(shapeProduct(updated));

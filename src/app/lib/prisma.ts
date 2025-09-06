@@ -1,101 +1,94 @@
-// src/app/lib/prisma.ts
 import { env, isDev, logDbTargetOnce } from "./env";
+import type { PrismaClient as PrismaClientType, Prisma } from "@prisma/client";
 
 /**
- * One client per process in dev; fresh per invocation in serverless.
- * We load PrismaClient via runtime require so TS can compile even if the
- * generated client hasn't been built yet.
+ * One PrismaClient per process in dev; fresh per invocation in serverless.
+ * We avoid strict middleware typings to be compatible across client versions.
  */
 
-/** Minimal surface we rely on, without importing Prisma types */
-export type PrismaClientLike = {
-  $connect?: () => Promise<void>;
-  $disconnect?: () => Promise<void>;
-  $queryRaw: <T = unknown>(...args: any[]) => Promise<T>;
-  $use?: (mw: (params: any, next: (params: any) => Promise<any>) => Promise<any>) => void;
-} & Record<string, any>;
-
 type GlobalWithPrisma = typeof globalThis & {
-  __PRISMA__?: PrismaClientLike;
+  __PRISMA__?: PrismaClientType;
   __PRISMA_SLOW_MW__?: boolean;
 };
 
 const g = globalThis as GlobalWithPrisma;
 
-/** ---- Logging controls --------------------------------------------------- */
+/* ------------------------------- Logging -------------------------------- */
 const LOG_QUERIES =
-  process.env.PRISMA_LOG_QUERIES === "1" ||
-  process.env.PRISMA_LOG_QUERIES === "true" ||
-  process.env.DEBUG_PRISMA === "1";
+  process.env["PRISMA_LOG_QUERIES"] === "1" ||
+  process.env["PRISMA_LOG_QUERIES"] === "true" ||
+  process.env["DEBUG_PRISMA"] === "1";
 
-const LOG_LEVELS = LOG_QUERIES
-  ? (["query", "info", "warn", "error"] as const)
+const LOG_LEVELS: Prisma.LogLevel[] = LOG_QUERIES
+  ? ["query", "info", "warn", "error"]
   : isDev
-  ? (["info", "warn", "error"] as const)
-  : (["warn", "error"] as const);
+  ? ["info", "warn", "error"]
+  : ["warn", "error"];
 
-/** ---- Load PrismaClient ctor safely ------------------------------------- */
-function getPrismaCtor(): new (...args: any[]) => PrismaClientLike {
+/* ---------------------- Load PrismaClient constructor -------------------- */
+function getPrismaCtor(): new (args?: Prisma.PrismaClientOptions) => PrismaClientType {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require("@prisma/client");
-    if (!mod?.PrismaClient) {
-      throw new Error("`@prisma/client` is installed but PrismaClient was not found.");
-    }
-    return mod.PrismaClient as new (...args: any[]) => PrismaClientLike;
+    const mod = require("@prisma/client") as {
+      PrismaClient?: new (args?: Prisma.PrismaClientOptions) => PrismaClientType;
+    };
+    if (!mod?.PrismaClient) throw new Error("PrismaClient not found in @prisma/client");
+    return mod.PrismaClient!;
   } catch (e: any) {
     const hint =
-      "Install & generate the client:\n  npm i @prisma/client\n  npx prisma generate";
-    throw new Error(
-      `[prisma] Unable to load PrismaClient. ${hint}\nOriginal error: ${e?.message || e}`
-    );
+      "Make sure @prisma/client is installed and generated:\n  npm i @prisma/client\n  npx prisma generate";
+    throw new Error(`[prisma] Unable to load PrismaClient.\n${hint}\nOriginal error: ${e?.message || e}`);
   }
 }
 
-/** ---- Client factory ----------------------------------------------------- */
-function createClient(): PrismaClientLike {
+/* -------------------------------- Factory -------------------------------- */
+function createClient(): PrismaClientType {
   const PrismaClient = getPrismaCtor();
+  const databaseUrl = env.DATABASE_URL || process.env["DATABASE_URL"] || "";
 
-  // Be resilient if `env` isn't available in plain Node scripts
-  const databaseUrl = (env as any)?.DATABASE_URL ?? process.env.DATABASE_URL ?? "";
-
-  return new PrismaClient({
-    datasources: databaseUrl ? { db: { url: databaseUrl } } : undefined,
+  // Build options without putting `datasources: undefined` on the object.
+  const options: Prisma.PrismaClientOptions = {
     errorFormat: isDev ? "pretty" : "minimal",
-    log: [...LOG_LEVELS],
-  });
+    log: LOG_LEVELS,
+    ...(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : {}),
+  };
+
+  return new PrismaClient(options);
 }
 
-/** 🔹 Exported singleton (named export) */
-export const prisma: PrismaClientLike = g.__PRISMA__ ?? createClient();
+/* ----------------------------- Singleton export -------------------------- */
+export const prisma: PrismaClientType = g.__PRISMA__ ?? createClient();
 
-/** Cache the client in dev so hot-reloads don’t spawn new connections */
 if (isDev) {
   g.__PRISMA__ = prisma;
   try {
     logDbTargetOnce?.();
   } catch {
-    // optional helper; ignore if not available
+    /* noop */
   }
 }
 
-/** ---- Optional: slow query warning middleware (idempotent) --------------- */
+/* --------------- Optional: slow query warning middleware ----------------- */
+/**
+ * Some Prisma versions/environments don’t surface the Middleware type or $use
+ * in a way TS can see. We attach via a safe cast to avoid TS friction while
+ * keeping the runtime behavior.
+ */
 if (!g.__PRISMA_SLOW_MW__) {
-  const SLOW_MS = Number(process.env.PRISMA_SLOW_QUERY_MS ?? 2000);
+  const SLOW_MS = Number(process.env["PRISMA_SLOW_QUERY_MS"] ?? 2000);
 
-  const maybeUse =
-    (prisma as any).$use as
-      | undefined
-      | ((mw: (params: any, next: (params: any) => Promise<any>) => Promise<any>) => void);
+  const anyClient = prisma as unknown as {
+    $use?: (mw: (params: any, next: (params: any) => Promise<any>) => Promise<any>) => void;
+  };
 
-  if (typeof maybeUse === "function") {
-    maybeUse(async (params: any, next: (params: any) => Promise<any>) => {
-      const start = Date.now();
+  if (typeof anyClient.$use === "function") {
+    anyClient.$use(async (params: any, next: (params: any) => Promise<any>) => {
+      const started = Date.now();
       const result = await next(params);
-      const ms = Date.now() - start;
+      const ms = Date.now() - started;
       if (ms > SLOW_MS) {
         // eslint-disable-next-line no-console
-        console.warn(`[prisma] slow ${params.model ?? "raw"}.${params.action} took ${ms}ms`);
+        console.warn(`[prisma] slow ${params?.model ?? "raw"}.${params?.action} took ${ms}ms`);
       }
       return result;
     });
@@ -103,10 +96,11 @@ if (!g.__PRISMA_SLOW_MW__) {
   g.__PRISMA_SLOW_MW__ = true;
 }
 
-/** ---- Healthcheck helpers ------------------------------------------------ */
+/* ------------------------------ Health helpers --------------------------- */
 export async function prismaHealthcheck(): Promise<boolean> {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    // Unsafe is fine for a fixed constant; avoids template literal quirks
+    await prisma.$queryRawUnsafe("SELECT 1");
     return true;
   } catch {
     return false;
@@ -115,12 +109,12 @@ export async function prismaHealthcheck(): Promise<boolean> {
 
 export async function prismaEnsureConnected(): Promise<void> {
   try {
-    await prisma.$connect?.();
+    await prisma.$connect();
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[prisma] connect error:", e);
   }
 }
 
-/** Optional alias if you like DI in tests */
-export type DB = PrismaClientLike;
+/** Optional alias for DI/tests */
+export type DB = PrismaClientType;

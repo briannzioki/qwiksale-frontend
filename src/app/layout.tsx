@@ -1,31 +1,25 @@
 // src/app/layout.tsx
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import { headers } from "next/headers";
 import Script from "next/script";
 import crypto from "crypto";
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
 import AppShell from "./components/AppShell";
 import Providers from "./providers";
-import DevToolsMount from "./components/DevToolsMount"; // ✅ client-only mount wrapper
-
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-inter",
-});
+import DevToolsMount from "./components/DevToolsMount";
+import { fontVars } from "./fonts";
 
 /* ----------------------------- Site URL helpers ---------------------------- */
 const envAppUrl =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+  process.env["NEXT_PUBLIC_APP_URL"] ||
+  (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "") ||
   "http://localhost:3000";
 const siteUrl = envAppUrl.replace(/\/+$/, "");
 
 const isPreview =
-  process.env.VERCEL_ENV === "preview" ||
-  process.env.NEXT_PUBLIC_NOINDEX === "1";
+  process.env["VERCEL_ENV"] === "preview" ||
+  process.env["NEXT_PUBLIC_NOINDEX"] === "1";
 
 /* -------------------------------- Viewport -------------------------------- */
 export const viewport: Viewport = {
@@ -62,7 +56,6 @@ export const metadata: Metadata = {
     "peer to peer",
     "mpesa",
   ],
-  // Make canonical absolute (clearer for crawlers)
   alternates: {
     canonical: siteUrl + "/",
     languages: {
@@ -121,11 +114,10 @@ export const metadata: Metadata = {
           "max-snippet": -1,
         },
       },
-  // Built-in verification keys
   verification: {
-    google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
+    google: process.env["GOOGLE_SITE_VERIFICATION"] || undefined,
     other: {
-      "msvalidate.01": process.env.BING_SITE_VERIFICATION || "",
+      "msvalidate.01": process.env["BING_SITE_VERIFICATION"] || "",
     },
   },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "QwikSale" },
@@ -140,7 +132,7 @@ export default async function RootLayout({
   // CSP nonce from middleware (or local fallback)
   let nonce: string;
   try {
-    const h = await headers();
+    const h = await headers(); // <-- await because headers() is async in your setup
     nonce = h.get("x-nonce") ?? crypto.randomBytes(16).toString("base64");
   } catch {
     nonce = crypto.randomBytes(16).toString("base64");
@@ -154,7 +146,7 @@ export default async function RootLayout({
     url: siteUrl,
     logo: `${siteUrl}/icon-512.png`,
     sameAs: [`${siteUrl}/about`, `${siteUrl}/contact`, `${siteUrl}/help`],
-  };
+  } as const;
 
   const siteJsonLd = {
     "@context": "https://schema.org",
@@ -166,10 +158,10 @@ export default async function RootLayout({
       target: `${siteUrl}/?q={search_term_string}`,
       "query-input": "required name=search_term_string",
     },
-  };
+  } as const;
 
-  const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
-  const PLAUSIBLE_DOMAIN = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN;
+  const GA_ID = process.env["NEXT_PUBLIC_GA_ID"];
+  const PLAUSIBLE_DOMAIN = process.env["NEXT_PUBLIC_PLAUSIBLE_DOMAIN"];
 
   return (
     <html lang="en" dir="ltr" className="h-full" suppressHydrationWarning>
@@ -177,9 +169,11 @@ export default async function RootLayout({
         <meta name="color-scheme" content="light dark" />
 
         {/* Performance hints */}
-        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="" />
-        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//res.cloudinary.com" />
+        <link rel="dns-prefetch" href="//images.unsplash.com" />
 
         {/* Set initial theme BEFORE paint to avoid flicker */}
         <Script id="theme-script" strategy="beforeInteractive" nonce={nonce}>
@@ -200,7 +194,7 @@ export default async function RootLayout({
         </Script>
       </head>
       <body
-        className={`${inter.variable} h-full text-gray-900 antialiased dark:text-slate-100`}
+        className={`${fontVars} h-full text-gray-900 antialiased dark:text-slate-100`}
         style={{ fontFeatureSettings: "'kern' 1, 'liga' 1, 'calt' 1" }}
       >
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
@@ -233,16 +227,16 @@ export default async function RootLayout({
               />
               <Script id="ga-init" nonce={nonce} strategy="afterInteractive">
                 {`
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: true });
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: true });
                 `}
               </Script>
             </>
           ) : null}
 
-          {/* ✅ Client-only dev widget mount (safe for Server Components) */}
+          {/* Client-only dev widget mount */}
           <DevToolsMount />
         </div>
       </body>

@@ -1,7 +1,6 @@
-// src/app/lib/productsStore.ts
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -31,17 +30,15 @@ export type Product = {
   } | null;
 };
 
-type ApiListResponse =
-  | Product[]
-  | {
-      page: number;
-      pageSize: number;
-      total: number;
-      totalPages: number;
-      items: Product[];
-    }
-  | { error: string };
+type ApiListEnvelope = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  items: Product[];
+};
 
+type ApiListResponse = Product[] | ApiListEnvelope | { error: string };
 type ApiItemResponse = Product | { error: string };
 
 export type UseProductsReturn = {
@@ -51,20 +48,35 @@ export type UseProductsReturn = {
   reload: () => void;
   /** Create a product, update local caches, and return { id } */
   addProduct: (payload: any) => Promise<{ id: string }>;
+  /** Revalidate only if cache is stale (no UI jank). */
+  refreshIfStale: () => Promise<void>;
+  /** Cheap selector against in-memory cache. */
+  getById: (id: string) => Product | undefined;
+};
+
+/* Optional config for useProducts (non-breaking) */
+export type UseProductsOptions = {
+  /** Override the default pageSize (capped between 24..120). */
+  pageSize?: number;
+  /** Provide initial products to prime cache (e.g., RSC prefetch). */
+  initial?: Product[];
+  /** How long a cached list is considered fresh (ms). Default 60s. */
+  cacheTtlMs?: number;
 };
 
 /* ------------------------------------------------------------------ */
-/* In-memory + session cache                                           */
+/* In-memory + session cache                                          */
 /* ------------------------------------------------------------------ */
 
 const LIST_KEY = "qs_products_list_v1"; // sessionStorage key
-const CACHE_TTL_MS = 60_000; // 60s stale-while-revalidate
-const DEFAULT_PAGE_SIZE = 60; // show more upfront; reduces "not found" on detail pages
+const DEFAULT_PAGE_SIZE = 60;           // show more upfront; reduces detail-page misses
+const MIN_PAGE_SIZE = 24;
+const MAX_PAGE_SIZE = 120;
 
 const memory = {
   list: [] as Product[],
   map: new Map<string, Product>(),
-  lastAt: 0,
+  lastAt: 0, // epoch ms when memory cache was set
 };
 
 function cacheListToMemory(list: Product[]) {
@@ -73,79 +85,33 @@ function cacheListToMemory(list: Product[]) {
   memory.lastAt = Date.now();
 }
 
-function loadListFromSession(): Product[] | null {
+function safeSessionGet<T>(key: string): T | null {
   try {
-    const raw = sessionStorage.getItem(LIST_KEY);
+    if (typeof sessionStorage === "undefined") return null;
+    const raw = sessionStorage.getItem(key);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    return Array.isArray(data) ? (data as Product[]) : null;
+    return data as T;
   } catch {
     return null;
   }
 }
 
-function saveListToSession(list: Product[]) {
+function safeSessionSet<T>(key: string, val: T) {
   try {
-    sessionStorage.setItem(LIST_KEY, JSON.stringify(list));
+    if (typeof sessionStorage === "undefined") return;
+    sessionStorage.setItem(key, JSON.stringify(val));
   } catch {
-    // ignore quota errors
+    /* ignore quota errors */
   }
 }
 
 function normalizeList(resp: ApiListResponse): Product[] {
   if (Array.isArray(resp)) return resp;
   if (resp && typeof resp === "object" && "items" in resp && Array.isArray((resp as any).items)) {
-    return (resp as any).items as Product[];
+    return (resp as ApiListEnvelope).items;
   }
   return [];
-}
-
-/* ------------------------------------------------------------------ */
-/* Fetch helpers                                                       */
-/* ------------------------------------------------------------------ */
-
-async function fetchList(signal?: AbortSignal): Promise<Product[]> {
-  const qs = new URLSearchParams({
-    page: "1",
-    pageSize: String(DEFAULT_PAGE_SIZE),
-  });
-
-  const res = await fetch(`/api/products?${qs.toString()}`, {
-    cache: "no-store",
-    signal,
-  });
-
-  let json: ApiListResponse;
-  try {
-    json = (await res.json()) as ApiListResponse;
-  } catch {
-    throw new Error(`Bad response (${res.status})`);
-  }
-
-  if (!res.ok) {
-    const msg = (json as any)?.error || `Request failed (${res.status})`;
-    throw new Error(msg);
-  }
-
-  const items = normalizeList(json);
-  return dedupeById(items);
-}
-
-async function fetchItem(id: string, signal?: AbortSignal): Promise<Product> {
-  const res = await fetch(`/api/products/${encodeURIComponent(id)}`, {
-    cache: "no-store",
-    signal,
-  });
-  let json: ApiItemResponse;
-  try {
-    json = (await res.json()) as ApiItemResponse;
-  } catch {
-    throw new Error(`Bad response (${res.status})`);
-  }
-  if (!res.ok || (json as any)?.error) {
-    throw new Error((json as any)?.error || `Not found (${res.status})`);
-  }
-  return json as Product;
 }
 
 function dedupeById(list: Product[]): Product[] {
@@ -162,44 +128,142 @@ function dedupeById(list: Product[]): Product[] {
 }
 
 /* ------------------------------------------------------------------ */
+/* Fetch helpers (with backoff + abort)                                */
+/* ------------------------------------------------------------------ */
+
+type FetchListArgs = {
+  pageSize: number;
+  signal?: AbortSignal | null;
+};
+
+const FETCH_TIMEOUT_MS = 12_000;
+
+async function fetchJson(input: RequestInfo, init?: RequestInit) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(input, {
+      credentials: "include", // keep cookies if any auth affects visibility
+      cache: "no-store",
+      ...init,
+      // always ensure a real signal is present; prefer caller's when provided
+      signal: init?.signal ?? ac.signal,
+      headers: { Accept: "application/json", ...(init?.headers || {}) },
+    });
+    const text = await res.text(); // avoid double-reading body
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      /* non-JSON response */
+    }
+    return { res, json };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function fetchList(args: FetchListArgs): Promise<Product[]> {
+  const { pageSize, signal } = args;
+  const qs = new URLSearchParams({
+    page: "1",
+    pageSize: String(pageSize),
+  });
+
+  const init = signal ? { signal } : undefined; // avoid `{ signal: undefined }`
+  const { res, json } = await fetchJson(`/api/products?${qs.toString()}`, init);
+  if (!res.ok) {
+    const msg = (json as any)?.error || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return dedupeById(normalizeList(json as ApiListResponse));
+}
+
+async function fetchItem(id: string, signal?: AbortSignal | null): Promise<Product> {
+  const init = signal ? { signal } : undefined; // avoid `{ signal: undefined }`
+  const { res, json } = await fetchJson(`/api/products/${encodeURIComponent(id)}`, init);
+  if (!res.ok || (json as any)?.error) {
+    throw new Error((json as any)?.error || `Not found (${res.status})`);
+  }
+  return json as Product;
+}
+
+/* Simple retry with backoff for list fetch in silent refreshes */
+async function tryFetchListWithBackoff(args: FetchListArgs) {
+  const { signal } = args;
+  const attempts = [0, 600, 1200]; // ms waits (3 tries total)
+  let lastErr: unknown;
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      return await fetchList(args);
+    } catch (e) {
+      lastErr = e;
+      if (signal?.aborted) throw e;
+      if (i < attempts.length - 1) {
+        await new Promise((r) => setTimeout(r, attempts[i + 1]));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/* ------------------------------------------------------------------ */
 /* Public hooks                                                        */
 /* ------------------------------------------------------------------ */
 
-/**
- * useProducts()
- * - Returns cached list quickly (memory/session)
- * - Revalidates in background
- * - Revalidates on tab focus / online
- * - Exposes addProduct() to create and locally cache a new listing
- */
-export function useProducts(): UseProductsReturn {
+export function useProducts(options: UseProductsOptions = {}): UseProductsReturn {
+  const cacheTtl = Math.max(5_000, options.cacheTtlMs ?? 60_000);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, options.pageSize ?? DEFAULT_PAGE_SIZE));
+
+  // Prime memory cache once if initial is provided and memory is empty
+  if (options.initial && memory.list.length === 0) {
+    const seeded = dedupeById(options.initial);
+    cacheListToMemory(seeded);
+    safeSessionSet(LIST_KEY, seeded);
+  }
+
   const [products, setProducts] = useState<Product[]>(memory.list);
   const [ready, setReady] = useState<boolean>(memory.list.length > 0);
   const [error, setError] = useState<string | null>(null);
   const acRef = useRef<AbortController | null>(null);
 
+  const applyList = useCallback((list: Product[]) => {
+    const deduped = dedupeById(list);
+    cacheListToMemory(deduped);
+    safeSessionSet(LIST_KEY, deduped);
+    setProducts(deduped);
+  }, []);
+
+  const revalidateSilently = useCallback(async () => {
+    try {
+      const list = await tryFetchListWithBackoff({ pageSize });
+      applyList(list);
+    } catch {
+      /* silent */
+    }
+  }, [applyList, pageSize]);
+
   const load = useCallback(
     async (force = false) => {
       setError(null);
 
-      // Use memory cache if fresh and not forced
-      const fresh = Date.now() - memory.lastAt < CACHE_TTL_MS;
+      // Fresh memory cache
+      const fresh = Date.now() - memory.lastAt < cacheTtl;
       if (!force && memory.list.length && fresh) {
         setProducts(memory.list);
         setReady(true);
-        // Also kick a silent revalidate in the background
+        // Silent background revalidate
         void revalidateSilently();
         return;
       }
 
-      // Try session cache for a fast first paint
+      // Session cache for instant paint
       if (!memory.list.length && !force) {
-        const sessionList = loadListFromSession();
-        if (sessionList && sessionList.length) {
+        const sessionList = safeSessionGet<Product[]>(LIST_KEY);
+        if (sessionList?.length) {
           cacheListToMemory(sessionList);
           setProducts(sessionList);
           setReady(true);
-          // background revalidate
           void revalidateSilently();
           return;
         }
@@ -210,10 +274,8 @@ export function useProducts(): UseProductsReturn {
       acRef.current = new AbortController();
 
       try {
-        const list = await fetchList(acRef.current.signal);
-        cacheListToMemory(list);
-        saveListToSession(list);
-        setProducts(list);
+        const list = await fetchList({ pageSize, signal: acRef.current.signal });
+        applyList(list);
         setReady(true);
       } catch (e: any) {
         setError(e?.message || "Failed to load products");
@@ -221,32 +283,30 @@ export function useProducts(): UseProductsReturn {
         setReady(true);
       }
     },
-    []
+    [applyList, cacheTtl, pageSize, revalidateSilently]
   );
 
-  // background revalidate with small retry
-  const revalidateSilently = useCallback(async () => {
-    try {
-      const list = await fetchList();
-      cacheListToMemory(list);
-      saveListToSession(list);
-      setProducts(list);
-    } catch {
-      // no-op (silent)
-    }
-  }, []);
-
-  // Initial load
+  // Initial load + visibility/online SWR
   useEffect(() => {
     void load(false);
-    // Revalidate when window regains focus or comes online
-    const onFocus = () => void revalidateSilently();
+
+    let visTimer: number | null = null;
+    const onVisibility = () => {
+      if (!document.hidden) {
+        // debounce quick toggles
+        if (visTimer) window.clearTimeout(visTimer);
+        visTimer = window.setTimeout(() => void revalidateSilently(), 250);
+      }
+    };
     const onOnline = () => void revalidateSilently();
-    window.addEventListener("focus", onFocus);
+
+    window.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", onOnline);
+
     return () => {
       acRef.current?.abort();
-      window.removeEventListener("focus", onFocus);
+      if (visTimer) window.clearTimeout(visTimer);
+      window.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -256,6 +316,11 @@ export function useProducts(): UseProductsReturn {
     void load(true);
   }, [load]);
 
+  const refreshIfStale = useCallback(async () => {
+    const fresh = Date.now() - memory.lastAt < cacheTtl;
+    if (!fresh) await revalidateSilently();
+  }, [cacheTtl, revalidateSilently]);
+
   /** Create product, update caches, return { id } */
   const addProduct = useCallback(
     async (payload: any): Promise<{ id: string }> => {
@@ -263,6 +328,7 @@ export function useProducts(): UseProductsReturn {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "include",
         body: JSON.stringify(payload),
       });
       const j = await r.json().catch(() => ({}));
@@ -274,10 +340,10 @@ export function useProducts(): UseProductsReturn {
       const nowIso = new Date().toISOString();
       const newItem: Product = {
         id: String(j.id),
-        name: String(payload.name),
+        name: String(payload.name ?? ""),
         description: payload.description ?? null,
-        category: String(payload.category),
-        subcategory: String(payload.subcategory),
+        category: String(payload.category ?? ""),
+        subcategory: String(payload.subcategory ?? ""),
         brand: payload.brand ?? null,
         condition: payload.condition ?? null,
         price:
@@ -292,22 +358,28 @@ export function useProducts(): UseProductsReturn {
         negotiable: !!payload.negotiable,
         createdAt: nowIso,
         featured: false,
-        sellerId: undefined,
+        // IMPORTANT: do not assign `undefined` with exactOptionalPropertyTypes
+        sellerId: null,
       };
 
-      // Update memory & session caches and state
+      // Update caches and state optimistically
       const merged = dedupeById([newItem, ...memory.list]);
       cacheListToMemory(merged);
-      saveListToSession(merged);
+      safeSessionSet(LIST_KEY, merged);
       setProducts(merged);
       setReady(true);
 
+      // Optionally, fire a silent refetch to pick up server-enriched fields
+      void revalidateSilently();
+
       return { id: String(j.id) };
     },
-    []
+    [revalidateSilently]
   );
 
-  return { products, ready, error, reload, addProduct };
+  const getById = useCallback((id: string) => memory.map.get(String(id)), []);
+
+  return { products, ready, error, reload, addProduct, refreshIfStale, getById };
 }
 
 /**
@@ -317,20 +389,18 @@ export function useProducts(): UseProductsReturn {
  * - Useful for product detail pages to avoid "not found on page 1" issues.
  */
 export function useProduct(id: string) {
-  const [product, setProduct] = useState<Product | null>(
-    id ? memory.map.get(String(id)) ?? null : null
-  );
-  const [loading, setLoading] = useState<boolean>(!product);
+  const seed = id ? memory.map.get(String(id)) ?? null : null;
+  const [product, setProduct] = useState<Product | null>(seed);
+  const [loading, setLoading] = useState<boolean>(!seed);
   const [error, setError] = useState<string | null>(null);
   const acRef = useRef<AbortController | null>(null);
 
   const load = useCallback(
     async (force = false) => {
       if (!id) return;
-
       setError(null);
 
-      // If we already have it and not forcing, show it instantly
+      // If present in cache and not forcing, show it instantly
       if (!force && memory.map.has(String(id))) {
         setProduct(memory.map.get(String(id)) || null);
         setLoading(false);
@@ -338,7 +408,6 @@ export function useProduct(id: string) {
         setLoading(true);
       }
 
-      // Network fetch
       acRef.current?.abort();
       acRef.current = new AbortController();
 
@@ -348,7 +417,7 @@ export function useProduct(id: string) {
         memory.map.set(String(p.id), p);
         const merged = dedupeById([p, ...memory.list]);
         cacheListToMemory(merged);
-        saveListToSession(merged);
+        safeSessionSet(LIST_KEY, merged);
         setProduct(p);
         setLoading(false);
       } catch (e: any) {
@@ -378,5 +447,5 @@ export function getCachedProduct(id: string): Product | undefined {
 export function primeProductsCache(list: Product[]) {
   const deduped = dedupeById(list);
   cacheListToMemory(deduped);
-  saveListToSession(deduped);
+  safeSessionSet(LIST_KEY, deduped);
 }

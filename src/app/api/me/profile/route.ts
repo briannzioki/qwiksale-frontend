@@ -22,7 +22,7 @@ function looksLikeValidUsername(u: string) {
 function normalizeName(input: unknown): string | undefined {
   if (typeof input !== "string") return undefined;
   const s = input.trim().replace(/\s+/g, " ");
-  if (!s) return ""; // allow clearing if you want; or return undefined to ignore empties
+  if (!s) return ""; // allow clearing; change to `undefined` if you want to ignore empties
   if (s.length > 80) return s.slice(0, 80);
   return s;
 }
@@ -39,11 +39,12 @@ export async function PATCH(req: Request) {
       // image is updated via /api/account/profile/photo
     };
 
-    const data: Record<string, any> = {};
+    // Use indexable shape to build patch object safely with bracket notation
+    const data: Record<string, unknown> = {};
 
     // Optional name
     const normName = normalizeName(body?.name);
-    if (normName !== undefined) data.name = normName;
+    if (normName !== undefined) data["name"] = normName;
 
     // Optional username with validation + uniqueness (case-insensitive)
     if (typeof body?.username === "string") {
@@ -66,7 +67,7 @@ export async function PATCH(req: Request) {
         return noStore({ error: "Username is already taken." }, { status: 409 });
       }
 
-      data.username = username;
+      data["username"] = username;
     }
 
     if (Object.keys(data).length === 0) {

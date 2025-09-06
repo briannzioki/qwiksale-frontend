@@ -1,15 +1,18 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  // We use a class toggle for dark mode (see ThemeToggle)
   darkMode: "class",
 
-  // Scan all the places we put JSX/MDX
   content: [
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/**/*.{md,mdx}",
   ],
+
+  // Opt in to helpful future defaults
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
 
   theme: {
     container: {
@@ -23,6 +26,11 @@ module.exports = {
       },
     },
     extend: {
+      // Wire your next/font CSS vars into Tailwind utilities
+      fontFamily: {
+        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+      },
       colors: {
         brandGreen: "#478559",
         brandNavy: "#161748",
@@ -54,10 +62,14 @@ module.exports = {
   },
 
   plugins: [
-    require("@tailwindcss/forms"),
+    // Use forms with strategy: 'class' to avoid global element resets
+    require("@tailwindcss/forms")({ strategy: "class" }),
     require("@tailwindcss/typography"),
     require("@tailwindcss/aspect-ratio"),
     require("tailwindcss-animate"),
-    // ⛔ Do NOT include "@tailwindcss/line-clamp": it's built-in since Tailwind v3.3
+    // If you installed it (you have it in devDependencies), this unlocks `@container`
+    // and responsive container query variants.
+    require("@tailwindcss/container-queries"),
+    // ⛔ Do NOT add @tailwindcss/line-clamp (deprecated in recent Tailwind).
   ],
 };

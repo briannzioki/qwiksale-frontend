@@ -9,15 +9,18 @@ const prisma = new PrismaClient();
    Config via environment vars
    =============================
 
-   SEED_RESET=1            -> delete test products/favorites/payments first
-   SEED_MIN=40             -> minimum number of products after cloning
-   SEED_SOURCE=/abs/file   -> optional override path to a products module/json
-   SEED_DEMO_USER_EMAIL    -> email for demo seller (default seller@qwiksale.test)
-   SEED_DEMO_USER_NAME     -> name for demo seller (default Demo Seller)
-   SEED_ALLOW_PROD=1       -> allow RESET in production (use with caution!)
+   SEED_RESET=1             -> delete demo/seed products/favorites first
+   SEED_RESET_ALL=1         -> delete *all* products (overrides demo-only safety)
+   SEED_MIN=40              -> minimum number of products after cloning
+   SEED_SOURCE=/abs/file    -> optional override path to a products module/json
+   SEED_DEMO_USER_EMAIL     -> email for demo seller (default seller@qwiksale.test)
+   SEED_DEMO_USER_NAME      -> name for demo seller (default Demo Seller)
+   SEED_DEMO_USER_USERNAME  -> username for demo seller (optional)
+   SEED_ALLOW_PROD=1        -> allow RESET in production (use with caution!)
 */
 
 const SEED_RESET = process.env.SEED_RESET === "1";
+const SEED_RESET_ALL = process.env.SEED_RESET_ALL === "1"; // extra-dangerous
 const SEED_MIN = Number.isFinite(Number(process.env.SEED_MIN))
   ? Math.max(1, Number(process.env.SEED_MIN))
   : 40;
@@ -25,6 +28,7 @@ const SEED_MIN = Number.isFinite(Number(process.env.SEED_MIN))
 const SEED_SOURCE = process.env.SEED_SOURCE || ""; // optional explicit file
 const DEMO_EMAIL = process.env.SEED_DEMO_USER_EMAIL || "seller@qwiksale.test";
 const DEMO_NAME = process.env.SEED_DEMO_USER_NAME || "Demo Seller";
+const DEMO_USERNAME = process.env.SEED_DEMO_USER_USERNAME || ""; // optional
 
 /* ==============
    Types (local)
@@ -48,7 +52,7 @@ type RawProduct = {
   condition?: "brand new" | "pre-owned" | string;
   price?: number | string | null;
   image?: string | null;
-  gallery?: unknown; // be tolerant; we’ll coerce to string[]
+  gallery?: unknown; // tolerant
   location?: string;
   negotiable?: boolean;
   createdAt?: string | Date;
@@ -89,19 +93,36 @@ type CreateRow = {
 /* ==============
    Load products
    ============== */
+function existingPaths(): string[] {
+  const roots = [
+    // common roots
+    process.cwd(),
+    // compiled dist scenario (e.g. prisma/seed.js being run from dist)
+    path.resolve(process.cwd(), "dist"),
+    // fallback to this file’s directory (works in CJS; in ESM __dirname may be undefined)
+    // @ts-ignore - in ts-node CJS this exists
+    typeof __dirname === "string" ? path.resolve(__dirname, "..") : process.cwd(),
+  ];
+  const unique = Array.from(new Set(roots));
+  return unique;
+}
+
 function loadSeed(): RawProduct[] {
   const tryFiles: string[] = [];
   if (SEED_SOURCE) {
     tryFiles.push(path.resolve(SEED_SOURCE));
   } else {
-    tryFiles.push(
-      path.resolve(__dirname, "../src/app/data/products.ts"),
-      path.resolve(__dirname, "../src/data/products.ts"),
-      path.resolve(__dirname, "../src/app/data/products.js"),
-      path.resolve(__dirname, "../src/data/products.js"),
-      path.resolve(__dirname, "../src/app/data/products.json"),
-      path.resolve(__dirname, "../src/data/products.json"),
-    );
+    const bases = existingPaths();
+    for (const root of bases) {
+      tryFiles.push(
+        path.resolve(root, "src/app/data/products.ts"),
+        path.resolve(root, "src/data/products.ts"),
+        path.resolve(root, "src/app/data/products.js"),
+        path.resolve(root, "src/data/products.js"),
+        path.resolve(root, "src/app/data/products.json"),
+        path.resolve(root, "src/data/products.json"),
+      );
+    }
   }
 
   for (const p of tryFiles) {
@@ -148,12 +169,19 @@ function toPrice(v: unknown): number | null {
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : null;
 }
 
+// Accept both 2547… and 2541…; allow +254…, 07…/01… and bare 7…/1…
 function normalizePhone(input?: string | null): string | null {
   if (!input) return null;
-  let s = String(input).replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07XXXXXXXX -> 2547XXXXXXXX
-  if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, "");
-  if (!/^2547\d{8}$/.test(s)) return null;
+  let s = String(input).trim();
+
+  if (/^\+254(7|1)\d{8}$/.test(s)) s = s.replace(/^\+/, "");
+  s = s.replace(/\D+/g, "");
+
+  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) s = "254" + s.slice(1);
+  if (/^7\d{8}$/.test(s) || /^1\d{8}$/.test(s)) s = "254" + s;
+
+  if (!/^254(7|1)\d{8}$/.test(s)) return null;
+  if (s.length > 12) s = s.slice(0, 12);
   return s;
 }
 
@@ -199,7 +227,10 @@ function makeAtLeast(seed: RawProduct[], minCount: number): RawProduct[] {
       price: clonePrice(toPrice(base.price), bump),
       brand: base.brand || pick(brands, i),
       createdAt: randomCreatedAt(),
-      image: typeof base.image === "string" && base.image ? base.image : "https://picsum.photos/seed/qwiksale-default/800/600",
+      image:
+        typeof base.image === "string" && base.image
+          ? base.image
+          : "https://picsum.photos/seed/qwiksale-default/800/600",
       gallery:
         Array.isArray(base.gallery) && base.gallery.length > 0
           ? (base.gallery as unknown[]).map(String)
@@ -296,11 +327,11 @@ async function main() {
     throw new Error("Refusing to RESET in production. Set SEED_ALLOW_PROD=1 to force (dangerous).");
   }
 
-  // 1) Demo seller (only fields that exist in your User schema)
+  // 1) Demo seller
   const demoSeller = await prisma.user.upsert({
     where: { email: DEMO_EMAIL },
-    update: { name: DEMO_NAME, subscription: "GOLD", image: null },
-    create: { email: DEMO_EMAIL, name: DEMO_NAME, subscription: "GOLD", image: null },
+    update: { name: DEMO_NAME, subscription: "GOLD", image: null, ...(DEMO_USERNAME ? { username: DEMO_USERNAME } : {}) },
+    create: { email: DEMO_EMAIL, name: DEMO_NAME, subscription: "GOLD", image: null, ...(DEMO_USERNAME ? { username: DEMO_USERNAME } : {}) },
   });
   console.log(`✓ Demo seller: ${demoSeller.email} (${demoSeller.id})`);
 
@@ -315,10 +346,38 @@ async function main() {
 
   // 4) Optional reset
   if (SEED_RESET) {
-    console.log("⚠️  Resetting test data…");
-    await prisma.favorite.deleteMany({});
-    try { await (prisma as any).payment?.deleteMany?.({}); } catch {}
-    await prisma.product.deleteMany({});
+    console.log("⚠️  Resetting seed/demo data…");
+    try {
+      // If SEED_RESET_ALL: delete all products (extremely dangerous).
+      if (SEED_RESET_ALL) {
+        await prisma.favorite.deleteMany({});
+        try { await (prisma as any).payment?.deleteMany?.({}); } catch {}
+        await prisma.product.deleteMany({});
+      } else {
+        // Safer default: wipe only obviously seeded/demo rows
+        const seededIds = await prisma.product.findMany({
+          where: {
+            OR: [
+              { sellerId: demoSeller.id },
+              { name: { contains: "• Batch" } },
+              { sellerName: "Private Seller" },
+            ],
+          },
+          select: { id: true },
+        });
+        const ids = seededIds.map((x) => x.id);
+        if (ids.length) {
+          await prisma.favorite.deleteMany({ where: { productId: { in: ids } } });
+          await prisma.product.deleteMany({ where: { id: { in: ids } } });
+        }
+        // Also nuke favorites *by* demo seller (in case they liked non-seed items)
+        await prisma.favorite.deleteMany({ where: { userId: demoSeller.id } });
+        try { await (prisma as any).payment?.deleteMany?.({ userId: demoSeller.id }); } catch {}
+      }
+      console.log("• Reset complete");
+    } catch (e) {
+      console.warn("• Reset failed (continuing):", (e as any)?.message || e);
+    }
   }
 
   // 5) Insert in batches
@@ -331,18 +390,22 @@ async function main() {
     console.log(`  …batch ${Math.floor(i / BATCH) + 1}: +${res.count}`);
   }
 
-  // 6) Seed favorites for demo seller
-  const firstTwo = await prisma.product.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 2,
-    select: { id: true },
-  });
-  for (const p of firstTwo) {
-    await prisma.favorite.upsert({
-      where: { userId_productId: { userId: demoSeller.id, productId: p.id } },
-      update: {},
-      create: { userId: demoSeller.id, productId: p.id },
+  // 6) Seed favorites for demo seller (top 2 newest)
+  try {
+    const firstTwo = await prisma.product.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 2,
+      select: { id: true },
     });
+    for (const p of firstTwo) {
+      await prisma.favorite.upsert({
+        where: { userId_productId: { userId: demoSeller.id, productId: p.id } },
+        update: {},
+        create: { userId: demoSeller.id, productId: p.id },
+      });
+    }
+  } catch {
+    // Favorites model might not exist in some schemas
   }
 
   // 7) Summary

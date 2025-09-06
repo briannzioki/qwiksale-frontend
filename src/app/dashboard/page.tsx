@@ -1,16 +1,17 @@
 // src/app/dashboard/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getServerSession } from "@/app/lib/auth";
+import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
+import DeleteListingButton from "./DeleteListingButton";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const runtime = "nodejs";
 
 export const metadata: Metadata = {
-  title: "Dashboard — QwikSale",
-  description: "Your QwikSale account overview, listings and insights.",
+  title: "Dashboard · QwikSale",
+  description: "Your QwikSale account overview, listings, and insights.",
 };
 
 type RecentListing = {
@@ -19,127 +20,156 @@ type RecentListing = {
   image: string | null;
   createdAt: Date;
   price: number | null;
-  featured: boolean;
+  featured: boolean | null;
   category: string;
   subcategory: string;
   status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
 };
 
-async function getUserIdOrNull() {
-  const session = await getServerSession();
-  const id = (session?.user as any)?.id as string | undefined;
-  const email = session?.user?.email || undefined;
-
-  if (!session?.user) return { session, userId: null };
-  if (id) return { session, userId: id };
-
-  if (email) {
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-    return { session, userId: user?.id ?? null };
+function fmtKES(n?: number | null) {
+  if (!n || n <= 0) return "Contact for price";
+  try {
+    return `KES ${new Intl.NumberFormat("en-KE").format(n)}`;
+  } catch {
+    return `KES ${n}`;
   }
+}
 
-  return { session, userId: null };
+async function getUserId(): Promise<string | null> {
+  const session = await auth();
+  const fromToken = (session?.user as any)?.id as string | undefined;
+  if (fromToken) return fromToken ?? null;
+
+  const email = session?.user?.email ?? null;
+  if (!email) return null;
+
+  const u = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+  return u?.id ?? null;
 }
 
 export default async function DashboardPage() {
-  const { session, userId } = await getUserIdOrNull();
+  const userId = await getUserId();
 
-  if (!session || !userId) {
+  /* ----------------------------- Signed out state ---------------------------- */
+  if (!userId) {
     return (
-      <div className="p-6">
+      <div className="p-6 space-y-6">
         <div className="rounded-2xl p-8 text-white shadow bg-gradient-to-r from-[#39a0ca] via-[#478559] to-[#161748]">
           <h1 className="text-2xl md:text-3xl font-extrabold">Dashboard</h1>
           <p className="text-white/90">You need to sign in to view this page.</p>
         </div>
-        <div className="mt-6 flex gap-3">
-          <Link href="/api/auth/signin" className="inline-block px-4 py-2 rounded-xl bg-black text-white">
-            Sign in with Google
-          </Link>
-          <Link href="/signin" className="inline-block px-4 py-2 rounded-xl border">
+
+        <div className="mt-2 flex flex-wrap gap-3">
+          <Link
+            href="/signin?callbackUrl=%2Fdashboard"
+            className="inline-flex items-center rounded-xl bg-black px-4 py-2 font-semibold text-white hover:opacity-90"
+          >
             Sign in with email
+          </Link>
+          <Link
+            href="/api/auth/signin/google?callbackUrl=%2Fdashboard"
+            className="inline-flex items-center rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50"
+          >
+            Continue with Google
           </Link>
         </div>
       </div>
     );
   }
 
-  const me = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, name: true, email: true, subscription: true, image: true, createdAt: true, username: true },
-  });
+  /* --------------------------------- Queries -------------------------------- */
+  const now = Date.now();
+  const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+  const [{ me, myListingsCount, favoritesCount, newLast7Days, likesOnMyListings, topCats30, recentListingsRaw }] =
+    await Promise.all([
+      (async () => {
+        const [me, myListingsCount, favoritesCount, newLast7Days, likesOnMyListings, topCats30, recentListingsRaw] =
+          await Promise.all([
+            prisma.user.findUnique({
+              where: { id: userId },
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                subscription: true,
+                image: true,
+                createdAt: true,
+                username: true,
+              },
+            }),
+            prisma.product.count({ where: { sellerId: userId } }),
+            prisma.favorite.count({ where: { userId } }),
+            prisma.product.count({ where: { sellerId: userId, createdAt: { gte: since7d } } }),
+            prisma.favorite.count({ where: { product: { sellerId: userId } } }),
+            prisma.product.groupBy({
+              by: ["category"],
+              where: { status: "ACTIVE", createdAt: { gte: since30d } },
+              _count: { category: true },
+            }),
+            prisma.product.findMany({
+              where: { sellerId: userId },
+              orderBy: { createdAt: "desc" },
+              take: 6,
+              select: {
+                id: true,
+                name: true,
+                image: true,
+                createdAt: true,
+                price: true,
+                featured: true,
+                category: true,
+                subcategory: true,
+                status: true,
+              },
+            }),
+          ]);
+
+        return {
+          me,
+          myListingsCount,
+          favoritesCount,
+          newLast7Days,
+          likesOnMyListings,
+          topCats30,
+          recentListingsRaw,
+        };
+      })(),
+    ]);
 
   if (!me) {
     return (
       <div className="p-6">
         <p className="mb-3">We couldn’t load your account. Please sign in again.</p>
-        <Link href="/api/auth/signin" className="text-blue-600 underline">
+        <Link href="/signin?callbackUrl=%2Fdashboard" className="text-[#39a0ca] underline">
           Sign in
         </Link>
       </div>
     );
   }
 
-  // Data for metrics
-  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
-  const [
-    myListingsCount,
-    favoritesCount,
-    recentListingsRaw,
-    newLast7Days,
-    likesOnMyListings,
-    topCats30,
-  ] = await Promise.all([
-    // Show ALL your listings count (not just ACTIVE)
-    prisma.product.count({ where: { sellerId: me.id } }),
-    prisma.favorite.count({ where: { userId: me.id } }),
-    prisma.product.findMany({
-      where: { sellerId: me.id }, // all statuses so you can edit drafts/hidden
-      orderBy: { createdAt: "desc" },
-      take: 6,
-      select: {
-        id: true,
-        name: true,
-        image: true,
-        createdAt: true,
-        price: true,
-        featured: true,
-        category: true,
-        subcategory: true,
-        status: true, // ← show status badge
-      },
-    }),
-    prisma.product.count({ where: { sellerId: me.id, createdAt: { gte: since7d } } }),
-    prisma.favorite.count({ where: { product: { sellerId: me.id } } }),
-    // Market snapshot should only consider ACTIVE (publicly visible) items
-    prisma.product.groupBy({
-      by: ["category"],
-      where: { status: "ACTIVE", createdAt: { gte: since30d } },
-      _count: { category: true },
-    }),
-  ]);
-
   const topCategoriesSorted = [...topCats30]
     .sort((a, b) => (b._count.category ?? 0) - (a._count.category ?? 0))
     .slice(0, 5);
 
   const recentListings = recentListingsRaw as unknown as RecentListing[];
-  const isBasic = me.subscription === "BASIC";
-  const subLabel = me.subscription === "BASIC" ? "FREE" : me.subscription;
+  const subLabel = me.subscription === "BASIC" ? "FREE" : me.subscription ?? "FREE";
 
+  /* ---------------------------------- View ---------------------------------- */
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-extrabold">
               Welcome{me.name ? `, ${me.name}` : ""} 👋
             </h1>
-            <p className="text-white/90">
-              Manage your listings, favorites and account.
-            </p>
+            <p className="text-white/90">Manage your listings, favorites, and account.</p>
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-white/15 px-3 py-1 text-sm">
@@ -147,15 +177,15 @@ export default async function DashboardPage() {
             </span>
             <Link
               href="/account/profile"
-              className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bg-white/90"
+              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#161748] hover:bg-white/90"
               title="Edit account"
             >
               Edit Account
             </Link>
-            {isBasic && (
+            {subLabel === "FREE" && (
               <Link
                 href="/settings/billing"
-                className="rounded-xl bg-white text-[#161748] px-4 py-2 text-sm font-semibold hover:bg-white/90"
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#161748] hover:bg-white/90"
               >
                 Upgrade
               </Link>
@@ -175,13 +205,16 @@ export default async function DashboardPage() {
         <Link href="/settings/billing" className="rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50">
           Billing & Subscription
         </Link>
-        <Link href="/api/auth/signout" className="ml-auto rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50">
+        <Link
+          href="/api/auth/signout"
+          className="ml-auto rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50"
+        >
           Sign out
         </Link>
       </div>
 
       {/* Stats */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric title="My Listings" value={myListingsCount} />
         <Metric title="My Favorites" value={favoritesCount} />
         <Metric title="New in last 7 days" value={newLast7Days} />
@@ -189,19 +222,21 @@ export default async function DashboardPage() {
       </section>
 
       {/* Trends */}
-      <section className="rounded-xl border bg-white p-5">
-        <div className="flex items-center justify-between mb-3">
+      <section className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Market snapshot (last 30 days)</h2>
-          <Link href="/" className="text-sm text-[#39a0ca] underline">Explore market →</Link>
+          <Link href="/" className="text-sm text-[#39a0ca] underline">
+            Explore market →
+          </Link>
         </div>
         {topCategoriesSorted.length === 0 ? (
-          <div className="text-gray-600">No data yet.</div>
+          <div className="text-gray-600 dark:text-slate-300">No data yet.</div>
         ) : (
-          <ul className="text-sm text-gray-800 grid sm:grid-cols-2 lg:grid-cols-3 gap-1">
+          <ul className="grid gap-1 text-sm text-gray-800 dark:text-slate-100 sm:grid-cols-2 lg:grid-cols-3">
             {topCategoriesSorted.map((c) => (
-              <li key={c.category} className="flex items-center justify-between border-b py-1">
+              <li key={c.category} className="flex items-center justify-between border-b py-1 dark:border-slate-800">
                 <span>{c.category}</span>
-                <span className="text-gray-500">{c._count.category}</span>
+                <span className="text-gray-500 dark:text-slate-400">{c._count.category}</span>
               </li>
             ))}
           </ul>
@@ -209,24 +244,27 @@ export default async function DashboardPage() {
       </section>
 
       {/* Social links prompt */}
-      <section className="rounded-xl border bg-white p-5">
-        <h2 className="text-lg font-semibold mb-1">Boost your store</h2>
-        <p className="text-sm text-gray-600 mb-3">
+      <section className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="mb-1 text-lg font-semibold">Boost your store</h2>
+        <p className="mb-3 text-sm text-gray-600 dark:text-slate-300">
           Add your social links so buyers can trust your brand.
         </p>
         <div className="flex flex-wrap gap-2">
-          <Link href="/account/profile#socials" className="rounded-xl border px-4 py-2 hover:bg-gray-50">
+          <Link href="/account/profile#socials" className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">
             Add social links
           </Link>
           {me.username && (
-            <Link href={`/store/${me.username}`} className="rounded-xl border px-4 py-2 hover:bg-gray-50">
+            <Link
+              href={`/store/${me.username}`}
+              className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
+            >
               View my store
             </Link>
           )}
         </div>
       </section>
 
-      {/* Recent listings with actions */}
+      {/* Recent listings */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Your Recent Listings</h2>
@@ -236,65 +274,62 @@ export default async function DashboardPage() {
         </div>
 
         {recentListings.length === 0 ? (
-          <div className="text-gray-600">No listings yet. Get started by posting your first item.</div>
+          <div className="text-gray-600 dark:text-slate-300">
+            No listings yet. Get started by posting your first item.
+          </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {recentListings.map((p) => (
               <div key={p.id} className="group">
-                <div className="relative bg-white rounded-xl shadow hover:shadow-lg transition overflow-hidden border border-gray-100">
-                  {p.featured && (
-                    <span className="absolute top-2 left-2 z-10 rounded-md bg-[#161748] text-white text-xs px-2 py-1 shadow">
+                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                  {p.featured ? (
+                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
                       Verified
                     </span>
-                  )}
-                  {/* Status badge (only when not ACTIVE) */}
+                  ) : null}
+
                   {p.status !== "ACTIVE" && (
-                    <span className="absolute top-2 right-2 z-10 rounded-md bg-gray-800 text-white text-xs px-2 py-1 shadow">
+                    <span className="absolute right-2 top-2 z-10 rounded-md bg-gray-800 px-2 py-1 text-xs text-white shadow">
                       {p.status}
                     </span>
                   )}
+
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={p.image || "/placeholder/default.jpg"}
                     alt={p.name}
-                    className="w-full h-40 object-cover"
+                    className="h-40 w-full object-cover"
                   />
+
                   <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 line-clamp-1">{p.name}</h3>
-                    <p className="text-xs text-gray-500 line-clamp-1">
+                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">{p.name}</h3>
+                    <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
                       {p.category} • {p.subcategory}
                     </p>
-                    <p className="text-[#161748] font-bold mt-1">
-                      {typeof p.price === "number" && p.price > 0
-                        ? `KES ${p.price.toLocaleString()}`
-                        : "Contact for price"}
+                    <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
+                      {fmtKES(p.price)}
                     </p>
-                    <p className="text-[11px] text-gray-400 mt-1">
+                    <p className="mt-1 text-[11px] text-gray-400">
                       {new Date(p.createdAt).toLocaleDateString()}
                     </p>
 
-                    {/* Actions */}
                     <div className="mt-3 flex gap-2">
                       <Link
                         href={`/product/${p.id}`}
-                        className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50"
+                        className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
                       >
                         View
                       </Link>
                       <Link
                         href={`/sell?id=${p.id}`}
-                        className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50"
+                        className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
                         title="Edit listing"
                       >
                         Edit
                       </Link>
-                      <Link
-                        href={`/product/${p.id}#delete`}
-                        className="rounded-md border px-3 py-1 text-sm text-red-600 hover:bg-red-50"
-                        title="Delete listing"
-                      >
-                        Delete
-                      </Link>
+
+                      {/* Client-only delete with long-press confirm */}
+                      <DeleteListingButton productId={p.id} productName={p.name} />
                     </div>
                   </div>
                 </div>
@@ -309,9 +344,11 @@ export default async function DashboardPage() {
 
 function Metric({ title, value }: { title: string; value: number }) {
   return (
-    <div className="rounded-xl border bg-white p-5">
-      <div className="text-sm text-gray-500">{title}</div>
-      <div className="text-2xl font-bold text-[#161748]">{value}</div>
+    <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+      <div className="text-sm text-gray-500 dark:text-slate-400">{title}</div>
+      <div className="text-2xl font-bold text-[#161748] dark:text-white">
+        {new Intl.NumberFormat("en-KE").format(value)}
+      </div>
     </div>
   );
 }

@@ -5,22 +5,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { toast } from "react-hot-toast";
 
+/* ------------------------------------------------------------------ */
+/* Constants & helpers                                                */
+/* ------------------------------------------------------------------ */
+
+type TierKey = "GOLD" | "PLATINUM";
+
 // Visible price points (KES). Adjust anytime.
-const PRICES: Record<"GOLD" | "PLATINUM", number> = {
+const PRICES: Record<TierKey, number> = {
   GOLD: 199,
   PLATINUM: 499,
 };
 
-const TEST_MSISDN = process.env.NEXT_PUBLIC_TEST_MSISDN || "";
+const TEST_MSISDN = (process.env["NEXT_PUBLIC_TEST_MSISDN"] || "").trim();
 
-// --- helpers ---
 function normalizeMsisdn(input: string): string {
-  let s = (input || "").replace(/\D+/g, ""); // strip non-digits
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07 -> 2547
-  if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, ""); // +2547 -> 2547
-  if (/^2547\d{8}$/.test(s)) return s;
-  // safety trim if people paste long stuff
-  if (s.startsWith("254") && s.length > 12) return s.slice(0, 12);
+  let s = (input || "").replace(/\D+/g, "");
+  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07xxxxxxxx -> 2547xxxxxxxx
+  if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, "");
+  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
 
@@ -28,13 +31,16 @@ function validMsisdn(s: string) {
   return /^2547\d{8}$/.test(s);
 }
 
-async function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/* ------------------------------------------------------------------ */
+/* Component                                                          */
+/* ------------------------------------------------------------------ */
 
 export default function BillingPage() {
   const { data: session, status: sessionStatus } = useSession();
-  const [tier, setTier] = useState<"GOLD" | "PLATINUM">("GOLD");
+
+  const [tier, setTier] = useState<TierKey>("GOLD");
   const [phone, setPhone] = useState("");
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
@@ -46,23 +52,29 @@ export default function BillingPage() {
 
   // Prefill from localStorage or NEXT_PUBLIC_TEST_MSISDN
   useEffect(() => {
-    const saved = localStorage.getItem("billing:lastPhone") || "";
-    if (saved) {
-      setPhone(saved);
-    } else if (TEST_MSISDN) {
-      setPhone(TEST_MSISDN);
+    try {
+      const saved = localStorage.getItem("billing:lastPhone") || "";
+      if (saved) {
+        setPhone(saved);
+      } else if (TEST_MSISDN) {
+        setPhone(TEST_MSISDN);
+      }
+    } catch {
+      if (TEST_MSISDN) setPhone(TEST_MSISDN);
     }
   }, []);
 
   // Persist phone locally
   useEffect(() => {
-    if (phone) localStorage.setItem("billing:lastPhone", phone);
+    try {
+      if (phone) localStorage.setItem("billing:lastPhone", phone);
+    } catch {
+      /* ignore */
+    }
   }, [phone]);
 
-  // Prevent memory leaks
-  useEffect(() => {
-    return () => abortRef.current?.abort();
-  }, []);
+  // Prevent memory leaks (abort in-flight on unmount)
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,6 +82,7 @@ export default function BillingPage() {
     setStatus("");
 
     const msisdn = normalizeMsisdn(phone);
+
     if (!validMsisdn(msisdn)) {
       setError("Please enter a valid Kenyan number like 2547XXXXXXXX.");
       return;
@@ -85,14 +98,15 @@ export default function BillingPage() {
     abortRef.current = new AbortController();
 
     try {
-      setStatus("Starting STK push… Check your phone.");
+      setStatus("Starting STK push… check your phone.");
       const res = await fetch("/api/billing/upgrade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortRef.current.signal,
         body: JSON.stringify({ tier, phone: msisdn, amount: price }),
       });
-      const data = await res.json().catch(() => ({}));
+
+      const data = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
         const msg = data?.error || `Failed to start payment (${res.status})`;
@@ -108,14 +122,14 @@ export default function BillingPage() {
       setStatus(msg);
       toast.success("STK push sent");
 
-      // Poll /api/me to detect subscription change → up to 10 attempts (~45s)
-      const targetTier = tier;
+      // Poll /api/me for subscription change → exponential-ish backoff (max ~50s)
+      const targetTier: TierKey = tier;
       let updated = false;
-      for (let i = 0; i < 10; i++) {
-        await sleep(i === 0 ? 3000 : 5000);
-        const r = await fetch("/api/me", { cache: "no-store" });
-        const j = await r.json().catch(() => ({}));
-        const sub = j?.user?.subscription;
+      for (let i = 0; i < 8; i++) {
+        await sleep(i === 0 ? 3000 : Math.min(5000 + i * 3000, 10000));
+        const r = await fetch("/api/me", { cache: "no-store" }).catch(() => null);
+        const j = (await r?.json().catch(() => ({}))) as any;
+        const sub = j?.user?.subscription as TierKey | undefined;
         if (sub === targetTier) {
           updated = true;
           break;
@@ -126,7 +140,7 @@ export default function BillingPage() {
         setStatus(`Subscription upgraded to ${targetTier}. Enjoy your perks!`);
       } else {
         setStatus(
-          "Payment received or pending. If your tier doesn't update shortly, refresh this page."
+          "Payment is processing. If your tier doesn’t update shortly, refresh this page."
         );
       }
     } catch (err: any) {
@@ -174,20 +188,16 @@ export default function BillingPage() {
             ) : sessionStatus === "loading" ? (
               <div className="skeleton h-4 w-56 rounded" />
             ) : (
-              <div className="text-gray-600 dark:text-slate-400">
-                Not signed in.
-              </div>
+              <div className="text-gray-600 dark:text-slate-400">Not signed in.</div>
             )}
           </div>
 
           {!signedIn && (
             <button
-              onClick={() =>
-                window.location.href = "/signin?callbackUrl=" + encodeURIComponent("/settings/billing")
-              }
+              onClick={() => signIn(undefined, { callbackUrl: "/settings/billing" })}
               className="btn-primary"
             >
-              Sign in with Google
+              Sign in
             </button>
           )}
         </section>
@@ -197,11 +207,7 @@ export default function BillingPage() {
           <PlanCard
             title="Gold"
             price={PRICES.GOLD}
-            features={[
-              "Verified badge",
-              "Priority placement",
-              "Basic support",
-            ]}
+            features={["Verified badge", "Priority placement", "Basic support"]}
             selected={tier === "GOLD"}
             onSelect={() => setTier("GOLD")}
           />
@@ -224,8 +230,11 @@ export default function BillingPage() {
         <form onSubmit={submit} className="card p-5 space-y-4">
           <div className="grid grid-cols-1 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="label">Phone (2547XXXXXXXX)</label>
+              <label htmlFor="phone" className="label">
+                Phone (2547XXXXXXXX)
+              </label>
               <input
+                id="phone"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="2547XXXXXXXX"
@@ -233,6 +242,7 @@ export default function BillingPage() {
                 autoComplete="tel"
                 className="input"
                 required
+                aria-invalid={phone ? !validMsisdn(normalizeMsisdn(phone)) : undefined}
               />
               <div className="text-xs text-gray-500 dark:text-slate-400">
                 We’ll send an STK push to this number. Use{" "}
@@ -251,12 +261,13 @@ export default function BillingPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <label className="label">Tier</label>
+              <label htmlFor="tier" className="label">
+                Tier
+              </label>
               <select
+                id="tier"
                 value={tier}
-                onChange={(e) =>
-                  setTier(e.target.value as "GOLD" | "PLATINUM")
-                }
+                onChange={(e) => setTier(e.target.value as TierKey)}
                 className="select w-56"
               >
                 <option value="GOLD">
@@ -290,17 +301,18 @@ export default function BillingPage() {
             </button>
 
             <p className="text-xs text-gray-500 dark:text-slate-400">
-              You’ll be redirected only if sign-in is required. Payments are
-              handled securely by Safaricom (Daraja).
+              You’ll be redirected only if sign-in is required. Payments are handled
+              securely by Safaricom (Daraja).
             </p>
           </div>
 
+          {/* Status + errors */}
           {showAdvanced && (
             <div className="mt-2 rounded-lg bg-gray-50 dark:bg-slate-800/60 p-3 text-xs text-gray-600 dark:text-slate-300">
               <ul className="list-disc ml-5 space-y-1">
                 <li>
-                  We send <span className="font-mono">CustomerPayBillOnline</span> STK
-                  to your number.
+                  We send <span className="font-mono">CustomerPayBillOnline</span> STK to
+                  your number.
                 </li>
                 <li>
                   On success, our callback updates your subscription automatically.
@@ -313,11 +325,8 @@ export default function BillingPage() {
             </div>
           )}
 
-          {/* Status + errors */}
           {status && (
-            <div className="text-sm text-gray-700 dark:text-slate-200">
-              {status}
-            </div>
+            <div className="text-sm text-gray-700 dark:text-slate-200">{status}</div>
           )}
           {error && <div className="text-sm text-red-600">{error}</div>}
         </form>
@@ -326,7 +335,10 @@ export default function BillingPage() {
   );
 }
 
-// --- sub-components ---
+/* ------------------------------------------------------------------ */
+/* Subcomponents                                                      */
+/* ------------------------------------------------------------------ */
+
 function PlanCard({
   title,
   price,
@@ -349,6 +361,8 @@ function PlanCard({
         highlighted ? "ring-1 ring-brandBlue/30" : "",
         selected ? "outline outline-2 outline-brandBlue/60" : "",
       ].join(" ")}
+      role="group"
+      aria-pressed={selected}
     >
       <div className="flex items-start justify-between">
         <div>
@@ -362,7 +376,9 @@ function PlanCard({
           </div>
         </div>
         {selected ? (
-          <span className="badge-verified">Selected</span>
+          <span className="badge-verified" aria-label="Selected plan">
+            Selected
+          </span>
         ) : (
           <span className="badge bg-white dark:bg-slate-900 border text-xs">
             {features.length} perks
@@ -384,6 +400,7 @@ function PlanCard({
           type="button"
           onClick={onSelect}
           className={selected ? "btn-outline" : "btn-primary"}
+          aria-pressed={selected}
         >
           {selected ? "Selected" : "Choose plan"}
         </button>

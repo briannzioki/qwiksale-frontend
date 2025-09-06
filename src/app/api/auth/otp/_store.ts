@@ -1,115 +1,250 @@
-// src/app/api/auth/otp/_store.ts
-import { createHash } from "crypto";
+// src/app/api/admin/products/[id]/feature/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-type Store = {
-  saveOtp(email: string, code: string, ttlMs: number): Promise<void>;
-  verifyAndConsumeOtp(email: string, code: string): Promise<boolean>;
-  throttle(key: string, max: number, windowSec: number): Promise<{ allowed: boolean; remaining: number }>;
-};
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { prisma } from "@/app/lib/prisma";
+import { auth } from "@/auth";
 
-const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+/* ---------------- analytics (console-only for now) ---------------- */
+type AnalyticsEvent =
+  | "admin_product_feature_attempt"
+  | "admin_product_feature_unauthorized"
+  | "admin_product_feature_forbidden"
+  | "admin_product_feature_invalid_id"
+  | "admin_product_feature_invalid_body"
+  | "admin_product_feature_not_found"
+  | "admin_product_feature_not_active_conflict"
+  | "admin_product_feature_no_change"
+  | "admin_product_feature_success"
+  | "admin_product_feature_error";
 
-// --- Redis (Upstash) if available ---
-let store: Store;
+function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
+  try {
+    // eslint-disable-next-line no-console
+    console.log(`[track] ${event}`, { ts: new Date().toISOString(), ...props });
+  } catch {
+    /* noop */
+  }
+}
 
-async function makeRedisStore(): Promise<Store | null> {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
+/* --------------------------------- utils --------------------------------- */
 
-  const base = async (path: string, body: any) => {
-    const res = await fetch(`${url}/${path}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+function noStore(json: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(json, init);
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
+  return res;
+}
+
+function isAdminEmail(email?: string | null) {
+  const raw = process.env["ADMIN_EMAILS"] || "";
+  const set = new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  return !!email && set.has(email.toLowerCase());
+}
+
+// Next 15: params may be object or Promise
+type CtxLike =
+  | { params?: { id: string } | Promise<{ id: string }> }
+  | Record<string, unknown>
+  | undefined;
+
+async function getId(ctx: CtxLike): Promise<string> {
+  const p: any = (ctx as any)?.params;
+  const v = p && typeof p.then === "function" ? await p : p;
+  return String(v?.id ?? "").trim();
+}
+
+function looksLikeId(id: string) {
+  // Keep permissive unless you enforce cuid/uuid. Non-empty is fine here.
+  return id.length > 0;
+}
+
+function parseBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const t = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(t)) return true;
+    if (["0", "false", "no", "off"].includes(t)) return false;
+  }
+  return undefined;
+}
+
+/* ----------------- PATCH /api/admin/products/[id]/feature ----------------- */
+// body: { featured: boolean; force?: boolean }
+// Also accepts query overrides: ?featured=true&force=1 (handy for quick tests)
+export async function PATCH(req: NextRequest, ctx: CtxLike) {
+  const reqId =
+    (globalThis as any).crypto?.randomUUID?.() ??
+    Math.random().toString(36).slice(2);
+
+  try {
+    // --- authN / authZ: admin only (env whitelist OR DB role === ADMIN) ---
+    const session = await auth();
+    const user = (session as any)?.user;
+
+    if (!user?.id || !user?.email) {
+      track("admin_product_feature_unauthorized", { reqId });
+      return noStore({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    let isAdmin = isAdminEmail(user.email);
+    if (!isAdmin) {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { role: true },
+      });
+      isAdmin = dbUser?.role === "ADMIN";
+    }
+    if (!isAdmin) {
+      track("admin_product_feature_forbidden", { reqId, userId: user.id });
+      return noStore({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // --- params ---
+    const id = await getId(ctx);
+    if (!looksLikeId(id)) {
+      track("admin_product_feature_invalid_id", { reqId });
+      return noStore({ error: "Missing or invalid id" }, { status: 400 });
+    }
+
+    // --- body / query ---
+    // Accept input both from JSON body and query string for convenience
+    let body: unknown = null;
+    try {
+      body = await req.json();
+    } catch {
+      /* Allow empty/invalid JSON when using query params */
+    }
+
+    const q = req.nextUrl.searchParams;
+    const featuredQ = q.get("featured");
+    const forceQ = q.get("force");
+
+    const featuredBody = (body as any)?.featured as unknown;
+    const forceBody = (body as any)?.force as unknown;
+
+    const featuredParsed = parseBoolean(featuredBody ?? featuredQ);
+    const forceParsed = parseBoolean(forceBody ?? forceQ) === true; // default false
+
+    if (typeof featuredParsed !== "boolean") {
+      track("admin_product_feature_invalid_body", {
+        reqId,
+        reason: "featured_not_boolean",
+      });
+      return noStore({ error: "featured:boolean required" }, { status: 400 });
+    }
+
+    track("admin_product_feature_attempt", {
+      reqId,
+      userId: user.id,
+      productId: id,
+      featured: featuredParsed,
+      force: forceParsed,
     });
-    if (!res.ok) throw new Error(`Upstash error ${res.status}`);
-    return res.json();
-  };
 
-  const keyOTP = (email: string) => `otp:email:${email}`;
-  const keyTH = (k: string) => `otp:throttle:${k}`;
+    // --- load product (validate existence & status) ---
+    const prod = await prisma.product.findUnique({
+      where: { id },
+      select: { id: true, status: true, featured: true, updatedAt: true },
+    });
+    if (!prod) {
+      track("admin_product_feature_not_found", { reqId, productId: id });
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
 
-  return {
-    async saveOtp(email, code, ttlMs) {
-      const value = sha256(code);
-      // SET key value EX ttl
-      await base("set", { key: keyOTP(email), value, ex: Math.ceil(ttlMs / 1000) });
-    },
-    async verifyAndConsumeOtp(email, code) {
-      const k = keyOTP(email);
-      const r = await base("get", { key: k });
-      const stored: string | null = r.result ?? null;
-      if (!stored) return false;
-      const ok = stored === sha256(code);
-      if (ok) await base("del", { key: k });
-      return ok;
-    },
-    async throttle(key, max, windowSec) {
-      // Simple counter with expire
-      const k = keyTH(key);
-      // INCR
-      const incr = await base("incr", { key: k });
-      if (incr.result === 1) {
-        await base("pexpire", { key: k, milliseconds: windowSec * 1000 });
+    // By default, only ACTIVE products can be toggled
+    if (!forceParsed && prod.status !== "ACTIVE") {
+      track("admin_product_feature_not_active_conflict", {
+        reqId,
+        productId: id,
+        status: prod.status,
+      });
+      return noStore(
+        {
+          error: "Only ACTIVE products can be toggled. Pass force:true to override.",
+          status: prod.status,
+        },
+        { status: 409 }
+      );
+    }
+
+    // No-op: already in requested state
+    if (prod.featured === featuredParsed) {
+      track("admin_product_feature_no_change", {
+        reqId,
+        productId: id,
+        featured: featuredParsed,
+      });
+      return noStore({
+        ok: true,
+        noChange: true,
+        product: { id: prod.id, featured: prod.featured, status: prod.status },
+      });
+    }
+
+    // --- update ---
+    const updated = await prisma.product.update({
+      where: { id },
+      data: { featured: featuredParsed },
+      select: { id: true, featured: true, status: true, updatedAt: true },
+    });
+
+    // Optional: write an audit log row if your schema supports it
+    try {
+      // Avoid //@ts-expect-error by narrowing prisma to a shape that MAY have adminAuditLog
+      const anyPrisma = prisma as unknown as {
+        adminAuditLog?: { create: (args: any) => Promise<any> };
+      };
+      if (anyPrisma.adminAuditLog?.create) {
+        await anyPrisma.adminAuditLog.create({
+          data: {
+            actorId: user.id,
+            action: "PRODUCT_FEATURE_TOGGLE",
+            meta: {
+              productId: id,
+              before: { featured: prod.featured, status: prod.status },
+              after: { featured: updated.featured, status: updated.status },
+              reqId,
+            },
+          },
+        });
       }
-      const count = Number(incr.result ?? 1);
-      return { allowed: count <= max, remaining: Math.max(0, max - count) };
-    },
-  };
+    } catch {
+      /* ignore if table not present */
+    }
+
+    track("admin_product_feature_success", {
+      reqId,
+      productId: id,
+      featured: updated.featured,
+      status: updated.status,
+    });
+
+    return noStore({ ok: true, product: updated });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("[admin/products/:id/feature PATCH] error:", e);
+    track("admin_product_feature_error", {
+      reqId,
+      message: (e as any)?.message ?? String(e),
+    });
+    return noStore({ error: "Server error" }, { status: 500 });
+  }
 }
 
-// --- In-memory fallback (dev only) ---
-function makeMemoryStore(): Store {
-  const map = new Map<string, { hash: string; exp: number }>();
-  const th = new Map<string, { count: number; exp: number }>();
-
-  const keyOTP = (email: string) => `otp:email:${email}`;
-  const keyTH = (k: string) => `otp:th:${k}`;
-
-  const now = () => Date.now();
-
-  return {
-    async saveOtp(email, code, ttlMs) {
-      map.set(keyOTP(email), { hash: sha256(code), exp: now() + ttlMs });
-    },
-    async verifyAndConsumeOtp(email, code) {
-      const k = keyOTP(email);
-      const v = map.get(k);
-      if (!v) return false;
-      if (now() > v.exp) {
-        map.delete(k);
-        return false;
-      }
-      const ok = v.hash === sha256(code);
-      if (ok) map.delete(k);
-      return ok;
-    },
-    async throttle(key, max, windowSec) {
-      const k = keyTH(key);
-      const v = th.get(k);
-      const t = now();
-      if (!v || t > v.exp) {
-        th.set(k, { count: 1, exp: t + windowSec * 1000 });
-        return { allowed: true, remaining: max - 1 };
-      }
-      v.count += 1;
-      return { allowed: v.count <= max, remaining: Math.max(0, max - v.count) };
-    },
-  };
+/* ----------- Minimal CORS/health helpers (optional but handy) ----------- */
+export async function OPTIONS() {
+  return noStore({ ok: true }, { status: 204 });
 }
-
-const init = await makeRedisStore();
-store = init ?? makeMemoryStore();
-
-export async function saveOtp(email: string, code: string, ttlMs: number) {
-  return store.saveOtp(email.toLowerCase(), code, ttlMs);
-}
-
-export async function verifyAndConsumeOtp(email: string, code: string) {
-  return store.verifyAndConsumeOtp(email.toLowerCase(), code);
-}
-
-export async function throttle(key: string, max: number, windowSec: number) {
-  return store.throttle(key, max, windowSec);
+export async function GET() {
+  return noStore({ ok: true, method: "GET" }, { status: 200 });
 }

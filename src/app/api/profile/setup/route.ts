@@ -25,6 +25,8 @@ function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
   }
 }
 
+/* ------------------------ helpers & validation ------------------------ */
+
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -36,15 +38,44 @@ function noStore(json: unknown, init?: ResponseInit) {
 function normalizeKenyanPhone(raw?: string | null): string | null {
   const s0 = (raw || "").trim();
   if (!s0) return null;
+  // strip non-digits
   let s = s0.replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07XXXXXXXX → 2547XXXXXXXX
-  if (/^\+254(7|1)\d{8}$/.test(s)) s = s.replace(/^\+/, ""); // +254… → 254…
+  // +2547/ +2541… -> 254…
+  if (/^\+?254(7|1)\d{8}$/.test(s0)) s = s.replace(/^\+/, "");
+  // 07XXXXXXXX / 01XXXXXXXX -> 2547XXXXXXXX / 2541XXXXXXXX
+  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
+  if (/^01\d{8}$/.test(s)) s = "254" + s.slice(1);
+  // 7XXXXXXXX / 1XXXXXXXX -> 2547XXXXXXXX / 2541XXXXXXXX
+  if (/^(7|1)\d{8}$/.test(s)) s = "254" + s;
+  // final validation
   if (/^254(7|1)\d{8}$/.test(s)) return s;
   return null;
 }
 
+const RESERVED_USERNAMES = new Set([
+  "admin",
+  "administrator",
+  "root",
+  "support",
+  "help",
+  "contact",
+  "api",
+  "auth",
+  "login",
+  "logout",
+  "signup",
+  "register",
+  "me",
+  "profile",
+  "settings",
+  "qwiksale",
+  "qwik",
+  "user",
+]);
+
 function looksLikeValidUsername(u: string) {
-  return /^[a-zA-Z0-9._]{3,24}$/.test(u);
+  // 3–24, letters/numbers/dot/underscore, must contain at least one letter/number
+  return /^[a-zA-Z0-9](?:[a-zA-Z0-9._]{1,22})[a-zA-Z0-9]$/.test(u);
 }
 
 function normStr(input: unknown, max = 120): string | null {
@@ -53,6 +84,24 @@ function normStr(input: unknown, max = 120): string | null {
   if (!s) return null;
   return s.slice(0, max);
 }
+
+function safeLower(s?: string | null) {
+  return (s || "").toLowerCase();
+}
+
+/* ------------------------------ CORS (opt) ------------------------------ */
+
+export function OPTIONS() {
+  const res = new NextResponse(null, { status: 204 });
+  res.headers.set("Access-Control-Allow-Origin", process.env["NEXT_PUBLIC_APP_URL"] || "*");
+  res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.headers.set("Access-Control-Max-Age", "86400");
+  res.headers.set("Cache-Control", "no-store");
+  return res;
+}
+
+/* --------------------------------- POST --------------------------------- */
 
 export async function POST(req: Request) {
   const reqId =
@@ -93,12 +142,17 @@ export async function POST(req: Request) {
       hasName: typeof body.name === "string" && !!body.name.trim(),
     });
 
+    // Validate username
     if (!looksLikeValidUsername(usernameRaw)) {
-      track("profile_setup_invalid_username", { reqId, userId: uid });
+      track("profile_setup_invalid_username", { reqId, userId: uid, usernameRaw });
       return noStore(
-        { error: "Username must be 3–24 chars (letters, numbers, dot, underscore)." },
+        { error: "Username must be 3–24 chars, letters/numbers with dot or underscore (no trailing/leading symbols)." },
         { status: 400 }
       );
+    }
+    if (RESERVED_USERNAMES.has(safeLower(usernameRaw))) {
+      track("profile_setup_invalid_username", { reqId, userId: uid, reason: "reserved" });
+      return noStore({ error: "This username is reserved" }, { status: 400 });
     }
 
     const whatsapp = normalizeKenyanPhone(

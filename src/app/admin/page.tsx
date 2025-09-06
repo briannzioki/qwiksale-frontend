@@ -6,42 +6,52 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 /* =========================
-   Row types (keep in sync with schema)
+   Selects -> Inferred row types
    ========================= */
-type AdminUserRow = {
-  id: string;
-  name: string | null;
-  email: string | null;
-  username: string | null;
-  role: "USER" | "MODERATOR" | "ADMIN";
-  subscription: "BASIC" | "GOLD" | "PLATINUM";
-  createdAt: Date;
-};
+const userSelect = {
+  id: true,
+  name: true,
+  email: true,
+  username: true,
+  role: true, // "USER" | "MODERATOR" | "ADMIN"
+  subscription: true, // "BASIC" | "GOLD" | "PLATINUM"
+  createdAt: true,
+} satisfies Prisma.UserSelect;
 
-type AdminProductRow = {
-  id: string;
-  name: string;
-  image: string | null;
-  price: number | null;
-  featured: boolean;
-  status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
-  category: string;
-  subcategory: string;
-  createdAt: Date;
-  seller: { id: string; username: string | null; name: string | null } | null;
-};
+type AdminUserRow = Prisma.UserGetPayload<{ select: typeof userSelect }>;
 
-function fmtKES(n?: number | null) {
-  if (typeof n !== "number" || n <= 0) return "—";
-  try {
-    return `KES ${new Intl.NumberFormat("en-KE").format(n)}`;
-  } catch {
-    return `KES ${n}`;
-  }
-}
+const productSelect = {
+  id: true,
+  name: true,
+  image: true,
+  price: true,
+  featured: true,
+  status: true, // "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT"
+  category: true,
+  subcategory: true,
+  createdAt: true,
+  seller: { select: { id: true, username: true, name: true } },
+} satisfies Prisma.ProductSelect;
 
+type AdminProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
+
+/* =========================
+   Formatters
+   ========================= */
+const fmtKES = (n?: number | null) =>
+  typeof n === "number" && n > 0
+    ? `KES ${new Intl.NumberFormat("en-KE").format(n)}`
+    : "—";
+
+const fmtDate = (d: Date) =>
+  new Intl.DateTimeFormat("en-KE", { year: "numeric", month: "short", day: "2-digit" }).format(d);
+
+/* =========================
+   Page
+   ========================= */
 export default async function AdminPage() {
   // Require auth + admin role
   const session = await auth();
@@ -58,60 +68,29 @@ export default async function AdminPage() {
   }
 
   // Parallel data fetches
-  const [
-    usersCount,
-    productsCount,
-    featuredCount,
-    activeCount,
-    recentUsersRaw,
-    recentProductsRaw,
-  ] = await Promise.all([
-    prisma.user.count(),
-    prisma.product.count(),
-    prisma.product.count({ where: { featured: true } }),
-    prisma.product.count({ where: { status: "ACTIVE" } }),
-    prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 8,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        username: true,
-        role: true,
-        subscription: true,
-        createdAt: true,
-      },
-    }),
-    prisma.product.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      select: {
-        id: true,
-        name: true,
-        image: true,
-        price: true,
-        featured: true,
-        status: true,
-        category: true,
-        subcategory: true,
-        createdAt: true,
-        seller: { select: { id: true, username: true, name: true } },
-      },
-    }),
-  ]);
-
-  // Cast to our row types so map callbacks can be typed explicitly (no implicit any)
-  const recentUsers = recentUsersRaw as AdminUserRow[];
-  const recentProducts = recentProductsRaw as AdminProductRow[];
+  const [usersCount, productsCount, featuredCount, activeCount, recentUsers, recentProducts] =
+    await Promise.all([
+      prisma.user.count(),
+      prisma.product.count(),
+      prisma.product.count({ where: { featured: true } }),
+      prisma.product.count({ where: { status: "ACTIVE" } }),
+      prisma.user.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        select: userSelect,
+      }),
+      prisma.product.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        select: productSelect,
+      }),
+    ]);
 
   return (
     <div className="space-y-6">
       <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
         <h1 className="text-2xl md:text-3xl font-extrabold">Admin Dashboard</h1>
-        <p className="text-white/90 text-sm mt-1">
-          High-level overview of users and listings.
-        </p>
+        <p className="text-white/90 text-sm mt-1">High-level overview of users and listings.</p>
       </div>
 
       {/* Metrics */}
@@ -123,9 +102,14 @@ export default async function AdminPage() {
       </section>
 
       {/* Recent users */}
-      <section className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm overflow-hidden">
+      <section
+        aria-labelledby="recent-users-heading"
+        className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm overflow-hidden"
+      >
         <div className="px-4 py-3 border-b dark:border-slate-800">
-          <h2 className="font-semibold">Recent Users</h2>
+          <h2 id="recent-users-heading" className="font-semibold">
+            Recent Users
+          </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -140,30 +124,34 @@ export default async function AdminPage() {
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-slate-800">
-              {recentUsers.map((u: AdminUserRow) => (
-                <tr key={u.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
-                  <Td>
-                    {u.username ? (
-                      <Link href={`/store/${u.username}`} className="text-[#161748] dark:text-[#39a0ca] underline">
-                        @{u.username}
-                      </Link>
-                    ) : (
-                      <span className="text-gray-500">—</span>
-                    )}
-                  </Td>
-                  <Td>{u.name || "—"}</Td>
-                  <Td>{u.email || "—"}</Td>
-                  <Td>{u.role}</Td>
-                  <Td>{u.subscription}</Td>
-                  <Td>{new Date(u.createdAt).toLocaleDateString()}</Td>
-                </tr>
-              ))}
-              {recentUsers.length === 0 && (
+              {recentUsers.length === 0 ? (
                 <tr>
                   <Td colSpan={6} className="text-center text-gray-500 py-6">
                     No users yet.
                   </Td>
                 </tr>
+              ) : (
+                recentUsers.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
+                    <Td>
+                      {u.username ? (
+                        <Link
+                          href={`/store/${u.username}`}
+                          className="text-[#161748] dark:text-[#39a0ca] underline"
+                        >
+                          @{u.username}
+                        </Link>
+                      ) : (
+                        <span className="text-gray-500">—</span>
+                      )}
+                    </Td>
+                    <Td>{u.name || "—"}</Td>
+                    <Td>{u.email || "—"}</Td>
+                    <Td>{u.role}</Td>
+                    <Td>{u.subscription}</Td>
+                    <Td>{fmtDate(u.createdAt)}</Td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -171,9 +159,14 @@ export default async function AdminPage() {
       </section>
 
       {/* Recent listings */}
-      <section className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm overflow-hidden">
+      <section
+        aria-labelledby="recent-listings-heading"
+        className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm overflow-hidden"
+      >
         <div className="px-4 py-3 border-b dark:border-slate-800">
-          <h2 className="font-semibold">Recent Listings</h2>
+          <h2 id="recent-listings-heading" className="font-semibold">
+            Recent Listings
+          </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -189,37 +182,40 @@ export default async function AdminPage() {
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-slate-800">
-              {recentProducts.map((p: AdminProductRow) => (
-                <tr key={p.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
-                  <Td>
-                    <Link href={`/product/${p.id}`} className="text-[#161748] dark:text-[#39a0ca] underline">
-                      {p.name}
-                    </Link>
-                  </Td>
-                  <Td>{p.category} • {p.subcategory}</Td>
-                  <Td>{fmtKES(p.price)}</Td>
-                  <Td>{p.status}</Td>
-                  <Td>{p.featured ? "Yes" : "No"}</Td>
-                  <Td>
-                    {p.seller?.username ? (
-                      <Link href={`/store/${p.seller.username}`} className="underline">
-                        @{p.seller.username}
-                      </Link>
-                    ) : p.seller?.name ? (
-                      p.seller.name
-                    ) : (
-                      "—"
-                    )}
-                  </Td>
-                  <Td>{new Date(p.createdAt).toLocaleDateString()}</Td>
-                </tr>
-              ))}
-              {recentProducts.length === 0 && (
+              {recentProducts.length === 0 ? (
                 <tr>
                   <Td colSpan={7} className="text-center text-gray-500 py-6">
                     No listings yet.
                   </Td>
                 </tr>
+              ) : (
+                recentProducts.map((p) => (
+                  <tr key={p.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
+                    <Td>
+                      <Link href={`/product/${p.id}`} className="text-[#161748] dark:text-[#39a0ca] underline">
+                        {p.name}
+                      </Link>
+                    </Td>
+                    <Td>
+                      {p.category} • {p.subcategory}
+                    </Td>
+                    <Td>{fmtKES(p.price)}</Td>
+                    <Td>{p.status}</Td>
+                    <Td>{p.featured ? "Yes" : "No"}</Td>
+                    <Td>
+                      {p.seller?.username ? (
+                        <Link href={`/store/${p.seller.username}`} className="underline">
+                          @{p.seller.username}
+                        </Link>
+                      ) : p.seller?.name ? (
+                        p.seller.name
+                      ) : (
+                        "—"
+                      )}
+                    </Td>
+                    <Td>{fmtDate(p.createdAt)}</Td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -235,20 +231,14 @@ export default async function AdminPage() {
 function StatCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm p-4">
-      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
-        {label}
-      </div>
+      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</div>
       <div className="text-2xl font-bold mt-1">{value.toLocaleString()}</div>
     </div>
   );
 }
 
 function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="text-left font-semibold px-4 py-2 whitespace-nowrap">
-      {children}
-    </th>
-  );
+  return <th className="text-left font-semibold px-4 py-2 whitespace-nowrap">{children}</th>;
 }
 
 function Td({

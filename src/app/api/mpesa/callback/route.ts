@@ -42,7 +42,7 @@ function parseMpesaTimestamp(v: unknown): Date | undefined {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const cb: MpesaCallback | undefined = body?.Body?.stkCallback;
+    const cb: MpesaCallback | undefined = (body as any)?.Body?.stkCallback;
 
     // Always ACK quickly
     if (!cb) {
@@ -59,10 +59,13 @@ export async function POST(req: Request) {
     } = cb;
 
     const meta = itemsToMap(CallbackMetadata?.Item);
-    const amount = typeof meta.Amount === "number" ? Math.round(meta.Amount) : undefined;
-    const receipt = meta.MpesaReceiptNumber != null ? String(meta.MpesaReceiptNumber) : undefined;
-    const phone = meta.PhoneNumber != null ? String(meta.PhoneNumber) : undefined;
-    const paidAt = parseMpesaTimestamp(meta.TransactionDate);
+    const amount =
+      typeof meta["Amount"] === "number" ? Math.round(meta["Amount"]) : undefined;
+    const receipt =
+      meta["MpesaReceiptNumber"] != null ? String(meta["MpesaReceiptNumber"]) : undefined;
+    const phone =
+      meta["PhoneNumber"] != null ? String(meta["PhoneNumber"]) : undefined;
+    const paidAt = parseMpesaTimestamp(meta["TransactionDate"]);
     const status = Number(ResultCode) === 0 ? "PAID" : "FAILED";
 
     // Build patch with only defined fields

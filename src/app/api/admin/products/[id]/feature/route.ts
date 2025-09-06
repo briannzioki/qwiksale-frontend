@@ -1,4 +1,3 @@
-// src/app/api/admin/products/[id]/feature/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -30,8 +29,8 @@ function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
   }
 }
 
-// ----------------------------------------------------------------------------
-// helpers
+/* --------------------------------- utils --------------------------------- */
+
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -41,7 +40,7 @@ function noStore(json: unknown, init?: ResponseInit) {
 }
 
 function isAdminEmail(email?: string | null) {
-  const raw = process.env.ADMIN_EMAILS || "";
+  const raw = process.env["ADMIN_EMAILS"] || "";
   const set = new Set(
     raw
       .split(",")
@@ -51,23 +50,30 @@ function isAdminEmail(email?: string | null) {
   return !!email && set.has(email.toLowerCase());
 }
 
-// Next 15: params may be object or Promise
-type CtxLike = { params?: { id: string } | Promise<{ id: string }> } | unknown;
-async function getId(ctx: CtxLike): Promise<string> {
-  const p: any = (ctx as any)?.params;
-  const v = p && typeof p.then === "function" ? await p : p;
-  return String(v?.id ?? "").trim();
-}
+type RouteParams = { id: string };
+
+/** Next 15 validator expects params to be Promise<RouteParams> */
+type RouteContext = { params: Promise<RouteParams> };
 
 function looksLikeId(id: string) {
-  // Keep permissive: accept any non-empty string; tighten if you move to cuid/uuid
+  // Keep permissive unless you enforce cuid/uuid. Non-empty is fine here.
   return id.length > 0;
 }
 
-// ----------------------------------------------------------------------------
-// PATCH /api/admin/products/[id]/feature
-// body: { featured: boolean, force?: boolean }
-export async function PATCH(req: NextRequest, ctx: CtxLike) {
+function parseBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const t = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(t)) return true;
+    if (["0", "false", "no", "off"].includes(t)) return false;
+  }
+  return undefined;
+}
+
+/* ----------------- PATCH /api/admin/products/[id]/feature ----------------- */
+// body: { featured: boolean; force?: boolean }
+// Also accepts query overrides: ?featured=true&force=1 (handy for quick tests)
+export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ??
     Math.random().toString(36).slice(2);
@@ -96,39 +102,46 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     }
 
     // --- params ---
-    const id = await getId(ctx);
+    const { id: rawId } = await ctx.params;
+    const id = String(rawId || "").trim();
     if (!looksLikeId(id)) {
       track("admin_product_feature_invalid_id", { reqId });
       return noStore({ error: "Missing or invalid id" }, { status: 400 });
     }
 
-    // --- body ---
-    let body: unknown;
+    // --- body / query ---
+    // Accept input both from JSON body and query string for convenience
+    let body: unknown = null;
     try {
       body = await req.json();
     } catch {
-      track("admin_product_feature_invalid_body", { reqId, reason: "invalid_json" });
-      return noStore({ error: "Invalid JSON body." }, { status: 400 });
-    }
-    if (typeof body !== "object" || body === null) {
-      track("admin_product_feature_invalid_body", { reqId, reason: "not_object" });
-      return noStore({ error: "Body must be a JSON object." }, { status: 400 });
+      /* Allow empty/invalid JSON when using query params */
     }
 
-    const { featured, force }: { featured?: unknown; force?: unknown } = body as any;
+    const q = req.nextUrl.searchParams;
+    const featuredQ = q.get("featured");
+    const forceQ = q.get("force");
 
-    if (typeof featured !== "boolean") {
-      track("admin_product_feature_invalid_body", { reqId, reason: "featured_not_boolean" });
+    const featuredBody = (body as any)?.featured as unknown;
+    const forceBody = (body as any)?.force as unknown;
+
+    const featuredParsed = parseBoolean(featuredBody ?? featuredQ);
+    const forceParsed = parseBoolean(forceBody ?? forceQ) === true; // default false
+
+    if (typeof featuredParsed !== "boolean") {
+      track("admin_product_feature_invalid_body", {
+        reqId,
+        reason: "featured_not_boolean",
+      });
       return noStore({ error: "featured:boolean required" }, { status: 400 });
     }
-    const allowNonActive = force === true;
 
     track("admin_product_feature_attempt", {
       reqId,
       userId: user.id,
       productId: id,
-      featured,
-      force: allowNonActive,
+      featured: featuredParsed,
+      force: forceParsed,
     });
 
     // --- load product (validate existence & status) ---
@@ -142,7 +155,7 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     }
 
     // By default, only ACTIVE products can be toggled
-    if (!allowNonActive && prod.status !== "ACTIVE") {
+    if (!forceParsed && prod.status !== "ACTIVE") {
       track("admin_product_feature_not_active_conflict", {
         reqId,
         productId: id,
@@ -150,8 +163,7 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
       });
       return noStore(
         {
-          error:
-            "Only ACTIVE products can be toggled. Pass force:true to override.",
+          error: "Only ACTIVE products can be toggled. Pass force:true to override.",
           status: prod.status,
         },
         { status: 409 }
@@ -159,11 +171,11 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     }
 
     // No-op: already in requested state
-    if (prod.featured === featured) {
+    if (prod.featured === featuredParsed) {
       track("admin_product_feature_no_change", {
         reqId,
         productId: id,
-        featured,
+        featured: featuredParsed,
       });
       return noStore({
         ok: true,
@@ -175,9 +187,28 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     // --- update ---
     const updated = await prisma.product.update({
       where: { id },
-      data: { featured },
+      data: { featured: featuredParsed },
       select: { id: true, featured: true, status: true, updatedAt: true },
     });
+
+    // Optional: write an audit log row if your schema supports it
+    try {
+      // @ts-expect-error - guard if you don't have this table
+      await prisma.adminAuditLog?.create({
+        data: {
+          actorId: user.id,
+          action: "PRODUCT_FEATURE_TOGGLE",
+          meta: {
+            productId: id,
+            before: { featured: prod.featured, status: prod.status },
+            after: { featured: updated.featured, status: updated.status },
+            reqId,
+          },
+        },
+      });
+    } catch {
+      /* ignore if table not present */
+    }
 
     track("admin_product_feature_success", {
       reqId,
@@ -196,4 +227,12 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     });
     return noStore({ error: "Server error" }, { status: 500 });
   }
+}
+
+/* ----------- Minimal CORS/health helpers (optional but handy) ----------- */
+export async function OPTIONS() {
+  return noStore({ ok: true }, { status: 204 });
+}
+export async function GET() {
+  return noStore({ ok: true, method: "GET" }, { status: 200 });
 }

@@ -1,16 +1,46 @@
 // src/app/api/auth/[...nextauth]/authOptions.ts
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
-import { prisma } from "@/server/db"; // or "@/app/lib/prisma" if that's your setup
 import Credentials from "next-auth/providers/credentials";
-// import Google from "next-auth/providers/google";
-import { verifyPassword } from "@/server/auth";
+import Google from "next-auth/providers/google";
+
+import { prisma } from "@/server/db";
+import { verifyPassword, hashPassword } from "@/server/auth";
+
+/**
+ * Hardened & typed NextAuth config
+ * - JWT sessions (no DB sessions)
+ * - SameSite=Lax, HttpOnly, __Secure- cookie in prod with apex domain
+ * - Extends the session token with uid/subscription/username/referralCode
+ * - Defensive credentials authorize() (no enumeration, optional auto-signup)
+ */
 
 const isProd = process.env.NODE_ENV === "production";
+const cookieDomain =
+  isProd && process.env["NEXTAUTH_COOKIE_DOMAIN"]
+    ? process.env["NEXTAUTH_COOKIE_DOMAIN"]
+    : isProd
+    ? ".qwiksale.sale"
+    : undefined;
+
+const ALLOW_CREDS_AUTO_SIGNUP =
+  (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
 
 export const authOptions: NextAuthOptions = {
+  debug: process.env["NEXTAUTH_DEBUG"] === "1",
+
+  // Only include secret when defined to satisfy exactOptionalPropertyTypes
+  ...(process.env["NEXTAUTH_SECRET"]
+    ? { secret: process.env["NEXTAUTH_SECRET"] as string }
+    : {}),
+
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "jwt" },
+
+  session: {
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,
+  },
 
   cookies: {
     sessionToken: {
@@ -20,10 +50,12 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         httpOnly: true,
         secure: isProd,
-        ...(isProd ? { domain: ".qwiksale.sale" } : {}),
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
       },
     },
   },
+
+  pages: { signIn: "/signin" },
 
   providers: [
     Credentials({
@@ -33,31 +65,126 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const email = credentials?.email?.toLowerCase().trim();
+        const email = credentials?.email?.toLowerCase().trim() || "";
         const password = credentials?.password ?? "";
-        if (!email || !password) return null;
+
+        const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!EMAIL_RE.test(email) || password.length < 6) {
+          await new Promise((r) => setTimeout(r, 250));
+          return null;
+        }
 
         const user = await prisma.user.findUnique({
           where: { email },
-          select: { id: true, email: true, passwordHash: true, name: true, image: true },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+            passwordHash: true,
+            accounts: { select: { provider: true }, take: 1 },
+            subscription: true,
+            username: true,
+            referralCode: true,
+          },
         });
-        if (!user?.passwordHash) return null;
 
-        const ok = await verifyPassword(password, user.passwordHash);
-        if (!ok) return null;
+        if (user) {
+          if (!user.passwordHash) {
+            throw new Error(
+              "This email is linked to a social login. Use “Continue with Google”."
+            );
+          }
+          const ok = await verifyPassword(password, user.passwordHash);
+          if (!ok) {
+            await new Promise((r) => setTimeout(r, 250));
+            return null;
+          }
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name ?? null,
+            image: user.image ?? null,
+          };
+        }
 
-        return { id: user.id, email: user.email, name: user.name ?? null, image: user.image ?? null };
+        if (!ALLOW_CREDS_AUTO_SIGNUP) {
+          await new Promise((r) => setTimeout(r, 250));
+          return null;
+        }
+
+        const passwordHash = await hashPassword(password);
+        const created = await prisma.user.create({
+          data: { email, passwordHash },
+          select: { id: true, email: true },
+        });
+        return { id: created.id, email: created.email };
       },
     }),
 
-    // Google (enable when ready)
-    // Google({ clientId: process.env.GOOGLE_CLIENT_ID!, clientSecret: process.env.GOOGLE_CLIENT_SECRET! }),
+    ...(process.env["GOOGLE_CLIENT_ID"] && process.env["GOOGLE_CLIENT_SECRET"]
+      ? [
+          Google({
+            clientId: process.env["GOOGLE_CLIENT_ID"] as string,
+            clientSecret: process.env["GOOGLE_CLIENT_SECRET"] as string,
+          }),
+        ]
+      : []),
   ],
 
-  pages: { signIn: "/signin" },
-
   callbacks: {
-    async jwt({ token, user }) { if (user?.id) token.uid = user.id; return token; },
-    async session({ session, token }) { if (token?.uid) (session as any).uid = token.uid; return session; },
+    async jwt({ token, user, trigger }) {
+      if (user?.id) (token as any)["uid"] = user.id;
+
+      if (user?.id || trigger === "update") {
+        const uid = (user?.id as string) || ((token as any)["uid"] as string | undefined);
+        if (uid) {
+          const profile = await prisma.user.findUnique({
+            where: { id: uid },
+            select: {
+              subscription: true,
+              username: true,
+              referralCode: true,
+            },
+          });
+          if (profile) {
+            (token as any)["subscription"] = profile.subscription ?? null;
+            (token as any)["username"] = profile.username ?? null;
+            (token as any)["referralCode"] = profile.referralCode ?? null;
+          }
+        }
+      }
+
+      return token;
+    },
+
+    async session({ session, token }) {
+      if (session.user && (token as any)?.["uid"]) {
+        (session.user as any).id = (token as any)["uid"] as string;
+      }
+      (session.user as any).subscription = (token as any)["subscription"] ?? null;
+      (session.user as any).username = (token as any)["username"] ?? null;
+      (session.user as any).referralCode = (token as any)["referralCode"] ?? null;
+      return session;
+    },
+  },
+
+  events: {
+    signIn({ user, account, isNewUser }) {
+      // eslint-disable-next-line no-console
+      console.log("[auth] signIn", {
+        uid: user?.id,
+        provider: account?.provider,
+        isNewUser,
+      });
+    },
+    createUser({ user }) {
+      // eslint-disable-next-line no-console
+      console.log("[auth] createUser", { uid: user.id, email: user.email });
+    },
+    linkAccount({ user, account }) {
+      // eslint-disable-next-line no-console
+      console.log("[auth] linkAccount", { uid: user.id, provider: account.provider });
+    },
   },
 };

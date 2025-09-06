@@ -1,7 +1,6 @@
-// src/app/page.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -47,20 +46,47 @@ type ErrorResponse = { error: string };
    ====================== */
 const PAGE_SIZE = 24;
 const DEBOUNCE_MS = 300;
+const FALLBACK_IMG = "/placeholder/default.jpg";
 
 const fmtKES = (n?: number | null) =>
   typeof n === "number" && n > 0 ? `KES ${n.toLocaleString()}` : "Contact for price";
 
-/** Small on-device gazetteer for Kenyan towns/cities (extend as needed) */
+/** tiny shimmer dataURL for next/image blur placeholders */
+function shimmer(width: number, height: number) {
+  const svg = `
+  <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="g">
+        <stop stop-color="#eee" offset="20%" />
+        <stop stop-color="#ddd" offset="50%" />
+        <stop stop-color="#eee" offset="70%" />
+      </linearGradient>
+    </defs>
+    <rect width="${width}" height="${height}" fill="#eee" />
+    <rect id="r" width="${width}" height="${height}" fill="url(#g)" />
+    <animate xlink:href="#r" attributeName="x" from="-${width}" to="${width}" dur="1.2s" repeatCount="indefinite"  />
+  </svg>`;
+  return `data:image/svg+xml;base64,${typeof window === "undefined" ? Buffer.from(svg).toString("base64") : btoa(svg)}`;
+}
+
+/** Image onError factory — one-arg handler to satisfy TS */
+const makeOnImgError =
+  (fallback: string) =>
+  (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    if (img && img.src !== fallback) img.src = fallback;
+  };
+
+/** Mini gazetteer (add more as needed) */
 const KENYA_PLACES: Array<{ name: string; lat: number; lng: number; aliases?: string[] }> = [
   { name: "Nairobi", lat: -1.2921, lng: 36.8219, aliases: ["nai", "nrb"] },
   { name: "Mombasa", lat: -4.0435, lng: 39.6682 },
-  { name: "Kisumu", lat: -0.0917, lng: 34.7680 },
-  { name: "Nakuru", lat: -0.3031, lng: 36.0800 },
+  { name: "Kisumu", lat: -0.0917, lng: 34.768 },
+  { name: "Nakuru", lat: -0.3031, lng: 36.08 },
   { name: "Eldoret", lat: 0.5143, lng: 35.2698 },
   { name: "Thika", lat: -1.0333, lng: 37.0693 },
   { name: "Naivasha", lat: -0.7167, lng: 36.4333 },
-  { name: "Nyeri", lat: -0.4176, lng: 36.9510 },
+  { name: "Nyeri", lat: -0.4176, lng: 36.951 },
   { name: "Meru", lat: 0.0463, lng: 37.6559 },
   { name: "Machakos", lat: -1.5167, lng: 37.2667 },
   { name: "Kakamega", lat: 0.2827, lng: 34.7519 },
@@ -68,19 +94,19 @@ const KENYA_PLACES: Array<{ name: string; lat: number; lng: number; aliases?: st
   { name: "Kitale", lat: 1.0157, lng: 35.0061 },
   { name: "Malindi", lat: -3.2192, lng: 40.1169 },
   { name: "Garissa", lat: -0.4569, lng: 39.6583 },
-  { name: "Embu", lat: -0.5333, lng: 37.4500 },
+  { name: "Embu", lat: -0.5333, lng: 37.45 },
   { name: "Nanyuki", lat: 0.0167, lng: 37.0667 },
-  { name: "Lamu", lat: -2.2717, lng: 40.9020 },
-  { name: "Kilifi", lat: -3.6333, lng: 39.8500 },
+  { name: "Lamu", lat: -2.2717, lng: 40.902 },
+  { name: "Kilifi", lat: -3.6333, lng: 39.85 },
   { name: "Voi", lat: -3.3961, lng: 38.5561 },
 ];
 
-/** Build a quick lowercase lookup (includes aliases) */
+/** Build lowercase lookup (includes aliases) */
 const PLACE_LUT: Record<string, { name: string; lat: number; lng: number }> = (() => {
   const lut: Record<string, { name: string; lat: number; lng: number }> = {};
   for (const p of KENYA_PLACES) {
     lut[p.name.toLowerCase()] = { name: p.name, lat: p.lat, lng: p.lng };
-    (p.aliases || []).forEach(a => (lut[a.toLowerCase()] = { name: p.name, lat: p.lat, lng: p.lng }));
+    (p.aliases || []).forEach((a) => (lut[a.toLowerCase()] = { name: p.name, lat: p.lat, lng: p.lng }));
   }
   return lut;
 })();
@@ -90,24 +116,30 @@ function normPlaceString(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9,\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/** Try to resolve a product's free-text `location` to a known Kenyan town */
-function resolveKenyaPlace(free: string | null | undefined):
-  | { name: string; lat: number; lng: number }
-  | null {
+/** Resolve a free-text location to a known Kenyan town (best effort) */
+function resolveKenyaPlace(
+  free: string | null | undefined
+): { name: string; lat: number; lng: number } | null {
   if (!free) return null;
   const t = normPlaceString(free);
   if (!t) return null;
 
-  // try comma-separated tokens first: "South B, Nairobi", "Kilimani Nairobi", etc.
-  const tokens = t.split(/[,\s]+/).filter(Boolean); // order matters: prefer rightmost broader area
+  const tokens = t.split(/[,\s]+/).filter(Boolean);
+
+  // Try exact token hits (from rightmost token)
   for (let i = tokens.length - 1; i >= 0; i--) {
-    const hit = PLACE_LUT[tokens[i]];
-    if (hit) return hit;
+    const tok: string | undefined = tokens[i];
+    if (!tok) continue; // satisfy noUncheckedIndexedAccess
+    const hit = PLACE_LUT[tok];
+    if (hit) return hit; // only return when defined
   }
 
-  // fallback: substring match against full names (e.g., "Nairobi CBD")
+  // Try substring includes (e.g., "nairobi west")
   for (const key of Object.keys(PLACE_LUT)) {
-    if (t.includes(key)) return PLACE_LUT[key];
+    if (t.includes(key)) {
+      const val = PLACE_LUT[key];
+      if (val) return val; // guard because indexed access may be undefined in strict settings
+    }
   }
   return null;
 }
@@ -121,10 +153,7 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   const sinDLat = Math.sin(dLat / 2);
   const sinDLon = Math.sin(dLon / 2);
   const c =
-    2 *
-    Math.asin(
-      Math.sqrt(sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon)
-    );
+    2 * Math.asin(Math.sqrt(sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon));
   return Math.round(R * c);
 }
 
@@ -132,8 +161,8 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
    Debounce
    ====================== */
 function useDebounced<T>(value: T, delay = DEBOUNCE_MS) {
-  const [debounced, setDebounced] = useState<T>(value);
-  useEffect(() => {
+  const [debounced, setDebounced] = React.useState<T>(value);
+  React.useEffect(() => {
     const id = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(id);
   }, [value, delay]);
@@ -148,18 +177,16 @@ export default function HomePage() {
   const sp = useSearchParams();
 
   // URL state (initialize from current query)
-  const [q, setQ] = useState(sp.get("q") || "");
-  const [category, setCategory] = useState(sp.get("category") || "");
-  const [subcategory, setSubcategory] = useState(sp.get("subcategory") || "");
-  const [brand, setBrand] = useState(sp.get("brand") || "");
-  const [condition, setCondition] = useState(sp.get("condition") || "");
-  const [minPrice, setMinPrice] = useState(sp.get("minPrice") || "");
-  const [maxPrice, setMaxPrice] = useState(sp.get("maxPrice") || "");
-  // API flag name: featured
-  const [featuredOnly, setFeaturedOnly] = useState((sp.get("featured") || "false") === "true");
-  // API sort keys: newest | price_asc | price_desc | featured
-  const [sort, setSort] = useState(sp.get("sort") || "newest");
-  const [page, setPage] = useState(() => {
+  const [q, setQ] = React.useState(sp.get("q") || "");
+  const [category, setCategory] = React.useState(sp.get("category") || "");
+  const [subcategory, setSubcategory] = React.useState(sp.get("subcategory") || "");
+  const [brand, setBrand] = React.useState(sp.get("brand") || "");
+  const [condition, setCondition] = React.useState(sp.get("condition") || "");
+  const [minPrice, setMinPrice] = React.useState(sp.get("minPrice") || "");
+  const [maxPrice, setMaxPrice] = React.useState(sp.get("maxPrice") || "");
+  const [featuredOnly, setFeaturedOnly] = React.useState((sp.get("featured") || "false") === "true");
+  const [sort, setSort] = React.useState(sp.get("sort") || "newest");
+  const [page, setPage] = React.useState(() => {
     const n = Number(sp.get("page") || 1);
     return Number.isFinite(n) && n > 0 ? n : 1;
   });
@@ -177,21 +204,19 @@ export default function HomePage() {
   const dpage = useDebounced(page);
 
   // Data
-  const [res, setRes] = useState<PageResponse | null>(null);
-  const [facets, setFacets] = useState<Facets | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [res, setRes] = React.useState<PageResponse | null>(null);
+  const [facets, setFacets] = React.useState<Facets | undefined>(undefined);
+  const [loading, setLoading] = React.useState(false);
+  const [err, setErr] = React.useState<string | null>(null);
 
   // Buyer geolocation (optional)
-  const [myLoc, setMyLoc] = useState<{ lat: number; lng: number } | null>(null);
-  const [geoDenied, setGeoDenied] = useState<boolean>(false);
+  const [myLoc, setMyLoc] = React.useState<{ lat: number; lng: number } | null>(null);
+  const [geoDenied, setGeoDenied] = React.useState<boolean>(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!("geolocation" in navigator)) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setMyLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      },
+      (pos) => setMyLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => setGeoDenied(true),
       { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 8000 }
     );
@@ -201,7 +226,7 @@ export default function HomePage() {
   const includeFacets = dpage === 1;
 
   // Build querystring from (debounced) state
-  const queryString = useMemo(() => {
+  const queryString = React.useMemo(() => {
     const params = new URLSearchParams();
     if (dq) params.set("q", dq);
     if (dcategory) params.set("category", dcategory);
@@ -210,8 +235,8 @@ export default function HomePage() {
     if (dcondition) params.set("condition", dcondition);
     if (dminPrice) params.set("minPrice", dminPrice);
     if (dmaxPrice) params.set("maxPrice", dmaxPrice);
-    if (dfeaturedOnly) params.set("featured", "true"); // API flag
-    if (dsort && dsort !== "newest") params.set("sort", dsort); // API default = newest
+    if (dfeaturedOnly) params.set("featured", "true");
+    if (dsort && dsort !== "newest") params.set("sort", dsort);
     if (dpage && dpage !== 1) params.set("page", String(dpage));
     params.set("pageSize", String(PAGE_SIZE));
     if (includeFacets) params.set("facets", "true");
@@ -230,9 +255,9 @@ export default function HomePage() {
     includeFacets,
   ]);
 
-  // Keep URL in sync (shallow)
-  const lastUrlRef = useRef<string>("");
-  useEffect(() => {
+  // Keep URL in sync (shallow) without spamming history
+  const lastUrlRef = React.useRef<string>("");
+  React.useEffect(() => {
     const next = queryString ? `/?${queryString}` : "/";
     if (next !== lastUrlRef.current) {
       lastUrlRef.current = next;
@@ -241,13 +266,15 @@ export default function HomePage() {
   }, [router, queryString]);
 
   // Fetch products (with abort + small retry)
-  useEffect(() => {
+  React.useEffect(() => {
     const ac = new AbortController();
 
     async function load(attempt = 1) {
-      setLoading(true);
-      setErr(null);
-      setRes(null);
+      if (attempt === 1) {
+        setLoading(true);
+        setErr(null);
+        // keep previous res during first attempt to reduce flicker
+      }
       try {
         const r = await fetch(`/api/products?${queryString}`, {
           cache: "no-store",
@@ -269,9 +296,11 @@ export default function HomePage() {
         if (e?.name !== "AbortError") {
           if (attempt < 2 && !ac.signal.aborted) return load(attempt + 1);
           setErr("Network error. Please try again.");
+          setRes(null);
+          setFacets(undefined);
         }
       } finally {
-        setLoading(false);
+        if (!ac.signal.aborted) setLoading(false);
       }
     }
 
@@ -289,7 +318,7 @@ export default function HomePage() {
   const items: ApiItem[] = Array.isArray(res?.items) ? res!.items : [];
 
   // Facet clicks
-  const applyFacet = useCallback(
+  const applyFacet = React.useCallback(
     (type: "category" | "brand" | "condition", value: string) => {
       setPage(1);
       if (type === "category") setCategory(value);
@@ -320,7 +349,7 @@ export default function HomePage() {
   };
 
   // Distance computer (resolved per item)
-  const computeDistanceText = useCallback(
+  const computeDistanceText = React.useCallback(
     (loc: string | null | undefined): { place: string; distanceKm?: number } | null => {
       const resolved = resolveKenyaPlace(loc);
       if (!resolved) return loc ? { place: loc } : null;
@@ -336,7 +365,10 @@ export default function HomePage() {
       {/* =======================
           Sticky Filter Bar
           ======================= */}
-      <section className="card-surface p-4 sticky top-[64px] z-20 backdrop-blur supports-[backdrop-filter]:bg-white/75 dark:supports-[backdrop-filter]:bg-slate-900/70">
+      <section
+        className="card-surface p-4 sticky top-[64px] z-20 backdrop-blur supports-[backdrop-filter]:bg-white/75 dark:supports-[backdrop-filter]:bg-slate-900/70"
+        aria-label="Filters"
+      >
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
           {/* Search */}
           <div className="md:col-span-3">
@@ -351,6 +383,7 @@ export default function HomePage() {
               }}
               placeholder="Name, brand, category…"
               className="mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#39a0ca]"
+              aria-label="Search items"
             />
           </div>
 
@@ -367,6 +400,7 @@ export default function HomePage() {
               }}
               placeholder="e.g. Electronics"
               className="mt-1 w-full rounded-lg border px-3 py-2"
+              aria-label="Category"
             />
           </div>
 
@@ -383,6 +417,7 @@ export default function HomePage() {
               }}
               placeholder="e.g. Phones & Tablets"
               className="mt-1 w-full rounded-lg border px-3 py-2"
+              aria-label="Subcategory"
             />
           </div>
 
@@ -399,6 +434,7 @@ export default function HomePage() {
               }}
               placeholder="e.g. Samsung"
               className="mt-1 w-full rounded-lg border px-3 py-2"
+              aria-label="Brand"
             />
           </div>
 
@@ -414,6 +450,7 @@ export default function HomePage() {
                 setCondition(e.target.value);
               }}
               className="mt-1 w-full rounded-lg border px-3 py-2"
+              aria-label="Condition"
             >
               <option value="">Any</option>
               <option value="brand new">Brand New</option>
@@ -436,6 +473,7 @@ export default function HomePage() {
                   setMinPrice(e.target.value);
                 }}
                 className="mt-1 w-full rounded-lg border px-3 py-2"
+                aria-label="Minimum price"
               />
             </div>
             <div>
@@ -451,6 +489,7 @@ export default function HomePage() {
                   setMaxPrice(e.target.value);
                 }}
                 className="mt-1 w-full rounded-lg border px-3 py-2"
+                aria-label="Maximum price"
               />
             </div>
           </div>
@@ -466,6 +505,7 @@ export default function HomePage() {
                   setFeaturedOnly(e.target.checked);
                 }}
                 className="rounded border-gray-300 dark:border-slate-600"
+                aria-label="Featured only"
               />
               Featured only
             </label>
@@ -477,6 +517,7 @@ export default function HomePage() {
               }}
               className="rounded-lg border px-3 py-2"
               title="Sort"
+              aria-label="Sort results"
             >
               <option value="newest">Newest</option>
               <option value="featured">Featured first</option>
@@ -505,8 +546,10 @@ export default function HomePage() {
                 maxPrice ||
                 featuredOnly) && (
                 <button
+                  type="button"
                   onClick={clearAll}
                   className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 transition"
+                  aria-label="Clear all filters"
                 >
                   Clear filters
                 </button>
@@ -517,7 +560,10 @@ export default function HomePage() {
 
         {/* subtle loading shimmer under the bar */}
         {loading && (
-          <div className="mt-3 h-1 w-full bg-gradient-to-r from-[#161748]/20 via-[#478559]/40 to-[#39a0ca]/30 animate-pulse rounded-full" />
+          <div
+            className="mt-3 h-1 w-full bg-gradient-to-r from-[#161748]/20 via-[#478559]/40 to-[#39a0ca]/30 animate-pulse rounded-full"
+            aria-hidden
+          />
         )}
       </section>
 
@@ -526,7 +572,7 @@ export default function HomePage() {
           ======================= */}
       {facets &&
       (facets.categories?.length || facets.brands?.length || facets.conditions?.length) ? (
-        <section className="card-surface p-4">
+        <section className="card-surface p-4" aria-label="Facets">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Categories */}
             <div>
@@ -538,6 +584,7 @@ export default function HomePage() {
                     onClick={() => applyFacet("category", f.value)}
                     className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
                     title={`${f.count} items`}
+                    aria-label={`Filter by category ${f.value}`}
                   >
                     {f.value} <span className="opacity-60">({f.count})</span>
                   </button>
@@ -554,6 +601,7 @@ export default function HomePage() {
                     onClick={() => applyFacet("brand", f.value)}
                     className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
                     title={`${f.count} items`}
+                    aria-label={`Filter by brand ${f.value}`}
                   >
                     {f.value} <span className="opacity-60">({f.count})</span>
                   </button>
@@ -570,6 +618,7 @@ export default function HomePage() {
                     onClick={() => applyFacet("condition", f.value)}
                     className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
                     title={`${f.count} items`}
+                    aria-label={`Filter by condition ${f.value}`}
                   >
                     {f.value} <span className="opacity-60">({f.count})</span>
                   </button>
@@ -583,7 +632,7 @@ export default function HomePage() {
       {/* =======================
           Results header
           ======================= */}
-      <section className="flex items-center justify-between">
+      <section className="flex items-center justify-between" aria-live="polite">
         <p className="text-sm text-gray-600 dark:text-slate-300">
           {loading
             ? "Loading…"
@@ -593,20 +642,24 @@ export default function HomePage() {
         </p>
         <div className="flex items-center gap-2">
           <button
+            type="button"
             disabled={!canPrev || loading}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             className={`rounded-lg px-3 py-1.5 border ${
               canPrev && !loading ? "hover:bg-gray-50 dark:hover:bg-slate-800" : "opacity-50 cursor-not-allowed"
             }`}
+            aria-label="Previous page"
           >
             ← Prev
           </button>
           <button
+            type="button"
             disabled={!canNext || loading}
             onClick={() => setPage((p) => p + 1)}
             className={`rounded-lg px-3 py-1.5 border ${
               canNext && !loading ? "hover:bg-gray-50 dark:hover:bg-slate-800" : "opacity-50 cursor-not-allowed"
             }`}
+            aria-label="Next page"
           >
             Next →
           </button>
@@ -623,9 +676,13 @@ export default function HomePage() {
       ) : items.length === 0 ? (
         <div className="text-gray-500 dark:text-slate-400">No items found.</div>
       ) : (
-        <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+        <section
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6"
+          aria-label="Search results"
+        >
           {items.map((p) => {
             const locInfo = computeDistanceText(p.location);
+            const blur = shimmer(800, 440);
             return (
               <Link key={p.id} href={`/product/${p.id}`} className="relative group">
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800">
@@ -637,12 +694,15 @@ export default function HomePage() {
                     )}
                     <Image
                       alt={p.name}
-                      src={p.image || "/placeholder/default.jpg"}
+                      src={p.image || FALLBACK_IMG}
                       width={800}
                       height={440}
                       className="w-full h-44 object-cover bg-gray-100 dark:bg-slate-800"
+                      placeholder="blur"
+                      blurDataURL={blur}
                       priority={false}
                       unoptimized={Boolean(p.image?.endsWith?.(".svg"))}
+                      onError={makeOnImgError(FALLBACK_IMG)}
                     />
                     <div className="absolute top-2 right-2 z-10">
                       <FavoriteButton productId={p.id} />
@@ -662,12 +722,10 @@ export default function HomePage() {
                     )}
 
                     {/* Price */}
-                    <p className="text-[#161748] dark:text-[#39a0ca] font-bold mt-2">
-                      {fmtKES(p.price)}
-                    </p>
+                    <p className="text-[#161748] dark:text-[#39a0ca] font-bold mt-2">{fmtKES(p.price)}</p>
 
                     {/* Location + Distance (Kenya-only) */}
-                    { (p.location || locInfo) && (
+                    {(p.location || locInfo) && (
                       <p className="mt-1 text-xs text-gray-600 dark:text-slate-300 flex items-center gap-2">
                         <span className="inline-flex items-center rounded-full border px-2 py-0.5">
                           {locInfo?.place || p.location}
@@ -698,7 +756,7 @@ export default function HomePage() {
    ====================== */
 function SkeletonGrid() {
   return (
-    <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+    <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6" aria-hidden>
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}

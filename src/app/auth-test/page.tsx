@@ -1,73 +1,127 @@
 // src/app/auth-test/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import type { Session } from "next-auth";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
+/**
+ * Debug page to quickly verify NextAuth session and /api/me.
+ * - Uses next-auth signIn/signOut programmatic calls (no full-page jumps)
+ * - Copies values to clipboard with feedback
+ * - Emits tiny analytics events for local debugging
+ */
+
+type Tier = "FREE" | "GOLD" | "PLATINUM";
 type MeResponse =
   | { authenticated: false }
   | {
       authenticated: true;
-      user: { id: string; email?: string | null; name?: string | null; subscription?: "FREE" | "GOLD" | "PLATINUM" };
+      user: { id: string; email?: string | null; name?: string | null; subscription?: Tier };
     };
+
+/* --------------------------- tiny analytics utils --------------------------- */
+function emit(name: string, detail?: unknown) {
+  // eslint-disable-next-line no-console
+  console.log(`[qs:event] ${name}`, detail);
+  if (typeof window !== "undefined" && "CustomEvent" in window) {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  }
+}
+function track(event: string, payload?: Record<string, unknown>) {
+  // eslint-disable-next-line no-console
+  console.log("[qs:track]", event, payload);
+  emit("qs:track", { event, payload });
+}
 
 export default function AuthTest() {
   const { data: session, status } = useSession();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loadingMe, setLoadingMe] = useState(false);
+  const liveRef = useRef<HTMLSpanElement | null>(null);
 
-  const sub = (session?.user as any)?.subscription as MeResponse extends { authenticated: true } ? "FREE" | "GOLD" | "PLATINUM" | undefined : undefined;
-  const uid = (session?.user as any)?.id as string | undefined;
+  // Safer typed access to custom fields on session.user
+  const u = (session?.user ?? null) as (Session["user"] & {
+    id?: string;
+    subscription?: Tier;
+  }) | null;
+  const sub = u?.subscription;
+  const uid = u?.id;
 
   const isAuthed = status === "authenticated";
 
-  async function pingMe() {
+  const announce = useCallback((msg: string) => {
+    const el = liveRef.current;
+    if (!el) return;
+    el.textContent = msg;
+    const t = setTimeout(() => (el.textContent = ""), 1200);
+    return () => clearTimeout(t);
+  }, []);
+
+  const pingMe = useCallback(async () => {
     try {
       setLoadingMe(true);
+      track("auth_debug_ping_me");
       const r = await fetch("/api/me", { cache: "no-store" });
       const j: MeResponse = await r.json();
       setMe(j);
       if (!r.ok) {
         toast.error("Could not fetch /api/me");
+        announce("Fetch failed");
       } else {
         toast.success("Fetched /api/me");
+        announce("Fetched /api/me");
       }
     } catch {
       toast.error("Network error hitting /api/me");
+      announce("Network error");
     } finally {
       setLoadingMe(false);
     }
-  }
+  }, [announce]);
 
-  async function copy(text?: string) {
+  const copy = useCallback(async (text?: string) => {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
       toast.success("Copied");
+      announce("Copied");
     } catch {
       toast.error("Copy failed");
+      announce("Copy failed");
     }
-  }
+  }, [announce]);
 
-  // Build a pretty JSON of the session for quick visual checks
+  // Pretty JSON of the session for quick visual checks
   const sessionJson = useMemo(() => {
     if (!session) return "{}";
     const safe = {
       user: {
-        id: (session.user as any)?.id,
-        email: session.user.email,
-        name: session.user.name,
-        subscription: (session.user as any)?.subscription,
+        id: u?.id ?? null,
+        email: u?.email ?? null,
+        name: u?.name ?? null,
+        subscription: u?.subscription ?? null,
       },
-      expires: (session as any)?.expires,
+      expires: (session as any)?.expires ?? null,
     };
     return JSON.stringify(safe, null, 2);
-  }, [session]);
+  }, [session, u?.id, u?.email, u?.name, u?.subscription]);
+
+  // auto-fetch /api/me when authenticated (optional)
+  useEffect(() => {
+    if (isAuthed && me === null && !loadingMe) {
+      void pingMe();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed]);
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-6">
+      {/* SR live region */}
+      <span ref={liveRef} className="sr-only" aria-live="polite" />
+
       {/* Header */}
       <div
         className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]"
@@ -75,7 +129,8 @@ export default function AuthTest() {
       >
         <h1 className="text-2xl font-extrabold">Auth Debug</h1>
         <p className="text-white/90">
-          Check sign-in status, session fields, and the <code className="px-1 rounded bg-white/10">/api/me</code> API.
+          Check sign-in status, session fields, and the{" "}
+          <code className="px-1 rounded bg-white/10">/api/me</code> API.
         </p>
       </div>
 
@@ -92,7 +147,7 @@ export default function AuthTest() {
             {isAuthed ? (
               <>
                 <div>
-                  <span className="font-semibold">Email:</span> {session?.user?.email || "—"}
+                  <span className="font-semibold">Email:</span> {u?.email || "—"}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">User ID:</span>
@@ -121,14 +176,21 @@ export default function AuthTest() {
           <div className="flex items-center gap-2">
             {!isAuthed ? (
               <button
-                onClick={() => (window.location.href = "/signin?callbackUrl=" + encodeURIComponent("/auth-test"))}
+                onClick={() => {
+                  track("auth_debug_signin_click");
+                  // If you have multiple providers, pass { callbackUrl } only
+                  signIn(undefined, { callbackUrl: "/auth-test" });
+                }}
                 className="rounded-lg bg-black text-white px-4 py-2 text-sm"
               >
-                Sign in with Google
+                Sign in
               </button>
             ) : (
               <button
-                onClick={() => (window.location.href = "/signin?callbackUrl=" + encodeURIComponent("/auth-test"))}
+                onClick={() => {
+                  track("auth_debug_signout_click");
+                  signOut({ callbackUrl: "/auth-test" });
+                }}
                 className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
               >
                 Sign out

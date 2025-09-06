@@ -15,8 +15,8 @@ const MAX_MB = 5;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 // Cloudinary (client-safe)
-const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
-const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || ""; // unsigned preset if you have one
+const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
+const UPLOAD_PRESET = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? ""; // unsigned preset if you have one
 
 /* ----------------------------- Phone helpers ----------------------------- */
 function normalizePhone(raw: string): string {
@@ -156,35 +156,47 @@ export default function SellClient() {
       ? store.addProduct
       : async () => undefined;
 
-  // Form state
-  const [name, setName] = useState("");
+  // ----------------------------- Form state -----------------------------
+  const [name, setName] = useState<string>("");
   const [price, setPrice] = useState<number | "">("");
-  const [negotiable, setNegotiable] = useState(false);
+  const [negotiable, setNegotiable] = useState<boolean>(false);
   const [condition, setCondition] = useState<"brand new" | "pre-owned">("brand new");
-  const [category, setCategory] = useState(categories[0]?.name || "");
-  const [subcategory, setSubcategory] = useState("");
-  const [brand, setBrand] = useState("");
-  const [location, setLocation] = useState("Nairobi");
-  const [phone, setPhone] = useState(""); // OPTIONAL now
-  const [description, setDescription] = useState("");
+
+  // 👇 explicitly typed as string to avoid literal-union narrowing from categories[0]?.name
+  const [category, setCategory] = useState<string>(String(categories[0]?.name || ""));
+  const [subcategory, setSubcategory] = useState<string>(""); // 👈 explicit string fixes TS narrowing
+
+  const [brand, setBrand] = useState<string>("");
+  const [location, setLocation] = useState<string>("Nairobi");
+  const [phone, setPhone] = useState<string>(""); // OPTIONAL now
+  const [description, setDescription] = useState<string>("");
   const [previews, setPreviews] = useState<FilePreview[]>([]);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const subcats = useMemo(
-    () => categories.find((c) => c.name === category)?.subcategories || [],
-    [category]
-  );
+  // Readonly-friendly typing for categories data
+  type SubCat = { readonly name: string; readonly subsubcategories?: readonly string[] };
+  type Cat = { readonly name: string; readonly subcategories: readonly SubCat[] };
+
+  // Keep as readonly; no mutation needed for rendering
+  const cats: readonly Cat[] = categories as unknown as readonly Cat[];
+
+  const subcats: ReadonlyArray<{ name: string }> = useMemo(() => {
+    const found = cats.find((c) => c.name === category);
+    const list = (found?.subcategories ?? []).map((s) => ({ name: s.name }));
+    return list as ReadonlyArray<{ name: string }>;
+  }, [cats, category]);
 
   useEffect(() => {
     if (!subcats.length) {
       setSubcategory("");
       return;
     }
-    if (!subcats.find((s) => s.name === subcategory)) {
-      setSubcategory(subcats[0].name);
+    const first = subcats[0];
+    if (!subcats.some((s) => s.name === subcategory)) {
+      if (first) setSubcategory(String(first.name));
     }
   }, [subcats, subcategory]);
 
@@ -242,22 +254,28 @@ export default function SellClient() {
     if (e.dataTransfer?.files?.length) filesToAdd(e.dataTransfer.files);
   }
 
+  // ✅ Safe versions: no undefined writes, no direct mutation
   function removeAt(idx: number) {
     setPreviews((prev) => {
-      const copy = [...prev];
-      const [removed] = copy.splice(idx, 1);
+      const removed = prev[idx];
       if (removed) URL.revokeObjectURL(removed.url);
-      return copy;
+      return prev.filter((_, i) => i !== idx);
     });
   }
 
   function move(idx: number, dir: -1 | 1) {
     setPreviews((prev) => {
-      const copy = [...prev];
       const j = idx + dir;
-      if (j < 0 || j >= copy.length) return copy;
-      [copy[idx], copy[j]] = [copy[j], copy[idx]];
-      return copy;
+      if (j < 0 || j >= prev.length) return prev;
+
+      const a = prev.slice();
+      const left = a[idx];
+      const right = a[j];
+      if (!left || !right) return prev;
+
+      a[idx] = right;
+      a[j] = left;
+      return a;
     });
   }
 
@@ -348,7 +366,6 @@ export default function SellClient() {
           : "";
 
       toast.success("Listing posted!");
-      // Prefer push over replace so back button returns to form if needed
       router.push(createdId ? `/sell/success?id=${createdId}` : "/sell/success");
     } catch (err: any) {
       console.error(err);
@@ -435,7 +452,7 @@ export default function SellClient() {
             <select
               className="select"
               value={condition}
-              onChange={(e) => setCondition(e.target.value as any)}
+              onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
             >
               <option value="brand new">Brand New</option>
               <option value="pre-owned">Pre-Owned</option>
@@ -448,7 +465,7 @@ export default function SellClient() {
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
-              {categories.map((c) => (
+              {cats.map((c) => (
                 <option key={c.name} value={c.name}>
                   {c.name}
                 </option>
@@ -460,7 +477,7 @@ export default function SellClient() {
             <select
               className="select"
               value={subcategory}
-              onChange={(e) => setSubcategory(e.target.value)}
+              onChange={(e) => setSubcategory(e.target.value)} // ✅ state is string, no literal mismatch
             >
               {subcats.map((s) => (
                 <option key={s.name} value={s.name}>
@@ -619,7 +636,6 @@ export default function SellClient() {
             type="submit"
             disabled={!canSubmit || submitting}
             className={`btn-primary ${(!canSubmit || submitting) && "opacity-60"}`}
-            onClick={onSubmit}
           >
             {submitting ? "Posting…" : "Post Listing"}
           </button>

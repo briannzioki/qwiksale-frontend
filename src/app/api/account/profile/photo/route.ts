@@ -3,11 +3,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
-// ---- helpers ---------------------------------------------------------------
+/* -------------------------------------------------------------------------- */
+/* utils                                                                       */
+/* -------------------------------------------------------------------------- */
 
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
@@ -17,79 +19,90 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
+const BRAND = "QwikSale";
+
 function cloudName(): string {
-  const name = process.env.CLOUDINARY_CLOUD_NAME;
-  if (!name) throw new Error("Missing CLOUDINARY_CLOUD_NAME env var");
+  const name = process.env["CLOUDINARY_CLOUD_NAME"];
+  if (!name) throw new Error("Missing CLOUDINARY_CLOUD_NAME");
   return name;
 }
 
-/**
- * Build a canonical Cloudinary delivery URL from a publicId.
- * We keep it simple and rely on Cloudinary's smart format/quality.
- */
+/** Build a canonical Cloudinary delivery URL from a publicId. */
 function buildCloudinaryUrl(publicId: string) {
   const cn = cloudName();
-  // Ensure no leading slash on publicId
   const pid = publicId.replace(/^\/+/, "");
   return `https://res.cloudinary.com/${cn}/image/upload/f_auto,q_auto/${encodeURI(pid)}`;
 }
 
-/**
- * Given a base delivery URL from Cloudinary, derive some helpful variants.
- * We do not persist these; the client can use them directly for UI.
- */
-function deriveVariants(baseUrl: string) {
-  // Insert transformations right after `/upload/`
-  const inject = (t: string) => baseUrl.replace("/upload/", `/upload/${t}/`);
-
-  // Square avatar (cover) + web-friendly preview + super-low LQIP placeholder
-  const avatarUrl = inject("c_thumb,g_face,ar_1:1,w_256,h_256,f_auto,q_auto");
-  const previewUrl = inject("c_fill,w_1024,f_auto,q_auto");
-  const placeholderUrl = inject("w_24,e_blur:2000,q_1,f_auto");
-
-  return { avatarUrl, previewUrl, placeholderUrl };
+/** Inject a transformation right after `/upload/` in a Cloudinary URL. */
+function injectTransform(baseUrl: string, t: string) {
+  return baseUrl.replace("/upload/", `/upload/${t}/`);
 }
 
-/**
- * Very light sanity check for Cloudinary delivery URLs for your cloud.
- */
+function deriveVariants(baseUrl: string) {
+  return {
+    // center face if present, square avatar
+    avatarUrl: injectTransform(baseUrl, "c_thumb,g_face,ar_1:1,w_256,h_256,f_auto,q_auto"),
+    // medium preview for settings page
+    previewUrl: injectTransform(baseUrl, "c_fill,w_1024,f_auto,q_auto"),
+    // tiny blur for LQIP placeholders
+    placeholderUrl: injectTransform(baseUrl, "w_24,e_blur:2000,q_1,f_auto"),
+  };
+}
+
+/** Very light sanity check for Cloudinary delivery URLs for *your* cloud. */
 function looksLikeCloudinaryUrl(url: string) {
   try {
     const u = new URL(url);
-    return (
-      u.protocol === "https:" &&
-      /(^|\.)res\.cloudinary\.com$/.test(u.hostname) &&
-      u.pathname.includes(`/${cloudName()}/image/upload/`)
-    );
+    if (u.protocol !== "https:") return false;
+    if (!/(^|\.)res\.cloudinary\.com$/.test(u.hostname)) return false;
+    return u.pathname.includes(`/${cloudName()}/image/upload/`);
   } catch {
     return false;
   }
 }
 
-// ---- method handlers -------------------------------------------------------
+/** Extract and validate the current user id. */
+async function requireUserId() {
+  const session = await auth();
+  const uid = (session as any)?.user?.id as string | undefined;
+  return uid ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* GET                                                                         */
+/* -------------------------------------------------------------------------- */
 
 export async function GET() {
-  const session = await auth();
-  const userId = (session as any)?.user?.id as string | undefined;
+  const userId = await requireUserId();
   if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, image: true, name: true, username: true, email: true },
   });
-
   if (!user) return noStore({ error: "User not found" }, { status: 404 });
 
-  const variants = user.image && looksLikeCloudinaryUrl(user.image)
-    ? deriveVariants(user.image)
-    : null;
+  const variants =
+    user.image && looksLikeCloudinaryUrl(user.image)
+      ? deriveVariants(user.image)
+      : null;
 
   return noStore({ ok: true, user, variants });
 }
 
-export async function POST(req: Request) {
-  const session = await auth();
-  const userId = (session as any)?.user?.id as string | undefined;
+/* -------------------------------------------------------------------------- */
+/* POST                                                                        */
+/* -------------------------------------------------------------------------- */
+/**
+ * Accept either:
+ *  - { secureUrl: "https://res.cloudinary.com/<cloud>/image/upload/.../file.jpg" }
+ *  - { publicId:  "folder/file" }  (unsigned upload flow)
+ *
+ * Optional: { intent: "avatar" | "raw" } — currently informational only
+ */
+export async function POST(req: NextRequest) {
+  const userId = await requireUserId();
   if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
   let body: unknown;
@@ -98,7 +111,6 @@ export async function POST(req: Request) {
   } catch {
     return noStore({ error: "Invalid JSON body." }, { status: 400 });
   }
-
   if (typeof body !== "object" || body === null) {
     return noStore({ error: "Body must be a JSON object." }, { status: 400 });
   }
@@ -106,14 +118,11 @@ export async function POST(req: Request) {
   const {
     secureUrl,
     publicId,
-  }: {
-    secureUrl?: unknown;
-    publicId?: unknown;
-  } = body as any;
+    intent,
+  }: { secureUrl?: unknown; publicId?: unknown; intent?: unknown } = body as any;
 
   // Accept EITHER a Cloudinary secureUrl OR a publicId (from unsigned upload)
   let finalUrl: string | null = null;
-
   if (typeof secureUrl === "string" && secureUrl.trim()) {
     const url = secureUrl.trim();
     if (!looksLikeCloudinaryUrl(url)) {
@@ -139,9 +148,17 @@ export async function POST(req: Request) {
       select: { id: true, image: true, name: true, username: true, email: true },
     });
 
-    const variants = deriveVariants(user.image ?? finalUrl!);
+    const variants = looksLikeCloudinaryUrl(user.image ?? "")
+      ? deriveVariants(user.image!)
+      : null;
 
-    return noStore({ ok: true, user, variants });
+    return noStore({
+      ok: true,
+      user,
+      variants,
+      // surface intent back (helpful for clients that branch on result)
+      meta: { intent: typeof intent === "string" ? intent : undefined },
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[profile/photo] POST error:", e);
@@ -149,25 +166,44 @@ export async function POST(req: Request) {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* DELETE                                                                      */
+/* -------------------------------------------------------------------------- */
+
 export async function DELETE() {
-  const session = await auth();
-  const userId = (session as any)?.user?.id as string | undefined;
+  const userId = await requireUserId();
   if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
   try {
     const user = await prisma.user.update({
       where: { id: userId },
-      data: { image: null as any }, // NextAuth User.image is string | null
+      data: { image: null },
       select: { id: true, image: true, name: true, username: true, email: true },
     });
 
-    // NOTE: We are not deleting from Cloudinary here because your setup uses an
-    // unsigned preset (no server-side API key/secret). If/when you add the
-    // authenticated Admin API, we can securely destroy the previous publicId.
+    // NOTE: We’re not deleting the asset from Cloudinary because this endpoint
+    // intentionally avoids storing/admin credentials for the Cloudinary Admin API.
+    // If/when you add that, you can destroy the previous publicId safely here.
+
     return noStore({ ok: true, user });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[profile/photo] DELETE error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* OPTIONS / simple health                                                     */
+/* -------------------------------------------------------------------------- */
+
+export async function OPTIONS() {
+  return noStore({ ok: true }, { status: 204 });
+}
+
+export async function HEAD() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+  });
 }

@@ -2,8 +2,11 @@
 import { Resend } from "resend";
 import * as React from "react";
 
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const DEFAULT_FROM = process.env.EMAIL_FROM || "QwikSale <noreply@qwiksale.sale>";
+// Access env via bracket notation to satisfy TS index signature checks
+const RESEND_API_KEY = process.env["RESEND_API_KEY"];
+const DEFAULT_FROM = process.env["EMAIL_FROM"] ?? "QwikSale <noreply@qwiksale.sale>";
+
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 export type SendEmailOpts = {
   to: string | string[];

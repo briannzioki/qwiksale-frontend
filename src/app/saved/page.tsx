@@ -1,13 +1,20 @@
 // src/app/saved/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import * as React from "react";
 import Link from "next/link";
-import { signIn, useSession } from "next-auth/react";
+import Image from "next/image";
+import { useSession } from "next-auth/react";
 import { toast } from "react-hot-toast";
 import FavoriteButton from "../components/FavoriteButton";
 import { useProducts } from "../lib/productsStore";
 import { useFavourites } from "../lib/favoritesStore";
+import { getJson } from "@/app/lib/http"; // ensures credentials: "include"
+import { shimmer } from "@/app/lib/blur";
+
+/* ------------------------------------------------------------------ */
+/* Types                                                              */
+/* ------------------------------------------------------------------ */
 
 type ApiProduct = {
   id: string;
@@ -27,7 +34,11 @@ type ApiFavorite = {
   product: ApiProduct;
 };
 
-type ApiResponse = { items: ApiFavorite[] };
+type ApiResponse = { items: ApiFavorite[]; nextCursor?: string | null };
+
+/* ------------------------------------------------------------------ */
+/* Utils                                                              */
+/* ------------------------------------------------------------------ */
 
 function fmtKES(n?: number | null) {
   if (!n || n <= 0) return "Contact for price";
@@ -38,62 +49,62 @@ function fmtKES(n?: number | null) {
   }
 }
 
-export default function SavedPage() {
-  const { data: session, status: sessionStatus } = useSession();
+/** One-argument onError factory to satisfy TS (Next/Image forwards only event). */
+const makeImageOnError =
+  (fallback: string) =>
+  (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    if (img && img.src !== fallback) img.src = fallback;
+  };
 
-  // Local stores (fallback if API fails)
+/* ------------------------------------------------------------------ */
+/* Component                                                           */
+/* ------------------------------------------------------------------ */
+
+export default function SavedPage() {
+  const { status: sessionStatus } = useSession();
+
+  // Local stores (fallback if API fails or user is signed out)
   const { products } = useProducts();
   const { ids } = useFavourites();
 
   // Remote favorites
-  const [favItems, setFavItems] = useState<ApiFavorite[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [origin, setOrigin] = useState<string>("");
+  const [favItems, setFavItems] = React.useState<ApiFavorite[] | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState<string | null>(null);
+  const [origin, setOrigin] = React.useState<string>("");
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
 
-  useEffect(() => {
+  React.useEffect(() => {
     let cancelled = false;
-    async function load() {
+    (async () => {
       setLoading(true);
       setErr(null);
       setFavItems(null);
       try {
-        const r = await fetch("/api/favorites", { cache: "no-store" });
-        if (cancelled) return;
-
-        if (r.status === 401) {
-          // Not signed in — handled in UI
-          setLoading(false);
-          return;
-        }
-        if (!r.ok) {
-          const j = await r.json().catch(() => ({}));
-          throw new Error(j?.error || `Failed to load favorites (${r.status})`);
-        }
-
-        const data = (await r.json()) as ApiResponse;
-        setFavItems(Array.isArray(data?.items) ? data.items : []);
+        // credentials: "include" is handled by getJson()
+        const data = await getJson<ApiResponse>("/api/favorites?format=full&limit=100");
+        if (!cancelled) setFavItems(Array.isArray(data?.items) ? data.items : []);
       } catch (e: any) {
-        setErr(e?.message || "Failed to load favorites");
+        // Gracefully treat 401 as “not signed in”
+        const msg = e?.message || "Failed to load favorites";
+        if (!cancelled) setErr(msg);
       } finally {
         if (!cancelled) setLoading(false);
       }
-    }
-    load();
+    })();
     return () => {
       cancelled = true;
     };
   }, [sessionStatus]);
 
   // Fallback list (local store) if API not available or errored
-  const fallbackFavs: ApiFavorite[] = useMemo(() => {
-    const selected = products.filter((p: any) => ids.includes(String(p.id)));
-    // Shape like ApiFavorite for rendering
-    return selected.map((p: any) => ({
+  const fallbackFavs: ApiFavorite[] = React.useMemo(() => {
+    const selected = products.filter((p) => ids.includes(String(p.id)));
+    return selected.map((p) => ({
       productId: p.id,
       createdAt: new Date().toISOString(),
       product: {
@@ -101,17 +112,17 @@ export default function SavedPage() {
         name: p.name,
         category: p.category,
         subcategory: p.subcategory,
-        brand: p.brand,
-        condition: p.condition,
-        price: p.price,
-        image: p.image,
-        featured: p.featured,
+        brand: p.brand ?? null,
+        condition: p.condition ?? null,
+        price: p.price ?? null,
+        image: p.image ?? null,
+        featured: !!p.featured,
       },
     }));
   }, [products, ids]);
 
   // Choose list: API first, else fallback
-  const list: ApiFavorite[] = useMemo(() => {
+  const list: ApiFavorite[] = React.useMemo(() => {
     if (favItems) return favItems;
     if (err) return fallbackFavs;
     if (!loading && sessionStatus === "unauthenticated") return []; // signed out
@@ -135,9 +146,7 @@ export default function SavedPage() {
       {/* Hero */}
       <div className="rounded-2xl p-8 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandBlue via-brandGreen to-brandNavy">
         <h1 className="text-2xl md:text-3xl font-extrabold">Saved Items</h1>
-        <p className="text-white/90">
-          Your favorites live here. {count ? `(${count})` : ""}
-        </p>
+        <p className="text-white/90">Your favorites live here. {count ? `(${count})` : ""}</p>
       </div>
 
       {/* States */}
@@ -159,12 +168,9 @@ export default function SavedPage() {
           <div className="text-sm text-gray-700 dark:text-slate-200">
             You’re not signed in. Sign in to see your saved items synced across devices.
           </div>
-          <button
-            className="btn-primary"
-            onClick={() => (window.location.href = "/signin?callbackUrl=" + encodeURIComponent("/saved"))}
-          >
+          <a className="btn-primary" href={`/signin?callbackUrl=${encodeURIComponent("/saved")}`}>
             Sign in
-          </button>
+          </a>
         </div>
       ) : loading ? (
         <div className="text-gray-600 dark:text-slate-300">Loading your favorites…</div>
@@ -189,6 +195,9 @@ export default function SavedPage() {
           <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
             {list.map((fav) => {
               const p = fav.product;
+              const fallback = "/placeholder/default.jpg";
+              const imgUrl = p.image || fallback;
+
               return (
                 <Link key={p.id} href={`/product/${p.id}`} className="group relative">
                   <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800 group-hover:border-brandBlue/60">
@@ -199,12 +208,20 @@ export default function SavedPage() {
                         </span>
                       ) : null}
 
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={p.image || "/placeholder/default.jpg"}
-                        alt={p.name}
-                        className="w-full h-44 object-cover"
-                      />
+                      {/* Image with blur shimmer */}
+                      <div className="relative w-full h-44">
+                        <Image
+                          src={imgUrl}
+                          alt={p.name}
+                          fill
+                          className="object-cover"
+                          placeholder="blur"
+                          /* shimmer now expects an options object */
+                          blurDataURL={shimmer({ width: 640, height: 360 })}
+                          sizes="(max-width: 768px) 100vw, 33vw"
+                          onError={makeImageOnError(fallback)}
+                        />
+                      </div>
 
                       <div className="absolute top-2 right-2 z-10 flex gap-1">
                         <FavoriteButton productId={p.id} compact />

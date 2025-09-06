@@ -1,7 +1,10 @@
+// src/app/account/profile/ProfileClient.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+
+/* ----------------------------- Types & helpers ----------------------------- */
 
 type Me = {
   id: string;
@@ -32,6 +35,15 @@ function looksLikeValidUsername(u: string) {
   return /^[a-zA-Z0-9._]{3,24}$/.test(u);
 }
 
+/* -------------------------- Cloudinary config (TS-safe) -------------------------- */
+
+const ENV = process.env as Record<string, string | undefined>;
+const CLOUD_NAME = ENV["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
+const UPLOAD_PRESET = ENV["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? "";
+const CAN_UPLOAD = !!(CLOUD_NAME && UPLOAD_PRESET);
+
+/* -------------------------------- Component -------------------------------- */
+
 export default function ProfileClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -48,11 +60,13 @@ export default function ProfileClient() {
   const [image, setImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // socials (for now stored re-using address fields / or extend API later)
+  // socials (placeholder — not persisted yet)
   const [website, setWebsite] = useState("");
   const [instagram, setInstagram] = useState("");
   const [facebook, setFacebook] = useState("");
   const [xhandle, setXHandle] = useState("");
+
+  const abortRef = useRef<AbortController | null>(null);
 
   const whatsappNormalized = useMemo(
     () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
@@ -61,9 +75,12 @@ export default function ProfileClient() {
 
   useEffect(() => {
     let alive = true;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     (async () => {
       try {
-        const r = await fetch("/api/me", { cache: "no-store" });
+        const r = await fetch("/api/me", { cache: "no-store", signal: ctrl.signal });
         if (r.status === 401) {
           toast.error("Please sign in.");
           window.location.href = "/signin?callbackUrl=/account/profile";
@@ -89,19 +106,23 @@ export default function ProfileClient() {
         setCountry(u.country ?? "");
         setImage(u.image ?? null);
 
-        // If you later add real columns for socials, populate here
+        // Socials placeholder (fill when you add real columns)
         setWebsite("");
         setInstagram("");
         setFacebook("");
         setXHandle("");
-      } catch {
-        toast.error("Could not load your profile.");
+      } catch (e: any) {
+        if (e?.name !== "AbortError") {
+          toast.error("Could not load your profile.");
+        }
       } finally {
         alive && setLoading(false);
       }
     })();
+
     return () => {
       alive = false;
+      ctrl.abort();
     };
   }, []);
 
@@ -130,11 +151,7 @@ export default function ProfileClient() {
           postalCode: postalCode || null,
           city: city || null,
           country: country || null,
-          // TODO: add socials to backend when you add columns
-          website: website || null,
-          instagram: instagram || null,
-          facebook: facebook || null,
-          x: xhandle || null,
+          // future: website/instagram/facebook/x once backend supports it
         }),
       });
       const j = await r.json().catch(() => ({}));
@@ -147,6 +164,10 @@ export default function ProfileClient() {
     }
   }
 
+  /**
+   * Direct unsigned upload to Cloudinary, then POST JSON to
+   * /api/account/profile/photo with { secureUrl, publicId } which your API expects.
+   */
   async function onFileChange(file?: File) {
     if (!file) return;
     if (!/^image\//.test(file.type)) {
@@ -157,34 +178,68 @@ export default function ProfileClient() {
       toast.error("Max file size is 2MB.");
       return;
     }
+    if (!CAN_UPLOAD) {
+      toast.error(
+        "Cloudinary not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET."
+      );
+      return;
+    }
 
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
+      // 1) Upload to Cloudinary
+      const form = new FormData();
+      form.append("file", file);
+      form.append("upload_preset", UPLOAD_PRESET);
+
+      const up = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, {
+        method: "POST",
+        body: form,
+      });
+
+      const uj = (await up.json().catch(() => null)) as {
+        secure_url?: string;
+        public_id?: string;
+        error?: { message?: string };
+      } | null;
+
+      if (!up.ok || !uj?.secure_url || !uj?.public_id) {
+        throw new Error(uj?.error?.message || "Cloudinary upload failed");
+      }
+
+      // 2) Tell backend to persist + derive variants
       const r = await fetch("/api/account/profile/photo", {
         method: "POST",
-        body: fd,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secureUrl: uj.secure_url, publicId: uj.public_id }),
       });
-      const j = await r.json().catch(() => ({} as any));
-      if (!r.ok || !j?.url) {
-        throw new Error(j?.error || "Upload failed");
-      }
-      setImage(j.url as string);
+
+      const j = (await r.json().catch(() => ({}))) as {
+        ok?: boolean;
+        user?: { image?: string | null };
+        variants?: { avatarUrl?: string; previewUrl?: string };
+        error?: string;
+      };
+
+      if (!r.ok || j?.error) throw new Error(j?.error || "Photo update failed");
+
+      // Prefer nicely transformed avatar if available
+      const nextSrc = j?.variants?.avatarUrl || j?.user?.image || uj.secure_url;
+      setImage(nextSrc || null);
       toast.success("Photo updated.");
     } catch (e: any) {
-      if (e?.message?.includes("Cloudinary")) {
-        toast.error("Cloudinary not configured. Check env vars & redeploy.");
-      } else {
-        toast.error(e?.message || "Upload failed");
-      }
+      toast.error(e?.message || "Upload failed");
     } finally {
       setUploading(false);
     }
   }
 
   async function deleteAccount() {
-    if (!confirm("Delete your account permanently? This removes your listings and favorites. This cannot be undone.")) {
+    if (
+      !confirm(
+        "Delete your account permanently? This removes your listings and favorites. This cannot be undone."
+      )
+    ) {
       return;
     }
     try {
@@ -248,9 +303,16 @@ export default function ProfileClient() {
                 className="text-sm text-red-600 hover:underline"
                 onClick={() => setImage(null)}
                 title="This only clears the preview. Save to persist."
+                disabled={uploading}
               >
                 Remove
               </button>
+            )}
+            {!CAN_UPLOAD && (
+              <span className="text-xs text-amber-700">
+                Set <code>NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME</code> and{" "}
+                <code>NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET</code> to enable uploads.
+              </span>
             )}
           </div>
         </div>
@@ -265,6 +327,7 @@ export default function ProfileClient() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="e.g. Brian Nzioki"
+                disabled={saving}
               />
             </div>
 
@@ -276,6 +339,8 @@ export default function ProfileClient() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="e.g. brian254"
                 required
+                disabled={saving}
+                aria-invalid={!looksLikeValidUsername(username)}
               />
               <p className="text-xs text-gray-500 mt-1">
                 3–24 chars. Letters, numbers, dot, underscore.
@@ -291,6 +356,7 @@ export default function ProfileClient() {
               onChange={(e) => setWhatsapp(e.target.value)}
               placeholder="07XXXXXXXX or 2547XXXXXXXX"
               aria-invalid={!!whatsapp && !looksLikeValidKePhone(whatsapp)}
+              disabled={saving}
             />
             <p className="text-xs text-gray-500 mt-1">
               Will be stored as{" "}
@@ -305,6 +371,7 @@ export default function ProfileClient() {
                 className="input"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
+                disabled={saving}
               />
             </div>
             <div>
@@ -313,6 +380,7 @@ export default function ProfileClient() {
                 className="input"
                 value={country}
                 onChange={(e) => setCountry(e.target.value)}
+                disabled={saving}
               />
             </div>
           </div>
@@ -324,6 +392,7 @@ export default function ProfileClient() {
                 className="input"
                 value={postalCode}
                 onChange={(e) => setPostal(e.target.value)}
+                disabled={saving}
               />
             </div>
             <div>
@@ -333,6 +402,7 @@ export default function ProfileClient() {
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="Street, estate, etc."
+                disabled={saving}
               />
             </div>
           </div>
@@ -342,19 +412,43 @@ export default function ProfileClient() {
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label className="label">Website</label>
-              <input className="input" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://…" />
+              <input
+                className="input"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://…"
+                disabled={saving}
+              />
             </div>
             <div>
               <label className="label">Instagram</label>
-              <input className="input" value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@handle" />
+              <input
+                className="input"
+                value={instagram}
+                onChange={(e) => setInstagram(e.target.value)}
+                placeholder="@handle"
+                disabled={saving}
+              />
             </div>
             <div>
               <label className="label">Facebook</label>
-              <input className="input" value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="Page or profile" />
+              <input
+                className="input"
+                value={facebook}
+                onChange={(e) => setFacebook(e.target.value)}
+                placeholder="Page or profile"
+                disabled={saving}
+              />
             </div>
             <div>
               <label className="label">X (Twitter)</label>
-              <input className="input" value={xhandle} onChange={(e) => setXHandle(e.target.value)} placeholder="@handle" />
+              <input
+                className="input"
+                value={xhandle}
+                onChange={(e) => setXHandle(e.target.value)}
+                placeholder="@handle"
+                disabled={saving}
+              />
             </div>
           </div>
 

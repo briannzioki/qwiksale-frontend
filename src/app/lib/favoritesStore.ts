@@ -1,52 +1,58 @@
 // src/app/lib/favoritesStore.ts
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { toast } from "react-hot-toast";
 
-const FAV_KEY = "qs_favs_v1";           // localStorage store for anonymous users
+/* ------------------------------------------------------------------ */
+/* --------------------------- Constants ----------------------------- */
+/* ------------------------------------------------------------------ */
+
+const FAV_KEY = "qs_favs_v1"; // localStorage for anonymous users
 const FETCH_TIMEOUT_MS = 12_000;
 
 type ApiGetResponse =
-  | { items: string[] } // already normalized by backend
+  | { items: string[]; nextCursor?: string | null }
   | {
       items: Array<
-        | { productId: string } // minimal
-        | { product: { id: string } } // when include: { product: true }
-        | { userId: string; productId: string; createdAt?: string | Date } // Prisma Favorite
+        | { productId: string; createdAt?: string | Date }
+        | { product: { id: string } }
+        | { userId: string; productId: string; createdAt?: string | Date }
       >;
+      nextCursor?: string | null;
     }
   | { error: string };
 
-// POST /api/favorites body
+type ApiOk = { ok: true };
+type ApiErr = { error: string };
 type ApiToggleBody =
-  | { productId: string; action?: "add" | "remove" } // preferred
-  | { productId: string }; // legacy (paired with method DELETE for removal)
+  | { productId: string; action?: "add" | "remove" }
+  | { productId: string };
 
-/** Extracts product IDs from the various shapes our API might return */
+type LoadState = "idle" | "loading" | "ready" | "error";
+
+/* ------------------------------------------------------------------ */
+/* --------------------------- Utilities ----------------------------- */
+/* ------------------------------------------------------------------ */
+
+function uniq<T>(arr: T[]): T[] {
+  return [...new Set(arr)];
+}
+
 function extractIdsFromApi(res: ApiGetResponse | null | undefined): string[] {
   if (!res || typeof res !== "object" || !("items" in res)) return [];
-  const items = (res as any).items;
-  if (!Array.isArray(items)) return [];
+  const items: any[] = Array.isArray((res as any).items) ? (res as any).items : [];
+  if (items.length && typeof items[0] === "string") return uniq(items as string[]);
 
-  // If it's already an array of strings (ids)
-  if (items.length > 0 && typeof items[0] === "string") {
-    return [...new Set(items as string[])];
-  }
-
-  // Otherwise, map known shapes to productId
   const ids = new Set<string>();
   for (const it of items) {
     if (!it) continue;
-    if (typeof it.productId === "string") {
-      ids.add(it.productId);
+    if (typeof (it as any).productId === "string") {
+      ids.add((it as any).productId);
       continue;
     }
-    const pid = it?.product?.id;
-    if (typeof pid === "string") {
-      ids.add(pid);
-      continue;
-    }
+    const pid = (it as any)?.product?.id;
+    if (typeof pid === "string") ids.add(pid);
   }
   return [...ids];
 }
@@ -55,8 +61,7 @@ function loadLocal(): string[] {
   try {
     const raw = localStorage.getItem(FAV_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(parsed)) return parsed.map(String);
-    return [];
+    return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];
   }
@@ -64,100 +69,140 @@ function loadLocal(): string[] {
 
 function saveLocal(ids: string[]) {
   try {
-    localStorage.setItem(FAV_KEY, JSON.stringify(ids));
+    localStorage.setItem(FAV_KEY, JSON.stringify(uniq(ids.map(String))));
   } catch {
-    // ignore quota errors
+    /* ignore quota */
   }
 }
 
-/** Small helper to fetch with timeout/abort */
-async function fetchJson(input: RequestInfo, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS) {
+/** fetch with abort + timeout + JSON parsing */
+async function fetchJson<T = unknown>(
+  input: RequestInfo,
+  init: RequestInit = {},
+  timeoutMs = FETCH_TIMEOUT_MS
+): Promise<{ res: Response; json: T | null }> {
   const ac = new AbortController();
-  const id = setTimeout(() => ac.abort(), timeoutMs);
+  const t = setTimeout(() => ac.abort(), timeoutMs);
   try {
     const res = await fetch(input, { cache: "no-store", ...init, signal: ac.signal });
     let json: any = null;
     try {
       json = await res.json();
     } catch {
-      // ignore non-JSON
+      json = null;
     }
     return { res, json };
   } finally {
-    clearTimeout(id);
+    clearTimeout(t);
   }
 }
 
-export function useFavourites() {
-  const [ids, setIds] = useState<string[]>([]);
-  const [authed, setAuthed] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(true);
-  const mountedRef = useRef(true);
+/** naive backoff: 1s, 2s, 4s, capped */
+async function backoff(attempt: number, capMs = 8000) {
+  const ms = Math.min(1000 * Math.pow(2, Math.max(0, attempt)), capMs);
+  await new Promise((r) => setTimeout(r, ms));
+}
 
-  // Keep a stable reference to current ids so we can rollback on error
+/* ------------------------------------------------------------------ */
+/* ----------------------------- Hook -------------------------------- */
+/* ------------------------------------------------------------------ */
+
+type Options = {
+  /**
+   * Called whenever the set of favorites changes (after optimistic update).
+   * NOTE: Named with the `Action` suffix to comply with Next’s client-entry rule.
+   */
+  onChangeAction?: (ids: string[]) => void;
+};
+
+export function useFavourites(opts: Options = {}) {
+  const { onChangeAction } = opts;
+
+  const [ids, setIds] = useState<string[]>([]);
+  const [authed, setAuthed] = useState(false);
+  const [state, setState] = useState<LoadState>("idle");
+
+  const mountedRef = useRef(true);
+  const inFlightRef = useRef<AbortController | null>(null);
+  const optimisticPrevRef = useRef<string[] | null>(null);
+
+  // keep ref for rollback
   const idsRef = useRef<string[]>([]);
   useEffect(() => {
     idsRef.current = ids;
-  }, [ids]);
+    onChangeAction?.(ids);
+  }, [ids, onChangeAction]);
 
-  // Initial load: try server first; if unauthorized/offline, fall back to local.
+  /** initial load: try server; on 401 fall back to local. also merge local → server on first signin */
   useEffect(() => {
     mountedRef.current = true;
 
     (async () => {
+      setState("loading");
       try {
-        setLoading(true);
-
-        const { res, json } = await fetchJson("/api/favorites");
+        const { res, json } = await fetchJson<ApiGetResponse>("/api/favorites");
         if (res.ok) {
-          const serverIds = extractIdsFromApi(json);
           setAuthed(true);
-
-          // Merge any local anonymous favorites into the server on first sign-in
+          const serverIds = extractIdsFromApi(json);
+          // merge local anon -> server
           const localIds = loadLocal();
           const toAdd = localIds.filter((id) => !serverIds.includes(id));
 
-          if (toAdd.length > 0) {
-            // Best-effort batch upsert (sequential to keep API simple)
-            for (const pid of toAdd) {
+          // push anon favs up (best-effort)
+          for (const pid of toAdd) {
+            try {
               await fetch("/api/favorites", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ productId: pid, action: "add" } satisfies ApiToggleBody),
-              }).catch(() => {});
+              });
+            } catch {
+              /* ignore */
             }
           }
 
-          const merged = [...new Set([...serverIds, ...localIds])];
-          saveLocal([]); // clear local after merge (avoid dupes)
-          if (mountedRef.current) setIds(merged);
-        } else {
-          // Not signed in or server error → fall back to local
+          // Clear anon store to avoid dup/flip-flop
+          saveLocal([]);
+
+          if (mountedRef.current) {
+            setIds(uniq([...serverIds, ...localIds]));
+            setState("ready");
+          }
+        } else if (res.status === 401) {
+          // anonymous mode
           const localIds = loadLocal();
           if (mountedRef.current) {
             setAuthed(false);
             setIds(localIds);
+            setState("ready");
+          }
+        } else {
+          // server error → local only
+          if (mountedRef.current) {
+            setAuthed(false);
+            setIds(loadLocal());
+            setState("error");
           }
         }
       } catch {
-        // Network failure → local
+        // network error → local only
         if (mountedRef.current) {
           setAuthed(false);
           setIds(loadLocal());
+          setState("error");
         }
-      } finally {
-        if (mountedRef.current) setLoading(false);
       }
     })();
 
-    // Sync across tabs (only relevant for anonymous/local mode)
+    // cross-tab sync (anon only)
     const onStorage = (e: StorageEvent) => {
+      if (!mountedRef.current) return;
       if (e.key === FAV_KEY && !authed) {
         try {
           const arr = e.newValue ? JSON.parse(e.newValue) : [];
           if (Array.isArray(arr)) setIds(arr.map(String));
         } catch {
-          // ignore
+          /* ignore */
         }
       }
     };
@@ -166,76 +211,147 @@ export function useFavourites() {
     return () => {
       mountedRef.current = false;
       window.removeEventListener("storage", onStorage);
+      inFlightRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Force refresh from server (no-op for anonymous users) */
-  const refresh = async () => {
+  /** fresh pull from server (no-op for anon) */
+  const refresh = useCallback(async () => {
     if (!authed) return;
-    const { res, json } = await fetchJson("/api/favorites");
+    const { res, json } = await fetchJson<ApiGetResponse>("/api/favorites");
     if (!res.ok) return;
     const serverIds = extractIdsFromApi(json);
     if (mountedRef.current) setIds(serverIds);
-  };
+  }, [authed]);
 
   const idsSet = useMemo(() => new Set(ids.map(String)), [ids]);
+  const isFavourite = useCallback((id: string | number) => idsSet.has(String(id)), [idsSet]);
 
-  const isFavourite = (id: string | number) => idsSet.has(String(id));
+  /** internal api call with tiny retry/backoff */
+  const callToggle = useCallback(
+    async (productId: string, nowFav: boolean) => {
+      inFlightRef.current?.abort();
+      const ac = new AbortController();
+      inFlightRef.current = ac;
 
-  /**
-   * Optimistic toggle with rollback.
-   * - If authenticated: uses POST + action ("add"/"remove").
-   * - If unauthenticated: updates localStorage only.
-   */
-  const toggle = async (id: string | number) => {
-    const s = String(id);
-    const wasFav = idsSet.has(s);
-    const nowFav = !wasFav;
-    const next = nowFav ? [...ids, s] : ids.filter((x) => x !== s);
+      const body: ApiToggleBody = { productId, action: nowFav ? "add" : "remove" };
 
-    setIds(next);
-    if (!authed) {
-      saveLocal(next);
-      return nowFav;
-    }
-
-    // Authenticated path: call API (prefer POST with action)
-    try {
-      const { res, json } = await fetchJson("/api/favorites", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          productId: s,
-          action: nowFav ? "add" : "remove",
-        } as ApiToggleBody),
-      });
-
-      if (!res.ok) {
-        throw new Error((json && json.error) || `Failed (${res.status})`);
+      let attempt = 0;
+      // 1 quick try + up to 2 retries with backoff
+      while (attempt < 3) {
+        try {
+          const { res, json } = await fetchJson<ApiOk | ApiErr>(
+            "/api/favorites",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+              signal: ac.signal,
+            },
+            FETCH_TIMEOUT_MS
+          );
+          if (res.ok) return true;
+          const msg = (json as ApiErr)?.error || `HTTP ${res.status}`;
+          throw new Error(msg);
+        } catch (e: any) {
+          attempt++;
+          if (e?.name === "AbortError" || attempt >= 3) {
+            throw e;
+          }
+          await backoff(attempt);
+        }
       }
-      // success → keep optimistic state
-      return nowFav;
-    } catch (e: any) {
-      // Rollback on error
-      const prev = idsRef.current;
-      setIds(prev);
-      toast.error(e?.message || "Couldn’t update favorites");
-      return wasFav;
-    }
-  };
+    },
+    []
+  );
 
+  /** add (optimistic) */
+  const add = useCallback(
+    async (id: string | number) => {
+      const s = String(id);
+      if (idsSet.has(s)) return true; // already in
+
+      const next = uniq([...idsRef.current, s]);
+      optimisticPrevRef.current = idsRef.current;
+      setIds(next);
+
+      if (!authed) {
+        saveLocal(next);
+        return true;
+      }
+
+      try {
+        await callToggle(s, true);
+        return true;
+      } catch (e: any) {
+        const prev = optimisticPrevRef.current ?? idsRef.current;
+        setIds(prev);
+        toast.error(e?.message || "Couldn’t add to favorites");
+        return false;
+      } finally {
+        optimisticPrevRef.current = null;
+      }
+    },
+    [authed, callToggle, idsSet]
+  );
+
+  /** remove (optimistic) */
+  const remove = useCallback(
+    async (id: string | number) => {
+      const s = String(id);
+      if (!idsSet.has(s)) return true; // already out
+
+      const next = idsRef.current.filter((x) => x !== s);
+      optimisticPrevRef.current = idsRef.current;
+      setIds(next);
+
+      if (!authed) {
+        saveLocal(next);
+        return true;
+      }
+
+      try {
+        await callToggle(s, false);
+        return true;
+      } catch (e: any) {
+        const prev = optimisticPrevRef.current ?? idsRef.current;
+        setIds(prev);
+        toast.error(e?.message || "Couldn’t remove from favorites");
+        return false;
+      } finally {
+        optimisticPrevRef.current = null;
+      }
+    },
+    [authed, callToggle, idsSet]
+  );
+
+  /** toggle (optimistic) */
+  const toggle = useCallback(
+    async (id: string | number) => {
+      return isFavourite(id) ? remove(id) : add(id);
+    },
+    [isFavourite, add, remove]
+  );
+
+  const loading = state === "loading" || state === "idle";
   const count = ids.length;
 
   return {
+    // state
     ids,
     idsSet,
     count,
     authed,
     loading,
+
+    // queries
     isFavourite,
+
+    // actions
+    add,
+    remove,
     toggle,
     refresh,
   };
 }
-

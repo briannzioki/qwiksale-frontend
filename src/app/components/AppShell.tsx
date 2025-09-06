@@ -1,11 +1,42 @@
 // src/app/components/AppShell.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { categories } from "../data/categories";
+
+/* ------------------------ tiny event/analytics ------------------------ */
+function emit(name: string, detail?: unknown) {
+  // eslint-disable-next-line no-console
+  console.log(`[qs:event] ${name}`, detail);
+  if (typeof window !== "undefined" && "CustomEvent" in window) {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  }
+}
+function track(event: string, payload?: Record<string, unknown>) {
+  // eslint-disable-next-line no-console
+  console.log("[qs:track]", event, payload);
+  emit("qs:track", { event, payload });
+}
+
+/* --------------------------- type narrowing --------------------------- */
+type LeafName = string;
+type Subcategory = { name: string; subsubcategories?: ReadonlyArray<LeafName> };
+type Category = { name: string; subcategories?: ReadonlyArray<Subcategory> };
+
+function hasSubcategories(
+  cat: unknown
+): cat is Category & { subcategories: ReadonlyArray<Subcategory> } {
+  return !!cat && Array.isArray((cat as any).subcategories);
+}
+
+function hasSubsubcategories(
+  sub: unknown
+): sub is Subcategory & { subsubcategories: ReadonlyArray<LeafName> } {
+  return !!sub && Array.isArray((sub as any).subsubcategories);
+}
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -15,35 +46,87 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const drawerRef = useRef<HTMLElement | null>(null);
+  const liveRef = useRef<HTMLSpanElement | null>(null);
 
+  // Announce drawer state changes for screen readers
+  const announce = useCallback((msg: string) => {
+    if (!liveRef.current) return;
+    liveRef.current.textContent = msg;
+    setTimeout(() => {
+      if (liveRef.current) liveRef.current.textContent = "";
+    }, 1200);
+  }, []);
+
+  // Escape to close
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Close drawer on route change
   useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+    if (open) setOpen(false);
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Body scroll lock + focus management + focus trap
   useEffect(() => {
     const body = document.body;
+
+    function trapFocus(e: KeyboardEvent) {
+      if (!open || e.key !== "Tab" || !drawerRef.current) return;
+
+      const nodeList = drawerRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+      );
+      const focusable: HTMLElement[] = Array.from(nodeList);
+      if (focusable.length === 0) return;
+
+      // Safe due to length check above
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
     if (open) {
       const prev = body.style.overflow;
       body.style.overflow = "hidden";
       closeBtnRef.current?.focus();
+      announce("Categories opened");
+      track("nav_categories_open");
+      window.addEventListener("keydown", trapFocus);
       return () => {
+        window.removeEventListener("keydown", trapFocus);
         body.style.overflow = prev;
       };
     } else {
       triggerRef.current?.focus();
+      announce("Categories closed");
+      track("nav_categories_close");
     }
-  }, [open]);
+  }, [open, announce]);
 
-  const categoryHref = (value: string) => `/?category=${encodeURIComponent(value)}`;
+  const categoryHref = useCallback(
+    (value: string) => `/?category=${encodeURIComponent(value)}`,
+    []
+  );
+
+  const year = useMemo(() => new Date().getFullYear(), []);
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* Live region for announcements */}
+      <span ref={liveRef} className="sr-only" aria-live="polite" />
+
       {/* Skip link for a11y */}
       <a
         href="#main"
@@ -62,11 +145,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         "
       >
         <div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between">
-          <Link
-            href="/"
-            className="flex items-center gap-2"
-            aria-label="QwikSale — Home"
-          >
+          <Link href="/" className="flex items-center gap-2" aria-label="QwikSale — Home">
             <span className="text-lg md:text-xl font-extrabold tracking-tight text-[#161748] dark:text-slate-100">
               QwikSale
             </span>
@@ -131,6 +210,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   onClick={async () => {
                     if (signingOut) return;
                     setSigningOut(true);
+                    track("auth_signout_click");
                     try {
                       await signOut({ callbackUrl: "/" });
                     } finally {
@@ -149,6 +229,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 href="/signin"
                 className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
                 title="Sign in"
+                onClick={() => track("auth_signin_click")}
               >
                 Sign in
               </Link>
@@ -158,6 +239,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               href="/sell"
               className="hidden sm:inline-flex items-center rounded-lg bg-black/5 dark:bg-white/10 px-3 py-2 text-sm font-semibold border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
+              onClick={() => track("nav_sell_click")}
             >
               + Sell
             </Link>
@@ -201,11 +283,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }}
       >
         <div className="max-w-7xl mx-auto px-5 py-4 text-sm">
-          © {new Date().getFullYear()} QwikSale — Built for Kenya 🇰🇪
+          © {year} QwikSale — Built for Kenya 🇰🇪
         </div>
       </footer>
 
-      {/* ===== Categories Drawer + Backdrop ===== */}
+      {/* ===== Backdrop ===== */}
       {open && (
         <button
           className="fixed inset-0 bg-black/40 z-40"
@@ -214,7 +296,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
 
+      {/* ===== Categories Drawer ===== */}
       <aside
+        ref={drawerRef}
         id="categories-drawer"
         role="dialog"
         aria-modal="true"
@@ -235,7 +319,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Drawer header */}
         <div className="px-5 py-4 flex items-center justify-between border-b bg-white dark:bg-slate-900 border-gray-200 dark:border-white/10">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-[#161748] dark:text-slate-100">QwikSale</span>
+            <span className="font-semibold text-[#161748] dark:text-slate-100">
+              QwikSale
+            </span>
           </div>
           <button
             ref={closeBtnRef}
@@ -258,75 +344,81 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             All Products
           </Link>
 
-          <ul className="space-y-2">
-            {categories.map((cat) => (
-              <li
-                key={cat.name}
-                className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-white/10 shadow-sm"
-              >
-                <details className="group">
-                  <summary className="flex items-center justify-between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
-                    <span className="font-medium">{cat.name}</span>
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      className="transition-transform duration-200 group-open:rotate-180 text-gray-500 dark:text-slate-400"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 15.5l-7-7 1.4-1.4L12 12.7l5.6-5.6L19 8.5z" />
-                    </svg>
-                  </summary>
+          <ul className="space-y-2" aria-label="Browse categories">
+            {categories.map((cat) => {
+              const c = cat as unknown as Category;
+              return (
+                <li
+                  key={c.name}
+                  className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-white/10 shadow-sm"
+                >
+                  <details className="group">
+                    <summary className="flex items-center justify-between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
+                      <span className="font-medium">{c.name}</span>
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        className="transition-transform duration-200 group-open:rotate-180 text-gray-500 dark:text-slate-400"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 15.5l-7-7 1.4-1.4L12 12.7l5.6-5.6L19 8.5z" />
+                      </svg>
+                    </summary>
 
-                  {cat.subcategories && (
-                    <ul className="mt-1 border-t border-gray-100 dark:border-white/5">
-                      {cat.subcategories.map((sub) => (
-                        <li key={sub.name} className="pl-2">
-                          <details>
-                            <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
-                              <Link
-                                href={categoryHref(sub.name)}
-                                onClick={() => setOpen(false)}
-                                className="flex-1"
-                              >
-                                {sub.name}
-                              </Link>
-                              <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                className="text-gray-400"
-                                fill="currentColor"
-                                aria-hidden="true"
-                              >
-                                <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
-                              </svg>
-                            </summary>
+                    {hasSubcategories(c) && c.subcategories.length > 0 && (
+                      <ul className="mt-1 border-t border-gray-100 dark:border-white/5">
+                        {c.subcategories.map((sub) => {
+                          const s = sub as Subcategory;
+                          return (
+                            <li key={s.name} className="pl-2">
+                              <details>
+                                <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
+                                  <Link
+                                    href={categoryHref(s.name)}
+                                    onClick={() => setOpen(false)}
+                                    className="flex-1"
+                                  >
+                                    {s.name}
+                                  </Link>
+                                  <svg
+                                    width="14"
+                                    height="14"
+                                    viewBox="0 0 24 24"
+                                    className="text-gray-400"
+                                    fill="currentColor"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
+                                  </svg>
+                                </summary>
 
-                            {sub.subsubcategories && (
-                              <ul className="ml-3 mb-2">
-                                {sub.subsubcategories.map((leaf) => (
-                                  <li key={leaf}>
-                                    <Link
-                                      href={categoryHref(leaf)}
-                                      onClick={() => setOpen(false)}
-                                      className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-[#39a0ca] transition"
-                                    >
-                                      {leaf}
-                                    </Link>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </details>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </details>
-              </li>
-            ))}
+                                {hasSubsubcategories(s) && s.subsubcategories.length > 0 && (
+                                  <ul className="ml-3 mb-2">
+                                    {s.subsubcategories.map((leaf: LeafName) => (
+                                      <li key={leaf}>
+                                        <Link
+                                          href={categoryHref(leaf)}
+                                          onClick={() => setOpen(false)}
+                                          className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-[#39a0ca] transition"
+                                        >
+                                          {leaf}
+                                        </Link>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </details>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </details>
+                </li>
+              );
+            })}
           </ul>
 
           <Link

@@ -1,20 +1,28 @@
 // src/app/data/categories.ts
 
-export interface Category {
+/* ============================================================================
+  QwikSale · Categories Catalog (typed, indexed, and utilities)
+  - Broad structural typing to avoid literal-union brittleness
+  - Index maps + helpers + fuzzy suggestion
+============================================================================ */
+
+export interface CategoryNode {
   name: string;
   subcategories?: {
     name: string;
-    subsubcategories?: string[];
+    subsubcategories?: readonly string[];
   }[];
 }
 
-/**
- * Canonical categories used across filters, posting, breadcrumbs, etc.
- * NOTE:
- * - Added "Musical Instruments" under Sports & Outdoors (matches your seed data).
- * - Added "Others" with "Books" (your seed has category "Others" / subcategory "Books").
- */
-export const categories: readonly Category[] = [
+export type CategoryPath = {
+  category?: string;
+  subcategory?: string;
+  subsubcategory?: string;
+};
+
+/* ------------------------------- Catalog ---------------------------------- */
+
+export const categories = [
   {
     name: "Electronics",
     subcategories: [
@@ -31,24 +39,11 @@ export const categories: readonly Category[] = [
       },
       {
         name: "Computers & Laptops",
-        subsubcategories: [
-          "Laptops",
-          "Desktops",
-          "Monitors",
-          "Computer Accessories",
-          "Printers & Scanners",
-        ],
+        subsubcategories: ["Laptops", "Desktops", "Monitors", "Computer Accessories", "Printers & Scanners"],
       },
       {
         name: "Home Appliances",
-        subsubcategories: [
-          "Televisions",
-          "Sound Systems",
-          "Refrigerators",
-          "Cookers & Ovens",
-          "Washing Machines",
-          "Microwaves",
-        ],
+        subsubcategories: ["Televisions", "Sound Systems", "Refrigerators", "Cookers & Ovens", "Washing Machines", "Microwaves"],
       },
       { name: "Gaming", subsubcategories: ["Consoles", "Controllers", "Games", "VR"] },
       { name: "Cameras", subsubcategories: ["DSLR", "Mirrorless", "Lenses", "Action Cameras"] },
@@ -59,10 +54,7 @@ export const categories: readonly Category[] = [
     subcategories: [
       { name: "Cars", subsubcategories: ["Sedans", "SUVs", "Pickups", "Trucks", "Vans & Buses"] },
       { name: "Motorcycles", subsubcategories: ["Street Bikes", "Scooters", "Off-road"] },
-      {
-        name: "Vehicle Parts & Accessories",
-        subsubcategories: ["Tyres & Rims", "Batteries", "Engines & Gearboxes", "Car Electronics"],
-      },
+      { name: "Vehicle Parts & Accessories", subsubcategories: ["Tyres & Rims", "Batteries", "Engines & Gearboxes", "Car Electronics"] },
     ],
   },
   {
@@ -103,7 +95,6 @@ export const categories: readonly Category[] = [
       { name: "Sportswear" },
       { name: "Camping & Hiking" },
       { name: "Bicycles" },
-      // Added to match your product seed data
       { name: "Musical Instruments", subsubcategories: ["Guitars", "Keyboards", "DJ Equipment", "Accessories"] },
     ],
   },
@@ -112,35 +103,21 @@ export const categories: readonly Category[] = [
     subcategories: [{ name: "Baby Gear" }, { name: "Toys" }, { name: "Kids Clothing" }],
   },
   {
-    // Added to match your "Others > Books" products
     name: "Others",
     subcategories: [{ name: "Books" }, { name: "Stationery" }, { name: "Arts & Crafts" }, { name: "Miscellaneous" }],
   },
-] as const;
+] as const satisfies readonly CategoryNode[];
 
-/* ------------------------------------------------------------------ */
-/* --------------------------- Derivatives --------------------------- */
-/* ------------------------------------------------------------------ */
+/* ------------------------------ Broad types ------------------------------- */
+type AnyCat = { name: string; subcategories?: readonly AnySub[] };
+type AnySub = { name: string; subsubcategories?: readonly string[] };
 
-type Cat = (typeof categories)[number];
-type Sub = NonNullable<Cat["subcategories"]>[number];
+/* ------------------------------- Utilities -------------------------------- */
 
-export type CategoryName = Cat["name"];
-export type SubcategoryName<C extends CategoryName = CategoryName> = Extract<
-  Sub["name"],
-  string
->;
-export type SubsubcategoryName = string;
+const toAscii = (s: string) => s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
 
-export type CategoryPath = {
-  category?: string;
-  subcategory?: string;
-  subsubcategory?: string;
-};
-
-/** Slugify for URLs / keys (lowercase, ascii, hyphen). */
 export function slugify(input: string): string {
-  return input
+  return toAscii(input)
     .toLowerCase()
     .replace(/&/g, " and ")
     .replace(/['’]/g, "")
@@ -149,175 +126,176 @@ export function slugify(input: string): string {
     .replace(/^-|-$/g, "");
 }
 
-const ciEq = (a?: string, b?: string) =>
-  (a || "").toLocaleLowerCase() === (b || "").toLocaleLowerCase();
-const ciIn = (a: string, b: string) => a.toLocaleLowerCase().includes(b.toLocaleLowerCase());
+const ciEq = (a?: string, b?: string) => (a || "").toLocaleLowerCase() === (b || "").toLocaleLowerCase();
 
-/** Build fast lookup maps */
-const CAT_BY_NAME = new Map<string, Cat>();
-const CAT_BY_SLUG = new Map<string, Cat>();
-const SUB_BY_CAT_NAME = new Map<string, Sub[]>();
-const SUB_BY_CAT_SLUG_AND_SUB_SLUG = new Map<string, Sub>(); // key = `${catSlug}/${subSlug}`
+/* ------------------------------- Index maps ------------------------------- */
 
-for (const c of categories) {
+const CAT_BY_NAME = new Map<string, AnyCat>();
+const CAT_BY_SLUG = new Map<string, AnyCat>();
+const SUBS_BY_CAT = new Map<string, readonly AnySub[]>();
+const SUB_BY_PAIR = new Map<string, AnySub>(); // key: `${catSlug}/${subSlug}`
+
+for (const c of categories as readonly AnyCat[]) {
   CAT_BY_NAME.set(c.name, c);
   CAT_BY_SLUG.set(slugify(c.name), c);
-  if (c.subcategories?.length) {
-    SUB_BY_CAT_NAME.set(c.name, c.subcategories);
-    for (const s of c.subcategories) {
-      SUB_BY_CAT_SLUG_AND_SUB_SLUG.set(`${slugify(c.name)}/${slugify(s.name)}`, s);
-    }
-  } else {
-    SUB_BY_CAT_NAME.set(c.name, []);
+
+  const subs = c.subcategories ?? [];
+  SUBS_BY_CAT.set(c.name, subs);
+
+  for (const s of subs) {
+    SUB_BY_PAIR.set(`${slugify(c.name)}/${slugify(s.name)}`, s);
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* ----------------------------- Helpers ----------------------------- */
-/* ------------------------------------------------------------------ */
+/* --------------------------------- API ------------------------------------ */
 
-/** List top-level category names (sorted). */
 export function listCategories(): string[] {
   return [...CAT_BY_NAME.keys()].sort((a, b) => a.localeCompare(b));
 }
 
-/** Get subcategories for a category (by name, case-insensitive). */
 export function listSubcategories(category?: string): string[] {
   if (!category) return [];
   const found =
     CAT_BY_NAME.get(category) ||
     CAT_BY_SLUG.get(slugify(category)) ||
     [...CAT_BY_NAME.values()].find((c) => ciEq(c.name, category));
-  return (found?.subcategories || []).map((s) => s.name);
+  return (found?.subcategories ?? []).map((s) => s.name);
 }
 
-/** Get sub-subcategories for category+subcategory combo. */
 export function listSubsubcategories(category?: string, subcategory?: string): string[] {
   if (!category || !subcategory) return [];
   const key = `${slugify(category)}/${slugify(subcategory)}`;
-  const sub = SUB_BY_CAT_SLUG_AND_SUB_SLUG.get(key);
-  return sub?.subsubcategories || [];
+  const sub = SUB_BY_PAIR.get(key);
+  return sub?.subsubcategories ? [...sub.subsubcategories] : [];
 }
 
-/** Validate and "snap" a selection to the catalog (returns best-effort correction). */
-export function ensureValidSelection(path: CategoryPath): Required<CategoryPath> {
-  // 1) category
+/**
+ * Normalize a possibly-partial path to a safe path.
+ * Returns only keys that are actually present (never `undefined` values),
+ * so it plays nice with `exactOptionalPropertyTypes`.
+ */
+export function ensureValidSelection(path: CategoryPath): CategoryPath {
   const cat =
-    CAT_BY_NAME.get(path.category || "") ||
-    CAT_BY_SLUG.get(slugify(path.category || "")) ||
-    // fallback: first category
-    categories[0];
+    CAT_BY_NAME.get(path.category ?? "") ||
+    CAT_BY_SLUG.get(slugify(path.category ?? "")) ||
+    (categories[0] as AnyCat);
 
-  // 2) subcategory
-  const subs = cat.subcategories || [];
+  const subs = SUBS_BY_CAT.get(cat.name) ?? [];
   const sub =
     subs.find((s) => ciEq(s.name, path.subcategory)) ||
-    subs.find((s) => slugify(s.name) === slugify(path.subcategory || "")) ||
+    subs.find((s) => slugify(s.name) === slugify(path.subcategory ?? "")) ||
     subs[0];
 
-  // 3) sub-subcategory
-  const subsubs = sub?.subsubcategories || [];
+  const subsubs = sub?.subsubcategories ?? [];
   const subsub =
     subsubs.find((n) => ciEq(n, path.subsubcategory)) ||
-    subsubs.find((n) => slugify(n) === slugify(path.subsubcategory || "")) ||
+    subsubs.find((n) => slugify(n) === slugify(path.subsubcategory ?? "")) ||
     subsubs[0];
 
-  return {
-    category: cat.name,
-    subcategory: sub?.name,
-    subsubcategory: subsub,
-  };
+  const out: CategoryPath = { category: cat.name };
+  if (sub?.name) out.subcategory = sub.name;
+  if (subsub) out.subsubcategory = subsub;
+  return out;
 }
 
-/** Find path by exact names (case-insensitive). */
 export function findPathByNames(
   category?: string,
   subcategory?: string,
   subsubcategory?: string
 ): CategoryPath | null {
   if (!category) return null;
-  const cat =
-    CAT_BY_NAME.get(category) ||
-    [...CAT_BY_NAME.values()].find((c) => ciEq(c.name, category));
+  const cat = CAT_BY_NAME.get(category) ?? [...CAT_BY_NAME.values()].find((c) => ciEq(c.name, category));
   if (!cat) return null;
 
   if (!subcategory) return { category: cat.name };
-  const sub = (cat.subcategories || []).find((s) => ciEq(s.name, subcategory));
+  const sub = (cat.subcategories ?? []).find((s) => ciEq(s.name, subcategory));
   if (!sub) return { category: cat.name };
 
   if (!subsubcategory) return { category: cat.name, subcategory: sub.name };
-  const subsub = (sub.subsubcategories || []).find((n) => ciEq(n, subsubcategory));
-  return { category: cat.name, subcategory: sub.name, subsubcategory: subsub || undefined };
+  const subsub = (sub.subsubcategories ?? []).find((n) => ciEq(n, subsubcategory));
+  return subsub
+    ? { category: cat.name, subcategory: sub.name, subsubcategory: subsub }
+    : { category: cat.name, subcategory: sub.name };
 }
 
-/** Find path by slugs: /:cat/:sub/:subsub (any may be omitted). */
-export function findPathBySlugs(
-  catSlug?: string,
-  subSlug?: string,
-  subsubSlug?: string
-): CategoryPath | null {
+export function findPathBySlugs(catSlug?: string, subSlug?: string, subsubSlug?: string): CategoryPath | null {
   if (!catSlug) return null;
   const cat = CAT_BY_SLUG.get(catSlug);
   if (!cat) return null;
 
   if (!subSlug) return { category: cat.name };
-  const key = `${catSlug}/${subSlug}`;
-  const sub = SUB_BY_CAT_SLUG_AND_SUB_SLUG.get(key);
-  if (!sub) return { category: cat.name };
+  const pair = SUB_BY_PAIR.get(`${catSlug}/${subSlug}`);
+  if (!pair) return { category: cat.name };
 
-  if (!subsubSlug) return { category: cat.name, subcategory: sub.name };
-  const subsub = (sub.subsubcategories || []).find((n) => slugify(n) === subsubSlug);
-  return { category: cat.name, subcategory: sub.name, subsubcategory: subsub || undefined };
+  if (!subsubSlug) return { category: cat.name, subcategory: pair.name };
+  const subsub = (pair.subsubcategories ?? []).find((n) => slugify(n) === subsubSlug);
+  return subsub
+    ? { category: cat.name, subcategory: pair.name, subsubcategory: subsub }
+    : { category: cat.name, subcategory: pair.name };
 }
 
-/** Build breadcrumb labels + slugs for a path. */
 export function breadcrumbs(path: CategoryPath): { label: string; slug: string }[] {
   const snap = ensureValidSelection(path);
-  const catSlug = slugify(snap.category);
+  const catSlug = slugify(snap.category!);
   const subSlug = snap.subcategory ? slugify(snap.subcategory) : undefined;
   const subsubSlug = snap.subsubcategory ? slugify(snap.subsubcategory) : undefined;
 
-  const crumbs: { label: string; slug: string }[] = [{ label: snap.category, slug: `/${catSlug}` }];
-  if (subSlug) crumbs.push({ label: snap.subcategory!, slug: `/${catSlug}/${subSlug}` });
-  if (subsubSlug) crumbs.push({ label: snap.subsubcategory!, slug: `/${catSlug}/${subSlug}/${subsubSlug}` });
+  const crumbs: { label: string; slug: string }[] = [{ label: snap.category!, slug: `/${catSlug}` }];
+  if (snap.subcategory && subSlug) crumbs.push({ label: snap.subcategory, slug: `/${catSlug}/${subSlug}` });
+  if (snap.subsubcategory && subSlug && subsubSlug)
+    crumbs.push({ label: snap.subsubcategory, slug: `/${catSlug}/${subSlug}/${subsubSlug}` });
   return crumbs;
 }
 
-/** Fuzzy search over category/subcategory names. Returns ranked suggestions. */
+/** Token-aware fuzzy suggestions (category and "Category • Subcategory"). */
 export function suggestCategories(query: string, limit = 8): string[] {
   const q = (query || "").trim();
   if (!q) return [];
+
+  // Ensure tokens is string[] (not (string | undefined)[])
+  const tokens = q
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((s): s is string => Boolean(s));
+
   const pool: string[] = [];
-  for (const c of categories) {
+  for (const c of categories as readonly AnyCat[]) {
     pool.push(c.name);
-    for (const s of c.subcategories || []) {
+    for (const s of c.subcategories ?? []) {
       pool.push(`${c.name} • ${s.name}`);
     }
   }
-  const ranked = pool
-    .map((label) => ({
-      label,
-      score: ciEq(label, q) ? 100 : ciIn(label, q) ? 50 : 0,
-    }))
-    .filter((x) => x.score > 0)
+
+  const rank = (label: string) => {
+    const lower = label.toLowerCase();
+    if (lower === q.toLowerCase()) return 1000; // exact
+
+    const firstTok = tokens[0];
+    const starts = firstTok && lower.startsWith(firstTok) ? 250 : 0;
+
+    const covered = tokens.every((t) => lower.includes(t));
+    if (!covered) return -1;
+
+    const brevity = Math.max(0, 120 - lower.length);
+    return 300 + starts + brevity;
+  };
+
+  return pool
+    .map((label) => ({ label, score: rank(label) }))
+    .filter((x) => x.score >= 0)
     .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label))
     .slice(0, limit)
     .map((x) => x.label);
-  return ranked;
 }
 
-/* ------------------------------------------------------------------ */
-/* --------------------------- UI Utilities -------------------------- */
-/* ------------------------------------------------------------------ */
+/* ----------------------------- UI conveniences ---------------------------- */
 
 export function categoryOptions() {
   return listCategories().map((name) => ({ label: name, value: name }));
 }
-
 export function subcategoryOptions(category?: string) {
   return listSubcategories(category).map((name) => ({ label: name, value: name }));
 }
-
 export function subsubcategoryOptions(category?: string, subcategory?: string) {
   return listSubsubcategories(category, subcategory).map((name) => ({ label: name, value: name }));
 }
@@ -325,17 +303,19 @@ export function subsubcategoryOptions(category?: string, subcategory?: string) {
 /** Flattened list useful for search filters/autocomplete. */
 export function flattenedPaths(): { category: string; subcategory?: string; subsubcategory?: string }[] {
   const out: { category: string; subcategory?: string; subsubcategory?: string }[] = [];
-  for (const c of categories) {
-    if (!c.subcategories?.length) {
+  for (const c of categories as readonly AnyCat[]) {
+    const subs = c.subcategories ?? [];
+    if (!subs.length) {
       out.push({ category: c.name });
       continue;
     }
-    for (const s of c.subcategories) {
-      if (!s.subsubcategories?.length) {
+    for (const s of subs) {
+      const subsubs = s.subsubcategories ?? [];
+      if (!subsubs.length) {
         out.push({ category: c.name, subcategory: s.name });
         continue;
       }
-      for (const ss of s.subsubcategories) {
+      for (const ss of subsubs) {
         out.push({ category: c.name, subcategory: s.name, subsubcategory: ss });
       }
     }
@@ -343,9 +323,15 @@ export function flattenedPaths(): { category: string; subcategory?: string; subs
   return out;
 }
 
-/* ------------------------------------------------------------------ */
-/* ------------------------ Sensible Defaults ------------------------ */
-/* ------------------------------------------------------------------ */
+/* --------------------------- Sensible defaults ---------------------------- */
 
-export const DEFAULT_CATEGORY = categories[0]?.name || "Electronics";
-export const DEFAULT_SUBCATEGORY = categories[0]?.subcategories?.[0]?.name || "Phones & Tablets";
+export const DEFAULT_CATEGORY: string = categories[0]?.name ?? "Electronics";
+export const DEFAULT_SUBCATEGORY: string = categories[0]?.subcategories?.[0]?.name ?? "Phones & Tablets";
+
+/* -------------------------- Optional map exports -------------------------- */
+export const CategoryMaps = {
+  byName: CAT_BY_NAME,
+  bySlug: CAT_BY_SLUG,
+  subsByCat: SUBS_BY_CAT,
+  subByPair: SUB_BY_PAIR,
+} as const;

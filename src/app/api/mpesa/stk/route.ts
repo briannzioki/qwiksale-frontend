@@ -31,12 +31,12 @@ function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
 
 type Body = {
   amount: number;
-  msisdn: string;                 // accepts 07/01/+254/254 forms
+  msisdn: string; // accepts 07/01/+254/254 forms
   mode?: "till" | "paybill";
-  productId?: string;             // optional linkage
-  userId?: string;                // optional linkage
-  accountRef?: string;            // optional override (<=12)
-  description?: string;           // optional override (<=32)
+  productId?: string;
+  userId?: string;
+  accountRef?: string;
+  description?: string;
 };
 
 function noStore(json: unknown, init?: ResponseInit) {
@@ -80,16 +80,18 @@ export async function POST(req: Request) {
       );
     }
 
-    const accountRef =
-      (parsed?.accountRef ?? "QWIKSALE").toString().slice(0, 12);
-    const description =
-      (parsed?.description ?? "Qwiksale payment").toString().slice(0, 32);
+    const accountRef = (parsed?.accountRef ?? "QWIKSALE").toString().slice(0, 12);
+    const description = (parsed?.description ?? "Qwiksale payment").toString().slice(0, 32);
+
+    // ✅ ensure a concrete mode for stkPush (TS exactOptionalPropertyTypes)
+    const mode: "paybill" | "till" =
+      parsed?.mode === "till" ? "till" : "paybill";
 
     track("mpesa_stk_attempt", {
       reqId,
       hasProductId: !!parsed?.productId,
       hasUserId: !!parsed?.userId,
-      mode: parsed?.mode ?? "paybill",
+      mode,
       accountRefLength: accountRef.length,
       descriptionLength: description.length,
       amount,
@@ -119,21 +121,33 @@ export async function POST(req: Request) {
         phone,
         accountReference: accountRef,
         description,
-        mode: parsed?.mode,
+        mode, // <-- pass concrete value
       });
     } catch (err: any) {
-      // Best effort: mark the pre-created row as FAILED so ops has a breadcrumb
-      await prisma.payment
-        .update({
-          where: { id: pending.id },
-          data: {
-            status: "FAILED",
-            resultDesc: err?.message?.slice?.(0, 200) || "STK push error",
-          },
-        })
-        .catch(() => {});
-      track("mpesa_stk_push_error", { reqId, paymentId: pending.id, message: String(err?.message || err) });
-      return noStore({ error: err?.message || "Failed to initiate STK" }, { status: 502 });
+    // Best effort: mark the pre-created row as FAILED so ops has a breadcrumb
+    await prisma.payment
+      .update({
+        where: { id: pending.id },
+        data: {
+          status: "FAILED",
+          // keep a lightweight error breadcrumb in the JSON column you already use
+          rawCallback: {
+            phase: "stkPush",
+            message: (err?.message ?? String(err)).slice(0, 200),
+            at: new Date().toISOString(),
+          } as any, // JSON column
+        },
+      })
+      .catch(() => {});
+    track("mpesa_stk_push_error", {
+      reqId,
+      paymentId: pending.id,
+      message: String(err?.message || err),
+    });
+    return noStore(
+      { error: err?.message || "Failed to initiate STK" },
+      { status: 502 }
+    );
     }
 
     // Safety: ensure IDs exist

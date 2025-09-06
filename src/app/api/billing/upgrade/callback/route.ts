@@ -15,7 +15,7 @@ function noStore(json: unknown, init?: ResponseInit) {
 }
 
 // Optional: set MPESA_CALLBACK_TOKEN in env and configure it on the MPesa portal
-const CALLBACK_TOKEN = (process.env.MPESA_CALLBACK_TOKEN || "").trim();
+const CALLBACK_TOKEN = (process.env["MPESA_CALLBACK_TOKEN"] || "").trim();
 
 type StkCallback = {
   MerchantRequestID?: string;

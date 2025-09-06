@@ -1,4 +1,3 @@
-// src/app/api/products/[id]/contact/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,26 +7,56 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 
-// tiny helper to always disable caching
+/* ------------------------- tiny helpers ------------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
   return res;
 }
 
-type RouteCtx = { params: Promise<{ id: string }> };
+type RouteParams = { id: string };
+type RouteContext = { params: Promise<RouteParams> };
 
-export async function GET(req: NextRequest, ctx: RouteCtx) {
+function getClientIp(req: NextRequest): string | null {
+  const xf =
+    req.headers.get("x-forwarded-for") ||
+    req.headers.get("x-vercel-forwarded-for") ||
+    "";
+  if (xf) return xf.split(",")[0]?.trim() || null;
+  const xr = req.headers.get("x-real-ip");
+  if (xr) return xr.trim();
+  return null;
+}
+
+function validUrl(u?: string | null): string | null {
+  const s = (u || "").trim();
+  if (!s) return null;
   try {
-    const { id } = await ctx.params;
-    const productId = String(id || "").trim();
+    const uu = new URL(s);
+    if (uu.protocol === "http:" || uu.protocol === "https:") {
+      return uu.toString().slice(0, 500);
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/* ----------------------------- GET ----------------------------- */
+export async function GET(req: NextRequest, ctx: RouteContext) {
+  try {
+    const { id: raw } = await ctx.params;
+    const productId = String(raw || "").trim();
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
-    // Optional: who is viewing (guests allowed)
-    const session = await auth();
+    // viewer is optional (guests allowed)
+    const session = await auth().catch(() => null);
     const viewerUserId = (session as any)?.user?.id as string | undefined;
 
-    const p = await prisma.product.findUnique({
+    // Minimal public fields to render the contact dialog safely
+    const product = await prisma.product.findUnique({
       where: { id: productId },
       select: {
         id: true,
@@ -38,41 +67,40 @@ export async function GET(req: NextRequest, ctx: RouteCtx) {
       },
     });
 
-    if (!p) return noStore({ error: "Not found" }, { status: 404 });
+    if (!product) return noStore({ error: "Not found" }, { status: 404 });
 
-    // Best-effort IP/UA (works on Vercel)
-    const ipHeader =
-      req.headers.get("x-forwarded-for") ||
-      req.headers.get("x-real-ip") ||
-      req.headers.get("x-vercel-forwarded-for") ||
-      "";
-    const ip = ipHeader.split(",")[0]?.trim() || null;
+    // Light telemetry — never block user on errors
+    const ip = getClientIp(req);
     const ua = req.headers.get("user-agent") || null;
+    const referer = validUrl(req.headers.get("referer")); // computed but not stored
 
-    // Log reveal (ignore failures)
-    await prisma.contactReveal
+    prisma.contactReveal
       .create({
         data: {
           productId,
           viewerUserId: viewerUserId ?? null,
-          ip,
+          ip: ip ?? null,
           userAgent: ua,
+          // referer, // <- add column first if you want to store it
         },
       })
-      .catch(() => {});
+      .catch(() => void 0);
 
+    // Shape contact payload
     const contact = {
-      name: p.sellerName || "Seller",
-      phone: p.sellerPhone || null,
-      location: p.sellerLocation || null,
+      name: product.sellerName || "Seller",
+      phone: product.sellerPhone || null,
+      location: product.sellerLocation || null,
     };
 
     return noStore({
-      product: { id: p.id, name: p.name },
+      product: { id: product.id, name: product.name },
       contact,
+      // nudge guests to sign in (client shows a soft banner)
       suggestLogin: !viewerUserId,
     });
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.warn("[products/:id/contact GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }

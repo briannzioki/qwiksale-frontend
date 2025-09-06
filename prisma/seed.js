@@ -10,69 +10,39 @@ const prisma = new PrismaClient();
    Config via environment vars
    =============================
 
-   SEED_RESET=1            -> delete test products/favorites/payments first
-   SEED_MIN=40             -> minimum number of products after cloning
-   SEED_SOURCE=/abs/file   -> optional override path to a products module/json
-   SEED_DEMO_USER_EMAIL    -> email for demo seller (default seller@qwiksale.test)
-   SEED_DEMO_USER_NAME     -> name for demo seller (default Demo Seller)
-   SEED_ALLOW_PROD=1       -> allow RESET in production (use with caution!)
+   SEED_RESET=1             -> delete demo/seeded rows (safe default)
+   SEED_RESET_ALL=1         -> delete *all* products (dangerous)
+   SEED_MIN=40              -> minimum rows after cloning
+   SEED_SOURCE=/abs/file    -> optional path to products module/json
+   SEED_DEMO_USER_EMAIL     -> email for demo seller (default seller@qwiksale.test)
+   SEED_DEMO_USER_NAME      -> name for demo seller (default Demo Seller)
+   SEED_ALLOW_PROD=1        -> allow RESET in production (danger!)
 */
 
 const SEED_RESET = process.env.SEED_RESET === "1";
+const SEED_RESET_ALL = process.env.SEED_RESET_ALL === "1";
 const SEED_MIN = Number.isFinite(Number(process.env.SEED_MIN))
   ? Math.max(1, Number(process.env.SEED_MIN))
   : 40;
 
-const SEED_SOURCE = process.env.SEED_SOURCE || ""; // optional explicit file
+const SEED_SOURCE = process.env.SEED_SOURCE || "";
 const DEMO_EMAIL = process.env.SEED_DEMO_USER_EMAIL || "seller@qwiksale.test";
 const DEMO_NAME = process.env.SEED_DEMO_USER_NAME || "Demo Seller";
-
-/* =============================
-   Types (JS comments only)
-   =============================
-  RawProduct = {
-    id?: string|number,
-    name: string,
-    description?: string,
-    category: string,
-    subcategory: string,
-    brand?: string,
-    condition?: "brand new" | "pre-owned" | string,
-    price?: number | string | null,
-    image?: string | null,
-    gallery?: any,
-    location?: string,
-    negotiable?: boolean,
-    createdAt?: string|Date,
-    seller?: { name?, phone?, location?, memberSince?, rating?, sales? },
-    sellerName?, sellerPhone?, sellerLocation?, sellerMemberSince?, sellerRating?, sellerSales?,
-    featured?: boolean
-  }
-*/
 
 /* ==============
    Built-in sample
    ============== */
 const builtinProducts = [
-  // Phones & Tablets
   { name: "Samsung Galaxy A24",  category: "Phones & Tablets", subcategory: "Android Phones", brand: "Samsung", condition: "pre-owned", price: 24500, image: "https://picsum.photos/seed/galaxy-a24/800/600", featured: true,  sellerLocation: "Nairobi" },
   { name: "Apple iPhone 12",     category: "Phones & Tablets", subcategory: "iPhones",        brand: "Apple",   condition: "pre-owned", price: 58000, image: "https://picsum.photos/seed/iphone-12/800/600", sellerLocation: "Nairobi" },
   { name: "Lenovo Tab M10",      category: "Phones & Tablets", subcategory: "Tablets",        brand: "Lenovo",  condition: "brand new", price: 28500, image: "https://picsum.photos/seed/lenovo-m10/800/600", sellerLocation: "Mombasa" },
-
-  // Electronics
   { name: "Sony Bravia 55\" 4K TV", category: "Electronics", subcategory: "TVs", brand: "Sony",   condition: "pre-owned", price: 68000, image: "https://picsum.photos/seed/bravia-55/800/600", featured: true, sellerLocation: "Nakuru" },
   { name: "HP EliteBook 840 G6",    category: "Electronics", subcategory: "Laptops", brand: "HP", condition: "pre-owned", price: 52000, image: "https://picsum.photos/seed/elitebook-840/800/600", sellerLocation: "Eldoret" },
   { name: "LG Soundbar SN5",        category: "Electronics", subcategory: "Audio",   brand: "LG", condition: "brand new", price: 28500, image: "https://picsum.photos/seed/lg-sn5/800/600", sellerLocation: "Kisumu" },
-
-  // Cars
   { name: "Toyota Axio 2014",   category: "Cars", subcategory: "Sedan",      brand: "Toyota", condition: "pre-owned", price: 1150000, image: "https://picsum.photos/seed/axio2014/800/600", sellerLocation: "Nairobi" },
   { name: "Nissan X-Trail 2015",category: "Cars", subcategory: "SUV",        brand: "Nissan", condition: "pre-owned", price: 1650000, image: "https://picsum.photos/seed/xtrail2015/800/600", featured: true, sellerLocation: "Nairobi" },
-
-  // Furniture
   { name: "6-Seater Fabric Sofa", category: "Furniture", subcategory: "Sofas", brand: "Custom", condition: "brand new", price: 78000, image: "https://picsum.photos/seed/sofa-6/800/600", sellerLocation: "Thika" },
   { name: "4x6 Bed (Mahogany)",   category: "Furniture", subcategory: "Beds",  brand: "Custom", condition: "brand new", price: 42000, image: "https://picsum.photos/seed/bed-4x6/800/600", sellerLocation: "Nairobi" },
-
-  // Services
   { name: "Private Tuition",      category: "Services", subcategory: "Education",     brand: "Private", condition: "pre-owned", price: null, image: "https://picsum.photos/seed/tuition/800/600", sellerLocation: "Nairobi", featured: true },
   { name: "Plumbing Services",    category: "Services", subcategory: "Home Services", brand: "Private", condition: "pre-owned", price: null, image: "https://picsum.photos/seed/plumbing/800/600", sellerLocation: "Nairobi" },
 ];
@@ -106,7 +76,6 @@ function loadSeed() {
         continue;
       }
 
-      // Try to require .js or transpiled .ts
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const mod = require(p);
       const arr =
@@ -131,12 +100,19 @@ function toPrice(v) {
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : null;
 }
 
+// Accept 07…/01…/+2547…/+2541…/7…/1… and store as 2547XXXXXXXX or 2541XXXXXXXX
 function normalizePhone(input) {
   if (!input) return null;
-  let s = String(input).replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07XXXXXXXX -> 2547XXXXXXXX
-  if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, "");
-  if (!/^2547\d{8}$/.test(s)) return null;
+  let s = String(input).trim();
+
+  if (/^\+254(7|1)\d{8}$/.test(s)) s = s.replace(/^\+/, "");
+  s = s.replace(/\D+/g, "");
+
+  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) s = "254" + s.slice(1);
+  if (/^7\d{8}$/.test(s) || /^1\d{8}$/.test(s)) s = "254" + s;
+
+  if (!/^254(7|1)\d{8}$/.test(s)) return null;
+  if (s.length > 12) s = s.slice(0, 12);
   return s;
 }
 
@@ -156,29 +132,36 @@ function pick(arr, i) {
   return arr[i % arr.length];
 }
 
+function coerceGallery(v) {
+  if (!Array.isArray(v)) return [];
+  return v.map((x) => String(x)).filter((s) => s.length > 0);
+}
+
 /** Ensure we have at least `minCount` rows by lightly cloning with small diffs. */
 function makeAtLeast(seed, minCount) {
   if (seed.length >= minCount) return seed;
 
   const brands = [
-    "Samsung", "Apple", "Tecno", "HP", "Dell", "Toyota", "Nissan",
-    "LG", "Sony", "Generic", "Local", "Chicco", "Coleman",
-    "Yamaha", "Pioneer", "Nike", "Adidas",
+    "Samsung","Apple","Tecno","Infinix","HP","Dell","Lenovo","Sony","LG",
+    "Toyota","Nissan","Mazda","Subaru","Generic","Custom",
   ];
 
   const out = [...seed];
   let i = 0;
   while (out.length < minCount) {
     const base = pick(seed, i);
-    const bump = ((i % 7) - 3) * 0.03; // -9% … +9%
-    const clone = {
+    const bump = ((i % 7) - 3) * 0.04; // -12% … +12%
+    out.push({
       ...base,
       id: undefined,
       name: `${base.name} • Batch ${Math.floor(i / Math.max(seed.length, 1)) + 1}`,
       price: clonePrice(toPrice(base.price), bump),
       brand: base.brand || pick(brands, i),
       createdAt: randomCreatedAt(),
-      image: typeof base.image === "string" && base.image ? base.image : "https://picsum.photos/seed/qwiksale-default/800/600",
+      image:
+        typeof base.image === "string" && base.image
+          ? base.image
+          : "https://picsum.photos/seed/qwiksale-default/800/600",
       gallery:
         Array.isArray(base.gallery) && base.gallery.length > 0
           ? base.gallery.map(String)
@@ -199,17 +182,11 @@ function makeAtLeast(seed, minCount) {
           : typeof base.seller?.sales === "number"
           ? base.seller.sales
           : 1,
-      featured: Boolean(base.featured && i % 3 !== 0), // keep some featured
-    };
-    out.push(clone);
+      featured: Boolean(base.featured && i % 3 !== 0),
+    });
     i++;
   }
   return out;
-}
-
-function coerceGallery(v) {
-  if (!Array.isArray(v)) return [];
-  return v.map((x) => String(x)).filter((s) => s.length > 0);
 }
 
 /* Map RawProduct -> ProductCreateMany row */
@@ -283,7 +260,7 @@ async function main() {
     );
   }
 
-  // 1) Demo seller (only fields that exist in your User schema)
+  // 1) Demo seller
   const demoSeller = await prisma.user.upsert({
     where: { email: DEMO_EMAIL },
     update: { name: DEMO_NAME, subscription: "GOLD" },
@@ -302,10 +279,36 @@ async function main() {
 
   // 4) Optional reset
   if (SEED_RESET) {
-    console.log("⚠️  Resetting test data…");
-    await prisma.favorite.deleteMany({});
-    await (prisma.payment?.deleteMany?.({}).catch(() => {}));
-    await prisma.product.deleteMany({});
+    console.log("⚠️  Resetting seed/demo data…");
+    try {
+      if (SEED_RESET_ALL) {
+        await prisma.favorite.deleteMany({});
+        await (prisma.payment?.deleteMany?.({}).catch(() => {}));
+        await prisma.product.deleteMany({});
+      } else {
+        // safer default: wipe demo/seeded rows only
+        const seeded = await prisma.product.findMany({
+          where: {
+            OR: [
+              { sellerId: demoSeller.id },
+              { name: { contains: "• Batch" } },
+              { sellerName: "Private Seller" },
+            ],
+          },
+          select: { id: true },
+        });
+        const ids = seeded.map((x) => x.id);
+        if (ids.length) {
+          await prisma.favorite.deleteMany({ where: { productId: { in: ids } } });
+          await prisma.product.deleteMany({ where: { id: { in: ids } } });
+        }
+        await prisma.favorite.deleteMany({ where: { userId: demoSeller.id } });
+        await (prisma.payment?.deleteMany?.({ userId: demoSeller.id }).catch(() => {}));
+      }
+      console.log("• Reset complete");
+    } catch (e) {
+      console.warn("• Reset failed (continuing):", e?.message || e);
+    }
   }
 
   // 5) Insert in batches
@@ -319,17 +322,21 @@ async function main() {
   }
 
   // 6) Seed favorites for demo seller
-  const firstTwo = await prisma.product.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 2,
-    select: { id: true },
-  });
-  for (const p of firstTwo) {
-    await prisma.favorite.upsert({
-      where: { userId_productId: { userId: demoSeller.id, productId: p.id } },
-      update: {},
-      create: { userId: demoSeller.id, productId: p.id },
+  try {
+    const firstTwo = await prisma.product.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 2,
+      select: { id: true },
     });
+    for (const p of firstTwo) {
+      await prisma.favorite.upsert({
+        where: { userId_productId: { userId: demoSeller.id, productId: p.id } },
+        update: {},
+        create: { userId: demoSeller.id, productId: p.id },
+      });
+    }
+  } catch {
+    // favorites model may not exist — ignore
   }
 
   // 7) Summaries

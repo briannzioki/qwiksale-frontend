@@ -1,29 +1,37 @@
 // src/app/components/ThemeToggle.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ThemeMode = "light" | "dark" | "system";
-const LS_KEY = "theme";
-const prefersDarkQuery = "(prefers-color-scheme: dark)";
 
-function isDarkFor(mode: ThemeMode, mql: MediaQueryList | null) {
+const LS_KEY = "theme";
+const MEDIA_QUERY = "(prefers-color-scheme: dark)";
+
+function readStoredMode(): ThemeMode | null {
+  try {
+    const raw = (localStorage.getItem(LS_KEY) || "").toLowerCase();
+    return raw === "light" || raw === "dark" || raw === "system" ? (raw as ThemeMode) : null;
+  } catch {
+    return null;
+  }
+}
+
+function isDarkFor(mode: ThemeMode, mql: MediaQueryList | null): boolean {
   if (mode === "dark") return true;
   if (mode === "light") return false;
-  return !!mql?.matches; // system
+  return !!mql?.matches;
 }
 
 function applyTheme(mode: ThemeMode, mql: MediaQueryList | null) {
-  const dark = isDarkFor(mode, mql);
   const root = document.documentElement;
+  const dark = isDarkFor(mode, mql);
 
-  // Tailwind "dark" strategy
   root.classList.toggle("dark", dark);
+  root.style.colorScheme = dark ? "dark" : "light";
+  // Instead of: root.dataset.themeMode = mode;  // ❌ TS4111
+  root.setAttribute("data-theme-mode", mode);   // ✅ explicit attribute
 
-  // Optional: help native form controls match
-  root.style.colorScheme = dark ? ("dark" as const) : ("light" as const);
-
-  // Persist choice
   try {
     localStorage.setItem(LS_KEY, mode);
   } catch {}
@@ -32,76 +40,108 @@ function applyTheme(mode: ThemeMode, mql: MediaQueryList | null) {
 export default function ThemeToggle({
   className = "",
   showLabel = false,
+  defaultMode = "system",
+  persist = true,
 }: {
   className?: string;
   showLabel?: boolean;
+  /** Initial mode if nothing in localStorage (default: "system") */
+  defaultMode?: ThemeMode;
+  /** Persist choice to localStorage (default: true) */
+  persist?: boolean;
 }) {
   const [mounted, setMounted] = useState(false);
-  const [mode, setMode] = useState<ThemeMode>("system");
+  const [mode, setMode] = useState<ThemeMode>(defaultMode);
   const mqlRef = useRef<MediaQueryList | null>(null);
 
-  // Determine the next mode when clicking the button (cycles: light → dark → system)
   const nextMode = useMemo<ThemeMode>(() => {
     if (mode === "light") return "dark";
     if (mode === "dark") return "system";
     return "light";
   }, [mode]);
 
-  const label = useMemo(() => {
-    if (mode === "light") return "Light";
-    if (mode === "dark") return "Dark";
-    return "System";
-  }, [mode]);
+  const label = useMemo(
+    () => (mode === "light" ? "Light" : mode === "dark" ? "Dark" : "System"),
+    [mode]
+  );
+
+  const emitChange = useCallback((newMode: ThemeMode) => {
+    try {
+      window.dispatchEvent(new CustomEvent("theme:change", { detail: { mode: newMode } }));
+      (globalThis as any).__onThemeModeChange?.(newMode);
+    } catch {}
+  }, []);
 
   useEffect(() => {
     setMounted(true);
 
-    // Init MediaQueryList for system detection
-    const mql = window.matchMedia(prefersDarkQuery);
+    const mql =
+      typeof window !== "undefined" && "matchMedia" in window
+        ? window.matchMedia(MEDIA_QUERY)
+        : null;
     mqlRef.current = mql;
 
-    // Bootstrap from localStorage (matches the inline script in layout.tsx)
-    let initial: ThemeMode = "system";
-    try {
-      const saved = (localStorage.getItem(LS_KEY) || "").toLowerCase();
-      if (saved === "light" || saved === "dark" || saved === "system") initial = saved as ThemeMode;
-    } catch {}
+    // Bootstrap from localStorage (or prop default)
+    let initial = defaultMode;
+    if (persist) {
+      const stored = readStoredMode();
+      if (stored) initial = stored;
+    }
 
     setMode(initial);
     applyTheme(initial, mql);
 
-    // React to OS theme changes when in "system" mode
+    // Respond to OS changes in "system" mode
+    const modeRef = { current: initial } as { current: ThemeMode };
     const onSystemChange = () => {
-      if (mode === "system") applyTheme("system", mqlRef.current);
+      if (modeRef.current === "system") {
+        applyTheme("system", mqlRef.current);
+        emitChange("system");
+      }
     };
-    mql.addEventListener?.("change", onSystemChange);
+    const offMql = mql?.addEventListener
+      ? (mql.addEventListener("change", onSystemChange), () =>
+          mql.removeEventListener("change", onSystemChange))
+      : mql?.addListener
+      ? (mql.addListener(onSystemChange), () => mql.removeListener(onSystemChange))
+      : () => {};
 
-    // Keep multiple tabs in sync
+    // Cross-tab sync
     const onStorage = (e: StorageEvent) => {
-      if (e.key === LS_KEY && e.newValue) {
-        const v = e.newValue as ThemeMode;
-        if (v === "light" || v === "dark" || v === "system") {
-          setMode(v);
-          applyTheme(v, mqlRef.current);
-        }
+      if (!persist || e.key !== LS_KEY || !e.newValue) return;
+      const v = e.newValue as ThemeMode;
+      if (v === "light" || v === "dark" || v === "system") {
+        modeRef.current = v;
+        setMode(v);
+        applyTheme(v, mqlRef.current);
+        emitChange(v);
       }
     };
     window.addEventListener("storage", onStorage);
 
     return () => {
-      mql.removeEventListener?.("change", onSystemChange);
+      offMql();
       window.removeEventListener("storage", onStorage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function handleClick() {
-    const next = nextMode;
-    setMode(next);
-    applyTheme(next, mqlRef.current);
-  }
+  const handleSetMode = useCallback(
+    (m: ThemeMode) => {
+      setMode(m);
+      applyTheme(m, mqlRef.current);
+      emitChange(m);
+      if (!persist) {
+        try {
+          localStorage.removeItem(LS_KEY);
+        } catch {}
+      }
+    },
+    [emitChange, persist]
+  );
 
-  // Hydration-safe placeholder
+  const handleClick = useCallback(() => handleSetMode(nextMode), [handleSetMode, nextMode]);
+
   if (!mounted) {
     return (
       <button
@@ -109,7 +149,6 @@ export default function ThemeToggle({
         className={`rounded-xl p-2 transition hover:bg-white/20 ${className}`}
         title="Toggle theme"
       >
-        {/* simple dot while hydrating */}
         <span className="inline-block w-2 h-2 rounded-full bg-white/70" />
       </button>
     );
@@ -119,24 +158,22 @@ export default function ThemeToggle({
     <button
       onClick={handleClick}
       className={`inline-flex items-center gap-2 rounded-xl p-2 text-sm transition hover:bg-white/20 ${className}`}
+      role="switch"
+      aria-pressed={mode === "dark"}
       aria-label={`Theme: ${label}. Click to switch to ${nextMode}.`}
       title={`Theme: ${label} — click to switch to ${nextMode}`}
     >
-      {/* Icon for current mode */}
       {mode === "dark" ? (
-        // Sun (indicates clicking will go to light? we show current state icon; label explains next)
-        <svg width="20" height="20" viewBox="0 0 24 24" className="text-yellow-300" fill="none">
+        <svg width="20" height="20" viewBox="0 0 24 24" className="text-yellow-300" fill="none" aria-hidden>
           <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.64 5.64L4.22 4.22M19.78 19.78l-1.42-1.42M5.64 18.36l-1.42 1.42M19.78 4.22l-1.42 1.42" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
           <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2"/>
         </svg>
       ) : mode === "light" ? (
-        // Moon
-        <svg width="20" height="20" viewBox="0 0 24 24" className="text-slate-200" fill="none">
+        <svg width="20" height="20" viewBox="0 0 24 24" className="text-slate-700 dark:text-slate-200" fill="none" aria-hidden>
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" strokeWidth="2" fill="currentColor"/>
         </svg>
       ) : (
-        // Laptop (system)
-        <svg width="20" height="20" viewBox="0 0 24 24" className="text-white/90" fill="none">
+        <svg width="20" height="20" viewBox="0 0 24 24" className="text-gray-900 dark:text-gray-100" fill="none" aria-hidden>
           <rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="2"/>
           <path d="M2 20h20" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
         </svg>

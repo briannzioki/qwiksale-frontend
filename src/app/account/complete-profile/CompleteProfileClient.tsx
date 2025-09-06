@@ -1,11 +1,12 @@
 // src/app/account/complete-profile/CompleteProfileClient.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 
 /* ----------------------------- Types & helpers ----------------------------- */
+
 type Me = {
   id: string;
   email: string | null;
@@ -34,18 +35,19 @@ function looksLikeValidUsername(u: string) {
   return /^[a-zA-Z0-9._]{3,24}$/.test(u);
 }
 
+type NameStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "error";
+
+/* -------------------------------- Component -------------------------------- */
+
 export default function CompleteProfileClient() {
   const router = useRouter();
   const sp = useSearchParams();
-
-  // Accept both ?next= and ?return= to avoid mismatches with older links
   const ret = useMemo(() => sp.get("next") || sp.get("return") || "/", [sp]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
 
-  // fields
   const [username, setUsername] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [address, setAddress] = useState("");
@@ -53,22 +55,28 @@ export default function CompleteProfileClient() {
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("");
 
-  const whatsappNormalized = whatsapp ? normalizeKePhone(whatsapp) : "";
+  const [nameStatus, setNameStatus] = useState<NameStatus>("idle");
+  const usernameAbort = useRef<AbortController | null>(null);
 
-  /* --------------------------------- Load me -------------------------------- */
+  const whatsappNormalized = useMemo(
+    () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
+    [whatsapp]
+  );
+
+  /* -------------------------------- Load /api/me ------------------------------- */
   useEffect(() => {
     let alive = true;
+    const ctrl = new AbortController();
+
     (async () => {
       try {
-        const r = await fetch("/api/me", { cache: "no-store" });
+        const r = await fetch("/api/me", { cache: "no-store", signal: ctrl.signal });
         if (r.status === 401) {
           toast.error("Please sign in.");
           router.replace(`/signin?callbackUrl=${encodeURIComponent(ret)}`);
           return;
         }
         const j = await r.json().catch(() => null);
-
-        // Handle either { user: {...} } or the user object at root
         const u: Me | null =
           j?.user && typeof j.user === "object"
             ? j.user
@@ -84,28 +92,87 @@ export default function CompleteProfileClient() {
         }
 
         setMe(u);
-        setUsername(u.username ?? "");
+        setUsername((u.username ?? "").trim());
         setWhatsapp(u.whatsapp ?? "");
         setAddress(u.address ?? "");
         setPostal(u.postalCode ?? "");
         setCity(u.city ?? "");
         setCountry(u.country ?? "");
-      } catch {
-        toast.error("Could not load your account. Try again.");
+      } catch (e: any) {
+        if (e?.name !== "AbortError") toast.error("Could not load your account. Try again.");
       } finally {
         alive && setLoading(false);
       }
     })();
+
     return () => {
       alive = false;
+      ctrl.abort();
     };
   }, [router, ret]);
 
-  /* --------------------------------- Save ---------------------------------- */
+  /* ------------------- Debounced username availability check ------------------- */
+  useEffect(() => {
+    const u = username.trim();
+
+    if (!u) {
+      setNameStatus("idle");
+      return;
+    }
+    if (!looksLikeValidUsername(u)) {
+      setNameStatus("invalid");
+      return;
+    }
+
+    setNameStatus("checking");
+
+    const t = setTimeout(async () => {
+      usernameAbort.current?.abort();
+      const ctrl = new AbortController();
+      usernameAbort.current = ctrl;
+
+      try {
+        const res = await fetch(`/api/username/check?u=${encodeURIComponent(u)}`, {
+          signal: ctrl.signal,
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          setNameStatus("error");
+          return;
+        }
+        const j = await res.json();
+        if (j?.valid === false) {
+          setNameStatus("invalid");
+        } else if (j?.available === true) {
+          setNameStatus("available");
+        } else {
+          setNameStatus("taken");
+        }
+      } catch (e: any) {
+        if (e?.name !== "AbortError") setNameStatus("error");
+      }
+    }, 400);
+
+    return () => clearTimeout(t);
+  }, [username]);
+
+  /* ----------------------------------- Save ----------------------------------- */
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!looksLikeValidUsername(username)) {
+    const u = username.trim();
+
+    if (!looksLikeValidUsername(u)) {
       toast.error("Username must be 3–24 chars (letters, numbers, dot, underscore).");
+      return;
+    }
+    if (nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "checking") {
+      toast.error(
+        nameStatus === "checking"
+          ? "Please wait for the username check…"
+          : nameStatus === "taken"
+          ? "That username is taken."
+          : "Invalid username."
+      );
       return;
     }
     if (whatsapp && !looksLikeValidKePhone(whatsapp)) {
@@ -119,19 +186,18 @@ export default function CompleteProfileClient() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username,
+          username: u,
           whatsapp: whatsappNormalized || null,
-          address: address || null,
-          postalCode: postalCode || null,
-          city: city || null,
-          country: country || null,
+          address: address.trim() || null,
+          postalCode: postalCode.trim() || null,
+          city: city.trim() || null,
+          country: country.trim() || null,
         }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || j?.error) throw new Error(j?.error || "Failed to save");
+      if (!r.ok || j?.error) throw new Error(j?.error || `Failed to save (${r.status})`);
 
       toast.success("Profile saved!");
-      // After saving, server should mark profile as complete. Go back.
       router.replace(ret);
     } catch (e: any) {
       toast.error(e?.message || "Could not save profile");
@@ -140,7 +206,26 @@ export default function CompleteProfileClient() {
     }
   }
 
-  /* --------------------------------- UI ------------------------------------ */
+  /* --------------------------------- UI bits --------------------------------- */
+  const nameHint =
+    nameStatus === "available"
+      ? "Looks good — available."
+      : nameStatus === "taken"
+      ? "That username is taken."
+      : nameStatus === "invalid"
+      ? "Use 3–24 chars: letters, numbers, dot, underscore."
+      : nameStatus === "checking"
+      ? "Checking availability…"
+      : "";
+
+  const nameHintClass =
+    nameStatus === "available"
+      ? "text-emerald-700"
+      : nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "error"
+      ? "text-red-600"
+      : "text-gray-500";
+
+  /* ---------------------------------- Render --------------------------------- */
   if (loading) {
     return (
       <div className="container-page py-8">
@@ -159,19 +244,39 @@ export default function CompleteProfileClient() {
           </p>
         </div>
 
-        <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4">
+        <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4" noValidate>
           <div>
-            <label className="block text-sm font-semibold mb-1">Username</label>
+            <label htmlFor="username" className="block text-sm font-semibold mb-1">
+              Username
+            </label>
             <input
+              id="username"
               className="w-full rounded-lg border px-3 py-2"
               placeholder="e.g. brian254"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              onBlur={(e) => setUsername(e.target.value.trim())}
               required
+              aria-invalid={
+                nameStatus === "taken" || nameStatus === "invalid" ? true : undefined
+              }
+              aria-describedby="username-help username-status"
+              disabled={saving}
+              inputMode="text"
+              autoComplete="username"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p id="username-help" className="text-xs text-gray-500 mt-1">
               Shown on your listings. 3–24 chars, letters/numbers/dot/underscore.
             </p>
+            {nameHint && (
+              <p
+                id="username-status"
+                className={`text-xs mt-1 ${nameHintClass}`}
+                aria-live="polite"
+              >
+                {nameHint}
+              </p>
+            )}
           </div>
 
           <div>
@@ -182,6 +287,7 @@ export default function CompleteProfileClient() {
               value={whatsapp}
               onChange={(e) => setWhatsapp(e.target.value)}
               aria-invalid={!!whatsapp && !looksLikeValidKePhone(whatsapp)}
+              disabled={saving}
             />
             <p className="text-xs text-gray-500 mt-1">
               Will be stored as <code className="font-mono">{whatsappNormalized || "—"}</code>
@@ -195,6 +301,7 @@ export default function CompleteProfileClient() {
                 className="w-full rounded-lg border px-3 py-2"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
+                disabled={saving}
               />
             </div>
             <div>
@@ -203,6 +310,7 @@ export default function CompleteProfileClient() {
                 className="w-full rounded-lg border px-3 py-2"
                 value={country}
                 onChange={(e) => setCountry(e.target.value)}
+                disabled={saving}
               />
             </div>
           </div>
@@ -214,6 +322,7 @@ export default function CompleteProfileClient() {
                 className="w-full rounded-lg border px-3 py-2"
                 value={postalCode}
                 onChange={(e) => setPostal(e.target.value)}
+                disabled={saving}
               />
             </div>
             <div>
@@ -222,6 +331,7 @@ export default function CompleteProfileClient() {
                 className="w-full rounded-lg border px-3 py-2"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
+                disabled={saving}
               />
             </div>
           </div>
@@ -229,15 +339,16 @@ export default function CompleteProfileClient() {
           <div className="flex gap-2 pt-2">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || nameStatus === "checking"}
               className="rounded-xl bg-[#161748] text-white px-4 py-2 font-semibold hover:opacity-90 disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save & continue"}
             </button>
             <button
               type="button"
-              className="rounded-xl border px-4 py-2"
+              className="rounded-xl border px-4 py-2 disabled:opacity-60"
               onClick={() => router.replace(ret)}
+              disabled={saving}
             >
               Skip for now
             </button>

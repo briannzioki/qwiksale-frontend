@@ -1,0 +1,116 @@
+// src/app/api/username/check/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
+
+/* -------------------------------- Prisma -------------------------------- */
+// Safe singleton (avoids multiple clients during dev HMR)
+const g = globalThis as unknown as { __qsPrisma?: PrismaClient };
+export const prisma = g.__qsPrisma ?? new PrismaClient();
+if (!g.__qsPrisma) g.__qsPrisma = prisma;
+
+/* ------------------------------ Tiny rate limit ------------------------------ */
+/** Super simple 15 req/min per key (memory-only; fine for dev/preview). */
+const rlStore = new Map<string, { count: number; resetAt: number }>();
+const RL_MAX = 15;
+const RL_WINDOW_MS = 60 * 1000;
+function rateLimitTry(key: string) {
+  const now = Date.now();
+  const cur = rlStore.get(key);
+  if (!cur || now >= cur.resetAt) {
+    rlStore.set(key, { count: 1, resetAt: now + RL_WINDOW_MS });
+    return { success: true };
+  }
+  if (cur.count >= RL_MAX) return { success: false };
+  cur.count += 1;
+  return { success: true };
+}
+
+/* ------------------------------ Optional auth ------------------------------ */
+/** Best-effort NextAuth session loader. Works even if `@/auth` is absent. */
+let getSession: null | (() => Promise<any>) = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const maybe = require("@/auth") as { auth?: () => Promise<any> } | undefined;
+  if (maybe?.auth) getSession = maybe.auth;
+} catch {
+  // module not present; proceed without session (still works)
+}
+
+/* --------------------------------- helpers --------------------------------- */
+function noStore(json: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(json, init);
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
+  return res;
+}
+
+const RE = /^[a-zA-Z0-9._]{3,24}$/;
+
+/* ---------------------------------- GET ---------------------------------- */
+export async function GET(req: NextRequest) {
+  try {
+    // per-IP RL (15/min)
+    const ip =
+      (req.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim() ||
+      req.headers.get("x-real-ip") ||
+      "0.0.0.0";
+    const rl = rateLimitTry(`username-check:${ip}`);
+    if (!rl.success) return noStore({ error: "Too many requests" }, { status: 429 });
+
+    const url = new URL(req.url);
+    const raw =
+      (url.searchParams.get("u") ??
+        url.searchParams.get("username") ??
+        "")!.trim();
+
+    const normalized = raw; // keep original casing for display; compare case-insensitive
+    const valid = RE.test(normalized);
+
+    if (!normalized) {
+      return noStore({
+        available: false,
+        valid: false,
+        normalized,
+        reason: "empty",
+      });
+    }
+    if (!valid) {
+      return noStore({
+        available: false,
+        valid: false,
+        normalized,
+        reason: "invalid",
+      });
+    }
+
+    // who is asking? (so their *current* username counts as available)
+    let meId: string | undefined;
+    if (getSession) {
+      try {
+        const session = await getSession();
+        meId = (session as any)?.user?.id as string | undefined;
+      } catch {
+        /* ignore auth errors; treat as guest */
+      }
+    }
+
+    const existing = await prisma.user.findFirst({
+      where: { username: { equals: normalized, mode: "insensitive" } },
+      select: { id: true },
+    });
+
+    const available = !existing || (!!meId && existing.id === meId);
+
+    return noStore({ available, valid: true, normalized });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("[/api/username/check] error:", e);
+    return noStore({ error: "Server error" }, { status: 500 });
+  }
+}

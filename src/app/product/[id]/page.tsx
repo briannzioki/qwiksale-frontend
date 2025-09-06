@@ -1,4 +1,3 @@
-// src/app/product/[id]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -10,6 +9,7 @@ import { useProducts } from "@/app/lib/productsStore";
 import FavoriteButton from "@/app/components/FavoriteButton";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
 
+/** Infer a single product shape from the products store */
 type ProductFromStore = ReturnType<typeof useProducts> extends { products: infer U }
   ? U extends (infer V)[]
     ? V
@@ -23,6 +23,7 @@ type RevealResponse = {
   error?: string;
 };
 
+/** Product shape we’ll accept from either cache or API */
 type FetchedProduct = Partial<ProductFromStore> & {
   id: string;
   name: string;
@@ -44,7 +45,7 @@ type FetchedProduct = Partial<ProductFromStore> & {
   sellerMemberSince?: string | null;
   sellerRating?: number | null;
   sellerSales?: number | null;
-  seller?: { id?: string; username?: string | null; name?: string | null } | null; // ⬅️ username included
+  seller?: { id?: string; username?: string | null; name?: string | null } | null;
 };
 
 function fmtKES(n?: number | null) {
@@ -96,7 +97,7 @@ export default function ProductPage() {
       try {
         setFetching(true);
         setFetchErr(null);
-        const r = await fetch(`/api/products/${id}`, { cache: "no-store" });
+        const r = await fetch(`/api/products/${encodeURIComponent(id)}`, { cache: "no-store" });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
         if (!cancelled) setFetched(j as FetchedProduct);
@@ -144,14 +145,14 @@ export default function ProductPage() {
     };
   }, [display]);
 
-  const isOwner = Boolean(viewerId && viewerId === seller.id);
+  const isOwner = Boolean(viewerId && seller.id && viewerId === seller.id);
 
   async function handleReveal() {
     if (!id) return;
     setRevealLoading(true);
     setRevealError(null);
     try {
-      const res = await fetch(`/api/products/${id}/contact`, { cache: "no-store" });
+      const res = await fetch(`/api/products/${encodeURIComponent(id)}/contact`, { cache: "no-store" });
       const data: RevealResponse = await res.json();
       if (!res.ok || data?.error) {
         setRevealError(data?.error || "Failed to fetch contact.");
@@ -185,6 +186,7 @@ export default function ProductPage() {
     }
   }
 
+  // ---------- States ----------
   if (!ready && !display) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -218,6 +220,7 @@ export default function ProductPage() {
     return <div className="text-gray-600 dark:text-slate-300">Product not found.</div>;
   }
 
+  // ---------- UI ----------
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
       {/* Images */}
@@ -237,7 +240,7 @@ export default function ProductPage() {
           />
 
           <div className="absolute top-3 right-3 z-10 flex gap-2">
-            <button onClick={copyLink} className="btn-ghost px-2 py-1 text-xs">
+            <button onClick={copyLink} className="btn-ghost px-2 py-1 text-xs" title="Copy link">
               Copy link
             </button>
             <FavoriteButton productId={display.id} />
@@ -256,7 +259,8 @@ export default function ProductPage() {
                   id={display.id}
                   className="rounded bg-red-600/90 text-white px-2 py-1 text-xs hover:bg-red-600"
                   label="Delete"
-                  afterDelete={() => {
+                  confirmText="Delete this listing? This cannot be undone."
+                  afterDeleteAction={() => {
                     toast.success("Listing deleted");
                     router.push("/dashboard");
                   }}
@@ -304,7 +308,7 @@ export default function ProductPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
             <FavoriteButton productId={display.id} />
           </div>
         </div>

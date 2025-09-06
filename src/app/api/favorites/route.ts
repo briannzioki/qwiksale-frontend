@@ -14,9 +14,12 @@ function noStore(jsonOrRes: unknown, init?: ResponseInit): NextResponse {
     jsonOrRes instanceof NextResponse
       ? jsonOrRes
       : NextResponse.json(jsonOrRes as any, init);
+
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  // Important for per-user responses so cache/CDN knows to vary by cookie
+  res.headers.set("Vary", "Cookie");
   return res;
 }
 
@@ -37,7 +40,6 @@ async function requireUserId(): Promise<string | null> {
 
 /** Local wrapper to avoid EventName union friction while we roll out events. */
 function trackSafe(event: string, props: Record<string, unknown> = {}): void {
-  // cast to any so we don't have to edit the global EventName union right now
   (track as any)(event, props);
 }
 
@@ -76,10 +78,14 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const format = (url.searchParams.get("format") || "ids").toLowerCase();
-    const includeInactive = (url.searchParams.get("includeInactive") || "0").trim() === "1";
+    const includeInactive =
+      (url.searchParams.get("includeInactive") || "0").trim() === "1";
 
     const limitRaw = Number(url.searchParams.get("limit") || "50");
-    const limit = Math.min(Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50), 200);
+    const limit = Math.min(
+      Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50),
+      200
+    );
 
     const cursorStr = url.searchParams.get("cursor") || "";
     const cursor = cursorStr ? new Date(cursorStr) : null;
@@ -121,12 +127,12 @@ export async function GET(req: Request) {
         },
       });
 
-      const nextCursor =
-        favorites.length > 0
-          ? favorites[favorites.length - 1].createdAt.toISOString()
-          : null;
+      // Safe: element may be undefined when array is empty
+      const lastFull = favorites.at(-1);
+      const nextCursor = lastFull?.createdAt
+        ? lastFull.createdAt.toISOString()
+        : null;
 
-      // analytics (read event)
       trackSafe("favorites_listed", {
         userId,
         format: "full",
@@ -148,11 +154,13 @@ export async function GET(req: Request) {
         select: { productId: true, createdAt: true },
       });
 
-    const ids = rows.map((r: { productId: string; createdAt: Date }) => r.productId);
-    const nextCursor =
-      rows.length > 0 ? rows[rows.length - 1].createdAt.toISOString() : null;
+    const ids = rows.map((r) => r.productId);
 
-    // analytics (read event)
+    const lastRow = rows.at(-1);
+    const nextCursor = lastRow?.createdAt
+      ? lastRow.createdAt.toISOString()
+      : null;
+
     trackSafe("favorites_listed", {
       userId,
       format: "ids",
@@ -189,7 +197,6 @@ export async function POST(req: Request) {
       create: { userId, productId: pid },
     });
 
-    // analytics
     trackSafe("favorite_added", { userId, productId: pid });
 
     return noStore({ ok: true, added: true, productId: pid });
@@ -209,12 +216,10 @@ export async function DELETE(req: Request) {
     const pid = await getProductIdFromReq(req);
     if (!pid) return noStore({ error: "productId is required" }, { status: 400 });
 
-    // Idempotent delete
     await prisma.favorite
       .delete({ where: { userId_productId: { userId, productId: pid } } })
-      .catch(() => null);
+      .catch(() => null); // idempotent
 
-    // analytics
     trackSafe("favorite_removed", { userId, productId: pid });
 
     return noStore({ ok: true, removed: true, productId: pid });

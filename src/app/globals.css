@@ -1,4 +1,10 @@
 /* src/app/globals.css */
+
+/* If stylelint is enabled, silence Tailwind at-rules warnings in this file. */
+ /* stylelint-disable at-rule-no-unknown */
+ /* @config "../tailwind.config.ts" */
+
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -36,18 +42,24 @@
   /* Smooth fonts */
   html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
+  /* Text selection */
+  ::selection {
+    background: color-mix(in oklab, var(--brand-blue) 18%, #0000);
+    color: inherit;
+  }
+
   /* Keep form controls readable in both themes */
   input, select, textarea, button {
     @apply text-gray-900 dark:text-slate-100;
   }
   input::placeholder,
-textarea::placeholder {
-  @apply text-gray-500;
-}
-.dark input::placeholder,
-.dark textarea::placeholder {
-  @apply text-slate-400;
-}
+  textarea::placeholder {
+    @apply text-gray-500;
+  }
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    @apply text-slate-400;
+  }
 
   /* Default control backgrounds (can be overridden per component) */
   input, select, textarea {
@@ -55,8 +67,34 @@ textarea::placeholder {
   }
 
   /* Accessible focus */
+  :focus-visible {
+    outline: 0;
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand-blue) 80%, #fff 0%);
+  }
   input:focus, select:focus, textarea:focus, button:focus {
     @apply outline-none ring-2 ring-[#39a0ca];
+  }
+
+  /* Reduced motion friendliness */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Scrollbar (WebKit) */
+  *::-webkit-scrollbar {
+    width: 10px; height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(0,0,0,.15);
+    border-radius: 9999px;
+  }
+  .dark *::-webkit-scrollbar-thumb {
+    background-color: rgba(255,255,255,.18);
   }
 }
 
@@ -161,20 +199,64 @@ textarea::placeholder {
            disabled:opacity-60 disabled:cursor-not-allowed;
   }
 
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs
+           bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700;
+  }
+  .badge-verified {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs
+           bg-[#161748] text-white;
+  }
+
+  /* Skeleton loader (used widely) */
+  .skeleton {
+    @apply animate-pulse bg-gray-200/70 dark:bg-slate-700/40;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255,255,255,.35),
+      transparent
+    );
+    background-size: 200% 100%;
+    background-position: 200% 0;
+  }
+
   /* Subtle shadow used by hero headers */
   .shadow-soft { @apply shadow-[0_10px_30px_-10px_rgba(0,0,0,0.25)]; }
 
   /* Optional utility for links on light surfaces */
   .link { @apply text-[#161748] hover:text-[#f95d9b]; }
+
+  /* Inline kbd styling for shortcuts */
+  kbd {
+    @apply inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px]
+           bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700
+           font-medium text-gray-700 dark:text-slate-200;
+  }
 }
 
 /* Utilities layer for tiny fallbacks/extensions */
 @layer utilities {
   /* Fallback for line-clamp-2 if plugin is not enabled */
   .line-clamp-2 {
+    /* Standard property for modern engines */
+    line-clamp: 2;
+    /* WebKit legacy */
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    /* Shared */
     overflow: hidden;
   }
+
+  /* Break long tokens (ids, hashes) gracefully */
+  .break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
+
+  /* Prose tweaks when using @tailwind/typography (if present) */
+  .prose :where(code):not(:where([class~="not-prose"] *)) {
+    @apply rounded-md bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 text-[0.85em];
+  }
 }
+
+/* stylelint-enable at-rule-no-unknown */
