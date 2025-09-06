@@ -3,9 +3,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma"; // keep your path if valid
+import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 
 /* ---------------- tiny utils ---------------- */
@@ -41,8 +40,7 @@ function parseBoolean(v: unknown): boolean | undefined {
 }
 
 /* ---------------- GET /api/products/[id]/feature ---------------- */
-/** Read current featured state (no auth required). */
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: { id: string } }) {
   try {
     const id = (params?.id || "").trim();
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
@@ -62,14 +60,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 /* --------------- PATCH /api/products/[id]/feature --------------- */
-/**
- * Toggle featured flag. Admin-only.
- * Accepts:
- *  - JSON body: { featured: boolean, force?: boolean }
- *  - OR query:  ?featured=true&force=1
- * Default rule: product must be ACTIVE unless force=true.
- */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
@@ -82,7 +73,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // env allowlist or DB role ADMIN
     let isAdmin = isAdminEmail(user.email);
     if (!isAdmin) {
       const dbUser = await prisma.user.findUnique({
@@ -107,7 +97,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       /* allow empty/invalid JSON when using query params */
     }
 
-    const q = req.nextUrl.searchParams;
+    const url = new URL(req.url);
+    const q = url.searchParams;
+
     const featuredQ = q.get("featured");
     const forceQ = q.get("force");
 
@@ -115,20 +107,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const forceBody = (body as any)?.force as unknown;
 
     const featuredParsed = parseBoolean(featuredBody ?? featuredQ);
-    const forceParsed = parseBoolean(forceBody ?? forceQ) === true; // default false
+    const forceParsed = parseBoolean(forceBody ?? forceQ) === true;
 
     if (typeof featuredParsed !== "boolean") {
       return noStore({ error: "featured:boolean required" }, { status: 400 });
     }
 
-    // --- load product ---
     const prod = await prisma.product.findUnique({
       where: { id },
       select: { id: true, status: true, featured: true, updatedAt: true },
     });
     if (!prod) return noStore({ error: "Not found" }, { status: 404 });
 
-    // Only ACTIVE can be toggled unless forced
     if (!forceParsed && prod.status !== "ACTIVE") {
       return noStore(
         {
@@ -139,7 +129,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       );
     }
 
-    // No-op
     if (prod.featured === featuredParsed) {
       return noStore({
         ok: true,
@@ -148,14 +137,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       });
     }
 
-    // --- update ---
     const updated = await prisma.product.update({
       where: { id },
       data: { featured: featuredParsed },
       select: { id: true, featured: true, status: true, updatedAt: true },
     });
 
-    // Optional: audit log (guarded)
     try {
       // @ts-expect-error - only if you have this model
       await prisma.adminAuditLog?.create({
@@ -170,9 +157,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           },
         },
       });
-    } catch {
-      /* ignore */
-    }
+    } catch {}
 
     return noStore({ ok: true, product: updated });
   } catch (e) {
