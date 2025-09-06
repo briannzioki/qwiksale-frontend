@@ -20,7 +20,7 @@ function noStore(json: unknown, init?: ResponseInit) {
 function getIdFromUrl(url: string): string {
   try {
     const { pathname } = new URL(url);
-    const m = pathname.match(/\/api\/products\/([^/]+)\/feature(?:\/)?$/i);
+    const m = pathname.match(/\/api\/products\/([^/]+)\/feature\/?$/i);
     return (m?.[1] ?? "").trim();
   } catch {
     return "";
@@ -34,7 +34,7 @@ function isAdminEmail(email?: string | null) {
     raw
       .split(",")
       .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
+      .filter(Boolean),
   );
   return !!email && set.has(email.toLowerCase());
 }
@@ -51,17 +51,16 @@ function parseBoolean(v: unknown): boolean | undefined {
 
 /* ---------------- GET /api/products/[id]/feature ---------------- */
 export async function GET(req: Request) {
-  try {
-    const id = getIdFromUrl(req.url);
-    if (!id) return noStore({ error: "Missing id" }, { status: 400 });
+  const id = getIdFromUrl(req.url);
+  if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
+  try {
     const product = await prisma.product.findUnique({
       where: { id },
       select: { id: true, name: true, status: true, featured: true, updatedAt: true },
     });
 
     if (!product) return noStore({ error: "Not found" }, { status: 404 });
-
     return noStore({ ok: true, product });
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -75,55 +74,50 @@ export async function PATCH(req: Request) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
+  // --- authN / authZ ---
+  const session = await auth();
+  const user = (session as any)?.user;
+  if (!user?.id || !user?.email) return noStore({ error: "Unauthorized" }, { status: 401 });
+
+  let isAdmin = isAdminEmail(user.email);
+  if (!isAdmin) {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { role: true },
+    });
+    isAdmin = dbUser?.role === "ADMIN";
+  }
+  if (!isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
+
+  // --- params ---
+  const id = getIdFromUrl(req.url);
+  if (!id) return noStore({ error: "Missing id" }, { status: 400 });
+
+  // --- body / query ---
+  let body: unknown = null;
   try {
-    // --- authN / authZ ---
-    const session = await auth();
-    const user = (session as any)?.user;
+    body = await req.json();
+  } catch {
+    /* allow empty/invalid JSON when using query params */
+  }
 
-    if (!user?.id || !user?.email) {
-      return noStore({ error: "Unauthorized" }, { status: 401 });
-    }
+  const url = new URL(req.url);
+  const q = url.searchParams;
 
-    let isAdmin = isAdminEmail(user.email);
-    if (!isAdmin) {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: user.id },
-        select: { role: true },
-      });
-      isAdmin = dbUser?.role === "ADMIN";
-    }
-    if (!isAdmin) {
-      return noStore({ error: "Forbidden" }, { status: 403 });
-    }
+  const featuredQ = q.get("featured");
+  const forceQ = q.get("force");
 
-    // --- params ---
-    const id = getIdFromUrl(req.url);
-    if (!id) return noStore({ error: "Missing id" }, { status: 400 });
+  const featuredBody = (body as any)?.featured as unknown;
+  const forceBody = (body as any)?.force as unknown;
 
-    // --- body / query ---
-    let body: unknown = null;
-    try {
-      body = await req.json();
-    } catch {
-      /* allow empty/invalid JSON when using query params */
-    }
+  const featuredParsed = parseBoolean(featuredBody ?? featuredQ);
+  const forceParsed = parseBoolean(forceBody ?? forceQ) === true;
 
-    const url = new URL(req.url);
-    const q = url.searchParams;
+  if (typeof featuredParsed !== "boolean") {
+    return noStore({ error: "featured:boolean required" }, { status: 400 });
+  }
 
-    const featuredQ = q.get("featured");
-    const forceQ = q.get("force");
-
-    const featuredBody = (body as any)?.featured as unknown;
-    const forceBody = (body as any)?.force as unknown;
-
-    const featuredParsed = parseBoolean(featuredBody ?? featuredQ);
-    const forceParsed = parseBoolean(forceBody ?? forceQ) === true;
-
-    if (typeof featuredParsed !== "boolean") {
-      return noStore({ error: "featured:boolean required" }, { status: 400 });
-    }
-
+  try {
     const prod = await prisma.product.findUnique({
       where: { id },
       select: { id: true, status: true, featured: true, updatedAt: true },
@@ -136,7 +130,7 @@ export async function PATCH(req: Request) {
           error: "Only ACTIVE products can be toggled. Pass force:true to override.",
           status: prod.status,
         },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
