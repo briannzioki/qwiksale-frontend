@@ -16,6 +16,17 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
+/** pull :id from /api/products/:id/feature */
+function getIdFromUrl(url: string): string {
+  try {
+    const { pathname } = new URL(url);
+    const m = pathname.match(/\/api\/products\/([^/]+)\/feature(?:\/)?$/i);
+    return (m?.[1] ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 /** Admin allow-list from env (comma-separated emails) or DB role. */
 function isAdminEmail(email?: string | null) {
   const raw = process.env["ADMIN_EMAILS"] || "";
@@ -38,21 +49,10 @@ function parseBoolean(v: unknown): boolean | undefined {
   return undefined;
 }
 
-// Handle Next 15’s sometimes-Promise `params`
-async function readId(ctx: any): Promise<string> {
-  try {
-    const p = ctx?.params;
-    const v = p && typeof p.then === "function" ? await p : p;
-    return String(v?.id ?? "").trim();
-  } catch {
-    return "";
-  }
-}
-
 /* ---------------- GET /api/products/[id]/feature ---------------- */
-export async function GET(_req: Request, ctx: any) {
+export async function GET(req: Request) {
   try {
-    const id = await readId(ctx);
+    const id = getIdFromUrl(req.url);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     const product = await prisma.product.findUnique({
@@ -71,7 +71,7 @@ export async function GET(_req: Request, ctx: any) {
 }
 
 /* --------------- PATCH /api/products/[id]/feature --------------- */
-export async function PATCH(req: Request, ctx: any) {
+export async function PATCH(req: Request) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
@@ -97,7 +97,7 @@ export async function PATCH(req: Request, ctx: any) {
     }
 
     // --- params ---
-    const id = await readId(ctx);
+    const id = getIdFromUrl(req.url);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     // --- body / query ---
