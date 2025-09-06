@@ -1,4 +1,3 @@
-// src/app/api/products/[id]/feature/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,10 +38,21 @@ function parseBoolean(v: unknown): boolean | undefined {
   return undefined;
 }
 
-/* ---------------- GET /api/products/[id]/feature ---------------- */
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+// Handle Next 15’s sometimes-Promise `params`
+async function readId(ctx: any): Promise<string> {
   try {
-    const id = (params?.id || "").trim();
+    const p = ctx?.params;
+    const v = p && typeof p.then === "function" ? await p : p;
+    return String(v?.id ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+/* ---------------- GET /api/products/[id]/feature ---------------- */
+export async function GET(_req: Request, ctx: any) {
+  try {
+    const id = await readId(ctx);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     const product = await prisma.product.findUnique({
@@ -54,13 +64,14 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
     return noStore({ ok: true, product });
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.warn("[products/:id/feature GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
 
 /* --------------- PATCH /api/products/[id]/feature --------------- */
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, ctx: any) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
@@ -86,7 +97,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
 
     // --- params ---
-    const id = (params?.id || "").trim();
+    const id = await readId(ctx);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     // --- body / query ---
@@ -143,6 +154,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       select: { id: true, featured: true, status: true, updatedAt: true },
     });
 
+    // Optional audit
     try {
       // @ts-expect-error - only if you have this model
       await prisma.adminAuditLog?.create({
@@ -161,6 +173,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
     return noStore({ ok: true, product: updated });
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.warn("[products/:id/feature PATCH] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
