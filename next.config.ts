@@ -72,7 +72,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     { key: "X-Frame-Options", value: "DENY" },
     { key: "X-DNS-Prefetch-Control", value: "on" },
     { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
-    // lighter, non-CSP security bits you also had in JS file:
+    // light extra hardening:
     { key: "X-Download-Options", value: "noopen" },
     { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
     { key: "X-XSS-Protection", value: "0" },
@@ -95,12 +95,10 @@ function getSentryTunnelRewrite() {
 
 /* ---------------------------- Next.js config ---------------------------- */
 const baseConfig: NextConfig = {
-  // Keep things tidy & fast
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
 
-  // Only upload browser source maps to Sentry when token is present
   productionBrowserSourceMaps: !!process.env.SENTRY_AUTH_TOKEN,
 
   images: {
@@ -117,14 +115,11 @@ const baseConfig: NextConfig = {
     dangerouslyAllowSVG: true,
   },
 
-  // Don’t block builds on lint/TS (you gate this in CI)
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: isPreview },
 
   async headers() {
-    const rules = [
-      { source: "/:path*", headers: securityHeaders() },
-    ];
+    const rules = [{ source: "/:path*", headers: securityHeaders() }];
     if (isPreview) {
       rules.push({
         source: "/:path*",
@@ -139,23 +134,24 @@ const baseConfig: NextConfig = {
       source: string;
       destination: string;
       permanent: boolean;
-      basePath?: false;
-      locale?: false;
-      has?: Array<{ type: "host" | "header" | "cookie" | "query"; key: string; value?: string }>;
-      missing?: Array<{ type: "host" | "header" | "cookie" | "query"; key: string; value?: string }>;
+      has?: Array<
+        | { type: "host"; value: string } // NOTE: host does NOT take a `key`
+        | { type: "header" | "cookie" | "query"; key: string; value?: string }
+      >;
+      missing?: Array<{ type: "header" | "cookie" | "query"; key: string; value?: string }>;
     }> = [];
 
-    // ✅ www → apex (must start with "/" and use a `has` host check)
+    // www → apex (308) using `has: [{ type: 'host', value: 'www.example.com' }]`
     if (APEX_DOMAIN) {
       rules.push({
         source: "/:path*",
         destination: `https://${APEX_DOMAIN}/:path*`,
         permanent: true,
-        has: [{ type: "host", key: "host", value: `www.${APEX_DOMAIN}` }],
+        has: [{ type: "host", value: `www.${APEX_DOMAIN}` }], // ✅ no `key` here
       });
     }
 
-    // Optional: force http→https defensively (Vercel already forces https)
+    // Optional: force http → https (Vercel already does this, but harmless)
     rules.push({
       source: "/:path*",
       destination: `https://${APEX_DOMAIN}/:path*`,
@@ -173,14 +169,12 @@ const baseConfig: NextConfig = {
     return rules;
   },
 
-  // (optional) keep, if you actually use these libs
   experimental: {
     optimizePackageImports: ["lodash", "date-fns"],
   },
 };
 
 /* ------------------------------ Sentry wrap ------------------------------ */
-// v8+ takes exactly two args
 export default withSentryConfig(baseConfig, {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
