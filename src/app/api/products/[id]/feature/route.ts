@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/app/lib/prisma"; // keep your path if valid
 import { auth } from "@/auth";
 
 /* ---------------- tiny utils ---------------- */
@@ -30,18 +30,6 @@ function isAdminEmail(email?: string | null) {
   return !!email && set.has(email.toLowerCase());
 }
 
-// Next 15: params may be object or Promise
-type CtxLike =
-  | { params?: { id: string } | Promise<{ id: string }> }
-  | Record<string, unknown>
-  | undefined;
-
-async function getId(ctx: CtxLike): Promise<string> {
-  const p: any = (ctx as any)?.params;
-  const v = p && typeof p.then === "function" ? await p : p;
-  return String(v?.id ?? "").trim();
-}
-
 function parseBoolean(v: unknown): boolean | undefined {
   if (typeof v === "boolean") return v;
   if (typeof v === "string") {
@@ -54,9 +42,9 @@ function parseBoolean(v: unknown): boolean | undefined {
 
 /* ---------------- GET /api/products/[id]/feature ---------------- */
 /** Read current featured state (no auth required). */
-export async function GET(_req: NextRequest, ctx: CtxLike) {
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const id = await getId(ctx);
+    const id = (params?.id || "").trim();
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     const product = await prisma.product.findUnique({
@@ -68,7 +56,6 @@ export async function GET(_req: NextRequest, ctx: CtxLike) {
 
     return noStore({ ok: true, product });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn("[products/:id/feature GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
@@ -82,10 +69,9 @@ export async function GET(_req: NextRequest, ctx: CtxLike) {
  *  - OR query:  ?featured=true&force=1
  * Default rule: product must be ACTIVE unless force=true.
  */
-export async function PATCH(req: NextRequest, ctx: CtxLike) {
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
     // --- authN / authZ ---
@@ -110,7 +96,7 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     }
 
     // --- params ---
-    const id = await getId(ctx);
+    const id = (params?.id || "").trim();
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     // --- body / query ---
@@ -169,7 +155,7 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
       select: { id: true, featured: true, status: true, updatedAt: true },
     });
 
-    // Optional: audit log (guarded in case you don’t have the table)
+    // Optional: audit log (guarded)
     try {
       // @ts-expect-error - only if you have this model
       await prisma.adminAuditLog?.create({
@@ -190,7 +176,6 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
 
     return noStore({ ok: true, product: updated });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn("[products/:id/feature PATCH] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
