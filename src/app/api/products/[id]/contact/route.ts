@@ -1,8 +1,8 @@
+// src/app/api/products/[id]/contact/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
@@ -16,10 +16,17 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-type RouteParams = { id: string };
-type RouteContext = { params: Promise<RouteParams> };
+function getIdFromUrl(url: string): string {
+  try {
+    const { pathname } = new URL(url);
+    const m = pathname.match(/\/api\/products\/([^/]+)\/contact\/?$/i);
+    return (m?.[1] ?? "").trim();
+  } catch {
+    return "";
+  }
+}
 
-function getClientIp(req: NextRequest): string | null {
+function getClientIp(req: Request): string | null {
   const xf =
     req.headers.get("x-forwarded-for") ||
     req.headers.get("x-vercel-forwarded-for") ||
@@ -45,10 +52,9 @@ function validUrl(u?: string | null): string | null {
 }
 
 /* ----------------------------- GET ----------------------------- */
-export async function GET(req: NextRequest, ctx: RouteContext) {
+export async function GET(req: Request) {
   try {
-    const { id: raw } = await ctx.params;
-    const productId = String(raw || "").trim();
+    const productId = getIdFromUrl(req.url);
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
     // viewer is optional (guests allowed)

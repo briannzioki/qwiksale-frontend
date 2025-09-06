@@ -3,7 +3,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
@@ -47,6 +46,17 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
+/** Extract `:id` from /api/products/:id */
+function getIdFromUrl(url: string): string {
+  try {
+    const { pathname } = new URL(url);
+    const m = pathname.match(/\/api\/products\/([^/]+)\/?$/i);
+    return (m?.[1] ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 // CORS (optional)
 export function OPTIONS() {
   const res = new NextResponse(null, { status: 204 });
@@ -56,14 +66,6 @@ export function OPTIONS() {
   res.headers.set("Access-Control-Max-Age", "86400");
   res.headers.set("Cache-Control", "no-store");
   return res;
-}
-
-// Next 15: params may be object or Promise
-type CtxLike = { params?: { id: string } | Promise<{ id: string }> } | unknown;
-async function getId(ctx: CtxLike): Promise<string> {
-  const p: any = (ctx as any)?.params;
-  const value = p && typeof p.then === "function" ? await p : p;
-  return String(value?.id ?? "").trim();
 }
 
 /** base select for product (safe fields) */
@@ -124,13 +126,12 @@ function shapeProduct(p: any) {
 }
 
 /* -------------------- GET /api/products/:id ------------------- */
-export async function GET(_req: NextRequest, ctx: CtxLike) {
+export async function GET(req: Request) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
-    const productId = await getId(ctx);
+    const productId = getIdFromUrl(req.url);
     if (!productId) {
       track("product_read_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });
@@ -170,10 +171,10 @@ export async function GET(_req: NextRequest, ctx: CtxLike) {
     });
     if (activeItem) {
       track("product_read_public_hit", {
-    reqId,
-    productId,
-    favoritesCount: (activeItem as any)?.["_count"]?.favorites ?? 0,
-    });
+        reqId,
+        productId,
+        favoritesCount: (activeItem as any)?.["_count"]?.favorites ?? 0,
+      });
       return noStore(shapeProduct(activeItem));
     }
 
@@ -207,13 +208,12 @@ export async function GET(_req: NextRequest, ctx: CtxLike) {
 }
 
 /* ------------------- PATCH /api/products/:id ------------------ */
-export async function PATCH(req: NextRequest, ctx: CtxLike) {
+export async function PATCH(req: Request) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
-    const productId = await getId(ctx);
+    const productId = getIdFromUrl(req.url);
     if (!productId) {
       track("product_update_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });
@@ -288,7 +288,7 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     if (typeof body?.subcategory === "string") data.subcategory = body.subcategory.slice(0, 64);
     if (typeof body?.brand === "string") data.brand = body.brand.slice(0, 64);
     if (normCondition !== undefined) data.condition = normCondition; // either valid string or undefined (ignore)
-    if (normPrice !== undefined) data.price = normPrice;             // number | null | undefined
+    if (normPrice !== undefined) data.price = normPrice; // number | null | undefined
     if (typeof body?.image === "string") data.image = body.image.slice(0, 2048);
     if (normGallery !== undefined) data.gallery = normGallery;
     if (typeof body?.location === "string") data.location = body.location.slice(0, 120);
@@ -313,9 +313,9 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
     });
 
     track("product_update_success", {
-   reqId,
-   productId,
-   favoritesCount: (updated as any)?.["_count"]?.favorites ?? 0,
+      reqId,
+      productId,
+      favoritesCount: (updated as any)?.["_count"]?.favorites ?? 0,
     });
 
     return noStore(shapeProduct(updated));
@@ -331,13 +331,12 @@ export async function PATCH(req: NextRequest, ctx: CtxLike) {
 }
 
 /* ------------------ DELETE /api/products/:id ------------------ */
-export async function DELETE(_req: NextRequest, ctx: CtxLike) {
+export async function DELETE(req: Request) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
-    const productId = await getId(ctx);
+    const productId = getIdFromUrl(req.url);
     if (!productId) {
       track("product_delete_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });
