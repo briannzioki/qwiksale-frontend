@@ -5,14 +5,14 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 // Prefer a shared Prisma singleton everywhere in the app:
-//// import { prisma } from "@/app/lib/prisma";
+// import { prisma } from "@/app/lib/prisma";
 import { PrismaClient } from "@prisma/client";
 import { auth } from "@/auth";
 
 /* ----------------------------- Prisma singleton ---------------------------- */
-// Uncomment this block ONLY if you don't have "@/app/lib/prisma" yet.
+// NOTE: Do NOT export prisma from a route file.
 const g = globalThis as unknown as { __qsPrisma?: PrismaClient };
-export const prisma = g.__qsPrisma ?? new PrismaClient();
+const prisma = g.__qsPrisma ?? new PrismaClient();
 if (!g.__qsPrisma) g.__qsPrisma = prisma;
 
 /* ------------------------------ Tiny rate limit ---------------------------- */
@@ -84,7 +84,7 @@ export async function GET(req: Request) {
       const session = await auth();
       meId = (session as any)?.user?.id as string | undefined;
     } catch {
-      // treat as guest
+      // guest
     }
 
     const existing = await prisma.user.findFirst({
