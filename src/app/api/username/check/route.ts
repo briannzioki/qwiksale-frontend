@@ -4,9 +4,13 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
+// Prefer a shared Prisma singleton everywhere in the app:
+//// import { prisma } from "@/app/lib/prisma";
 import { PrismaClient } from "@prisma/client";
+import { auth } from "@/auth";
 
 /* ----------------------------- Prisma singleton ---------------------------- */
+// Uncomment this block ONLY if you don't have "@/app/lib/prisma" yet.
 const g = globalThis as unknown as { __qsPrisma?: PrismaClient };
 export const prisma = g.__qsPrisma ?? new PrismaClient();
 if (!g.__qsPrisma) g.__qsPrisma = prisma;
@@ -36,7 +40,8 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-const USERNAME_RE = /^[a-zA-Z0-9._]{3,24}$/;
+/** Username: 3–24 chars; letters/digits/._; no leading/trailing sep; no doubles */
+const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 
 /* ---------------------------------- GET ---------------------------------- */
 export async function GET(req: Request) {
@@ -51,30 +56,35 @@ export async function GET(req: Request) {
       req.headers.get("x-real-ip") ||
       "0.0.0.0";
     const rl = rateLimitTry(`username-check:${ip}`);
-    if (!rl.success) return noStore({ error: "Too many requests" }, { status: 429 });
+    if (!rl.success) {
+      return noStore({ error: "Too many requests" }, { status: 429 });
+    }
 
     const url = new URL(req.url);
     const raw = (url.searchParams.get("u") ?? url.searchParams.get("username") ?? "").trim();
 
     if (!raw) {
-      return noStore({ available: false, valid: false, normalized: "", reason: "empty" });
+      return noStore(
+        { available: false, valid: false, normalized: "", reason: "empty" },
+        { status: 400 }
+      );
     }
 
-    const normalized = raw; // keep casing; compare case-insensitive in DB
+    const normalized = raw; // keep casing for display
     if (!USERNAME_RE.test(normalized)) {
-      return noStore({ available: false, valid: false, normalized, reason: "invalid" });
+      return noStore(
+        { available: false, valid: false, normalized, reason: "invalid_format" },
+        { status: 400 }
+      );
     }
 
     // Who is asking? (their current username counts as available)
     let meId: string | undefined;
     try {
-      // runtime import shim so TS doesn’t try to resolve "@/auth"
-      const _import = (Function("return import")() as unknown) as (s: string) => Promise<any>;
-      const mod = await _import("@/auth").catch(() => null);
-      const session = await mod?.auth?.();
+      const session = await auth();
       meId = (session as any)?.user?.id as string | undefined;
     } catch {
-      /* treat as guest */
+      // treat as guest
     }
 
     const existing = await prisma.user.findFirst({
@@ -83,7 +93,7 @@ export async function GET(req: Request) {
     });
 
     const available = !existing || (!!meId && existing.id === meId);
-    return noStore({ available, valid: true, normalized });
+    return noStore({ available, valid: true, normalized }, { status: 200 });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/username/check] error:", e);
