@@ -1,4 +1,3 @@
-// src/app/sell/SellClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -8,7 +7,7 @@ import { useProducts } from "../lib/productsStore";
 import toast from "react-hot-toast";
 
 type FilePreview = { file: File; url: string; key: string };
-type Me = { id: string; email: string | null; profileComplete: boolean };
+type Me = { id: string; email: string | null; profileComplete: boolean; whatsapp?: string | null };
 
 const MAX_FILES = 6;
 const MAX_MB = 5;
@@ -114,6 +113,26 @@ export default function SellClient() {
   const [ready, setReady] = useState(false);
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
+  // ----------------------------- Form state -----------------------------
+  const [name, setName] = useState<string>("");
+  const [price, setPrice] = useState<number | "">("");
+  const [negotiable, setNegotiable] = useState<boolean>(false);
+  const [condition, setCondition] = useState<"brand new" | "pre-owned">("brand new");
+
+  const [category, setCategory] = useState<string>(String(categories[0]?.name || ""));
+  const [subcategory, setSubcategory] = useState<string>("");
+
+  const [brand, setBrand] = useState<string>("");
+  const [location, setLocation] = useState<string>("Nairobi");
+  const [phone, setPhone] = useState<string>(""); // ← will prefill from /api/me.whatsapp
+  const [description, setDescription] = useState<string>("");
+  const [previews, setPreviews] = useState<FilePreview[]>([]);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [uploadPct, setUploadPct] = useState<number>(0);
+
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Prefill phone from profile (NEW) + normal gate checks — minimal change
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -122,7 +141,6 @@ export default function SellClient() {
         if (cancelled) return;
 
         if (res.status === 401) {
-          // Not signed in -> go to sign-in with return
           router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell")}`);
           return;
         }
@@ -130,24 +148,26 @@ export default function SellClient() {
         const me = (await res.json().catch(() => null)) as Me | null;
 
         if (me && me.profileComplete === false) {
-          // Signed in but needs profile completion
           router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell")}`);
           return;
         }
 
-        // OK to proceed
+        // NEW: prefill phone once from profile if empty
+        if (!cancelled && !phone && me?.whatsapp) {
+          setPhone(me.whatsapp); // (input accepts 07… or 2547…; normalization happens on submit)
+        }
+
         setAllowed(true);
       } catch {
-        // Fail-open to avoid accidental loops if /api/me is down
-        setAllowed(true);
+        setAllowed(true); // fail-open
       } finally {
-        setReady(true);
+        if (!cancelled) setReady(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router]); // intentionally not depending on `phone` to avoid refetch loops
 
   // Zustand store (optional)
   const store = useProducts() as any;
@@ -156,31 +176,9 @@ export default function SellClient() {
       ? store.addProduct
       : async () => undefined;
 
-  // ----------------------------- Form state -----------------------------
-  const [name, setName] = useState<string>("");
-  const [price, setPrice] = useState<number | "">("");
-  const [negotiable, setNegotiable] = useState<boolean>(false);
-  const [condition, setCondition] = useState<"brand new" | "pre-owned">("brand new");
-
-  // 👇 explicitly typed as string to avoid literal-union narrowing from categories[0]?.name
-  const [category, setCategory] = useState<string>(String(categories[0]?.name || ""));
-  const [subcategory, setSubcategory] = useState<string>(""); // 👈 explicit string fixes TS narrowing
-
-  const [brand, setBrand] = useState<string>("");
-  const [location, setLocation] = useState<string>("Nairobi");
-  const [phone, setPhone] = useState<string>(""); // OPTIONAL now
-  const [description, setDescription] = useState<string>("");
-  const [previews, setPreviews] = useState<FilePreview[]>([]);
-  const [submitting, setSubmitting] = useState<boolean>(false);
-  const [uploadPct, setUploadPct] = useState<number>(0);
-
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
   // Readonly-friendly typing for categories data
   type SubCat = { readonly name: string; readonly subsubcategories?: readonly string[] };
   type Cat = { readonly name: string; readonly subcategories: readonly SubCat[] };
-
-  // Keep as readonly; no mutation needed for rendering
   const cats: readonly Cat[] = categories as unknown as readonly Cat[];
 
   const subcats: ReadonlyArray<{ name: string }> = useMemo(() => {
@@ -208,8 +206,6 @@ export default function SellClient() {
 
   const normalizedPhone = phone ? normalizePhone(phone) : "";
   const priceNum = price === "" ? 0 : Number(price);
-
-  // Phone is optional; if provided, it must be valid
   const phoneOk = !phone || looksLikeValidKePhone(phone);
 
   const canSubmit =
@@ -220,7 +216,6 @@ export default function SellClient() {
     (price === "" || (typeof price === "number" && price >= 0)) &&
     phoneOk;
 
-  /* ------------------------------ Image helpers ------------------------------ */
   function filesToAdd(files: FileList | File[]) {
     const next: FilePreview[] = [];
     for (const f of Array.from(files)) {
@@ -254,7 +249,6 @@ export default function SellClient() {
     if (e.dataTransfer?.files?.length) filesToAdd(e.dataTransfer.files);
   }
 
-  // ✅ Safe versions: no undefined writes, no direct mutation
   function removeAt(idx: number) {
     setPreviews((prev) => {
       const removed = prev[idx];
@@ -267,19 +261,16 @@ export default function SellClient() {
     setPreviews((prev) => {
       const j = idx + dir;
       if (j < 0 || j >= prev.length) return prev;
-
       const a = prev.slice();
       const left = a[idx];
       const right = a[j];
       if (!left || !right) return prev;
-
       a[idx] = right;
       a[j] = left;
       return a;
     });
   }
 
-  /* --------------------------------- Submit --------------------------------- */
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) {
@@ -336,7 +327,7 @@ export default function SellClient() {
         gallery,
         location: location.trim(),
         negotiable,
-        // Optional: let server ignore or use later
+        // Optional per-listing override; if empty the server will use profile whatsapp
         sellerPhone: normalizedPhone || undefined,
       };
 
@@ -368,6 +359,7 @@ export default function SellClient() {
       toast.success("Listing posted!");
       router.push(createdId ? `/sell/success?id=${createdId}` : "/sell/success");
     } catch (err: any) {
+      // eslint-disable-next-line no-console
       console.error(err);
       toast.error(err?.message || "Failed to post listing.");
     } finally {
@@ -376,7 +368,6 @@ export default function SellClient() {
     }
   }
 
-  /* ------------------------------- Gate loading ------------------------------ */
   if (!ready || !allowed) {
     return (
       <div className="container-page py-10">
@@ -388,7 +379,6 @@ export default function SellClient() {
     );
   }
 
-  /* ----------------------------------- UI ----------------------------------- */
   return (
     <div className="container-page py-6">
       {/* Header card */}
@@ -477,7 +467,7 @@ export default function SellClient() {
             <select
               className="select"
               value={subcategory}
-              onChange={(e) => setSubcategory(e.target.value)} // ✅ state is string, no literal mismatch
+              onChange={(e) => setSubcategory(e.target.value)}
             >
               {subcats.map((s) => (
                 <option key={s.name} value={s.name}>

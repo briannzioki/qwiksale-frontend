@@ -145,7 +145,15 @@ async function getMe() {
   if (!userId) return null;
   return prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, subscription: true },
+    select: {
+      id: true,
+      name: true,
+      subscription: true,
+      // For phone/location fallback:
+      whatsapp: true,
+      city: true,
+      country: true,
+    },
   });
 }
 
@@ -153,7 +161,6 @@ async function getMe() {
 
 export function OPTIONS() {
   const res = new NextResponse(null, { status: 204 });
-  // TS4111-safe env read:
   res.headers.set(
     "Access-Control-Allow-Origin",
     process.env["NEXT_PUBLIC_APP_URL"] || "*"
@@ -189,42 +196,48 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-  // Required basics
-  const name = s(body["name"], MAX.name);
-  const category = s(body["category"], MAX.category);
-  const subcategory = s(body["subcategory"], MAX.subcategory);
+    // Required basics
+    const name = s(body["name"], MAX.name);
+    const category = s(body["category"], MAX.category);
+    const subcategory = s(body["subcategory"], MAX.subcategory);
 
-  // Optional
-  const brand = s(body["brand"], MAX.brand);
-  const description = clampLen(
-  typeof body["description"] === "string" ? body["description"].trim() : undefined,
-  MAX.description
-   );
-  const condition = nCond(body["condition"]) ?? "pre-owned";
-  const price = nPrice(body["price"]); // null => contact for price
-  const image = s(body["image"], MAX.imageUrl);
-  const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
-  const location = s(body["location"], MAX.location);
-  const negotiable = nBool(body["negotiable"]);
-  let featured = nBool(body["featured"]) ?? false;
+    // Optional
+    const brand = s(body["brand"], MAX.brand);
+    const description = clampLen(
+      typeof body["description"] === "string" ? body["description"].trim() : undefined,
+      MAX.description
+    );
+    const condition = nCond(body["condition"]) ?? "pre-owned";
+    const price = nPrice(body["price"]); // null => contact for price
+    const image = s(body["image"], MAX.imageUrl);
+    const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
+    const location = s(body["location"], MAX.location);
+    const negotiable = nBool(body["negotiable"]);
+    let featured = nBool(body["featured"]) ?? false;
 
-  // Seller snapshot (phone is OPTIONAL)
-  const sellerPhoneRaw = normalizeMsisdn(body["sellerPhone"]);
-  if (typeof body["sellerPhone"] === "string" && !sellerPhoneRaw) {
-  track("product_create_validation_error", {
-    reqId,
-    userId: me.id,
-    field: "sellerPhone",
-    reason: "invalid_format",
-    });
-    return noStore(
-      { error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." },
-      { status: 400 }
-     );
+    // Seller snapshot (phone is OPTIONAL): prefer per-listing, else profile.whatsapp
+    let sellerPhoneRaw = normalizeMsisdn(body["sellerPhone"]);
+    if (!sellerPhoneRaw && me.whatsapp) {
+      sellerPhoneRaw = normalizeMsisdn(me.whatsapp) ?? undefined;
+    }
+    if (typeof body["sellerPhone"] === "string" && !normalizeMsisdn(body["sellerPhone"])) {
+      track("product_create_validation_error", {
+        reqId,
+        userId: me.id,
+        field: "sellerPhone",
+        reason: "invalid_format",
+      });
+      return noStore(
+        { error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." },
+        { status: 400 }
+      );
     }
 
     const sellerName = s(body["sellerName"], 120) ?? me.name ?? undefined;
-    const sellerLocation = s(body["sellerLocation"], MAX.location) ?? location;
+    const sellerLocation =
+      s(body["sellerLocation"], MAX.location) ??
+      (me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? undefined) ??
+      location;
 
     // Validate required
     if (!name) {
@@ -240,11 +253,9 @@ export async function POST(req: NextRequest) {
       return noStore({ error: "subcategory is required" }, { status: 400 });
     }
 
-    // Tier enforcement
+    // Tier enforcement (count only ACTIVE listings)
     const tier = toTier(me.subscription);
     const limits = LIMITS[tier];
-
-    // Count only ACTIVE listings for limits
     const myActiveCount = await prisma.product.count({
       where: { sellerId: me.id, status: "ACTIVE" },
     });
@@ -264,7 +275,7 @@ export async function POST(req: NextRequest) {
     // Auto gallery fallback
     const finalGallery = gallery ?? (image ? [image] : []);
 
-    // Create
+    // Create (explicitly set ACTIVE to ensure visibility on Home)
     const created = await prisma.product.create({
       data: {
         name,
@@ -273,7 +284,7 @@ export async function POST(req: NextRequest) {
         condition,
         featured,
         sellerId: me.id,
-        // status defaults to ACTIVE in schema
+        status: "ACTIVE", // ensure it shows on Home API
         createdAt: new Date(),
 
         ...(brand ? { brand } : {}),
@@ -284,27 +295,10 @@ export async function POST(req: NextRequest) {
         ...(location ? { location } : {}),
         ...(negotiable !== undefined ? { negotiable } : {}),
         ...(sellerName ? { sellerName } : {}),
-        sellerPhone: sellerPhoneRaw ?? null, // store null if not provided
+        sellerPhone: sellerPhoneRaw ?? null,
         ...(sellerLocation ? { sellerLocation } : {}),
       },
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        subcategory: true,
-        brand: true,
-        condition: true,
-        price: true,
-        image: true,
-        gallery: true,
-        location: true,
-        negotiable: true,
-        featured: true,
-        createdAt: true,
-        sellerId: true,
-        sellerName: true,
-        sellerLocation: true,
-      },
+      select: { id: true },
     });
 
     track("product_create_success", {
@@ -312,20 +306,19 @@ export async function POST(req: NextRequest) {
       userId: me.id,
       tier,
       productId: created.id,
-      featured: created.featured,
-      hasPrice: created.price != null,
-      gallerySize: created.gallery?.length ?? 0,
+      featured,
+      hasPrice: price != null,
+      gallerySize: finalGallery.length,
     });
 
-    return noStore(created, { status: 201 });
+    // Match SellClient expectation
+    return noStore({ ok: true, productId: created.id }, { status: 201 });
   } catch (e: any) {
     // eslint-disable-next-line no-console
     console.error("POST /api/products/create error", e);
     track("product_create_error", { reqId, message: e?.message ?? String(e) });
 
-    // Surface Prisma validation-ish errors cleanly
     if (e?.code === "P2002") {
-      // unique constraint (unlikely here, but just in case for duplicate IDs, etc.)
       return noStore({ error: "Duplicate value not allowed" }, { status: 409 });
     }
 
