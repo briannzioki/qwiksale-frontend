@@ -5,10 +5,8 @@ import { NextResponse, type NextRequest } from "next/server";
 /* ------------------- Edge-safe helpers (no Node Buffer) ------------------- */
 function makeNonce() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
-  // base64 without Buffer
   let binary = "";
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  // btoa is available in Edge runtime
   return btoa(binary);
 }
 
@@ -67,7 +65,7 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "SAMEORIGIN");
   headers.set("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
-  if (!isDev) {
+  if (process.env.NODE_ENV === "production") {
     headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
   }
   return headers;
@@ -80,11 +78,10 @@ export default withAuth(
       process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview";
     const nonce = makeNonce();
 
-    // Forward nonce to the app for <Script nonce={...}/> usage
+    // Forward nonce to the app for <Script nonce={...}/>
     const forwarded = new Headers(req.headers);
     forwarded.set("x-nonce", nonce);
 
-    // Continue the request with forwarded headers
     const res = NextResponse.next({ request: { headers: forwarded } });
 
     // Apply security headers
@@ -94,11 +91,11 @@ export default withAuth(
     return res;
   },
   {
-    // 🔐 Only require auth for /sell/** and /account/**
+    // 🔐 Only require auth for /sell (no server-side profile gating)
     callbacks: {
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
-        const needsAuth = p.startsWith("/sell") || p.startsWith("/account");
+        const needsAuth = p.startsWith("/sell") || p.startsWith("/api/admin");
         return needsAuth ? !!token : true;
       },
     },
@@ -106,10 +103,6 @@ export default withAuth(
 );
 
 /* ----------------------------- Route matcher ------------------------------ */
-/**
- * We run on (almost) all routes to attach CSP, but skip Next static assets,
- * images, and known public files. Auth is still limited by the callback above.
- */
 export const config = {
   matcher: [
     // everything except these:

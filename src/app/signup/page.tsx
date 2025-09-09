@@ -13,6 +13,38 @@ function isSafePath(p?: string | null): p is string {
   return !!p && /^\/(?!\/)/.test(p);
 }
 
+// Try to delete both dev and prod callback-url cookies, with/without apex domain
+function clearStaleCallbackCookies() {
+  if (typeof document === "undefined") return;
+
+  const names = [
+    "__Secure-next-auth.callback-url", // prod
+    "next-auth.callback-url",          // dev
+  ];
+
+  const host = location.hostname;
+  const domains = new Set<string | undefined>([undefined, host]);
+
+  // If we're on a subdomain or the bare domain, also try the apex
+  const parts = host.split(".");
+  if (parts.length >= 2) {
+    const apex = "." + parts.slice(-2).join(".");
+    domains.add(apex);
+    // explicitly include your prod apex too
+    domains.add(".qwiksale.sale");
+  }
+
+  const common = `; Path=/; Max-Age=0; SameSite=Lax${
+    location.protocol === "https:" ? "; Secure" : ""
+  }`;
+
+  for (const name of names) {
+    for (const d of domains) {
+      document.cookie = `${name}=deleted${common}${d ? `; Domain=${d}` : ""}`;
+    }
+  }
+}
+
 function strengthLabel(pw: string) {
   let score = 0;
   if (pw.length >= 6) score++;
@@ -50,6 +82,11 @@ export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [working, setWorking] = useState<"creds" | "google" | null>(null);
 
+  // 🔧 Nuke stale callback cookies to avoid redirect loops (e.g., /signup sticking)
+  useEffect(() => {
+    clearStaleCallbackCookies();
+  }, []);
+
   useEffect(() => {
     if (friendlyError) toast.error(friendlyError);
   }, [friendlyError]);
@@ -64,16 +101,18 @@ export default function SignUpPage() {
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
+    if (working) return;
     const v = validate();
     if (v) return toast.error(v);
 
     try {
       setWorking("creds");
-      // Use Credentials provider (your authorize() should handle create-or-login).
+      // Use Credentials provider (authorize() handles create-or-login).
       const res = await signIn("credentials", {
         email: email.trim().toLowerCase(),
         password,
-        redirect: false,
+        redirect: false, // we handle navigation
+        callbackUrl: returnTo, // still set for consistency
       });
       if (!res || res.error) {
         toast.error(
@@ -90,6 +129,7 @@ export default function SignUpPage() {
   }
 
   async function onGoogle() {
+    if (working) return;
     setWorking("google");
     try {
       await signIn("google", { callbackUrl: returnTo });

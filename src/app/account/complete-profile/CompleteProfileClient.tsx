@@ -31,8 +31,14 @@ function normalizeKePhone(raw: string): string {
 function looksLikeValidKePhone(input: string) {
   return /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
 }
+
+// ✅ 3–24; letters/digits/._; no leading/trailing sep; no doubles
+const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 function looksLikeValidUsername(u: string) {
-  return /^[a-zA-Z0-9._]{3,24}$/.test(u);
+  return USERNAME_RE.test(u);
+}
+function isSafePath(p?: string | null): p is string {
+  return !!p && /^\/(?!\/)/.test(p);
 }
 
 type NameStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "error";
@@ -42,7 +48,12 @@ type NameStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "err
 export default function CompleteProfileClient() {
   const router = useRouter();
   const sp = useSearchParams();
-  const ret = useMemo(() => sp.get("next") || sp.get("return") || "/", [sp]);
+
+  // sanitize next/return to internal path
+  const ret = useMemo(() => {
+    const raw = sp.get("next") || sp.get("return") || "/";
+    return isSafePath(raw) ? raw : "/";
+  }, [sp]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -57,6 +68,7 @@ export default function CompleteProfileClient() {
 
   const [nameStatus, setNameStatus] = useState<NameStatus>("idle");
   const usernameAbort = useRef<AbortController | null>(null);
+  const redirectedRef = useRef(false); // 🚧 prevent ping-pong redirects
 
   const whatsappNormalized = useMemo(
     () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
@@ -72,8 +84,11 @@ export default function CompleteProfileClient() {
       try {
         const r = await fetch("/api/me", { cache: "no-store", signal: ctrl.signal });
         if (r.status === 401) {
-          toast.error("Please sign in.");
-          router.replace(`/signin?callbackUrl=${encodeURIComponent(ret)}`);
+          if (!redirectedRef.current) {
+            redirectedRef.current = true;
+            toast.error("Please sign in.");
+            router.replace(`/signin?callbackUrl=${encodeURIComponent(ret)}`);
+          }
           return;
         }
         const j = await r.json().catch(() => null);
@@ -86,8 +101,11 @@ export default function CompleteProfileClient() {
 
         if (!alive) return;
         if (!u?.email) {
-          toast.error("Please sign in.");
-          router.replace(`/signin?callbackUrl=${encodeURIComponent(ret)}`);
+          if (!redirectedRef.current) {
+            redirectedRef.current = true;
+            toast.error("Please sign in.");
+            router.replace(`/signin?callbackUrl=${encodeURIComponent(ret)}`);
+          }
           return;
         }
 

@@ -1,7 +1,7 @@
 // src/app/sell/page.tsx
+import Link from "next/link";
 import { getServerSession } from "@/app/lib/auth"; // centralized wrapper around auth()
 import SellClient from "./SellClient";
-import Link from "next/link";
 
 /** Ensure auth is evaluated on each request (don’t statically cache this page). */
 export const dynamic = "force-dynamic";
@@ -23,9 +23,9 @@ export default async function SellPage() {
           </div>
 
           <div className="flex gap-3">
-            <a className="btn-primary" href={`/signin?callbackUrl=${callbackUrl}`}>
+            <Link href={`/signin?callbackUrl=${callbackUrl}`} className="btn-primary">
               Sign in
-            </a>
+            </Link>
             <Link href="/" className="btn-ghost">
               Go back home
             </Link>

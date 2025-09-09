@@ -13,6 +13,7 @@ import { verifyPassword, hashPassword } from "@/server/auth";
  * - SameSite=Lax, HttpOnly, __Secure- cookie in prod with apex domain
  * - Extends the session token with uid/subscription/username/referralCode
  * - Defensive credentials authorize() (no enumeration, optional auto-signup)
+ * - Redirect callback that ignores bad/stale callback cookies (e.g., /signup)
  */
 
 const isProd = process.env.NODE_ENV === "production";
@@ -26,10 +27,17 @@ const cookieDomain =
 const ALLOW_CREDS_AUTO_SIGNUP =
   (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
 
+// Allow only these internal landings; never /signup
+const ALLOWED_CALLBACK_PATHS = new Set<string>([
+  "/",
+  "/sell",
+  "/account/profile",
+  "/account/complete-profile",
+]);
+
 export const authOptions: NextAuthOptions = {
   debug: process.env["NEXTAUTH_DEBUG"] === "1",
 
-  // Only include secret when defined to satisfy exactOptionalPropertyTypes
   ...(process.env["NEXTAUTH_SECRET"]
     ? { secret: process.env["NEXTAUTH_SECRET"] as string }
     : {}),
@@ -133,6 +141,26 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
+    // 🧭 Neutralize stale/bad callback cookies & force safe, same-origin paths
+    async redirect({ url, baseUrl }) {
+      try {
+        const u = new URL(url, baseUrl);
+        if (u.origin !== baseUrl) return baseUrl; // external → home
+        if (u.pathname === "/signup") return baseUrl; // break old loop
+        if (ALLOWED_CALLBACK_PATHS.has(u.pathname) || u.pathname === "/") return u.toString();
+
+        const cb = u.searchParams.get("callbackUrl");
+        if (cb) {
+          const cbu = new URL(cb, baseUrl);
+          if (cbu.origin === baseUrl && ALLOWED_CALLBACK_PATHS.has(cbu.pathname)) {
+            if (cbu.pathname === "/signup") return baseUrl;
+            return cbu.toString();
+          }
+        }
+      } catch {}
+      return baseUrl;
+    },
+
     async jwt({ token, user, trigger }) {
       if (user?.id) (token as any)["uid"] = user.id;
 

@@ -31,8 +31,11 @@ function normalizeKePhone(raw: string): string {
 function looksLikeValidKePhone(input: string) {
   return /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
 }
+
+// ✅ stricter username: 3–24; letters/digits/._; no leading/trailing sep; no doubles
+const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 function looksLikeValidUsername(u: string) {
-  return /^[a-zA-Z0-9._]{3,24}$/.test(u);
+  return USERNAME_RE.test(u);
 }
 
 /* -------------------------- Cloudinary config (TS-safe) -------------------------- */
@@ -67,6 +70,7 @@ export default function ProfileClient() {
   const [xhandle, setXHandle] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
+  const redirectedRef = useRef(false); // 🚧 one-shot redirect guard
 
   const whatsappNormalized = useMemo(
     () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
@@ -82,8 +86,12 @@ export default function ProfileClient() {
       try {
         const r = await fetch("/api/me", { cache: "no-store", signal: ctrl.signal });
         if (r.status === 401) {
-          toast.error("Please sign in.");
-          window.location.href = "/signin?callbackUrl=/account/profile";
+          // prevent ping-pong loops
+          if (!redirectedRef.current) {
+            redirectedRef.current = true;
+            toast.error("Please sign in.");
+            window.location.href = "/signin?callbackUrl=/account/profile";
+          }
           return;
         }
         const j = (await r.json().catch(() => null)) as Me | { user?: Me } | null;
@@ -91,8 +99,11 @@ export default function ProfileClient() {
 
         if (!alive) return;
         if (!u?.email) {
-          toast.error("Please sign in.");
-          window.location.href = "/signin?callbackUrl=/account/profile";
+          if (!redirectedRef.current) {
+            redirectedRef.current = true;
+            toast.error("Please sign in.");
+            window.location.href = "/signin?callbackUrl=/account/profile";
+          }
           return;
         }
 
@@ -288,7 +299,7 @@ export default function ProfileClient() {
             className="h-16 w-16 rounded-full object-cover border border-black/10 dark:border-white/10"
           />
           <div className="flex items-center gap-3">
-            <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-white/10">
+            <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg白/10 dark:hover:bg-slate-800/50">
               <input
                 type="file"
                 accept="image/*"
