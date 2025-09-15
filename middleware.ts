@@ -91,8 +91,8 @@ export default withAuth(
   function middleware(req: NextRequest) {
     const p = req.nextUrl.pathname;
 
-    // ✅ Never run middleware on NextAuth routes (prevents breaking Set-Cookie)
-    if (p.startsWith("/api/auth")) {
+    // ⛔️ Never touch NextAuth / Vercel internal routes
+    if (p.startsWith("/api/auth") || p.startsWith("/_vercel")) {
       return NextResponse.next();
     }
 
@@ -114,15 +114,17 @@ export default withAuth(
     forwarded.set("x-nonce", nonce);
     const res = NextResponse.next({ request: { headers: forwarded } });
 
-    // Security headers (not applied to /api/auth because we exit above)
+    // Security headers (skip on /api/auth above)
     const sec = buildSecurityHeaders(nonce, isDev);
     for (const [k, v] of sec.entries()) res.headers.set(k, v);
 
     // Device cookie
-    if (!req.cookies.get("qs_did")?.value) {
+    const DID = req.cookies.get("qs_did")?.value;
+    if (!DID) {
+      const did = makeUUID();
       res.cookies.set({
         name: "qs_did",
-        value: makeUUID(),
+        value: did,
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
@@ -138,10 +140,10 @@ export default withAuth(
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
 
-        // belt-and-suspenders: always allow auth infra
-        if (p.startsWith("/api/auth")) return true;
-
+        // Require login for /sell
         const needsAuth = p.startsWith("/sell");
+
+        // Require admin for /admin and /api/admin
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
 
         if (needsAdmin) return !!token && (token as any).role === "admin";
@@ -153,9 +155,9 @@ export default withAuth(
 );
 
 /* ----------------------------- Route matcher ------------------------------ */
+// Exclude static assets, sitemaps, NextAuth, and Vercel’s internal paths.
 export const config = {
   matcher: [
-    // Exclude NextAuth + static assets + sitemap endpoints
-    '/((?!api/auth|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps).*)',
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|_vercel).*)",
   ],
 };
