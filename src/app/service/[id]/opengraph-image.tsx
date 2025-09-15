@@ -1,54 +1,50 @@
+// src/app/service/[id]/opengraph-image.tsx
 /* eslint-disable @next/next/no-img-element */
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "Service preview";
-export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
+export const size = { width: 1200, height: 630 };
+export const alt = "Service preview";
 
 type ServiceOG = {
   id: string;
-  name: string;
-  image?: string | null;
-  gallery?: string[] | null;
+  name?: string | null;
   price?: number | null;
   rateType?: "hour" | "day" | "fixed" | null;
   category?: string | null;
   subcategory?: string | null;
 };
 
-function siteUrl() {
-  // Must be absolute for Edge fetch
-  const base =
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+function appBaseUrl() {
+  const envAppUrl =
     process.env["NEXT_PUBLIC_APP_URL"] ||
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "") ||
     "http://localhost:3000";
-  return base.replace(/\/+$/, "");
+  return envAppUrl.replace(/\/+$/, "");
 }
 
 function safeTxt(v?: string | null) {
   return (v || "").toString().slice(0, 140);
 }
 
-function suffix(rt?: "hour" | "day" | "fixed" | null) {
+function rateSuffix(rt?: "hour" | "day" | "fixed" | null) {
   if (rt === "hour") return "/hr";
   if (rt === "day") return "/day";
   return "";
 }
 
 async function loadService(id: string): Promise<ServiceOG | null> {
-  // Use your existing API so this works on Edge without Prisma
-  const url = `${siteUrl()}/api/services/${encodeURIComponent(id)}`;
+  const base = appBaseUrl();
+  const url = `${base}/api/services/${encodeURIComponent(id)}`;
   try {
-    const res = await fetch(url, { cache: "no-store", next: { revalidate: 0 } });
-    if (!res.ok) return null;
-    const j = await res.json();
-    // shape minimally to avoid runtime surprises
+    const res = await fetch(url, { next: { revalidate: 300 } });
+    if (!res?.ok) return null;
+    const j = await res.json().catch(() => ({}));
     return {
-      id: String(j?.id || id),
-      name: String(j?.name || ""),
-      image: j?.image ?? null,
-      gallery: Array.isArray(j?.gallery) ? j.gallery : [],
+      id: String(j?.id ?? id),
+      name: j?.name ?? null,
       price: typeof j?.price === "number" ? j.price : null,
       rateType:
         j?.rateType === "hour" || j?.rateType === "day" || j?.rateType === "fixed"
@@ -62,18 +58,14 @@ async function loadService(id: string): Promise<ServiceOG | null> {
   }
 }
 
-export default async function Image({ params }: { params: { id: string } }) {
-  const id = decodeURIComponent(params?.id || "");
+export default async function Image({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const s = (id && (await loadService(id))) || null;
 
-  const title = safeTxt(s?.name) || "QwikSale";
-  const hero =
-    (s?.image ||
-      (Array.isArray(s?.gallery) ? s!.gallery![0] : null) ||
-      "/placeholder/default.jpg")!.toString();
+  const title = safeTxt(s?.name) || "QwikSale Service";
   const price =
     typeof s?.price === "number" && s.price > 0
-      ? `KES ${new Intl.NumberFormat("en-KE").format(s.price)}${suffix(s?.rateType ?? null)}`
+      ? `KES ${new Intl.NumberFormat("en-KE").format(s.price)}${rateSuffix(s?.rateType)}`
       : "Contact for quote";
   const cat = [s?.category, s?.subcategory].filter(Boolean).join(" • ") || "Service";
 
@@ -81,49 +73,44 @@ export default async function Image({ params }: { params: { id: string } }) {
     (
       <div
         style={{
-          width: "100%",
-          height: "100%",
+          width: size.width,
+          height: size.height,
           display: "flex",
-          position: "relative",
-          fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: 48,
+          background: "linear-gradient(135deg, #39a0ca 0%, #478559 50%, #161748 100%)",
+          color: "#fff",
+          fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
         }}
       >
-        <img
-          src={hero}
-          alt=""
-          style={{
-            position: "absolute",
-            inset: 0,
-            objectFit: "cover",
-            width: "100%",
-            height: "100%",
-            filter: "brightness(0.7)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(135deg, rgba(22,23,72,.75), rgba(71,133,89,.45))",
-          }}
-        />
-        <div
-          style={{
-            margin: 64,
-            color: "white",
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
-            maxWidth: 980,
-          }}
-        >
-          <div style={{ fontSize: 56, fontWeight: 800, lineHeight: 1.1 }}>{title}</div>
-          <div style={{ display: "flex", gap: 24, fontSize: 28 }}>
+        {/* Brand row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              background: "#fff",
+              opacity: 0.9,
+            }}
+          />
+          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 0.5 }}>QwikSale</div>
+        </div>
+
+        {/* Title + meta */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 64, fontWeight: 800, lineHeight: 1.1 }}>{title}</div>
+          <div style={{ display: "flex", gap: 16, fontSize: 28, opacity: 0.9 }}>
             <span>{cat}</span>
-            <span>{price}</span>
+            <span>· {price}</span>
           </div>
-          <div style={{ marginTop: 8, fontSize: 22, opacity: 0.9 }}>qwiksale.co</div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div style={{ fontSize: 20, opacity: 0.9 }}>Find trusted pros near you</div>
+          <div style={{ fontSize: 20, opacity: 0.9 }}>qwiksale.sale</div>
         </div>
       </div>
     ),

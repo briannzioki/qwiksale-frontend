@@ -1,73 +1,90 @@
 /* eslint-disable @next/next/no-img-element */
 import { ImageResponse } from "next/og";
-import { prisma } from "@/app/lib/prisma";
 
 export const runtime = "edge";
-export const alt = "Product preview";
-export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
+export const size = { width: 1200, height: 630 };
 
-function safeTxt(v?: string | null) {
-  return (v || "").toString().slice(0, 140);
+type Product = {
+  id: string;
+  name?: string | null;
+  price?: number | null;
+  currency?: string | null; // optional if your API returns it
+  town?: string | null;
+  coverImageUrl?: string | null; // if your API returns one
+};
+
+function appBaseUrl() {
+  const envAppUrl =
+    process.env["NEXT_PUBLIC_APP_URL"] ||
+    (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "") ||
+    "http://localhost:3000";
+  return envAppUrl.replace(/\/+$/, "");
 }
 
-export default async function Image({ params }: { params: { id: string } }) {
-  const id = decodeURIComponent(params.id || "");
-  const p = await prisma.product
-    .findUnique({
-      where: { id },
-      select: { name: true, price: true, image: true, gallery: true, brand: true },
-    })
-    .catch(() => null);
+async function getProduct(id: string): Promise<Product | null> {
+  const base = appBaseUrl();
+  const res = await fetch(`${base}/api/products/${encodeURIComponent(id)}`, {
+    // Cache a bit to avoid hammering your API
+    next: { revalidate: 300 },
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
 
-  const title = safeTxt(p?.name) || "QwikSale";
-  const brand = safeTxt(p?.brand);
-  const hero =
-    (p?.image || (p?.gallery || [])[0] || "/placeholder/default.jpg").trim();
+  const json = await res.json().catch(() => ({}));
+  // Adjust to your API shape if needed:
+  return (json?.product as Product) ?? null;
+}
 
+export default async function Image({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const p = await getProduct(id);
+
+  const title = (p?.name || "QwikSale").slice(0, 90);
+  const currency = p?.currency || "KES";
   const price =
-    typeof p?.price === "number" && p.price > 0
-      ? `KES ${new Intl.NumberFormat("en-KE").format(p.price)}`
-      : "Contact for price";
+    typeof p?.price === "number" ? `${currency} ${Math.round(p.price).toLocaleString("en-KE")}` : "";
+  const location = p?.town || "";
 
+  // We intentionally avoid loading fonts or external images to keep bundle tiny
   return new ImageResponse(
     (
       <div
         style={{
-          width: "100%",
-          height: "100%",
+          width: size.width,
+          height: size.height,
           display: "flex",
-          position: "relative",
-          fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: 48,
+          background: "linear-gradient(135deg, #161748 0%, #478559 50%, #39a0ca 100%)",
+          color: "#fff",
+          fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
         }}
       >
-        <img
-          src={hero}
-          alt=""
-          style={{
-            position: "absolute",
-            inset: 0,
-            objectFit: "cover",
-            width: "100%",
-            height: "100%",
-            filter: "brightness(0.7)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(135deg, rgba(22,23,72,.75), rgba(57,160,202,.45))",
-          }}
-        />
-        <div style={{ margin: 64, color: "white", display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ fontSize: 56, fontWeight: 800, lineHeight: 1.1 }}>{title}</div>
-          <div style={{ display: "flex", gap: 24, fontSize: 28 }}>
-            {brand ? <span>Brand: {brand}</span> : null}
-            <span>{price}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              background: "#fff",
+              opacity: 0.9,
+            }}
+          />
+          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 0.5 }}>QwikSale</div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 64, fontWeight: 800, lineHeight: 1.1 }}>{title}</div>
+          <div style={{ display: "flex", gap: 16, fontSize: 28, opacity: 0.9 }}>
+            {price ? <span>{price}</span> : null}
+            {location ? <span>· {location}</span> : null}
           </div>
-          <div style={{ marginTop: 8, fontSize: 22, opacity: 0.9 }}>qwiksale.co</div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div style={{ fontSize: 20, opacity: 0.9 }}>Kenya’s trusted marketplace</div>
+          <div style={{ fontSize: 20, opacity: 0.9 }}>qwiksale.sale</div>
         </div>
       </div>
     ),
