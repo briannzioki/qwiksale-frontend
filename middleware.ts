@@ -89,12 +89,18 @@ function mustBeJson(req: NextRequest) {
 /* --------------------- Unified middleware (auth + CSP + cookie) -------------------- */
 export default withAuth(
   function middleware(req: NextRequest) {
+    const p = req.nextUrl.pathname;
+
+    // ✅ Never run middleware on NextAuth routes (prevents breaking Set-Cookie)
+    if (p.startsWith("/api/auth")) {
+      return NextResponse.next();
+    }
+
     const isDev =
       process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview";
     const nonce = makeNonce();
 
     // JSON guards for sensitive POST endpoints
-    const p = req.nextUrl.pathname;
     if (
       (p === "/api/billing/upgrade" && req.method === "POST") ||
       (p.startsWith("/api/products/") && p.endsWith("/promote") && req.method === "POST")
@@ -108,17 +114,15 @@ export default withAuth(
     forwarded.set("x-nonce", nonce);
     const res = NextResponse.next({ request: { headers: forwarded } });
 
-    // Security headers
+    // Security headers (not applied to /api/auth because we exit above)
     const sec = buildSecurityHeaders(nonce, isDev);
     for (const [k, v] of sec.entries()) res.headers.set(k, v);
 
     // Device cookie
-    const DID = req.cookies.get("qs_did")?.value;
-    if (!DID) {
-      const did = makeUUID();
+    if (!req.cookies.get("qs_did")?.value) {
       res.cookies.set({
         name: "qs_did",
-        value: did,
+        value: makeUUID(),
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
@@ -134,16 +138,13 @@ export default withAuth(
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
 
-        // pages that require *any* auth
-        const needsAuth = p.startsWith("/sell");
+        // belt-and-suspenders: always allow auth infra
+        if (p.startsWith("/api/auth")) return true;
 
-        // pages & APIs that require admin
+        const needsAuth = p.startsWith("/sell");
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
 
-        if (needsAdmin) {
-          // your JWT must include token.role === 'admin'
-          return !!token && (token as any).role === "admin";
-        }
+        if (needsAdmin) return !!token && (token as any).role === "admin";
         if (needsAuth) return !!token;
         return true;
       },
@@ -154,6 +155,7 @@ export default withAuth(
 /* ----------------------------- Route matcher ------------------------------ */
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps).*)",
+    // Exclude NextAuth + static assets + sitemap endpoints
+    '/((?!api/auth|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps).*)',
   ],
 };
