@@ -96,7 +96,6 @@ export const authOptions: NextAuthOptions = {
             name: true,
             image: true,
             passwordHash: true,
-            // accounts: { select: { provider: true }, take: 1 }, // keep if needed later
             subscription: true,
             username: true,
             referralCode: true,
