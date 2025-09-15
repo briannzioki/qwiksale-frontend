@@ -89,12 +89,18 @@ function mustBeJson(req: NextRequest) {
 /* --------------------- Unified middleware (auth + CSP + cookie) -------------------- */
 export default withAuth(
   function middleware(req: NextRequest) {
+    const p = req.nextUrl.pathname;
+
+    // ⛔️ Never touch NextAuth / Vercel internal routes
+    if (p.startsWith("/api/auth") || p.startsWith("/_vercel")) {
+      return NextResponse.next();
+    }
+
     const isDev =
       process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview";
     const nonce = makeNonce();
 
     // JSON guards for sensitive POST endpoints
-    const p = req.nextUrl.pathname;
     if (
       (p === "/api/billing/upgrade" && req.method === "POST") ||
       (p.startsWith("/api/products/") && p.endsWith("/promote") && req.method === "POST")
@@ -108,7 +114,7 @@ export default withAuth(
     forwarded.set("x-nonce", nonce);
     const res = NextResponse.next({ request: { headers: forwarded } });
 
-    // Security headers
+    // Security headers (skip on /api/auth above)
     const sec = buildSecurityHeaders(nonce, isDev);
     for (const [k, v] of sec.entries()) res.headers.set(k, v);
 
@@ -134,16 +140,13 @@ export default withAuth(
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
 
-        // pages that require *any* auth
+        // Require login for /sell
         const needsAuth = p.startsWith("/sell");
 
-        // pages & APIs that require admin
+        // Require admin for /admin and /api/admin
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
 
-        if (needsAdmin) {
-          // your JWT must include token.role === 'admin'
-          return !!token && (token as any).role === "admin";
-        }
+        if (needsAdmin) return !!token && (token as any).role === "admin";
         if (needsAuth) return !!token;
         return true;
       },
@@ -152,8 +155,9 @@ export default withAuth(
 );
 
 /* ----------------------------- Route matcher ------------------------------ */
+// Exclude static assets, sitemaps, NextAuth, and Vercel’s internal paths.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|_vercel).*)",
   ],
 };
