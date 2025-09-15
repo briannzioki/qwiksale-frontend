@@ -90,10 +90,10 @@ function shape(row: any) {
 /* ------------------------------ GET ------------------------------ */
 export async function GET(req: NextRequest) {
   try {
-    // Per-IP rate limit
-    const rl = checkRateLimit(req.headers, {
+    // Per-IP rate limit (extraKey omitted; IP is already part of the key)
+    const rl = await checkRateLimit(req.headers, {
       name: "services_search",
-      limit: 60,       // 60 / 60s / IP
+      limit: 60,
       windowMs: 60_000,
     });
     if (!rl.ok) {

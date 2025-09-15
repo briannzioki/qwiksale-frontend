@@ -1,3 +1,4 @@
+// src/app/api/products/[id]/contact/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -75,20 +76,23 @@ export async function GET(req: NextRequest) {
     const productId = getId(req);
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
 
-    // Global best-effort rate limit (IP bucket)
-    const rl = checkRateLimit(req.headers, {
-      name: "products_contact",
-      limit: 10,       // 10 / 30s / IP
-      windowMs: 30_000,
-      extraKey: productId, // scope per product to be nicer to users
-    });
-    if (!rl.ok) {
-      return tooMany("Please wait a moment before revealing more contacts.", rl.retryAfterSec);
-    }
-
     // viewer is optional (guests allowed)
     const session = await auth().catch(() => null);
     const viewerUserId = (session as any)?.user?.id as string | undefined;
+
+    // Global best-effort rate limit (bucket per viewer + product)
+    const rl = await checkRateLimit(req.headers, {
+      name: "products_contact_reveal",
+      limit: 5,
+      windowMs: 60_000,
+      extraKey: `${viewerUserId ?? "anon"}:${productId}`,
+    });
+    if (!rl.ok) {
+      return tooMany(
+        "Please wait a moment before revealing more contacts.",
+        rl.retryAfterSec
+      );
+    }
 
     // Minimal public fields
     const product = await prisma.product.findUnique({
@@ -112,8 +116,8 @@ export async function GET(req: NextRequest) {
     const WIN_IP_HR = new Date(now - 60 * 60 * 1000);     // 1 hour
     const WIN_DEVICE_15 = new Date(now - 15 * 60 * 1000); // 15 minutes
 
-    const MAX_PER_IP_PER_HOUR = 12;       // generous per IP
-    const MAX_PER_DEVICE_15MIN = 6;       // same IP + UA ≈ device
+    const MAX_PER_IP_PER_HOUR = 12; // generous per IP
+    const MAX_PER_DEVICE_15MIN = 6; // same IP + UA ≈ device
 
     // Count recent reveals per IP for this product
     if (ip) {

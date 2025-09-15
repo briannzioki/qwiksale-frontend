@@ -1,3 +1,4 @@
+// src/app/api/products/search/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -95,10 +96,10 @@ function shape(row: any) {
 /* ------------------------------ GET ------------------------------ */
 export async function GET(req: NextRequest) {
   try {
-    // Per-IP throttle
-    const rl = checkRateLimit(req.headers, {
+    // Per-IP throttle (extraKey not needed here; IP is already used internally)
+    const rl = await checkRateLimit(req.headers, {
       name: "products_search",
-      limit: 60,       // 60 / 60s per IP
+      limit: 60,
       windowMs: 60_000,
     });
     if (!rl.ok) {

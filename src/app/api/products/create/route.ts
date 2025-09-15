@@ -1,3 +1,4 @@
+// src/app/api/products/create/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -173,11 +174,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Rate limit per IP + user
-    const rl = checkRateLimit(req.headers, {
-      name: "create_listing",
-      limit: 6,                  // 6 / 10m
+    const rl = await checkRateLimit(req.headers, {
+      name: "products_create",
+      limit: 6,
       windowMs: 10 * 60_000,
-      extraKey: me.id,           // also bucket by user id
+      extraKey: me.id, // <-- use authenticated user id
     });
     if (!rl.ok) {
       return tooMany("Too many create attempts. Try again later.", rl.retryAfterSec);

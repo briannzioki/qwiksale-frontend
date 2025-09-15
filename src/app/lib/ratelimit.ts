@@ -20,8 +20,7 @@ let RatelimitCtor:
   | null = null;
 
 if (UPSTASH_URL && UPSTASH_TOKEN) {
-  // Lazy require so we don't even import the packages if not configured
-  // (helps local dev / tests, and avoids logs during static generation).
+  // Lazy require so we don't import unless configured
   const { Redis } = require("@upstash/redis") as typeof import("@upstash/redis");
   const { Ratelimit } = require("@upstash/ratelimit") as typeof import("@upstash/ratelimit");
 
@@ -86,32 +85,29 @@ function memoryCheck(key: string, p: RLParams, now: number): RLResult {
  * Universal checker: uses Upstash if configured, otherwise a process-memory Map.
  * Returns `{ ok, retryAfterSec }`.
  */
-export async function checkRateLimit(headers: Headers, p: RLParams): Promise<RLResult> {
+export async function checkRateLimit(headers: Headers, p: RLParams) {
   const ip = ipFromHeaders(headers) ?? "anon";
   const key = `${p.name}:${ip}${p.extraKey ? `:${p.extraKey}` : ""}`;
 
   // Fast path: Upstash present
   if (upstashRedis && RatelimitCtor) {
-    // Construct a small ratelimiter for the window/limit provided.
     const { Ratelimit } = require("@upstash/ratelimit") as typeof import("@upstash/ratelimit");
+
+    // Upstash expects a Duration like "60 s", not a number.
+    const seconds = Math.max(1, Math.round(p.windowMs / 1000));
     const rl = new RatelimitCtor({
       redis: upstashRedis,
-      limiter: Ratelimit.slidingWindow(p.limit, p.windowMs / 1000), // seconds
+      limiter: Ratelimit.slidingWindow(p.limit, `${seconds} s`),
       prefix: `rl:${p.name}`,
       analytics: false,
     });
 
     const res = await rl.limit(key);
-    if (res.success) {
-      const retryAfterSec = res.reset
-        ? Math.max(1, Math.ceil((res.reset - Date.now()) / 1000))
-        : Math.ceil(p.windowMs / 1000);
-      return { ok: true, retryAfterSec };
-    }
-
     const retryAfterSec = res.reset
       ? Math.max(1, Math.ceil((res.reset - Date.now()) / 1000))
-      : Math.ceil(p.windowMs / 1000);
+      : seconds;
+
+    if (res.success) return { ok: true, retryAfterSec } as const;
 
     // Optional extended cooldown
     if (p.blockMs && res.reset && res.reset - Date.now() < p.blockMs) {
@@ -121,7 +117,7 @@ export async function checkRateLimit(headers: Headers, p: RLParams): Promise<RLR
         /* ignore */
       }
     }
-    return { ok: false, retryAfterSec };
+    return { ok: false, retryAfterSec } as const;
   }
 
   // Fallback: in-memory Map (single-process only)

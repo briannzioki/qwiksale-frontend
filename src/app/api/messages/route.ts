@@ -1,3 +1,4 @@
+// src/app/api/messages/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,20 +42,18 @@ export async function GET(req: NextRequest) {
     const uid = (session?.user as any)?.id as string | undefined;
     if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    // Rate limit listing threads fetch
-    const rl = checkRateLimit(req.headers, {
+    // Rate limit listing threads fetch (per user)
+    const rl = await checkRateLimit(req.headers, {
       name: "messages_list",
-      limit: 60,     // 60 / 60s
+      limit: 60,
       windowMs: 60_000,
       extraKey: uid,
     });
-    if (!rl.ok) {
-      return tooMany("Please slow down.", rl.retryAfterSec);
-    }
+    if (!rl.ok) return tooMany("Please slow down.", rl.retryAfterSec);
 
     const threads = await db.thread.findMany({
       where: { OR: [{ buyerId: uid }, { sellerId: uid }] },
-      orderBy: { lastMessageAt: "desc" },
+      orderBy: { lastMessageAt: "asc" }, // or "desc" if you prefer newest first
       select: {
         id: true,
         listingId: true,
@@ -74,6 +73,7 @@ export async function GET(req: NextRequest) {
 
     return noStore({ items: threads });
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.warn("[messages GET] error", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
@@ -87,23 +87,13 @@ export async function POST(req: NextRequest) {
     const uid = (session?.user as any)?.id as string | undefined;
     if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    // Rate limit thread creation / first message
-    const rl = checkRateLimit(req.headers, {
-      name: "messages_send",
-      limit: 30,     // 30 / 60s
-      windowMs: 60_000,
-      extraKey: uid,
-    });
-    if (!rl.ok) {
-      return tooMany("You’re sending messages too quickly. Please slow down.", rl.retryAfterSec);
-    }
-
+    // Quick content-type check
     const ctype = (req.headers.get("content-type") || "").toLowerCase();
     if (!ctype.includes("application/json")) {
       return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
     }
 
-    const b = await req.json().catch(() => ({}));
+    const b = await req.json().catch(() => ({} as any));
     const toUserId = String(b?.toUserId || "").trim();
     const listingType = String(b?.listingType || "") as ListingType;
     const listingId = String(b?.listingId || "").trim();
@@ -114,6 +104,20 @@ export async function POST(req: NextRequest) {
     }
     if (toUserId === uid) {
       return noStore({ error: "Cannot message yourself" }, { status: 400 });
+    }
+
+    // Rate limit thread creation / first message (per user + target + listing)
+    const rl = await checkRateLimit(req.headers, {
+      name: "messages_create_or_send",
+      limit: 30,
+      windowMs: 60_000,
+      extraKey: `${uid}:${toUserId}:${listingType}:${listingId}`,
+    });
+    if (!rl.ok) {
+      return tooMany(
+        "You’re sending messages too quickly. Please slow down.",
+        rl.retryAfterSec
+      );
     }
 
     const buyerId = uid;
@@ -157,6 +161,7 @@ export async function POST(req: NextRequest) {
 
     return noStore({ threadId: thread.id }, { status: 201 });
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.warn("[messages POST] error", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }

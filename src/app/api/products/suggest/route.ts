@@ -44,11 +44,11 @@ export async function GET(request: Request) {
     return empty;
   }
 
-  // New: global per-IP throttle with 429s
-  const rl = checkRateLimit(new Headers(request.headers), {
+  // Global per-IP throttle with 429s
+  const rl = await checkRateLimit(request.headers as unknown as Headers, {
     name: "products_suggest",
-    limit: LIMIT,
-    windowMs: WINDOW_MS,
+    limit: 30,
+    windowMs: 60_000,
   });
   if (!rl.ok) {
     return tooMany("Too many requests. Please slow down and try again.", rl.retryAfterSec);

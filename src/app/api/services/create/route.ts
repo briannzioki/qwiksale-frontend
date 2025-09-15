@@ -62,9 +62,9 @@ export async function POST(req: NextRequest) {
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     // Rate limit per IP + user
-    const rl = checkRateLimit(req.headers, {
-      name: "create_listing",
-      limit: 6,                 // 6 / 10m
+    const rl = await checkRateLimit(req.headers, {
+      name: "services_create",
+      limit: 6,
       windowMs: 10 * 60_000,
       extraKey: userId,
     });
