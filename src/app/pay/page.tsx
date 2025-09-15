@@ -1,4 +1,3 @@
-// app/pay/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,15 +19,31 @@ const PRESETS = [10, 50, 100, 200, 500] as const;
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
+/** Normalize Kenyan MSISDN to 2547XXXXXXXX or 2541XXXXXXXX. */
 function normalizeMsisdn(input: string): string {
-  let s = (input || "").replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07 -> 2547
-  if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, ""); // +2547 -> 2547
-  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12); // guard paste
+  const raw = (input || "").trim();
+
+  // If already +2547… or +2541…, drop +
+  if (/^\+254(7|1)\d{8}$/.test(raw)) return raw.replace(/^\+/, "");
+
+  // Strip non-digits
+  let s = raw.replace(/\D+/g, "");
+
+  // 07… / 01… -> 2547… / 2541…
+  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
+  if (/^01\d{8}$/.test(s)) s = "254" + s.slice(1);
+
+  // 7…… / 1…… -> 2547… / 2541…
+  if (/^7\d{8}$/.test(s)) s = "254" + s;
+  if (/^1\d{8}$/.test(s)) s = "254" + s;
+
+  // Guard: too many digits pasted
+  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
+
   return s;
 }
 function isValidMsisdn(msisdn: string) {
-  return /^2547\d{8}$/.test(msisdn);
+  return /^254(7|1)\d{8}$/.test(msisdn);
 }
 function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.round(n)));
@@ -63,6 +78,7 @@ type Mode = "paybill" | "till";
 
 export default function PayPage() {
   const [msisdn, setMsisdn] = useState<string>("");
+  const [profileMsisdn, setProfileMsisdn] = useState<string>(""); // normalized from /api/me/profile
   const normalized = useMemo(() => normalizeMsisdn(msisdn), [msisdn]);
   const validPhone = isValidMsisdn(normalized);
 
@@ -75,14 +91,41 @@ export default function PayPage() {
 
   const abortRef = useRef<AbortController | null>(null);
 
-  // Prefill msisdn: last used -> env default
+  // Prefill order: profile.whatsapp -> last used (ls) -> env default
   useEffect(() => {
-    const last = lsGet("qs_last_msisdn", DEFAULT_MSISDN);
-    if (last) setMsisdn(last);
+    let alive = true;
+
+    (async () => {
+      try {
+        const r = await fetch("/api/me/profile", { cache: "no-store" });
+        if (r.ok) {
+          const j = await r.json().catch(() => ({}));
+          const wa = (j?.user?.whatsapp || "").trim();
+          const norm = wa ? normalizeMsisdn(wa) : "";
+          if (alive && norm && isValidMsisdn(norm)) {
+            setProfileMsisdn(norm);
+            setMsisdn(norm);
+            return;
+          }
+        }
+      } catch {
+        /* ignore, fall back to ls/env */
+      }
+      // fallback to last used then env default
+      const last = lsGet("qs_last_msisdn", DEFAULT_MSISDN);
+      const normLast = normalizeMsisdn(last);
+      if (alive && normLast) {
+        setMsisdn(normLast);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
+  // Persist when valid
   useEffect(() => {
-    // Persist when valid
     if (validPhone) lsSet("qs_last_msisdn", normalized);
   }, [validPhone, normalized]);
 
@@ -92,12 +135,18 @@ export default function PayPage() {
     setAmount(clampInt(n, 1, 1_000_000));
   }
 
+  // Snap-normalize on blur for a clean input value
+  function snapNormalize() {
+    const n = normalizeMsisdn(msisdn);
+    if (n !== msisdn) setMsisdn(n);
+  }
+
   async function pay() {
     setErr(null);
     setResp(null);
 
     if (!validPhone) {
-      const msg = "Please enter a valid phone like 2547XXXXXXXX.";
+      const msg = "Please enter a valid phone like 2547XXXXXXXX or 2541XXXXXXXX.";
       setErr(msg);
       toast.error("Invalid phone");
       return;
@@ -122,7 +171,7 @@ export default function PayPage() {
         signal: ac.signal,
         body: JSON.stringify({
           amount,
-          msisdn: normalized,
+          msisdn: normalized, // digits only
           mode,
         }),
       });
@@ -190,6 +239,9 @@ export default function PayPage() {
     };
   }, [resp]);
 
+  const showUseProfile =
+    !!profileMsisdn && isValidMsisdn(profileMsisdn) && profileMsisdn !== normalized;
+
   return (
     <div className="container-page py-6 space-y-6 max-w-2xl mx-auto">
       {/* Hero */}
@@ -204,21 +256,34 @@ export default function PayPage() {
       <div className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
         {/* Phone */}
         <div>
-          <label className="block text-sm font-semibold mb-1">Phone (2547XXXXXXXX)</label>
-          <input
-            className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
-            placeholder="2547XXXXXXXX"
-            value={msisdn}
-            onChange={(e) => setMsisdn(e.target.value)}
-            inputMode="numeric"
-            aria-invalid={!validPhone}
-          />
+          <label className="block text-sm font-semibold mb-1">Phone (2547XXXXXXXX or 2541XXXXXXXX)</label>
+          <div className="flex gap-2 items-start">
+            <input
+              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+              placeholder="2547XXXXXXXX"
+              value={msisdn}
+              onChange={(e) => setMsisdn(e.target.value)}
+              onBlur={snapNormalize}
+              inputMode="numeric"
+              aria-invalid={!validPhone}
+            />
+            {showUseProfile && (
+              <button
+                type="button"
+                onClick={() => setMsisdn(profileMsisdn)}
+                className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800"
+                title="Use my profile phone"
+              >
+                Use profile
+              </button>
+            )}
+          </div>
           <div className="text-xs text-gray-600 dark:text-slate-400 mt-1">
             Normalized: <code className="font-mono">{normalized || "—"}</code>
           </div>
           {!validPhone && msisdn && (
             <div className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">
-              Must match <code className="font-mono">2547XXXXXXXX</code>
+              Must match <code className="font-mono">2547XXXXXXXX</code> or <code className="font-mono">2541XXXXXXXX</code>
             </div>
           )}
         </div>
@@ -307,31 +372,53 @@ export default function PayPage() {
         )}
 
         {/* Parsed summary */}
-        {summary && (
+        {resp && (
           <div className="rounded-xl border dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
             <h2 className="font-semibold">Response</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
               <div>
                 <span className="text-gray-500 dark:text-slate-400">Response Code:</span>{" "}
-                <span className="font-medium">{String(summary.responseCode ?? "—")}</span>
+                <span className="font-medium">{String(
+                  resp?.ResponseCode ??
+                  resp?.responseCode ??
+                  resp?.Body?.stkCallback?.ResultCode ??
+                  "—")}</span>
               </div>
               <div>
                 <span className="text-gray-500 dark:text-slate-400">Response:</span>{" "}
-                <span className="font-medium">{summary.responseDesc ?? "—"}</span>
+                <span className="font-medium">{
+                  resp?.ResponseDescription ??
+                  resp?.responseDescription ??
+                  resp?.CustomerMessage ??
+                  resp?.customerMessage ??
+                  resp?.Body?.stkCallback?.ResultDesc ??
+                  "—"}</span>
               </div>
               <div>
                 <span className="text-gray-500 dark:text-slate-400">MerchantRequestID:</span>{" "}
-                <span className="font-medium">{summary.merchantRequestId ?? "—"}</span>
+                <span className="font-medium">{
+                  resp?.MerchantRequestID ??
+                  resp?.merchantRequestId ??
+                  resp?.Body?.stkCallback?.MerchantRequestID ??
+                  "—"}</span>
               </div>
               <div>
                 <span className="text-gray-500 dark:text-slate-400">CheckoutRequestID:</span>{" "}
-                <span className="font-medium break-all">{summary.checkoutRequestId ?? "—"}</span>
-                {summary.checkoutRequestId && (
+                <span className="font-medium break-all">{
+                  resp?.CheckoutRequestID ??
+                  resp?.checkoutRequestId ??
+                  resp?.Body?.stkCallback?.CheckoutRequestID ??
+                  "—"}</span>
+                {(resp?.CheckoutRequestID || resp?.checkoutRequestId || resp?.Body?.stkCallback?.CheckoutRequestID) && (
                   <button
                     className="ml-2 rounded-md border px-2 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-800"
                     onClick={async () => {
                       try {
-                        await navigator.clipboard.writeText(String(summary.checkoutRequestId));
+                        const id =
+                          resp?.CheckoutRequestID ??
+                          resp?.checkoutRequestId ??
+                          resp?.Body?.stkCallback?.CheckoutRequestID;
+                        await navigator.clipboard.writeText(String(id));
                         toast.success("CheckoutRequestID copied");
                       } catch {
                         toast.error("Couldn't copy");
@@ -351,9 +438,9 @@ export default function PayPage() {
               <summary className="cursor-pointer text-sm text-gray-600 dark:text-slate-300">
                 Raw response JSON
               </summary>
-              <pre className="text-xs bg-gray-100 dark:bg-slate-800/50 p-3 rounded mt-2 overflow-x-auto">
-                {prettyJson(resp)}
-              </pre>
+                <pre className="text-xs bg-gray-100 dark:bg-slate-800/50 p-3 rounded mt-2 overflow-x-auto">
+{prettyJson(resp)}
+                </pre>
             </details>
           </div>
         )}

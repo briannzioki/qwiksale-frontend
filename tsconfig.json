@@ -23,7 +23,9 @@
     "paths": { "@/*": ["src/*"] },
 
     "plugins": [{ "name": "next" }],
-    "types": ["@types/node"],
+
+    /* Make TS happy in tests & Next env */
+    "types": ["@types/node", "vitest/globals", "next/types/global"],
 
     /* extra safety (opt-in) */
     "exactOptionalPropertyTypes": true,
@@ -35,6 +37,7 @@
   "include": [
     "next-env.d.ts",
     "src",
+    "tests",
     "src/types/**/*.d.ts",
     ".next/types/**/*.ts"
   ],

@@ -193,8 +193,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     // Optional: write an audit log row if your schema supports it
     try {
-      // @ts-expect-error - guard if you don't have this table
-      await prisma.adminAuditLog?.create({
+      await (prisma as any).adminAuditLog?.create?.({
         data: {
           actorId: user.id,
           action: "PRODUCT_FEATURE_TOGGLE",

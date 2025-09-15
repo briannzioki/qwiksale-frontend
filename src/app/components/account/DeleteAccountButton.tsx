@@ -29,6 +29,7 @@ export default function DeleteAccountButton({
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const normalizedEmail = useMemo(() => userEmail.trim().toLowerCase(), [userEmail]);
   const canDelete = ack && typed.trim().toLowerCase() === normalizedEmail;
@@ -49,6 +50,11 @@ export default function DeleteAccountButton({
     return () => clearTimeout(t);
   }, []);
 
+  // abort any in-flight request on unmount
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   /* --------------------------- open/close effects --------------------------- */
   useEffect(() => {
     if (!open) return;
@@ -66,7 +72,6 @@ export default function DeleteAccountButton({
         );
         if (focusable.length === 0) return;
 
-        // Use .item() and guard to satisfy strict TS
         const first = focusable.item(0);
         const last = focusable.item(focusable.length - 1);
         if (!first || !last) return;
@@ -113,10 +118,15 @@ export default function DeleteAccountButton({
     setErr(null);
     emit("qs:account:delete:submit", { email: userEmail });
 
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     try {
       const res = await fetch("/api/account/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: ac.signal,
         body: JSON.stringify({ confirm: true, email: userEmail }),
       });
       const json = await res.json().catch(() => ({}));
@@ -140,6 +150,7 @@ export default function DeleteAccountButton({
 
       router.replace("/goodbye");
     } catch (e: any) {
+      if (e?.name === "AbortError") return;
       const message = e?.message || "Failed to delete account";
       setErr(message);
       announce("Delete failed");
@@ -150,6 +161,8 @@ export default function DeleteAccountButton({
   }, [announce, canDelete, loading, onDeletedAction, router, userEmail, emit]);
 
   /* --------------------------------- render -------------------------------- */
+  const descId = "delacc-desc";
+
   return (
     <>
       <span aria-live="polite" className="sr-only" ref={liveRef} />
@@ -158,6 +171,7 @@ export default function DeleteAccountButton({
         ref={triggerRef}
         type="button"
         onClick={() => {
+          if (open) return;
           setOpen(true);
           emit("qs:account:delete:open", { email: userEmail });
         }}
@@ -181,6 +195,7 @@ export default function DeleteAccountButton({
             role="dialog"
             aria-modal="true"
             aria-labelledby="delacc-title"
+            aria-describedby={descId}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
             <div
@@ -190,7 +205,7 @@ export default function DeleteAccountButton({
               <h2 id="delacc-title" className="text-lg font-semibold text-red-700 dark:text-red-400">
                 Delete your account?
               </h2>
-              <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+              <p id={descId} className="mt-2 text-sm text-gray-700 dark:text-gray-300">
                 This action is <strong>permanent</strong> and will remove your profile, listings, and data.
                 To confirm, tick the box and type your email <span className="font-mono">{userEmail}</span> below.
               </p>

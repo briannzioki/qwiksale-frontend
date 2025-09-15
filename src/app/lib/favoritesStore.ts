@@ -84,7 +84,13 @@ async function fetchJson<T = unknown>(
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const res = await fetch(input, { cache: "no-store", ...init, signal: ac.signal });
+    const res = await fetch(input, {
+      cache: "no-store",
+      credentials: "include",
+      headers: { Accept: "application/json", ...(init.headers || {}) },
+      ...init,
+      signal: init.signal ?? ac.signal,
+    });
     let json: any = null;
     try {
       json = await res.json();
@@ -154,6 +160,7 @@ export function useFavourites(opts: Options = {}) {
               await fetch("/api/favorites", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify({ productId: pid, action: "add" } satisfies ApiToggleBody),
               });
             } catch {
@@ -246,6 +253,7 @@ export function useFavourites(opts: Options = {}) {
             {
               method: "POST",
               headers: { "content-type": "application/json" },
+              credentials: "include",
               body: JSON.stringify(body),
               signal: ac.signal,
             },
@@ -286,7 +294,7 @@ export function useFavourites(opts: Options = {}) {
         return true;
       } catch (e: any) {
         const prev = optimisticPrevRef.current ?? idsRef.current;
-        setIds(prev);
+        if (mountedRef.current) setIds(prev);
         toast.error(e?.message || "Couldn’t add to favorites");
         return false;
       } finally {
@@ -316,7 +324,7 @@ export function useFavourites(opts: Options = {}) {
         return true;
       } catch (e: any) {
         const prev = optimisticPrevRef.current ?? idsRef.current;
-        setIds(prev);
+        if (mountedRef.current) setIds(prev);
         toast.error(e?.message || "Couldn’t remove from favorites");
         return false;
       } finally {

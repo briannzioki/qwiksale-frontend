@@ -1,34 +1,23 @@
-// src/app/onboarding/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { normalizeKenyanPhone } from "@/app/lib/phone";
 
-/* ------------------------------------------------------------------ */
-/* Types                                                              */
-/* ------------------------------------------------------------------ */
-
 type Profile = {
   username: string;
-  whatsapp: string;   // optional raw input
-  city: string;       // optional
-  country: string;    // optional
-  postalCode: string; // optional
-  address: string;    // optional
+  whatsapp: string;
+  city: string;
+  country: string;
+  postalCode: string;
+  address: string;
 };
-
 type UsernameCheck = { ok: boolean; available: boolean; reason?: string };
 
-/* ------------------------------------------------------------------ */
-/* Utilities                                                          */
-/* ------------------------------------------------------------------ */
-
 function isSafePath(p?: string | null): p is string {
-  // allow "/foo" but not "", not "//", not "http(s)://..."
   return !!p && /^\/(?!\/)/.test(p);
 }
 
@@ -43,7 +32,6 @@ function canonicalUsername(raw: string) {
     .slice(0, 20);
 }
 
-/* Debounce helper */
 function useDebounced<T>(value: T, delay = 400) {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -53,11 +41,7 @@ function useDebounced<T>(value: T, delay = 400) {
   return v;
 }
 
-/* ------------------------------------------------------------------ */
-/* Component                                                          */
-/* ------------------------------------------------------------------ */
-
-export default function OnboardingPage() {
+function OnboardingPageInner() {
   const { status } = useSession();
   const sp = useSearchParams();
   const router = useRouter();
@@ -77,14 +61,13 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // username availability state
-  const [unameStatus, setUnameStatus] = useState<"idle" | "checking" | "ok" | "taken" | "invalid">("idle");
+  const [unameStatus, setUnameStatus] =
+    useState<"idle" | "checking" | "ok" | "taken" | "invalid">("idle");
   const [unameMsg, setUnameMsg] = useState<string>("");
 
   const debouncedUsername = useDebounced(form.username, 450);
   const abortRef = useRef<AbortController | null>(null);
 
-  /* Prefill from /api/me/profile (if available) */
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -103,12 +86,15 @@ export default function OnboardingPage() {
             });
           }
         } else if (r.status === 401) {
-          // not signed in — send to sign-in with safe return
-          router.replace(`/signin?callbackUrl=${encodeURIComponent("/onboarding?return=" + encodeURIComponent(returnTo))}`);
+          router.replace(
+            `/signin?callbackUrl=${encodeURIComponent(
+              "/onboarding?return=" + encodeURIComponent(returnTo),
+            )}`,
+          );
           return;
         }
       } catch {
-        /* network ignore */
+        /* ignore network */
       } finally {
         if (alive) setLoading(false);
       }
@@ -119,7 +105,6 @@ export default function OnboardingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* Live username availability check */
   useEffect(() => {
     const raw = debouncedUsername;
     if (!raw) {
@@ -143,10 +128,10 @@ export default function OnboardingPage() {
 
     (async () => {
       try {
-        const r = await fetch(`/api/me/username-available?u=${encodeURIComponent(u)}`, {
-          signal: ac.signal,
-          cache: "no-store",
-        });
+        const r = await fetch(
+          `/api/me/username-available?u=${encodeURIComponent(u)}`,
+          { signal: ac.signal, cache: "no-store" },
+        );
         const j = (await r.json().catch(() => ({}))) as UsernameCheck;
         if (!r.ok || !j?.ok) throw new Error(j?.reason || `check failed (${r.status})`);
 
@@ -167,12 +152,25 @@ export default function OnboardingPage() {
     return () => ac.abort();
   }, [debouncedUsername]);
 
-  /* Submit */
+  const normalizedWa = useMemo(() => {
+    const raw = form.whatsapp.trim();
+    if (!raw) return "";
+    return normalizeKenyanPhone(raw) || "";
+  }, [form.whatsapp]);
+
+  function snapNormalizeWhatsapp() {
+    if (!form.whatsapp) return;
+    if (!normalizedWa) return;
+    const pretty = `+${normalizedWa}`;
+    if (form.whatsapp !== pretty) {
+      setForm((f) => ({ ...f, whatsapp: pretty }));
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (saving) return;
 
-    // Normalize/validate username
     const username = canonicalUsername(form.username);
     if (!USERNAME_RE.test(username)) {
       toast.error("Choose a valid username (3–20 chars: a–z, 0–9, _ or .)");
@@ -183,7 +181,6 @@ export default function OnboardingPage() {
       return;
     }
 
-    // Normalize WhatsApp (optional)
     const waRaw = form.whatsapp.trim();
     const wa = waRaw ? normalizeKenyanPhone(waRaw) : null;
     if (waRaw && !wa) {
@@ -193,7 +190,7 @@ export default function OnboardingPage() {
 
     const payload = {
       username,
-      whatsapp: wa ? wa : (waRaw ? "" : null), // empty string clears, null leaves unchanged
+      whatsapp: wa ? wa : (waRaw ? "" : null),
       city: form.city.trim() || "",
       country: form.country.trim() || "",
       postalCode: form.postalCode.trim() || "",
@@ -221,10 +218,6 @@ export default function OnboardingPage() {
     }
   }
 
-  /* ------------------------------------------------------------------ */
-  /* Render                                                             */
-  /* ------------------------------------------------------------------ */
-
   if (status === "loading" || loading) {
     return (
       <div className="container-page py-8">
@@ -248,7 +241,6 @@ export default function OnboardingPage() {
   return (
     <div className="container-page py-8">
       <div className="mx-auto max-w-xl">
-        {/* Header */}
         <div className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
           <h1 className="text-2xl md:text-3xl font-extrabold">Finish your profile</h1>
           <p className="mt-1 text-white/90">
@@ -257,8 +249,10 @@ export default function OnboardingPage() {
           </p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={onSubmit} className="rounded-xl border bg-white p-5 mt-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
+        <form
+          onSubmit={onSubmit}
+          className="rounded-xl border bg-white p-5 mt-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4"
+        >
           {/* Username */}
           <div>
             <label htmlFor="username" className="block text-sm font-semibold mb-1">
@@ -270,9 +264,7 @@ export default function OnboardingPage() {
                 className="w-full rounded-lg border px-3 py-2 pr-24 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="e.g. brian254"
                 value={form.username}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, username: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
@@ -304,17 +296,30 @@ export default function OnboardingPage() {
               placeholder="07XXXXXXXX or +2547XXXXXXX"
               value={form.whatsapp}
               onChange={(e) => setForm((f) => ({ ...f, whatsapp: e.target.value }))}
+              onBlur={snapNormalizeWhatsapp}
               inputMode="tel"
             />
             <p className="mt-1 text-xs text-gray-500">
               We’ll only use this to help buyers reach you — it’s optional.
             </p>
+            {form.whatsapp && (
+              <p className="mt-1 text-xs">
+                Normalized:{" "}
+                {normalizedWa ? (
+                  <span className="text-emerald-600">+{normalizedWa}</span>
+                ) : (
+                  <span className="text-red-600">Invalid</span>
+                )}
+              </p>
+            )}
           </div>
 
           {/* City/Country */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label htmlFor="city" className="block text-sm font-semibold mb-1">City (optional)</label>
+              <label htmlFor="city" className="block text-sm font-semibold mb-1">
+                City (optional)
+              </label>
               <input
                 id="city"
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
@@ -324,7 +329,9 @@ export default function OnboardingPage() {
               />
             </div>
             <div>
-              <label htmlFor="country" className="block text-sm font-semibold mb-1">Country (optional)</label>
+              <label htmlFor="country" className="block text-sm font-semibold mb-1">
+                Country (optional)
+              </label>
               <input
                 id="country"
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
@@ -338,7 +345,9 @@ export default function OnboardingPage() {
           {/* Postal/Address */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label htmlFor="postal" className="block text-sm font-semibold mb-1">Postal code (optional)</label>
+              <label htmlFor="postal" className="block text-sm font-semibold mb-1">
+                Postal code (optional)
+              </label>
               <input
                 id="postal"
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
@@ -349,7 +358,9 @@ export default function OnboardingPage() {
               />
             </div>
             <div>
-              <label htmlFor="address" className="block text-sm font-semibold mb-1">Address (optional)</label>
+              <label htmlFor="address" className="block text-sm font-semibold mb-1">
+                Address (optional)
+              </label>
               <input
                 id="address"
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
@@ -387,5 +398,13 @@ export default function OnboardingPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div />}>
+      <OnboardingPageInner />
+    </Suspense>
   );
 }

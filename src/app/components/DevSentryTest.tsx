@@ -20,9 +20,9 @@ import { useCallback, useMemo, useRef, useState } from "react";
  *  - (optional) Throw a sync error to test React error boundaries
  */
 export default function DevSentryTest() {
+  // ✅ DOT notation for client env access
   const ENV = process.env["VERCEL_ENV"] || process.env.NODE_ENV || "development";
-  const SHOW =
-    process.env["NEXT_PUBLIC_SHOW_DEV_TEST"] === "1" || ENV !== "production";
+  const SHOW = process.env["NEXT_PUBLIC_SHOW_DEV_TEST"] === "1" || ENV !== "production";
 
   const [status, setStatus] = useState<string>("");
   const [tagVal, setTagVal] = useState<string>("dev");
@@ -31,33 +31,42 @@ export default function DevSentryTest() {
   // Small helpers — keep UI snappy and safe if Sentry isn’t configured yet
   const hasSentry = !!Sentry?.captureMessage;
 
-  const captureMsg = useCallback((msg: string, level: Sentry.SeverityLevel = "info") => {
-    if (!hasSentry) return console.log("[sentry:mock:captureMessage]", msg, level);
-    Sentry.captureMessage(msg, level);
-  }, [hasSentry]);
+  const captureMsg = useCallback(
+    (msg: string, level: Sentry.SeverityLevel = "info") => {
+      if (!hasSentry) return console.log("[sentry:mock:captureMessage]", msg, level);
+      Sentry.captureMessage(msg, level);
+    },
+    [hasSentry]
+  );
 
   const captureErr = useCallback((e: unknown) => {
     if (!hasSentry) return console.log("[sentry:mock:captureException]", e);
     Sentry.captureException(e);
   }, [hasSentry]);
 
-  const addBreadcrumb = useCallback((message: string, data?: Record<string, unknown>) => {
-    if (!hasSentry) return console.log("[sentry:mock:addBreadcrumb]", message, data);
+  const addBreadcrumb = useCallback(
+    (message: string, data?: Record<string, unknown>) => {
+      if (!hasSentry) return console.log("[sentry:mock:addBreadcrumb]", message, data);
 
-    const crumb: Sentry.Breadcrumb = {
-      category: "devtools",
-      message,
-      level: "info",
-    };
+      const crumb: Sentry.Breadcrumb = {
+        category: "devtools",
+        message,
+        level: "info",
+      };
 
-    // Only attach `data` when present to satisfy exactOptionalPropertyTypes
-    if (data) {
-      // Sentry's type is `{ [key: string]: any }`; cast is safe for dev tool payloads
-      (crumb as Sentry.Breadcrumb & { data: Record<string, any> }).data = data as Record<string, any>;
-    }
+      // Only attach `data` when present to satisfy exactOptionalPropertyTypes
+      if (data) {
+        // Sentry's type is `{ [key: string]: any }`; cast is safe for dev tool payloads
+        (crumb as Sentry.Breadcrumb & { data: Record<string, any> }).data = data as Record<
+          string,
+          any
+        >;
+      }
 
-    Sentry.addBreadcrumb(crumb);
-  }, [hasSentry]);
+      Sentry.addBreadcrumb(crumb);
+    },
+    [hasSentry]
+  );
 
   const setTag = useCallback((key: string, value: string) => {
     if (!hasSentry) return console.log("[sentry:mock:setTag]", key, value);
@@ -140,22 +149,22 @@ export default function DevSentryTest() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button onClick={sendClientMessage} className="btn-ghost px-2 py-1 text-xs">
+        <button onClick={sendClientMessage} className="btn-outline px-2 py-1 text-xs">
           Client message
         </button>
-        <button onClick={sendClientError} className="btn-ghost px-2 py-1 text-xs">
+        <button onClick={sendClientError} className="btn-outline px-2 py-1 text-xs">
           Client error
         </button>
-        <button onClick={sendServerError} className="btn-ghost px-2 py-1 text-xs">
+        <button onClick={sendServerError} className="btn-outline px-2 py-1 text-xs">
           Server error
         </button>
-        <button onClick={simulateSlow} className="btn-ghost px-2 py-1 text-xs">
+        <button onClick={simulateSlow} className="btn-outline px-2 py-1 text-xs">
           Simulate slow
         </button>
-        <button onClick={unhandledRejection} className="btn-ghost px-2 py-1 text-xs">
+        <button onClick={unhandledRejection} className="btn-outline px-2 py-1 text-xs">
           Unhandled rejection
         </button>
-        <button onClick={throwSyncError} className="btn-ghost px-2 py-1 text-xs">
+        <button onClick={throwSyncError} className="btn-outline px-2 py-1 text-xs">
           Throw sync error
         </button>
       </div>
@@ -175,7 +184,7 @@ export default function DevSentryTest() {
             setTag("qs-dev", tagVal || "dev");
             setStatus(`Set tag "qs-dev"=${JSON.stringify(tagVal || "dev")} ✓`);
           }}
-          className="btn-ghost px-2 py-1 text-[11px]"
+          className="btn-outline px-2 py-1 text-[11px]"
         >
           Set tag
         </button>
@@ -184,7 +193,7 @@ export default function DevSentryTest() {
             addBreadcrumb("devtools:manual_breadcrumb", { tag: tagVal || "dev" });
             setStatus("Breadcrumb added ✓");
           }}
-          className="btn-ghost px-2 py-1 text-[11px]"
+          className="btn-outline px-2 py-1 text-[11px]"
         >
           Add breadcrumb
         </button>

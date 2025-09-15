@@ -1,4 +1,3 @@
-// src/app/api/referrals/stats/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -158,8 +157,14 @@ export async function GET(req: NextRequest) {
       | undefined;
 
     if (includeRecent) {
-      // Adjust relation names if they differ in your schema.
-      const recentRaw = await prisma.referral.findMany({
+      type RecentRow = {
+        id: string;
+        createdAt: Date;
+        qualifiedAt: Date | null;
+        invitee: { email: string | null } | null;
+      };
+
+      const recentRaw = (await prisma.referral.findMany({
         where: { inviterId: uid },
         orderBy: { createdAt: "desc" },
         take: 20,
@@ -169,9 +174,9 @@ export async function GET(req: NextRequest) {
           qualifiedAt: true,
           invitee: { select: { email: true } }, // requires a `invitee` relation
         },
-      });
+      })) as RecentRow[];
 
-      recent = recentRaw.map((r) => ({
+      recent = recentRaw.map((r: RecentRow) => ({
         id: r.id,
         inviteeEmail: r.invitee?.email ?? null,
         createdAt: r.createdAt,

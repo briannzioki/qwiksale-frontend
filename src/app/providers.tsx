@@ -1,122 +1,247 @@
+// src/app/providers.tsx
 "use client";
 
-import * as React from "react";
-import * as Sentry from "@sentry/nextjs";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { Session } from "next-auth";
 import { SessionProvider } from "next-auth/react";
-import { Toaster, toast } from "react-hot-toast";
-import { usePathname } from "next/navigation";
 
-/* ----------------------------- Root Providers ----------------------------- */
-export default function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <SessionProvider refetchOnWindowFocus={false} refetchInterval={0}>
-      <Sentry.ErrorBoundary fallback={<ErrorFallback />}>
-        <React.Suspense fallback={<PageLoader />}>
-          <OnlineStatusWatcher />
-          <PathChangeAnnouncer />
-          {children}
-        </React.Suspense>
-      </Sentry.ErrorBoundary>
+/* ----------------------- Types ----------------------- */
 
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          className:
-            "rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100",
-          style: {
-            borderRadius: "12px",
-            padding: "10px 12px",
-            background: "#ffffff",
-            color: "#111827",
-            boxShadow:
-              "0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10)",
-          },
-          success: { style: { borderLeft: "4px solid #478559" } },
-          error: { style: { borderLeft: "4px solid #f95d9b" } },
-          loading: { style: { borderLeft: "4px solid #39a0ca" } },
-        }}
-      />
-    </SessionProvider>
-  );
-}
+type Props = {
+  children: React.ReactNode;
+  session?: Session | null;
 
-/* ------------------------------- Fallback UI ------------------------------ */
-function ErrorFallback() {
-  // Keep this minimal; app-level errors will render this.
-  return (
-    <div className="grid min-h-[40vh] place-items-center p-6">
-      <div className="max-w-md text-center space-y-3">
-        <h1 className="text-lg font-semibold">Something went wrong</h1>
-        <p className="text-sm text-gray-600 dark:text-slate-400">
-          We’ve been notified and are looking into it.
-        </p>
-        <button
-          className="btn-primary"
-          onClick={() => {
-            // Best-effort: reload the current route
-            if (typeof window !== "undefined") window.location.reload();
-          }}
-        >
-          Retry
-        </button>
-      </div>
-    </div>
-  );
-}
+  /** NextAuth session refetch */
+  refetchIntervalSec?: number;
+  refetchOnWindowFocus?: boolean;
+  /** Remount subtree when the signed-in user changes (helps reset client state) */
+  remountOnUserChange?: boolean;
 
-/* ------------------------------- Page Loader ------------------------------ */
-function PageLoader() {
-  return (
-    <div
-      className="grid min-h-[40vh] place-items-center"
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-    >
-      <div
-        className="h-6 w-6 rounded-full border-2 border-brandNavy border-t-transparent motion-safe:animate-spin"
-        aria-label="Loading"
-      />
-    </div>
-  );
-}
+  /** Theme defaults */
+  defaultTheme?: "system" | "light" | "dark";
+  /** If true and defaultTheme === "system", follow OS changes live */
+  enableSystemTheme?: boolean;
+  /** Persist theme using localStorage key */
+  themeStorageKey?: string;
+};
 
-/* --------------------------- Online/Offline Toasts ------------------------ */
-function OnlineStatusWatcher() {
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
+// Minimal shape we rely on for deriving a stable key
+type SessionLike = {
+  user?: { email?: string | null; id?: string | null } | null;
+} | null;
 
-    const onOffline = () =>
-      toast.error("You’re offline. Some actions may not work.");
-    const onOnline = () => toast.success("Back online");
+/* ----------------------- Analytics (console-only stub) ----------------------- */
 
-    window.addEventListener("offline", onOffline);
-    window.addEventListener("online", onOnline);
-    return () => {
-      window.removeEventListener("offline", onOffline);
-      window.removeEventListener("online", onOnline);
-    };
+type AnalyticsEvent =
+  | "page_view"
+  | "product_view"
+  | "favorite_add"
+  | "favorite_remove"
+  | "contact_reveal"
+  | "listing_create_attempt"
+  | "listing_created"
+  | "listing_failed"
+  | "search_performed"
+  | "filter_changed"
+  | string;
+
+type AnalyticsPayload = Record<string, unknown>;
+
+type AnalyticsContextValue = { track: (event: AnalyticsEvent, payload?: AnalyticsPayload) => void };
+
+const AnalyticsContext = createContext<AnalyticsContextValue | null>(null);
+
+function useAnalyticsInternal(): AnalyticsContextValue {
+  const track = useCallback((event: AnalyticsEvent, payload: AnalyticsPayload = {}) => {
+    // eslint-disable-next-line no-console
+    console.log("[analytics.track]", event, payload);
   }, []);
-
-  return null;
+  return useMemo(() => ({ track }), [track]);
 }
 
-/* ----------------------- Screen Reader Route Announcer -------------------- */
-function PathChangeAnnouncer() {
-  const pathname = usePathname();
-  const [mounted, setMounted] = React.useState(false);
+export function useAnalytics(): AnalyticsContextValue {
+  return useContext(AnalyticsContext) ?? { track: () => {} };
+}
 
-  React.useEffect(() => setMounted(true), []);
-  // Skip the first render to avoid announcing on initial load.
-  const label = mounted ? `Page changed: ${pathname || "/"}` : "";
+/* ----------------------- Theme (self-contained, no deps) ----------------------- */
+
+type Theme = "light" | "dark" | "system";
+type ResolvedTheme = "light" | "dark";
+
+type ThemeContextValue = {
+  theme: Theme; // selected theme
+  resolvedTheme: ResolvedTheme; // applied theme
+  setTheme: (t: Theme) => void;
+  toggleTheme: () => void; // toggles light<->dark (system resolves first)
+};
+
+const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+function getSystemTheme(): ResolvedTheme {
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyHtmlClass(theme: ResolvedTheme) {
+  const root = document.documentElement;
+  // Temporarily disable transitions to avoid jank when toggling
+  root.classList.add("[&_*]:!transition-none");
+  if (theme === "dark") root.classList.add("dark");
+  else root.classList.remove("dark");
+  root.setAttribute("data-theme", theme);
+  // Re-enable transitions on next paint
+  requestAnimationFrame(() => {
+    root.classList.remove("[&_*]:!transition-none");
+  });
+}
+
+function useThemeInternal({
+  defaultTheme,
+  enableSystemTheme,
+  storageKey,
+}: {
+  defaultTheme: Theme;
+  enableSystemTheme: boolean;
+  storageKey: string;
+}): ThemeContextValue {
+  const initialResolved = useRef<ResolvedTheme>("light");
+
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window === "undefined") return defaultTheme;
+    try {
+      const saved = window.localStorage.getItem(storageKey) as Theme | null;
+      return (saved ?? defaultTheme) as Theme;
+    } catch {
+      return defaultTheme;
+    }
+  });
+
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
+    if (theme === "system") return getSystemTheme();
+    return theme;
+  });
+
+  // Apply and persist on theme change
+  useEffect(() => {
+    const nextResolved = theme === "system" ? getSystemTheme() : theme;
+    setResolvedTheme(nextResolved);
+    try {
+      window.localStorage.setItem(storageKey, theme);
+    } catch {
+      /* ignore storage errors */
+    }
+    applyHtmlClass(nextResolved);
+  }, [theme, storageKey]);
+
+  // React to OS changes if using system theme
+  useEffect(() => {
+    if (!enableSystemTheme) return;
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => {
+      if (theme === "system") {
+        const sys = mql.matches ? "dark" : "light";
+        setResolvedTheme(sys);
+        applyHtmlClass(sys);
+      }
+    };
+    // Safari < 14 fallback not strictly necessary; optional
+    mql.addEventListener?.("change", onChange);
+    return () => mql.removeEventListener?.("change", onChange);
+  }, [enableSystemTheme, theme]);
+
+  // Track initial resolved (avoid extra writes)
+  useEffect(() => {
+    if (initialResolved.current !== resolvedTheme) {
+      initialResolved.current = resolvedTheme;
+    }
+  }, [resolvedTheme]);
+
+  const setTheme = useCallback((t: Theme) => setThemeState(t), []);
+  const toggleTheme = useCallback(() => {
+    const current = theme === "system" ? getSystemTheme() : theme;
+    setThemeState(current === "dark" ? "light" : "dark");
+  }, [theme]);
+
+  return useMemo(
+    () => ({ theme, resolvedTheme, setTheme, toggleTheme }),
+    [theme, resolvedTheme, setTheme, toggleTheme]
+  );
+}
+
+function ThemeProviderInline({
+  children,
+  defaultTheme,
+  enableSystemTheme,
+  storageKey,
+}: {
+  children: React.ReactNode;
+  defaultTheme: Theme;
+  enableSystemTheme: boolean;
+  storageKey: string;
+}) {
+  const value = useThemeInternal({ defaultTheme, enableSystemTheme, storageKey });
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+export function useTheme(): ThemeContextValue {
+  return (
+    useContext(ThemeContext) ?? {
+      theme: "light",
+      resolvedTheme: "light",
+      setTheme: () => {},
+      toggleTheme: () => {},
+    }
+  );
+}
+
+/* ----------------------- Root Providers ----------------------- */
+
+export default function Providers({
+  children,
+  session = null,
+  refetchIntervalSec = 120,
+  refetchOnWindowFocus = true,
+  remountOnUserChange = true,
+  defaultTheme = "system",
+  enableSystemTheme = true,
+  themeStorageKey = "theme",
+}: Props) {
+  // Derive a stable key that remounts subtree when identity changes (helps reset client state).
+  // Prefer user.id; fall back to email; then "anon".
+  const identityKey =
+    remountOnUserChange
+      ? (((
+          (session as SessionLike)?.user?.id ??
+          (session as SessionLike)?.user?.email
+        ) as string | null | undefined) ?? "anon")
+      : "stable";
+
+  const analytics = useAnalyticsInternal();
 
   return (
-    <div
-      aria-live="polite"
-      aria-atomic="true"
-      className="sr-only"
+    <SessionProvider
+      key={identityKey}
+      session={(session ?? null) as Session | null}
+      refetchInterval={Math.max(0, refetchIntervalSec)}
+      refetchOnWindowFocus={refetchOnWindowFocus}
     >
-      {label}
-    </div>
+      <ThemeProviderInline
+        defaultTheme={defaultTheme}
+        enableSystemTheme={enableSystemTheme}
+        storageKey={themeStorageKey}
+      >
+        <AnalyticsContext.Provider value={analytics}>
+          {children}
+        </AnalyticsContext.Provider>
+      </ThemeProviderInline>
+    </SessionProvider>
   );
 }

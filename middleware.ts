@@ -1,4 +1,3 @@
-// middleware.ts
 import { withAuth } from "next-auth/middleware";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -8,6 +7,9 @@ function makeNonce() {
   let binary = "";
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
+}
+function makeUUID() {
+  return (crypto as any)?.randomUUID?.() ?? `${Date.now().toString(36)}-${makeNonce()}`;
 }
 
 /* ---------------------------- Security / CSP ------------------------------ */
@@ -71,32 +73,79 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
   return headers;
 }
 
-/* --------------------- Unified middleware (auth + CSP) -------------------- */
+/* ------------------------- tiny guards for JSON POSTs ------------------------- */
+function mustBeJson(req: NextRequest) {
+  if (req.method !== "POST") return null;
+  const ct = (req.headers.get("content-type") || "").toLowerCase();
+  if (!ct.includes("application/json")) {
+    return new NextResponse(JSON.stringify({ error: "Bad request" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  }
+  return null;
+}
+
+/* --------------------- Unified middleware (auth + CSP + cookie) -------------------- */
 export default withAuth(
   function middleware(req: NextRequest) {
     const isDev =
       process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview";
     const nonce = makeNonce();
 
-    // Forward nonce to the app for <Script nonce={...}/>
+    // JSON guards for sensitive POST endpoints
+    const p = req.nextUrl.pathname;
+    if (
+      (p === "/api/billing/upgrade" && req.method === "POST") ||
+      (p.startsWith("/api/products/") && p.endsWith("/promote") && req.method === "POST")
+    ) {
+      const bad = mustBeJson(req);
+      if (bad) return bad;
+    }
+
+    // Forward nonce to app
     const forwarded = new Headers(req.headers);
     forwarded.set("x-nonce", nonce);
-
     const res = NextResponse.next({ request: { headers: forwarded } });
 
-    // Apply security headers
+    // Security headers
     const sec = buildSecurityHeaders(nonce, isDev);
     for (const [k, v] of sec.entries()) res.headers.set(k, v);
+
+    // Device cookie
+    const DID = req.cookies.get("qs_did")?.value;
+    if (!DID) {
+      const did = makeUUID();
+      res.cookies.set({
+        name: "qs_did",
+        value: did,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+    }
 
     return res;
   },
   {
-    // 🔐 Only require auth for /sell (no server-side profile gating)
     callbacks: {
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
-        const needsAuth = p.startsWith("/sell") || p.startsWith("/api/admin");
-        return needsAuth ? !!token : true;
+
+        // pages that require *any* auth
+        const needsAuth = p.startsWith("/sell");
+
+        // pages & APIs that require admin
+        const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
+
+        if (needsAdmin) {
+          // your JWT must include token.role === 'admin'
+          return !!token && (token as any).role === "admin";
+        }
+        if (needsAuth) return !!token;
+        return true;
       },
     },
   }
@@ -105,7 +154,6 @@ export default withAuth(
 /* ----------------------------- Route matcher ------------------------------ */
 export const config = {
   matcher: [
-    // everything except these:
     "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps).*)",
   ],
 };

@@ -1,7 +1,7 @@
 // src/app/account/complete-profile/page.tsx
-import CompleteProfileClient from "./CompleteProfileClient";
-
 export const dynamic = "force-dynamic";
+
+import CompleteProfileClient from "./CompleteProfileClient";
 
 export default function Page() {
   return <CompleteProfileClient />;

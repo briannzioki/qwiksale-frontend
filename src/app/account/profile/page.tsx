@@ -1,8 +1,13 @@
-// src/app/account/profile/page.tsx
-export const dynamic = "force-dynamic";
-
+import { Suspense } from "react";
 import ProfileClient from "./ProfileClient";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function Page() {
-  return <ProfileClient />;
+  return (
+    <Suspense fallback={<div />}>
+      <ProfileClient />
+    </Suspense>
+  );
 }

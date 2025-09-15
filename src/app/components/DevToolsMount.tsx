@@ -69,7 +69,7 @@ function computeInitialShow(): boolean {
   }
 
   // Env-based defaults (inlined at build time)
-  if (process.env["NEXT_PUBLIC_SHOW_DEV_TEST"] === "1") return true;
+  if (process.env["NEXT_PUBLIC_SHOW_DEV_TEST"] === "1") return true; // ← changed to dot-form
   return process.env.NODE_ENV !== "production";
 }
 

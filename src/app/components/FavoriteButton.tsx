@@ -1,31 +1,39 @@
 // src/app/components/FavoriteButton.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { useFavourites } from "../lib/favoritesStore";
+// File name is American English; the hook name in your store may vary.
+// We'll accept either isFavourite or isFavorited at runtime.
+import { useFavourites as useStoreMaybe } from "../lib/favoritesStore";
+// ^ If your store exports `useFavorites` instead, just change the import to:
+// import { useFavorites as useStoreMaybe } from "../lib/favoritesStore";
 
 type Props = {
   productId: string | number;
   /** Small overlay style used on cards */
   compact?: boolean;
-  /** Optional: override accessible label prefix (e.g., "Listing") */
+  /** Accessible label prefix (e.g., "Listing", "Item"). */
   labelPrefix?: string;
-  /** Optional extra classes for the button */
+  /** Optional extra classes for the button. */
   className?: string;
 };
 
 /* ------------------------ tiny client analytics ------------------------ */
 function trackClient(event: string, payload?: Record<string, unknown>) {
-  // eslint-disable-next-line no-console
-  console.log("[qs:track]", event, payload);
-  if (typeof window !== "undefined" && "CustomEvent" in window) {
-    window.dispatchEvent(new CustomEvent("qs:track", { detail: { event, payload } }));
+  // lightweight/no-op friendly
+  try {
+    // eslint-disable-next-line no-console
+    console.log("[qs:track]", event, payload);
+    if (typeof window !== "undefined" && "CustomEvent" in window) {
+      window.dispatchEvent(new CustomEvent("qs:track", { detail: { event, payload } }));
+    }
+  } catch {
+    /* noop */
   }
 }
 
-/* ------------------------------ component ------------------------------ */
-
+/* --------------------------------- UI --------------------------------- */
 export default function FavoriteButton({
   productId,
   compact = false,
@@ -33,22 +41,31 @@ export default function FavoriteButton({
   className = "",
 }: Props) {
   const pid = useMemo(() => String(productId), [productId]);
-  const { ids, isFavourite, toggle } = useFavourites();
 
-  // Local state mirrors store (optimistic updates supported)
+  // Store is intentionally `any` so this component can tolerate
+  // either `isFavourite` or `isFavorited`, and whatever `toggle` returns.
+  const store = (useStoreMaybe as unknown as () => any)();
+
+  const storeIds: string[] = Array.isArray(store?.ids) ? store.ids.map(String) : [];
+  const storeIsFav: ((id: string) => boolean) =
+    store?.isFavourite || store?.isFavorited || ((id: string) => storeIds.includes(id));
+  const storeToggle: (id: string) => Promise<boolean> | boolean =
+    typeof store?.toggle === "function" ? store.toggle : async () => false;
+
+  // Local state mirrors store with optimistic updates
   const [fav, setFav] = useState<boolean>(false);
   const [pending, setPending] = useState(false);
-  const cooldownRef = useRef<number>(0); // timestamp (ms)
+  const cooldownRef = useRef<number>(0);
   const mountedRef = useRef(false);
 
-  // A11y live region (screen-reader announce)
-  const [live, setLive] = useState<string>("");
+  // A11y live region for screen readers
+  const [live, setLive] = useState("");
 
-  // Sync from store when ids or productId change (avoid SSR hydration edge cases)
+  // Hydration-safe sync from store
   useEffect(() => {
-    setFav(isFavourite(pid));
+    setFav(storeIsFav(pid));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pid, ids]);
+  }, [pid, storeIds.join("|")]); // join → stable dep for array contents
 
   useEffect(() => {
     mountedRef.current = true;
@@ -57,56 +74,59 @@ export default function FavoriteButton({
     };
   }, []);
 
-  const announce = (message: string) => {
+  const announce = useCallback((message: string) => {
     setLive(message);
-    // Clear after a short moment so future messages are re-announced
     const t = setTimeout(() => setLive(""), 1200);
     return () => clearTimeout(t);
-  };
+  }, []);
 
-  const onClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    // If inside a <Link> card, prevent navigation
-    e.preventDefault();
-    e.stopPropagation();
+  const onClick = useCallback(
+    async (e: React.MouseEvent<HTMLButtonElement>) => {
+      // Prevent <Link> parents from navigating
+      e.preventDefault();
+      e.stopPropagation();
 
-    // Basic cooldown (prevents accidental double toggles)
-    const now = Date.now();
-    if (now < cooldownRef.current) return;
-    cooldownRef.current = now + 600;
+      // Basic cooldown to avoid rapid double toggles
+      const now = Date.now();
+      if (now < cooldownRef.current) return;
+      cooldownRef.current = now + 600;
 
-    if (pending) return;
-    setPending(true);
+      if (pending) return;
+      setPending(true);
 
-    // Optimistic UI
-    const prev = fav;
-    const next = !prev;
-    setFav(next);
+      // Optimistic UI
+      const prev = fav;
+      const next = !prev;
+      setFav(next);
 
-    try {
-      // Store toggle returns the new definitive state
-      const confirmed = await toggle(pid);
-      setFav(confirmed);
+      try {
+        const result = await storeToggle(pid);
+        // `toggle` may return the canonical state or nothing; coerce sensibly
+        const confirmed = typeof result === "boolean" ? result : storeIsFav(pid);
+        setFav(confirmed);
 
-      toast.dismiss();
-      if (confirmed) {
-        toast.success("Saved to favorites");
-        trackClient("favorite_add", { productId: pid });
-        announce(`${labelPrefix} saved to favorites`);
-      } else {
-        toast("Removed from favorites", { icon: "💔" });
-        trackClient("favorite_remove", { productId: pid });
-        announce(`${labelPrefix} removed from favorites`);
+        toast.dismiss();
+        if (confirmed) {
+          toast.success("Saved to favorites");
+          trackClient("favorite_add", { productId: pid });
+          announce(`${labelPrefix} saved to favorites`);
+        } else {
+          toast("Removed from favorites", { icon: "💔" });
+          trackClient("favorite_remove", { productId: pid });
+          announce(`${labelPrefix} removed from favorites`);
+        }
+      } catch {
+        // Rollback optimistic update on error
+        setFav(prev);
+        toast.dismiss();
+        toast.error("Could not update favorites. Please try again.");
+        announce(`Failed to update favorites for ${labelPrefix}`);
+      } finally {
+        if (mountedRef.current) setPending(false);
       }
-    } catch (err) {
-      // Rollback optimistic update
-      setFav(prev);
-      toast.dismiss();
-      toast.error("Could not update favorites. Please try again.");
-      announce(`Failed to update favorites for ${labelPrefix}`);
-    } finally {
-      if (mountedRef.current) setPending(false);
-    }
-  };
+    },
+    [announce, fav, labelPrefix, pending, pid, storeIsFav, storeToggle]
+  );
 
   const aria = fav ? "Unsave" : "Save";
   const title = `${aria} ${labelPrefix}`;
@@ -168,7 +188,6 @@ export default function FavoriteButton({
 
   return (
     <>
-      {/* Live region for screen readers */}
       <span className="sr-only" aria-live="polite">
         {live}
       </span>

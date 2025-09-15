@@ -5,8 +5,9 @@ import { headers } from "next/headers";
 import Script from "next/script";
 import crypto from "crypto";
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
-import AppShell from "./components/AppShell";
 import Providers from "./providers";
+import AppShell from "./components/AppShell";
+import Header from "./components/Header"; // mounts your signed-in header w/ avatar
 import DevToolsMount from "./components/DevToolsMount";
 import { fontVars } from "./fonts";
 
@@ -18,8 +19,7 @@ const envAppUrl =
 const siteUrl = envAppUrl.replace(/\/+$/, "");
 
 const isPreview =
-  process.env["VERCEL_ENV"] === "preview" ||
-  process.env["NEXT_PUBLIC_NOINDEX"] === "1";
+  process.env["VERCEL_ENV"] === "preview" || process.env["NEXT_PUBLIC_NOINDEX"] === "1";
 
 /* -------------------------------- Viewport -------------------------------- */
 export const viewport: Viewport = {
@@ -48,20 +48,10 @@ export const metadata: Metadata = {
   },
   description:
     "QwikSale — Kenya’s trusted marketplace for all items. List your items, find great deals, and contact sellers directly.",
-  keywords: [
-    "QwikSale",
-    "Kenya",
-    "marketplace",
-    "buy and sell",
-    "peer to peer",
-    "mpesa",
-  ],
+  keywords: ["QwikSale", "Kenya", "marketplace", "buy and sell", "peer to peer", "mpesa"],
   alternates: {
     canonical: siteUrl + "/",
-    languages: {
-      "en-KE": "/",
-      en: "/",
-    },
+    languages: { "en-KE": "/", en: "/" },
   },
   manifest: "/manifest.webmanifest",
   openGraph: {
@@ -71,14 +61,7 @@ export const metadata: Metadata = {
     title: "QwikSale — Kenya’s trusted marketplace for all items.",
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
-    images: [
-      {
-        url: `${siteUrl}/og-image.png`,
-        width: 1200,
-        height: 630,
-        alt: "QwikSale",
-      },
-    ],
+    images: [{ url: `${siteUrl}/og-image.png`, width: 1200, height: 630, alt: "QwikSale" }],
     locale: "en_KE",
   },
   twitter: {
@@ -116,9 +99,7 @@ export const metadata: Metadata = {
       },
   verification: {
     google: process.env["GOOGLE_SITE_VERIFICATION"] || undefined,
-    other: {
-      "msvalidate.01": process.env["BING_SITE_VERIFICATION"] || "",
-    },
+    other: { "msvalidate.01": process.env["BING_SITE_VERIFICATION"] || "" },
   },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "QwikSale" },
   category: "marketplace",
@@ -132,7 +113,7 @@ export default async function RootLayout({
   // CSP nonce from middleware (or local fallback)
   let nonce: string;
   try {
-    const h = await headers(); // <-- await because headers() is async in your setup
+    const h = await headers(); // ✅ await the async headers() in Next 15
     nonce = h.get("x-nonce") ?? crypto.randomBytes(16).toString("base64");
   } catch {
     nonce = crypto.randomBytes(16).toString("base64");
@@ -192,13 +173,20 @@ export default async function RootLayout({
         <Script id="ld-site" type="application/ld+json" nonce={nonce}>
           {JSON.stringify(siteJsonLd)}
         </Script>
+
+        {/* Optional hard meta for preview safety, complements metadata.robots */}
+        {isPreview ? <meta name="robots" content="noindex,nofollow,noimageindex" /> : null}
       </head>
+
       <body
         className={`${fontVars} h-full text-gray-900 antialiased dark:text-slate-100`}
         style={{ fontFeatureSettings: "'kern' 1, 'liga' 1, 'calt' 1" }}
+        data-env={isPreview ? "preview" : "prod"}
       >
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
+          {/* Providers must wrap Header so it can read auth and render the avatar */}
           <Providers>
+            <Header />
             <AppShell>{children}</AppShell>
           </Providers>
 

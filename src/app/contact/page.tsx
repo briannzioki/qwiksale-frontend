@@ -272,7 +272,7 @@ export default function ContactPage() {
             </p>
             <button
               disabled={!canSubmit}
-              className="btn-primary rounded-xl px-4 py-2 font-semibold disabled:opacity-60"
+              className="btn-gradient-primary rounded-xl px-4 py-2 font-semibold disabled:opacity-60"
               aria-disabled={!canSubmit}
             >
               {submitting ? "Sending…" : "Send message"}

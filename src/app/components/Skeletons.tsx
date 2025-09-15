@@ -1,3 +1,4 @@
+// src/app/components/Skeletons.tsx
 import React, { memo } from "react";
 
 /* ----------------------- Utilities ----------------------- */
@@ -105,6 +106,27 @@ export const ProductCardSkeleton = memo(function ProductCardSkeleton({
   );
 });
 
+/* ----------------------- Grid helpers (Tailwind safelist) ----------------------- */
+
+/**
+ * Tailwind can purge dynamic `grid-cols-${n}` classes. Map to a safelisted set (1..6).
+ * If you need higher counts, extend here and safelist them in tailwind.config if desired.
+ */
+const COL_CLASS: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+  5: "grid-cols-5",
+  6: "grid-cols-6",
+};
+
+function gridColsClass(n?: number, prefix?: string) {
+  const key = Math.max(1, Math.min(6, n ?? 1));
+  const base = COL_CLASS[key];
+  return prefix ? `${prefix}:${base}` : base;
+}
+
 export function ProductGridSkeleton({
   count = 8,
   cols = { base: 1, sm: 2, md: 3, xl: 4 },
@@ -116,13 +138,12 @@ export function ProductGridSkeleton({
 }) {
   const items = Array.from({ length: Math.max(1, count) });
 
-  // Use ternaries so we never pass a raw 0 to cx (which would otherwise be included)
   const grid = cx(
-    `grid grid-cols-${Math.max(1, cols.base ?? 1)}`,
-    cols.sm && cols.sm > 0 ? `sm:grid-cols-${cols.sm}` : undefined,
-    cols.md && cols.md > 0 ? `md:grid-cols-${cols.md}` : undefined,
-    cols.xl && cols.xl > 0 ? `xl:grid-cols-${cols.xl}` : undefined,
-    "gap-6"
+    "grid gap-6",
+    gridColsClass(cols?.base ?? 1),
+    cols?.sm ? gridColsClass(cols.sm, "sm") : undefined,
+    cols?.md ? gridColsClass(cols.md, "md") : undefined,
+    cols?.xl ? gridColsClass(cols.xl, "xl") : undefined
   );
 
   return (
@@ -253,7 +274,6 @@ export function HomePageSkeleton({
           <ButtonSkeleton w="w-16" />
         </div>
       </div>
-      {/* Only pass `cols` when it exists to satisfy exactOptionalPropertyTypes */}
       <ProductGridSkeleton
         count={gridCount}
         {...(gridCols !== undefined ? { cols: gridCols } : {})}

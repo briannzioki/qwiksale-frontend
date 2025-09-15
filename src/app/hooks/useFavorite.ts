@@ -38,6 +38,10 @@ export function useFavorite(productId: string, opts: Options = {}) {
 
   const mounted = useRef(true);
   const inFlight = useRef<AbortController | null>(null);
+  const busy = useRef(false); // simple mutex to avoid overlapping calls
+  const stateRef = useRef({ isFavorited: initial, count: initialCount });
+  stateRef.current.isFavorited = isFavorited;
+  stateRef.current.count = count;
 
   useEffect(() => {
     mounted.current = true;
@@ -47,20 +51,17 @@ export function useFavorite(productId: string, opts: Options = {}) {
     };
   }, []);
 
-  const origin = useMemo(
-    () => (typeof window !== "undefined" ? window.location.origin : ""),
-    []
-  );
-
   const signInRedirect = useCallback(() => {
     if (onUnauthorized) return onUnauthorized();
     if (!requireAuth) return;
     try {
-      const path = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/";
-      const cb = encodeURIComponent(path || "/");
-      window.location.href = `/signin?callbackUrl=${cb}`;
+      if (typeof window !== "undefined") {
+        const path = window.location.pathname + window.location.search + window.location.hash;
+        const cb = encodeURIComponent(path || "/");
+        window.location.href = `/signin?callbackUrl=${cb}`;
+      }
     } catch {
-      // no-op
+      /* no-op */
     }
   }, [onUnauthorized, requireAuth]);
 
@@ -78,20 +79,27 @@ export function useFavorite(productId: string, opts: Options = {}) {
     const doFetch = async () => {
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(body),
         cache: "no-store",
+        credentials: "include", // keep session cookies
         signal: controller.signal,
       });
-      const json = await res.json().catch(() => ({}));
+      let json: any = null;
+      try {
+        // Some APIs may respond 204/empty
+        const text = await res.text();
+        json = text ? JSON.parse(text) : {};
+      } catch {
+        json = {};
+      }
       return { ok: res.ok, status: res.status, json };
     };
 
     try {
       return await doFetch();
-    } catch (err) {
-      // One quick retry on network hiccup
-      if (retry && (err as any)?.name !== "AbortError") {
+    } catch (err: any) {
+      if (retry && err?.name !== "AbortError") {
         try {
           return await doFetch();
         } catch {}
@@ -101,13 +109,14 @@ export function useFavorite(productId: string, opts: Options = {}) {
   }
 
   const add = useCallback(async () => {
-    if (!productId || loading) return;
+    if (!productId || loading || busy.current) return;
+    busy.current = true;
     setLoading(true);
     setError(null);
 
     // optimistic
-    const prevFav = isFavorited;
-    const prevCount = count;
+    const prevFav = stateRef.current.isFavorited;
+    const prevCount = stateRef.current.count;
     if (!prevFav) {
       setIsFavorited(true);
       setCount((c) => c + 1);
@@ -117,38 +126,46 @@ export function useFavorite(productId: string, opts: Options = {}) {
       const { ok, status, json } = await requestOnce("POST", { productId });
       if (status === 401) {
         // rollback + route to sign-in
-        setIsFavorited(prevFav);
-        setCount(prevCount);
+        if (mounted.current) {
+          setIsFavorited(prevFav);
+          setCount(prevCount);
+        }
         signInRedirect();
         throw new Error("Unauthorized");
       }
-      if (!ok || !json?.ok) {
+      if (!ok || (json && json.ok === false)) {
         throw new Error(json?.error || `Failed to favorite (${status})`);
       }
-      onChange?.(true, prevFav ? prevCount : prevCount + 1);
+      // If API returns canonical count/state, prefer them
+      if (mounted.current) {
+        if (typeof json?.count === "number") setCount(Math.max(0, json.count));
+        if (typeof json?.favorited === "boolean") setIsFavorited(json.favorited);
+      }
+      onChange?.(true, typeof json?.count === "number" ? json.count : prevFav ? prevCount : prevCount + 1);
       toast?.success?.("Saved to favorites");
     } catch (e: any) {
-      // rollback
       if (mounted.current) {
         setIsFavorited(prevFav);
         setCount(prevCount);
         setError(e?.message || "Failed to favorite");
         toast?.error?.("Failed to favorite");
       }
-      throw e;
+      // swallow error to avoid unhandled rejections in UI callers
     } finally {
       if (mounted.current) setLoading(false);
+      busy.current = false;
     }
-  }, [productId, loading, isFavorited, count, onChange, toast, signInRedirect]);
+  }, [productId, loading, onChange, toast, signInRedirect]);
 
   const remove = useCallback(async () => {
-    if (!productId || loading) return;
+    if (!productId || loading || busy.current) return;
+    busy.current = true;
     setLoading(true);
     setError(null);
 
     // optimistic
-    const prevFav = isFavorited;
-    const prevCount = count;
+    const prevFav = stateRef.current.isFavorited;
+    const prevCount = stateRef.current.count;
     if (prevFav) {
       setIsFavorited(false);
       setCount((c) => Math.max(0, c - 1));
@@ -157,34 +174,38 @@ export function useFavorite(productId: string, opts: Options = {}) {
     try {
       const { ok, status, json } = await requestOnce("DELETE", { productId });
       if (status === 401) {
-        // rollback + route to sign-in
-        setIsFavorited(prevFav);
-        setCount(prevCount);
+        if (mounted.current) {
+          setIsFavorited(prevFav);
+          setCount(prevCount);
+        }
         signInRedirect();
         throw new Error("Unauthorized");
       }
-      if (!ok || !json?.ok) {
+      if (!ok || (json && json.ok === false)) {
         throw new Error(json?.error || `Failed to unfavorite (${status})`);
       }
-      onChange?.(false, prevFav ? Math.max(0, prevCount - 1) : prevCount);
+      if (mounted.current) {
+        if (typeof json?.count === "number") setCount(Math.max(0, json.count));
+        if (typeof json?.favorited === "boolean") setIsFavorited(json.favorited);
+      }
+      onChange?.(false, typeof json?.count === "number" ? json.count : prevFav ? Math.max(0, prevCount - 1) : prevCount);
       toast?.success?.("Removed from favorites");
     } catch (e: any) {
-      // rollback
       if (mounted.current) {
         setIsFavorited(prevFav);
         setCount(prevCount);
         setError(e?.message || "Failed to unfavorite");
         toast?.error?.("Failed to unfavorite");
       }
-      throw e;
     } finally {
       if (mounted.current) setLoading(false);
+      busy.current = false;
     }
-  }, [productId, loading, isFavorited, count, onChange, toast, signInRedirect]);
+  }, [productId, loading, onChange, toast, signInRedirect]);
 
   const toggle = useCallback(async () => {
-    return isFavorited ? remove() : add();
-  }, [isFavorited, add, remove]);
+    return stateRef.current.isFavorited ? remove() : add();
+  }, [add, remove]);
 
   return {
     // state

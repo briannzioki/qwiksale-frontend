@@ -1,4 +1,3 @@
-// src/app/hooks/usePaymentStatusPoll.ts
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -41,6 +40,8 @@ type PollOpts = {
   onSuccess?: (payload: StatusPayload) => void;
   /** Called when payment becomes FAILED. */
   onFailure?: (payload: StatusPayload) => void;
+  /** Called when max attempts reached without terminal status. */
+  onTimeout?: (lastPayload: StatusPayload | null) => void;
   /** Called on every successful status read (including PENDING). */
   onUpdate?: (payload: StatusPayload) => void;
   /** Override status endpoint. Default: `/api/billing/upgrade/status?id=...` */
@@ -58,6 +59,7 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
     autoStart = true,
     onSuccess,
     onFailure,
+    onTimeout,
     onUpdate,
     statusUrlBuilder = (id) => `/api/billing/upgrade/status?id=${encodeURIComponent(id)}`,
   } = opts;
@@ -67,7 +69,7 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<StatusPayload | null>(null);
 
-  // Refs to avoid stale-closure issues
+  // Refs to avoid stale closures
   const attemptsRef = useRef(0);
   const intervalRef = useRef(intervalMs);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,10 +92,10 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
     if (mountedRef.current) setIsPolling(false);
   }, []);
 
-  // Jittered backoff helper
+  // Jittered backoff
   const nextIntervalWithJitter = useCallback(() => {
     const base = Math.min(Math.ceil(intervalRef.current * backoffFactor), maxIntervalMs);
-    const jitter = base * jitterPct;
+    const jitter = Math.max(0, Math.min(1, jitterPct)) * base;
     const min = Math.max(0, base - jitter);
     const max = base + jitter;
     const withJitter = Math.floor(min + Math.random() * (max - min));
@@ -101,19 +103,15 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
     return withJitter;
   }, [backoffFactor, maxIntervalMs, jitterPct]);
 
-  const schedule = useCallback(
-    (ms: number, fn: () => void) => {
-      clearTimer();
-      // Guard against SSR environments
-      if (typeof window === "undefined") return;
-      timerRef.current = setTimeout(fn, ms);
-    },
-    []
-  );
+  const schedule = useCallback((ms: number, fn: () => void) => {
+    clearTimer();
+    if (typeof window === "undefined" || !mountedRef.current) return;
+    timerRef.current = setTimeout(fn, Math.max(0, ms));
+  }, []);
 
   const pollOnce = useCallback(async () => {
     if (!paymentId || !mountedRef.current) return;
-    if (pollingRef.current) return; // prevent parallel calls
+    if (pollingRef.current) return;
     pollingRef.current = true;
 
     abortRef.current?.abort();
@@ -122,15 +120,45 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
 
     try {
       const url = statusUrlBuilder(paymentId);
-      const res = await fetch(url, { cache: "no-store", signal: controller.signal });
-      const json = (await res.json().catch(() => ({}))) as StatusPayload;
+      const res = await fetch(url, {
+        cache: "no-store",
+        credentials: "include",
+        signal: controller.signal,
+        headers: { Accept: "application/json" },
+      });
+
+      // Handle empty 204 quickly using res.ok semantics (and keep polling)
+      if (res.status === 204) {
+        if (!mountedRef.current) return;
+        const json: StatusPayload = { ok: res.ok };
+        setPayload(json);
+        attemptsRef.current += 1;
+        if (attemptsRef.current >= maxAttempts) {
+          setError("Timed out waiting for payment confirmation.");
+          stop();
+          onTimeout?.(json);
+          return;
+        }
+        const delay = nextIntervalWithJitter();
+        schedule(delay, pollOnce);
+        return;
+      }
+
+      // Parse JSON (tolerate non-JSON)
+      let json: StatusPayload = { ok: res.ok };
+      try {
+        const text = await res.text();
+        json = text ? (JSON.parse(text) as StatusPayload) : ({ ok: res.ok } as StatusPayload);
+      } catch {
+        json = { ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}` } as StatusPayload;
+      }
 
       if (!mountedRef.current) return;
 
       setPayload(json);
 
       if (!res.ok || !json?.ok || !json.payment) {
-        throw new Error(json?.error || `Status ${res.status}`);
+        throw new Error(json?.error || `HTTP ${res.status}`);
       }
 
       const s = (json.payment.status ?? "PENDING") as PaymentStatus;
@@ -149,11 +177,12 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
         return;
       }
 
-      // Still pending → continue with backoff + jitter
+      // still pending
       attemptsRef.current += 1;
       if (attemptsRef.current >= maxAttempts) {
         setError("Timed out waiting for payment confirmation.");
         stop();
+        onTimeout?.(json ?? null);
         return;
       }
       const delay = nextIntervalWithJitter();
@@ -164,6 +193,7 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
       setError(e?.message || "Polling error");
       if (attemptsRef.current >= maxAttempts) {
         stop();
+        onTimeout?.(payload);
         return;
       }
       const delay = nextIntervalWithJitter();
@@ -181,19 +211,26 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
     onSuccess,
     onFailure,
     onUpdate,
+    onTimeout,
+    payload,
   ]);
 
-  const start = useCallback(() => {
-    if (!paymentId || isPolling) return;
-    attemptsRef.current = 0;
-    intervalRef.current = intervalMs;
-    setIsPolling(true);
-    setError(null);
-    // schedule first tick
-    schedule(initialDelay, pollOnce);
-  }, [paymentId, isPolling, intervalMs, initialDelay, pollOnce, schedule]);
+  const start = useCallback(
+    (immediate = false) => {
+      if (!paymentId || isPolling) return;
+      // reset run state
+      attemptsRef.current = 0;
+      intervalRef.current = intervalMs;
+      setStatus("PENDING");
+      setError(null);
+      setIsPolling(true);
 
-  // Lifecycle: mount/unmount
+      schedule(immediate ? 0 : initialDelay, pollOnce);
+    },
+    [paymentId, isPolling, intervalMs, initialDelay, pollOnce, schedule]
+  );
+
+  // mount/unmount
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -202,7 +239,7 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
     };
   }, [stop]);
 
-  // Tab visibility: pause when hidden; resume when visible
+  // Pause when tab hidden; resume when visible (respect autoStart)
   useEffect(() => {
     if (typeof document === "undefined") return;
     const onVisibility = () => {
@@ -224,13 +261,13 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
 
   return {
     // state
-    status,                  // "PENDING" | "SUCCESS" | "FAILED" | ...
+    status,
     isPolling,
     attempts: attemptsRef.current,
     error,
     payload,
     // actions
-    start,                   // manual start (if autoStart=false)
-    stop,                    // manual stop
+    start,   // start(true) to poll immediately
+    stop,
   };
 }

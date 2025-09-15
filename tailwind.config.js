@@ -9,7 +9,7 @@ module.exports = {
     "./src/**/*.{md,mdx}",
   ],
 
-  // Opt in to helpful future defaults
+  // Helpful future defaults
   future: {
     hoverOnlyWhenSupported: true,
   },
@@ -26,7 +26,7 @@ module.exports = {
       },
     },
     extend: {
-      // Wire your next/font CSS vars into Tailwind utilities
+      // Wire next/font CSS vars into Tailwind utilities
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
@@ -62,14 +62,53 @@ module.exports = {
   },
 
   plugins: [
-    // Use forms with strategy: 'class' to avoid global element resets
     require("@tailwindcss/forms")({ strategy: "class" }),
     require("@tailwindcss/typography"),
     require("@tailwindcss/aspect-ratio"),
     require("tailwindcss-animate"),
-    // If you installed it (you have it in devDependencies), this unlocks `@container`
-    // and responsive container query variants.
     require("@tailwindcss/container-queries"),
-    // ⛔ Do NOT add @tailwindcss/line-clamp (deprecated in recent Tailwind).
+
+    // 🔌 Gradient button utilities (classnames: btn-gradient-primary / -accent / -hero)
+    function ({ addComponents, theme }) {
+      const baseBtn = {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "0.5rem",
+        borderRadius: theme("borderRadius.2xl"),
+        padding: "0.5rem 1rem",
+        fontWeight: "700",
+        color: "white",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+        transition: "opacity 120ms ease, filter 120ms ease",
+        cursor: "pointer",
+        userSelect: "none",
+      };
+
+      addComponents({
+        ".btn-gradient-primary": {
+          ...baseBtn,
+          backgroundImage: `linear-gradient(90deg, ${theme("colors.brandNavy")} 0%, ${theme("colors.brandGreen")} 50%, ${theme("colors.brandBlue")} 100%)`,
+          "&:hover": { opacity: ".9" },
+          "&:active": { filter: "brightness(0.98)" },
+          outline: "none",
+        },
+        ".btn-gradient-accent": {
+          ...baseBtn,
+          backgroundImage: `linear-gradient(90deg, ${theme("colors.brandGreen")} 0%, ${theme("colors.brandBlue")} 100%)`,
+          "&:hover": { opacity: ".9" },
+          "&:active": { filter: "brightness(0.98)" },
+          outline: "none",
+        },
+        ".btn-gradient-hero": {
+          ...baseBtn,
+          padding: "0.75rem 1.25rem",
+          backgroundImage: `linear-gradient(90deg, ${theme("colors.brandNavy")} 0%, ${theme("colors.brandBlue")} 100%)`,
+          "&:hover": { opacity: ".92" },
+          "&:active": { filter: "brightness(0.98)" },
+          outline: "none",
+        },
+      });
+    },
   ],
 };

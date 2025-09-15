@@ -4,12 +4,12 @@
  * Kenyan phone helpers
  * - Normalize to 12-digit MSISDN: 2547XXXXXXXX or 2541XXXXXXXX (digits only)
  * - Reject landlines and unknown prefixes
- * - Provide formatting, masking, equality checks, and WhatsApp links
+ * - Provide formatting, masking, equality checks, WhatsApp links, and E.164
  */
 
 const MSISDN_RE = /^254(7|1)\d{8}$/;
 
-/** Keep only digits. */
+/** Keep only ASCII digits. */
 function digitsOnly(s: string) {
   return (s || "").replace(/\D+/g, "");
 }
@@ -20,38 +20,41 @@ export function isValidKenyanMsisdn(msisdn: string): boolean {
 }
 
 /**
- * Normalize any common Kenyan mobile input to a canonical MSISDN:
- *   - Accepts: 07XXXXXXXX, 01XXXXXXXX, +2547XXXXXXXX, 2547XXXXXXXX, 7XXXXXXXX, 1XXXXXXXX
- *   - Returns: "2547XXXXXXXX" or "2541XXXXXXXX" (12 digits), else null
+ * Normalize common Kenyan mobile input to canonical MSISDN:
+ * Accepts: 07XXXXXXXX, 01XXXXXXXX, +2547XXXXXXXX, 2547XXXXXXXX, 7XXXXXXXX, 1XXXXXXXX
+ * Returns: "2547XXXXXXXX" or "2541XXXXXXXX" (12 digits), else null.
  * Notes:
- *   - Landlines (020/0xx not starting 7/1) are not accepted.
- *   - Extra trailing digits are trimmed conservatively after normalization.
+ * - Landlines (020 / 0xx not starting 7/1) are not accepted.
+ * - Extra trailing digits are trimmed conservatively after normalization.
  */
 export function normalizeKenyanPhone(input: string): string | null {
   if (!input) return null;
 
   let d = digitsOnly(input);
 
-  // If starts with country code already
+  // Already with country code
   if (d.startsWith("254")) {
-    d = d.slice(0, 12); // cap to 12 just in case
+    d = d.slice(0, 12); // cap to 12 digits
     return isValidKenyanMsisdn(d) ? d : null;
   }
 
-  // Local formats starting with 0, 7, or 1
+  // Local with leading 0 (07 / 01)
   if (d.startsWith("0") && d.length >= 10) {
-    // 07XXXXXXXX or 01XXXXXXXX → 2547/2541 + 8 digits
-    d = "254" + d.slice(1, 10); // keep exactly 9 after 0 → total 12
-    return isValidKenyanMsisdn(d) ? d : null;
+    // Ensure exactly 10 digits for the local form before converting
+    // 0 + 9 = 10 → 07/01 + 8 more digits
+    const local10 = d.slice(0, 10);
+    const body9 = local10.slice(1); // drop leading 0
+    const msisdn = "254" + body9;
+    return isValidKenyanMsisdn(msisdn) ? msisdn : null;
   }
 
+  // Local without leading 0 (7XXXXXXXX / 1XXXXXXXX)
   if ((d.startsWith("7") || d.startsWith("1")) && d.length >= 9) {
-    // 7XXXXXXXX or 1XXXXXXXX → 254 + 9 digits
-    d = "254" + d.slice(0, 9);
-    return isValidKenyanMsisdn(d) ? d : null;
+    const body9 = d.slice(0, 9);
+    const msisdn = "254" + body9;
+    return isValidKenyanMsisdn(msisdn) ? msisdn : null;
   }
 
-  // +254 without plus handled by first branch; anything else invalid
   return null;
 }
 
@@ -69,6 +72,17 @@ export function formatKenyanLocal(msisdn: string): string {
   return `${head} ${mid} ${tail}`;
 }
 
+/** International display format: +2547XXXXXXXX */
+export function formatKenyanInternational(msisdn: string): string {
+  return isValidKenyanMsisdn(msisdn) ? `+${msisdn}` : msisdn;
+}
+
+/** Convert to E.164 (+2547XXXXXXXX) if valid; else null. */
+export function toE164Kenyan(input: string): string | null {
+  const msisdn = normalizeKenyanPhone(input);
+  return msisdn ? `+${msisdn}` : null;
+}
+
 /**
  * Mask a valid MSISDN for logs/UI: keep first 6 & last 3 digits.
  * 254712345678 → 254712***678
@@ -79,18 +93,19 @@ export function maskKenyanMsisdn(msisdn: string): string {
   return msisdn.replace(/^(\d{6})\d{3}(\d{3})$/, "$1***$2");
 }
 
-/** Case-insensitive/format-insensitive equality check for Kenyan mobiles. */
+/** Case/format-insensitive equality check for Kenyan mobiles. */
 export function equalsKenyanPhones(a?: string | null, b?: string | null): boolean {
   const na = a ? normalizeKenyanPhone(a) : null;
   const nb = b ? normalizeKenyanPhone(b) : null;
   return !!na && na === nb;
 }
 
-/** WhatsApp deep-link (returns undefined if phone is invalid). */
+/** WhatsApp deep link (undefined if invalid). */
 export function makeWhatsAppLink(phone?: string, text?: string): string | undefined {
   const msisdn = phone ? normalizeKenyanPhone(phone) : null;
   if (!msisdn) return undefined;
   const q = text ? `?text=${encodeURIComponent(text)}` : "";
+  // wa.me expects international number without the '+'
   return `https://wa.me/${msisdn}${q}`;
 }
 

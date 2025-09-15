@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -39,7 +39,6 @@ type ApiListEnvelope = {
 };
 
 type ApiListResponse = Product[] | ApiListEnvelope | { error: string };
-type ApiItemResponse = Product | { error: string };
 
 export type UseProductsReturn = {
   products: Product[];
@@ -69,7 +68,7 @@ export type UseProductsOptions = {
 /* ------------------------------------------------------------------ */
 
 const LIST_KEY = "qs_products_list_v1"; // sessionStorage key
-const DEFAULT_PAGE_SIZE = 60;           // show more upfront; reduces detail-page misses
+const DEFAULT_PAGE_SIZE = 60;
 const MIN_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 120;
 
@@ -90,8 +89,7 @@ function safeSessionGet<T>(key: string): T | null {
     if (typeof sessionStorage === "undefined") return null;
     const raw = sessionStorage.getItem(key);
     if (!raw) return null;
-    const data = JSON.parse(raw);
-    return data as T;
+    return JSON.parse(raw) as T;
   } catch {
     return null;
   }
@@ -128,7 +126,7 @@ function dedupeById(list: Product[]): Product[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Fetch helpers (with backoff + abort)                                */
+/* Fetch helpers (with backoff + abort)                               */
 /* ------------------------------------------------------------------ */
 
 type FetchListArgs = {
@@ -143,14 +141,13 @@ async function fetchJson(input: RequestInfo, init?: RequestInit) {
   const t = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(input, {
-      credentials: "include", // keep cookies if any auth affects visibility
+      credentials: "include",
       cache: "no-store",
       ...init,
-      // always ensure a real signal is present; prefer caller's when provided
       signal: init?.signal ?? ac.signal,
       headers: { Accept: "application/json", ...(init?.headers || {}) },
     });
-    const text = await res.text(); // avoid double-reading body
+    const text = await res.text();
     let json: any = null;
     try {
       json = text ? JSON.parse(text) : null;
@@ -165,12 +162,8 @@ async function fetchJson(input: RequestInfo, init?: RequestInit) {
 
 async function fetchList(args: FetchListArgs): Promise<Product[]> {
   const { pageSize, signal } = args;
-  const qs = new URLSearchParams({
-    page: "1",
-    pageSize: String(pageSize),
-  });
-
-  const init = signal ? { signal } : undefined; // avoid `{ signal: undefined }`
+  const qs = new URLSearchParams({ page: "1", pageSize: String(pageSize) });
+  const init = signal ? { signal } : undefined;
   const { res, json } = await fetchJson(`/api/products?${qs.toString()}`, init);
   if (!res.ok) {
     const msg = (json as any)?.error || `Request failed (${res.status})`;
@@ -180,7 +173,7 @@ async function fetchList(args: FetchListArgs): Promise<Product[]> {
 }
 
 async function fetchItem(id: string, signal?: AbortSignal | null): Promise<Product> {
-  const init = signal ? { signal } : undefined; // avoid `{ signal: undefined }`
+  const init = signal ? { signal } : undefined;
   const { res, json } = await fetchJson(`/api/products/${encodeURIComponent(id)}`, init);
   if (!res.ok || (json as any)?.error) {
     throw new Error((json as any)?.error || `Not found (${res.status})`);
@@ -191,17 +184,15 @@ async function fetchItem(id: string, signal?: AbortSignal | null): Promise<Produ
 /* Simple retry with backoff for list fetch in silent refreshes */
 async function tryFetchListWithBackoff(args: FetchListArgs) {
   const { signal } = args;
-  const attempts = [0, 600, 1200]; // ms waits (3 tries total)
+  const waits = [0, 600, 1200];
   let lastErr: unknown;
-  for (let i = 0; i < attempts.length; i++) {
+  for (let i = 0; i < waits.length; i++) {
     try {
       return await fetchList(args);
     } catch (e) {
       lastErr = e;
       if (signal?.aborted) throw e;
-      if (i < attempts.length - 1) {
-        await new Promise((r) => setTimeout(r, attempts[i + 1]));
-      }
+      if (i < waits.length - 1) await new Promise((r) => setTimeout(r, waits[i + 1]));
     }
   }
   throw lastErr;
@@ -252,7 +243,6 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
       if (!force && memory.list.length && fresh) {
         setProducts(memory.list);
         setReady(true);
-        // Silent background revalidate
         void revalidateSilently();
         return;
       }
@@ -293,7 +283,6 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
     let visTimer: number | null = null;
     const onVisibility = () => {
       if (!document.hidden) {
-        // debounce quick toggles
         if (visTimer) window.clearTimeout(visTimer);
         visTimer = window.setTimeout(() => void revalidateSilently(), 250);
       }
@@ -324,7 +313,8 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
   /** Create product, update caches, return { id } */
   const addProduct = useCallback(
     async (payload: any): Promise<{ id: string }> => {
-      const r = await fetch("/api/products", {
+      // NOTE: server snapshots seller’s WhatsApp from profile if not provided.
+      const r = await fetch("/api/products/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -332,14 +322,16 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         body: JSON.stringify(payload),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j?.id) {
+      const newId = String(j?.productId || j?.id || j?.product?.id || j?.data?.id || "").trim();
+
+      if (!r.ok || !newId) {
         throw new Error(j?.error || `Failed to create product (${r.status})`);
       }
 
       // Build a local product for optimistic cache
       const nowIso = new Date().toISOString();
       const newItem: Product = {
-        id: String(j.id),
+        id: newId,
         name: String(payload.name ?? ""),
         description: payload.description ?? null,
         category: String(payload.category ?? ""),
@@ -358,8 +350,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         negotiable: !!payload.negotiable,
         createdAt: nowIso,
         featured: false,
-        // IMPORTANT: do not assign `undefined` with exactOptionalPropertyTypes
-        sellerId: null,
+        sellerId: null, // filled by server on subsequent fetch
       };
 
       // Update caches and state optimistically
@@ -369,10 +360,10 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
       setProducts(merged);
       setReady(true);
 
-      // Optionally, fire a silent refetch to pick up server-enriched fields
+      // Pick up server-enriched fields (seller snapshot, counts, etc.)
       void revalidateSilently();
 
-      return { id: String(j.id) };
+      return { id: newId };
     },
     [revalidateSilently]
   );
@@ -400,7 +391,6 @@ export function useProduct(id: string) {
       if (!id) return;
       setError(null);
 
-      // If present in cache and not forcing, show it instantly
       if (!force && memory.map.has(String(id))) {
         setProduct(memory.map.get(String(id)) || null);
         setLoading(false);
@@ -413,7 +403,6 @@ export function useProduct(id: string) {
 
       try {
         const p = await fetchItem(id, acRef.current.signal);
-        // Update memory & session list (if present)
         memory.map.set(String(p.id), p);
         const merged = dedupeById([p, ...memory.list]);
         cacheListToMemory(merged);

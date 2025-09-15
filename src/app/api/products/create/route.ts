@@ -1,4 +1,3 @@
-// src/app/api/products/create/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -7,6 +6,8 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
+import { checkRateLimit } from "@/app/lib/ratelimit";
+import { tooMany } from "@/app/lib/ratelimit-response";
 
 /* ----------------------------- tiny utils ----------------------------- */
 
@@ -64,7 +65,7 @@ function nGallery(v: unknown, maxUrl: number, maxCount: number): string[] | unde
     .map((x) => (typeof x === "string" ? x.trim() : ""))
     .filter(Boolean)
     .map((x) => clampLen(x, maxUrl)!)
-    .filter((x) => /^https?:\/\//i.test(x)); // basic URL sanity (optional)
+    .filter((x) => /^https?:\/\//i.test(x));
   const unique = Array.from(new Set(cleaned)).slice(0, maxCount);
   return unique;
 }
@@ -73,21 +74,12 @@ function normalizeMsisdn(input: unknown): string | undefined {
   if (typeof input !== "string") return undefined;
   let raw = input.trim();
 
-  // Already +2547… or +2541…
   if (/^\+254(7|1)\d{8}$/.test(raw)) raw = raw.replace(/^\+/, "");
-
-  // Strip non-digits
   let s = raw.replace(/\D+/g, "");
-
-  // 07… / 01… -> 2547… / 2541…
   if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
   if (/^01\d{8}$/.test(s)) s = "254" + s.slice(1);
-
-  // 7…… or 1…… -> 2547… / 2541…
   if (/^7\d{8}$/.test(s)) s = "254" + s;
   if (/^1\d{8}$/.test(s)) s = "254" + s;
-
-  // Truncate any accidental extra digits
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
 
   return /^254(7|1)\d{8}$/.test(s) ? s : undefined;
@@ -104,19 +96,15 @@ type AnalyticsEvent =
 
 function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
   try {
-    // keep it simple + non-PII; swap for GA/Plausible/PostHog later
-    // eslint-disable-next-line no-console
     console.log(`[track] ${event}`, { ts: new Date().toISOString(), ...props });
-  } catch {
-    /* no-op */
-  }
+  } catch {}
 }
 
 /* --------------------------------- policy --------------------------------- */
 
 type Tier = "BASIC" | "GOLD" | "PLATINUM";
 const LIMITS: Record<Tier, { listingLimit: number; canFeature: boolean }> = {
-  BASIC: { listingLimit: 3, canFeature: false }, // BASIC maps to DB "FREE"
+  BASIC: { listingLimit: 3, canFeature: false },
   GOLD: { listingLimit: 30, canFeature: true },
   PLATINUM: { listingLimit: 999_999, canFeature: true },
 };
@@ -136,7 +124,7 @@ function toTier(sub?: string | null): Tier {
   const s = (sub || "").toUpperCase();
   if (s === "GOLD") return "GOLD";
   if (s === "PLATINUM") return "PLATINUM";
-  return "BASIC"; // Treat FREE/NULL/UNKNOWN as BASIC
+  return "BASIC";
 }
 
 async function getMe() {
@@ -149,7 +137,6 @@ async function getMe() {
       id: true,
       name: true,
       subscription: true,
-      // For phone/location fallback:
       whatsapp: true,
       city: true,
       country: true,
@@ -158,7 +145,6 @@ async function getMe() {
 }
 
 /* ---------------------------------- CORS ---------------------------------- */
-
 export function OPTIONS() {
   const res = new NextResponse(null, { status: 204 });
   res.headers.set(
@@ -184,6 +170,17 @@ export async function POST(req: NextRequest) {
     if (!me) {
       track("product_create_validation_error", { reqId, reason: "unauthorized" });
       return noStore({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Rate limit per IP + user
+    const rl = checkRateLimit(req.headers, {
+      name: "create_listing",
+      limit: 6,                  // 6 / 10m
+      windowMs: 10 * 60_000,
+      extraKey: me.id,           // also bucket by user id
+    });
+    if (!rl.ok) {
+      return tooMany("Too many create attempts. Try again later.", rl.retryAfterSec);
     }
 
     // Reject non-JSON early
@@ -215,7 +212,7 @@ export async function POST(req: NextRequest) {
     const negotiable = nBool(body["negotiable"]);
     let featured = nBool(body["featured"]) ?? false;
 
-    // Seller snapshot (phone is OPTIONAL): prefer per-listing, else profile.whatsapp
+    // Seller snapshot (phone is OPTIONAL)
     let sellerPhoneRaw = normalizeMsisdn(body["sellerPhone"]);
     if (!sellerPhoneRaw && me.whatsapp) {
       sellerPhoneRaw = normalizeMsisdn(me.whatsapp) ?? undefined;
@@ -272,10 +269,8 @@ export async function POST(req: NextRequest) {
     // Enforce featured permission
     if (!limits.canFeature && featured) featured = false;
 
-    // Auto gallery fallback
     const finalGallery = gallery ?? (image ? [image] : []);
 
-    // Create (explicitly set ACTIVE to ensure visibility on Home)
     const created = await prisma.product.create({
       data: {
         name,
@@ -284,7 +279,7 @@ export async function POST(req: NextRequest) {
         condition,
         featured,
         sellerId: me.id,
-        status: "ACTIVE", // ensure it shows on Home API
+        status: "ACTIVE",
         createdAt: new Date(),
 
         ...(brand ? { brand } : {}),
@@ -311,10 +306,8 @@ export async function POST(req: NextRequest) {
       gallerySize: finalGallery.length,
     });
 
-    // Match SellClient expectation
     return noStore({ ok: true, productId: created.id }, { status: 201 });
   } catch (e: any) {
-    // eslint-disable-next-line no-console
     console.error("POST /api/products/create error", e);
     track("product_create_error", { reqId, message: e?.message ?? String(e) });
 

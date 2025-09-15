@@ -6,14 +6,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProfilePhotoUpload } from "@/app/hooks/useProfilePhotoUpload";
 
 /**
- * Polished, accessible profile photo uploader with:
- * - Drag & drop + click-to-pick
+ * Profile photo uploader:
+ * - Drag & drop + click/keyboard to pick
  * - Local preview (object URL) while uploading
- * - Progress bar with a11y `role="progressbar"`
- * - File validation (size/type) before upload
- * - Abort on re-pick to avoid race conditions
- * - Keyboard friendly (Enter/Space to open picker)
- * - Emits lightweight client events and tracking
+ * - Progress bar (a11y)
+ * - File validation (size/type)
+ * - Abort on re-pick & on unmount
+ * - Emits lightweight client events
  */
 
 type Props = {
@@ -21,7 +20,7 @@ type Props = {
   initialImage?: string | null;
   /** Max allowed file size in bytes (default 5MB) */
   maxBytes?: number;
-  /** Allowed mime types (prefix allowed, e.g. "image/") */
+  /** Allowed mime types (supports wildcard like "image/*") */
   allowedTypes?: readonly string[];
   /** Avatar size in px (square) used for preview box (default 96) */
   sizePx?: number;
@@ -63,6 +62,9 @@ export default function ProfilePhotoUploader({
 
   const { upload, remove, isUploading, progress, error, reset } = useProfilePhotoUpload();
 
+  // Abort any in-flight upload on unmount
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   // Shape → Tailwind class
   const roundClass = useMemo(
     () => (shape === "full" ? "rounded-full" : shape === "md" ? "rounded-md" : "rounded-2xl"),
@@ -94,7 +96,11 @@ export default function ProfilePhotoUploader({
     if (f.size > maxBytes) {
       return `File is too large. Max ${Math.round(maxBytes / 1024 / 1024)}MB allowed.`;
     }
-    if (!allowedTypes.some((t) => (t.endsWith("/*") ? f.type.startsWith(t.slice(0, -1)) : f.type === t))) {
+    if (
+      !allowedTypes.some((t) =>
+        t.endsWith("/*") ? f.type.startsWith(t.slice(0, -1)) : f.type === t
+      )
+    ) {
       return `Unsupported file type (${f.type || "unknown"}).`;
     }
     return null;
@@ -122,8 +128,7 @@ export default function ProfilePhotoUploader({
       const objUrl = URL.createObjectURL(f);
       setLocalPreview(objUrl);
 
-      // Fresh controller for the new upload (the hook may or may not support it;
-      // we still keep a local controller to be future-proof)
+      // Fresh controller for the new upload
       const ac = new AbortController();
       abortRef.current = ac;
 
@@ -134,14 +139,13 @@ export default function ProfilePhotoUploader({
         announce("Profile photo updated");
         track("profile_photo_upload", { size: f.size, type: f.type });
         emit("qs:profile:photo:updated", { url: user.image, avatar: variants?.avatarUrl });
-      } catch (e: any) {
-        // The hook sets `error`; keep the local preview (user can retry or reset)
+      } catch {
         announce("Upload failed");
       } finally {
         abortRef.current = null;
       }
     },
-    [announce, localPreview, maxBytes, allowedTypes, upload]
+    [announce, localPreview, upload]
   );
 
   const onPickFile = useCallback(
@@ -212,12 +216,15 @@ export default function ProfilePhotoUploader({
           "relative overflow-hidden bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700",
           roundClass,
           dragOver ? "ring-2 ring-[#39a0ca]" : "",
+          "cursor-pointer",
         ].join(" ")}
         style={{ width: px, height: px }}
+        onClick={() => fileInputRef.current?.click()}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
-        role="img"
+        role="button"
+        aria-haspopup="dialog"
         aria-label={previewSrc ? "Profile photo" : "No profile photo"}
         tabIndex={0}
         onKeyDown={(e) => {
@@ -226,7 +233,7 @@ export default function ProfilePhotoUploader({
             fileInputRef.current?.click();
           }
         }}
-        title="Drop an image here, or press Enter to pick a file"
+        title="Drop an image here, or click/press Enter to pick a file"
       >
         {previewSrc ? (
           <Image

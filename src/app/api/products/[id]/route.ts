@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
@@ -46,12 +47,13 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-/** Extract `:id` from /api/products/:id */
-function getIdFromUrl(url: string): string {
+function getId(req: NextRequest): string {
   try {
-    const { pathname } = new URL(url);
-    const m = pathname.match(/\/api\/products\/([^/]+)\/?$/i);
-    return (m?.[1] ?? "").trim();
+    // Prefer NextRequest.nextUrl for robustness
+    const segs = req.nextUrl.pathname.split("/");
+    const idx = segs.findIndex((s) => s === "products");
+    const id = idx >= 0 ? (segs[idx + 1] ?? "") : "";
+    return id.trim();
   } catch {
     return "";
   }
@@ -59,8 +61,14 @@ function getIdFromUrl(url: string): string {
 
 // CORS (optional)
 export function OPTIONS() {
+  const origin =
+    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
+    "*";
+
   const res = new NextResponse(null, { status: 204 });
-  res.headers.set("Access-Control-Allow-Origin", process.env["NEXT_PUBLIC_APP_URL"] || "*");
+  res.headers.set("Access-Control-Allow-Origin", origin);
+  res.headers.set("Vary", "Origin");
   res.headers.set("Access-Control-Allow-Methods", "GET, PATCH, DELETE, OPTIONS");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
@@ -126,12 +134,12 @@ function shapeProduct(p: any) {
 }
 
 /* -------------------- GET /api/products/:id ------------------- */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
-    const productId = getIdFromUrl(req.url);
+    const productId = getId(req);
     if (!productId) {
       track("product_read_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });
@@ -208,12 +216,12 @@ export async function GET(req: Request) {
 }
 
 /* ------------------- PATCH /api/products/:id ------------------ */
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
-    const productId = getIdFromUrl(req.url);
+    const productId = getId(req);
     if (!productId) {
       track("product_update_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });
@@ -274,7 +282,7 @@ export async function PATCH(req: Request) {
       category?: string;
       subcategory?: string;
       brand?: string;
-      condition?: string | null; // allow null if you plan to clear; we keep undefined unless matched
+      condition?: string | null;
       price?: number | null;
       image?: string;
       gallery?: string[];
@@ -287,7 +295,7 @@ export async function PATCH(req: Request) {
     if (typeof body?.category === "string") data.category = body.category.slice(0, 64);
     if (typeof body?.subcategory === "string") data.subcategory = body.subcategory.slice(0, 64);
     if (typeof body?.brand === "string") data.brand = body.brand.slice(0, 64);
-    if (normCondition !== undefined) data.condition = normCondition; // either valid string or undefined (ignore)
+    if (normCondition !== undefined) data.condition = normCondition;
     if (normPrice !== undefined) data.price = normPrice; // number | null | undefined
     if (typeof body?.image === "string") data.image = body.image.slice(0, 2048);
     if (normGallery !== undefined) data.gallery = normGallery;
@@ -331,12 +339,12 @@ export async function PATCH(req: Request) {
 }
 
 /* ------------------ DELETE /api/products/:id ------------------ */
-export async function DELETE(req: Request) {
+export async function DELETE(req: NextRequest) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
-    const productId = getIdFromUrl(req.url);
+    const productId = getId(req);
     if (!productId) {
       track("product_delete_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });

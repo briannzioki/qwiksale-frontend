@@ -1,11 +1,13 @@
-// src/app/api/products/[id]/contact/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
+import { checkRateLimit } from "@/app/lib/ratelimit";
+import { tooMany } from "@/app/lib/ratelimit-response";
 
 /* ------------------------- tiny helpers ------------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
@@ -16,17 +18,18 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-function getIdFromUrl(url: string): string {
+function getId(req: NextRequest): string {
   try {
-    const { pathname } = new URL(url);
-    const m = pathname.match(/\/api\/products\/([^/]+)\/contact\/?$/i);
-    return (m?.[1] ?? "").trim();
+    const segs = req.nextUrl.pathname.split("/");
+    const i = segs.findIndex((s) => s === "products");
+    const id = i >= 0 ? (segs[i + 1] ?? "") : "";
+    return (id ?? "").toString().trim();
   } catch {
     return "";
   }
 }
 
-function getClientIp(req: Request): string | null {
+function getClientIp(req: NextRequest): string | null {
   const xf =
     req.headers.get("x-forwarded-for") ||
     req.headers.get("x-vercel-forwarded-for") ||
@@ -45,23 +48,49 @@ function validUrl(u?: string | null): string | null {
     if (uu.protocol === "http:" || uu.protocol === "https:") {
       return uu.toString().slice(0, 500);
     }
-  } catch {
-    /* ignore */
-  }
+  } catch {}
   return null;
 }
 
-/* ----------------------------- GET ----------------------------- */
-export async function GET(req: Request) {
+/* ----------------------------- CORS (optional) ----------------------------- */
+export function OPTIONS() {
+  const origin =
+    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
+    "*";
+
+  const res = new NextResponse(null, { status: 204 });
+  res.headers.set("Access-Control-Allow-Origin", origin);
+  res.headers.set("Vary", "Origin");
+  res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.headers.set("Access-Control-Max-Age", "86400");
+  res.headers.set("Cache-Control", "no-store");
+  return res;
+}
+
+/* ----------------------------- GET (with throttle) ----------------------------- */
+export async function GET(req: NextRequest) {
   try {
-    const productId = getIdFromUrl(req.url);
+    const productId = getId(req);
     if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
+
+    // Global best-effort rate limit (IP bucket)
+    const rl = checkRateLimit(req.headers, {
+      name: "products_contact",
+      limit: 10,       // 10 / 30s / IP
+      windowMs: 30_000,
+      extraKey: productId, // scope per product to be nicer to users
+    });
+    if (!rl.ok) {
+      return tooMany("Please wait a moment before revealing more contacts.", rl.retryAfterSec);
+    }
 
     // viewer is optional (guests allowed)
     const session = await auth().catch(() => null);
     const viewerUserId = (session as any)?.user?.id as string | undefined;
 
-    // Minimal public fields to render the contact dialog safely
+    // Minimal public fields
     const product = await prisma.product.findUnique({
       where: { id: productId },
       select: {
@@ -72,14 +101,61 @@ export async function GET(req: Request) {
         sellerLocation: true,
       },
     });
-
     if (!product) return noStore({ error: "Not found" }, { status: 404 });
 
-    // Light telemetry — never block user on errors
+    // ---- Soft throttle windows (DB-backed) ----
     const ip = getClientIp(req);
     const ua = req.headers.get("user-agent") || null;
-    const referer = validUrl(req.headers.get("referer")); // computed but not stored
 
+    // Window sizes & limits
+    const now = Date.now();
+    const WIN_IP_HR = new Date(now - 60 * 60 * 1000);     // 1 hour
+    const WIN_DEVICE_15 = new Date(now - 15 * 60 * 1000); // 15 minutes
+
+    const MAX_PER_IP_PER_HOUR = 12;       // generous per IP
+    const MAX_PER_DEVICE_15MIN = 6;       // same IP + UA ≈ device
+
+    // Count recent reveals per IP for this product
+    if (ip) {
+      const ipCount = await prisma.contactReveal.count({
+        where: {
+          productId,
+          ip,
+          createdAt: { gte: WIN_IP_HR },
+        },
+      });
+      if (ipCount >= MAX_PER_IP_PER_HOUR) {
+        const res = noStore(
+          { error: "Too many requests. Please try again later." },
+          { status: 429 },
+        );
+        res.headers.set("Retry-After", "1800"); // 30 min
+        return res;
+      }
+    }
+
+    // Count recent reveals per (IP + UA) for this product
+    if (ip && ua) {
+      const devCount = await prisma.contactReveal.count({
+        where: {
+          productId,
+          ip,
+          userAgent: ua,
+          createdAt: { gte: WIN_DEVICE_15 },
+        },
+      });
+      if (devCount >= MAX_PER_DEVICE_15MIN) {
+        const res = noStore(
+          { error: "Please wait a few minutes before trying again." },
+          { status: 429 },
+        );
+        res.headers.set("Retry-After", "300"); // 5 min
+        return res;
+      }
+    }
+
+    // Light telemetry — never block user on errors
+    const referer = validUrl(req.headers.get("referer"));
     prisma.contactReveal
       .create({
         data: {
@@ -87,7 +163,7 @@ export async function GET(req: Request) {
           viewerUserId: viewerUserId ?? null,
           ip: ip ?? null,
           userAgent: ua,
-          // referer, // <- add column first if you want to store it
+          // referer, // add column in schema if desired
         },
       })
       .catch(() => void 0);
@@ -102,7 +178,6 @@ export async function GET(req: Request) {
     return noStore({
       product: { id: product.id, name: product.name },
       contact,
-      // nudge guests to sign in (client shows a soft banner)
       suggestLogin: !viewerUserId,
     });
   } catch (e) {

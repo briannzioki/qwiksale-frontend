@@ -45,12 +45,13 @@ function trackSafe(event: string, props: Record<string, unknown> = {}): void {
 
 /** Extracts a productId from query or JSON body (never throws). */
 async function getProductIdFromReq(req: Request): Promise<string> {
-  // 1) Query param
   const url = new URL(req.url);
-  const qp = url.searchParams.get("productId") ?? url.searchParams.get("id");
-  if (qp && qp.trim()) return qp.trim();
 
-  // 2) JSON body
+  // 1) Query param (productId or id)
+  const qp = (url.searchParams.get("productId") ?? url.searchParams.get("id"))?.trim();
+  if (qp) return qp;
+
+  // 2) JSON body (optional)
   let body: unknown = null;
   try {
     body = await req.json();
@@ -62,6 +63,14 @@ async function getProductIdFromReq(req: Request): Promise<string> {
       ? (body as any).productId.trim()
       : "";
   return pid;
+}
+
+function parseBool(v: string | null, def = false) {
+  if (v == null) return def;
+  const t = v.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(t)) return true;
+  if (["0", "false", "no", "off"].includes(t)) return false;
+  return def;
 }
 
 /**
@@ -77,25 +86,19 @@ export async function GET(req: Request) {
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const url = new URL(req.url);
-    const format = (url.searchParams.get("format") || "ids").toLowerCase();
-    const includeInactive =
-      (url.searchParams.get("includeInactive") || "0").trim() === "1";
+    const formatRaw = (url.searchParams.get("format") || "ids").toLowerCase();
+    const format: "ids" | "full" = formatRaw === "full" ? "full" : "ids";
+    const includeInactive = parseBool(url.searchParams.get("includeInactive"), false);
 
     const limitRaw = Number(url.searchParams.get("limit") || "50");
-    const limit = Math.min(
-      Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50),
-      200
-    );
+    const limit = Math.min(Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50), 200);
 
     const cursorStr = url.searchParams.get("cursor") || "";
-    const cursor = cursorStr ? new Date(cursorStr) : null;
-    const cursorValid = !!cursor && !Number.isNaN(cursor.getTime());
+    const cursorDate = cursorStr ? new Date(cursorStr) : null;
+    const cursorValid = !!cursorDate && !Number.isNaN(cursorDate.getTime());
 
-    const whereBase: {
-      userId: string;
-      createdAt?: { lt: Date };
-    } = { userId };
-    if (cursorValid && cursor) whereBase.createdAt = { lt: cursor };
+    const whereBase: { userId: string; createdAt?: { lt: Date } } = { userId };
+    if (cursorValid && cursorDate) whereBase.createdAt = { lt: cursorDate };
 
     if (format === "full") {
       const favorites = await prisma.favorite.findMany({
@@ -127,11 +130,8 @@ export async function GET(req: Request) {
         },
       });
 
-      // Safe: element may be undefined when array is empty
       const lastFull = favorites.at(-1);
-      const nextCursor = lastFull?.createdAt
-        ? lastFull.createdAt.toISOString()
-        : null;
+      const nextCursor = lastFull?.createdAt ? lastFull.createdAt.toISOString() : null;
 
       trackSafe("favorites_listed", {
         userId,
@@ -144,22 +144,18 @@ export async function GET(req: Request) {
     }
 
     // ids (fast path)
-    const rows: Array<{ productId: string; createdAt: Date }> =
-      await prisma.favorite.findMany({
-        where: includeInactive
-          ? whereBase
-          : { ...whereBase, product: { status: "ACTIVE" as const } },
-        orderBy: { createdAt: "desc" },
-        take: limit,
-        select: { productId: true, createdAt: true },
-      });
+    const rows: Array<{ productId: string; createdAt: Date }> = await prisma.favorite.findMany({
+      where: includeInactive
+        ? whereBase
+        : { ...whereBase, product: { status: "ACTIVE" as const } },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: { productId: true, createdAt: true },
+    });
 
     const ids = rows.map((r) => r.productId);
-
     const lastRow = rows.at(-1);
-    const nextCursor = lastRow?.createdAt
-      ? lastRow.createdAt.toISOString()
-      : null;
+    const nextCursor = lastRow?.createdAt ? lastRow.createdAt.toISOString() : null;
 
     trackSafe("favorites_listed", {
       userId,

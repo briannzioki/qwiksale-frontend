@@ -1,7 +1,7 @@
 // src/app/components/ContactModal.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
 /* ----------------------------- Types ----------------------------- */
@@ -36,19 +36,11 @@ function normalizeKenyanMsisdn(raw?: string | null): string | null {
   if (!raw) return null;
   let s = String(raw).trim();
 
-  // If it's already +2547/ +2541 form, normalize to E.164 without plus
   if (/^\+?254(7|1)\d{8}$/.test(s)) return s.replace(/^\+/, "");
-
-  // Remove non-digits
   s = s.replace(/\D+/g, "");
 
-  // 07XXXXXXXX / 01XXXXXXXX -> 2547XXXXXXXX / 2541XXXXXXXX
   if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) return "254" + s.slice(1);
-
-  // 7XXXXXXXX / 1XXXXXXXX -> 2547XXXXXXXX / 2541XXXXXXXX
   if (/^(7|1)\d{8}$/.test(s)) return "254" + s;
-
-  // Already 254***********, trim to exactly 12 digits
   if (s.startsWith("254") && s.length >= 12) return s.slice(0, 12);
 
   return null;
@@ -80,6 +72,10 @@ export default function ContactModal({
   buttonLabel = "Show Contact",
   className = "",
 }: Props) {
+  const modalUid = useId(); // stable, unique per instance
+  const modalId = `contact-modal-${modalUid}`;
+  const descId = `${modalId}-desc`;
+
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [payload, setPayload] = useState<RevealPayload | null>(null);
@@ -142,7 +138,7 @@ export default function ContactModal({
     }
   }, [productId, loading]);
 
-  // Close on Escape + simple focus trap
+  // Close on Escape + focus trap
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -151,15 +147,13 @@ export default function ContactModal({
         const focusable = panelRef.current.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
         );
-
         if (focusable.length === 0) return;
 
         const first = focusable.item(0);
         const last = focusable.item(focusable.length - 1);
-        if (!first || !last) return; // type guard
+        if (!first || !last) return;
 
         const active = document.activeElement as HTMLElement | null;
-
         if (e.shiftKey && active === first) {
           e.preventDefault();
           last.focus();
@@ -173,7 +167,7 @@ export default function ContactModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Prevent background scroll when open (iOS-friendly)
+  // Prevent background scroll when open
   useEffect(() => {
     if (!open) return;
     const { overflow } = document.body.style;
@@ -183,7 +177,7 @@ export default function ContactModal({
     };
   }, [open]);
 
-  // Focus the close button when the modal opens; restore focus to trigger on close
+  // Focus mgmt
   useEffect(() => {
     if (open) {
       const t = setTimeout(() => closeBtnRef.current?.focus(), 10);
@@ -220,15 +214,18 @@ export default function ContactModal({
         ref={triggerRef}
         onClick={reveal}
         disabled={loading}
+        type="button"
         className={[
           "px-4 py-2 rounded-xl text-sm",
           "bg-black text-white dark:bg-white dark:text-black",
           "disabled:opacity-60",
-          className || "",
-        ].join(" ")}
+          className,
+        ]
+          .filter(Boolean)
+          .join(" ")}
         aria-busy={loading ? "true" : "false"}
         aria-haspopup="dialog"
-        aria-controls="contact-modal"
+        aria-controls={modalId}
       >
         {loading ? "Revealing…" : buttonLabel}
       </button>
@@ -237,6 +234,7 @@ export default function ContactModal({
         <>
           {/* Backdrop */}
           <button
+            type="button"
             className="fixed inset-0 z-50 bg-black/40"
             aria-label="Close contact dialog"
             onClick={onBackdropClick}
@@ -244,30 +242,36 @@ export default function ContactModal({
 
           {/* Dialog */}
           <div
-            id="contact-modal"
+            id={modalId}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="contact-modal-title"
+            aria-labelledby={`${modalId}-title`}
+            aria-describedby={descId}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
             <div
               ref={panelRef}
               className="bg-white dark:bg-gray-950 rounded-2xl w-full max-w-md p-5 shadow-lg border border-gray-200 dark:border-gray-800"
             >
+              <p id={descId} className="sr-only">
+                Seller contact details and quick actions.
+              </p>
+
               {/* Optional safety nudge */}
               {payload?.suggestLogin && (
-                <div className="mb-3 p-3 text-sm rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-300 dark:border-yellow-900/50">
+                <div className="mb-3 p-3 text-sm rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-300 dark:border-yellow-900/50" role="note">
                   For safety, we recommend logging in first. You can still proceed.
                 </div>
               )}
 
-              <div className="flex items-center justify-between mb-2">
-                <h3 id="contact-modal-title" className="font-semibold text-gray-900 dark:text-gray-100">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 id={`${modalId}-title`} className="font-semibold text-gray-900 dark:text-gray-100">
                   Seller Contact
                 </h3>
                 <button
                   ref={closeBtnRef}
                   onClick={() => setOpen(false)}
+                  type="button"
                   className="px-2 py-1 rounded-md border text-sm hover:bg-gray-50 dark:hover:bg-gray-900 dark:border-gray-700 dark:text-gray-200"
                 >
                   Close
@@ -275,7 +279,9 @@ export default function ContactModal({
               </div>
 
               {error ? (
-                <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
+                <div className="text-sm text-red-600 dark:text-red-400" role="alert" aria-live="polite">
+                  {error}
+                </div>
               ) : (
                 <>
                   <div className="space-y-2 text-sm text-gray-800 dark:text-gray-200">
@@ -288,6 +294,7 @@ export default function ContactModal({
                       {payload?.contact?.phone && (
                         <button
                           onClick={copyPhone}
+                          type="button"
                           className="ml-2 rounded border px-2 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-900 dark:border-gray-700"
                           title="Copy to clipboard"
                         >
@@ -301,14 +308,15 @@ export default function ContactModal({
                   </div>
 
                   {/* CTAs */}
-                  <div className="mt-4 flex flex-wrap gap-2 justify-end">
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
                     {waLink && (
                       <a
                         href={waLink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-[#25D366] text-white text-sm hover:opacity-90"
+                        className="rounded-xl bg-[#25D366] px-3 py-1.5 text-sm text-white hover:opacity-90"
                         onClick={() => track("contact_whatsapp_click", { productId })}
+                        aria-label="Open WhatsApp chat with seller"
                       >
                         WhatsApp
                       </a>
@@ -316,15 +324,17 @@ export default function ContactModal({
                     {telLink && (
                       <a
                         href={telLink}
-                        className="px-3 py-1.5 rounded-xl border text-sm hover:bg-gray-50 dark:hover:bg-gray-900 dark:border-gray-700 dark:text-gray-200"
+                        className="rounded-xl border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 dark:text-gray-200"
                         onClick={() => track("contact_call_click", { productId })}
+                        aria-label="Call seller"
                       >
                         Call
                       </a>
                     )}
                     <button
                       onClick={() => setOpen(false)}
-                      className="px-3 py-1.5 rounded-xl border text-sm hover:bg-gray-50 dark:hover:bg-gray-900 dark:border-gray-700 dark:text-gray-200"
+                      type="button"
+                      className="rounded-xl border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 dark:text-gray-200"
                     >
                       Close
                     </button>

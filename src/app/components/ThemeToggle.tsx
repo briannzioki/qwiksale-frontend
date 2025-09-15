@@ -29,8 +29,8 @@ function applyTheme(mode: ThemeMode, mql: MediaQueryList | null) {
 
   root.classList.toggle("dark", dark);
   root.style.colorScheme = dark ? "dark" : "light";
-  // Instead of: root.dataset.themeMode = mode;  // ❌ TS4111
-  root.setAttribute("data-theme-mode", mode);   // ✅ explicit attribute
+  // TS-safe explicit attribute instead of dataset
+  root.setAttribute("data-theme-mode", mode);
 
   try {
     localStorage.setItem(LS_KEY, mode);
@@ -99,12 +99,15 @@ export default function ThemeToggle({
         emitChange("system");
       }
     };
-    const offMql = mql?.addEventListener
-      ? (mql.addEventListener("change", onSystemChange), () =>
-          mql.removeEventListener("change", onSystemChange))
-      : mql?.addListener
-      ? (mql.addListener(onSystemChange), () => mql.removeListener(onSystemChange))
-      : () => {};
+
+    const offMql =
+      mql && "addEventListener" in mql
+        ? (mql.addEventListener("change", onSystemChange), () =>
+            mql.removeEventListener("change", onSystemChange))
+        : mql && "addListener" in mql
+        ? // @ts-expect-error: legacy API exists on some browsers
+          (mql.addListener(onSystemChange), () => mql.removeListener(onSystemChange))
+        : () => {};
 
     // Cross-tab sync
     const onStorage = (e: StorageEvent) => {

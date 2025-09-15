@@ -1,24 +1,23 @@
 // src/app/sell/success/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { track } from "@/app/lib/analytics";
 
-// Use bracket notation to satisfy TS index-signature typing for process.env
-const ENV_SITE = (process.env["NEXT_PUBLIC_SITE_URL"] ?? "").replace(/\/+$/, ""); // no trailing slash
+// Prefer configured public URL; fall back to current origin (client-only)
+const ENV_SITE = (process.env["NEXT_PUBLIC_SITE_URL"] ?? "").replace(/\/+$/, "");
 const SUBSCRIPTIONS_ENABLED =
   (process.env["NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED"] ?? "1") !== "0";
 
-export default function SellSuccessPage() {
+function SellSuccessInner() {
   const sp = useSearchParams();
 
   const [origin, setOrigin] = useState<string>("");
   const [canNativeShare, setCanNativeShare] = useState<boolean>(false);
 
-  // Prefer configured public URL; fall back to current origin (client-only)
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOrigin(ENV_SITE || window.location.origin);
@@ -38,6 +37,7 @@ export default function SellSuccessPage() {
     try {
       await navigator.clipboard.writeText(productUrl);
       toast.success("Link copied to clipboard");
+      // use existing union-safe event name
       track("contact_click", { where: "sell_success_copy", productId, productUrl });
     } catch {
       toast.error("Couldn't copy link");
@@ -52,9 +52,10 @@ export default function SellSuccessPage() {
         text: "Check out my new listing on QwikSale:",
         url: productUrl,
       });
+      // use existing union-safe event name
       track("message_sent", { where: "sell_success_native_share", productId, productUrl });
     } catch {
-      // user canceled or share not available — intentionally silent
+      // user canceled; ignore
     }
   }
 
@@ -66,7 +67,7 @@ export default function SellSuccessPage() {
 
   return (
     <div className="container-page py-8">
-      <div className="max-w-2xl mx-auto space-y-6 text-center">
+      <div className="mx-auto max-w-2xl space-y-6 text-center">
         {/* Success hero */}
         <div
           className="rounded-2xl p-10 text-white bg-gradient-to-br from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none animate-in fade-in zoom-in duration-500"
@@ -95,7 +96,7 @@ export default function SellSuccessPage() {
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <Link
                   href={`/product/${productId}`}
-                  className="btn-primary"
+                  className="btn-gradient-primary"
                   onClick={() => track("product_created", { where: "sell_success_view", productId })}
                 >
                   View listing
@@ -114,8 +115,8 @@ export default function SellSuccessPage() {
                 <a
                   href={waShare || "#"}
                   target="_blank"
-                  rel="noreferrer"
-                  className={`btn-success ${!waShare ? "pointer-events-none opacity-60" : ""}`}
+                  rel="noopener noreferrer"
+                  className={`btn-gradient-accent ${!waShare ? "pointer-events-none opacity-60" : ""}`}
                   aria-disabled={!waShare}
                   onClick={() =>
                     waShare &&
@@ -129,7 +130,7 @@ export default function SellSuccessPage() {
                   <button
                     type="button"
                     onClick={shareNative}
-                    className="btn-ghost"
+                    className="btn-outline"
                     disabled={!productUrl}
                     aria-disabled={!productUrl}
                   >
@@ -152,7 +153,7 @@ export default function SellSuccessPage() {
             </Link>
             <Link
               href="/sell"
-              className="btn-ghost"
+              className="btn-outline"
               onClick={() => track("product_created", { where: "sell_success_post_another" })}
             >
               Post another
@@ -164,7 +165,7 @@ export default function SellSuccessPage() {
         {SUBSCRIPTIONS_ENABLED && (
           <div className="card p-5 text-left">
             <h2 className="text-base font-semibold mb-2">Boost your chances</h2>
-            <ul className="list-disc ml-5 space-y-1 text-sm text-gray-700 dark:text-slate-300">
+            <ul className="ml-5 list-disc space-y-1 text-sm text-gray-700 dark:text-slate-300">
               <li>Add 3–6 clear photos from different angles.</li>
               <li>Write an honest description and mention any accessories/warranty.</li>
               <li>Enable WhatsApp on your phone number so buyers can reach you fast.</li>
@@ -176,7 +177,7 @@ export default function SellSuccessPage() {
             <div className="mt-3">
               <Link
                 href="/account/billing"
-                className="btn-primary"
+                className="btn-gradient-primary"
                 onClick={() => track("payment_initiated", { where: "sell_success_upgrade_cta" })}
               >
                 Upgrade subscription
@@ -189,13 +190,22 @@ export default function SellSuccessPage() {
   );
 }
 
+export default function SellSuccessPage() {
+  // Wrap useSearchParams usage in a Suspense boundary to satisfy Next.js 15 CSR bailout rules.
+  return (
+    <Suspense fallback={<div />}>
+      <SellSuccessInner />
+    </Suspense>
+  );
+}
+
 function CheckIcon() {
   return (
     <svg
       className="h-8 w-8 text-white"
       viewBox="0 0 24 24"
       fill="none"
-      aria-hidden
+      aria-hidden="true"
       focusable="false"
     >
       <path

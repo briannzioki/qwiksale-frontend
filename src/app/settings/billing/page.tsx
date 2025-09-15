@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 /* ------------------------------------------------------------------ */
 /* Constants & helpers                                                */
@@ -74,7 +74,9 @@ export default function BillingPage() {
   }, [phone]);
 
   // Prevent memory leaks (abort in-flight on unmount)
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -195,7 +197,7 @@ export default function BillingPage() {
           {!signedIn && (
             <button
               onClick={() => signIn(undefined, { callbackUrl: "/settings/billing" })}
-              className="btn-primary"
+              className="btn-gradient-primary"
             >
               Sign in
             </button>
@@ -252,7 +254,7 @@ export default function BillingPage() {
                 <button
                   type="button"
                   onClick={() => setPhone(TEST_MSISDN)}
-                  className="btn-ghost w-fit mt-1 text-xs"
+                  className="btn-outline w-fit mt-1 text-xs"
                   title="Use test number from env"
                 >
                   Use test number ({TEST_MSISDN})
@@ -282,7 +284,7 @@ export default function BillingPage() {
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <button
-              className="btn-primary"
+              className="btn-gradient-primary"
               type="submit"
               disabled={submitting || !signedIn}
               title={!signedIn ? "Please sign in first" : "Upgrade"}
@@ -295,7 +297,7 @@ export default function BillingPage() {
             <button
               type="button"
               onClick={() => setShowAdvanced((s) => !s)}
-              className="btn-ghost"
+              className="btn-outline"
             >
               {showAdvanced ? "Hide" : "Details"}
             </button>
@@ -362,7 +364,6 @@ function PlanCard({
         selected ? "outline outline-2 outline-brandBlue/60" : "",
       ].join(" ")}
       role="group"
-      aria-pressed={selected}
     >
       <div className="flex items-start justify-between">
         <div>
@@ -399,7 +400,7 @@ function PlanCard({
         <button
           type="button"
           onClick={onSelect}
-          className={selected ? "btn-outline" : "btn-primary"}
+          className={selected ? "btn-outline" : "btn-gradient-primary"}
           aria-pressed={selected}
         >
           {selected ? "Selected" : "Choose plan"}

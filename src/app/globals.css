@@ -1,9 +1,8 @@
 /* src/app/globals.css */
 
 /* If stylelint is enabled, silence Tailwind at-rules warnings in this file. */
- /* stylelint-disable at-rule-no-unknown */
- /* @config "../tailwind.config.ts" */
-
+/* stylelint-disable at-rule-no-unknown */
+/* @config "../tailwind.config.js" */
 
 @tailwind base;
 @tailwind components;
@@ -12,39 +11,34 @@
 /* Respect system color-scheme for native widgets */
 :root { color-scheme: light dark; }
 
-/* Brand color helpers (used by gradient utilities in markup) */
+/* Brand tokens */
 :root {
   --brand-navy: #161748;
   --brand-green: #478559;
   --brand-blue: #39a0ca;
+
+  /* RGB triplets for opacity-aware usage */
+  --brand-navy-rgb: 22 23 72;
+  --brand-green-rgb: 71 133 89;
+  --brand-blue-rgb: 57 160 202;
 }
 
-/* Provide Tailwind-like gradient stop helpers for custom brand colors.
-   These mimic `from-*`, `via-*`, `to-*` classes for our brand palette. */
-.from-brandNavy {
-  --tw-gradient-from: var(--brand-navy) var(--tw-gradient-from-position);
-  --tw-gradient-to: color-mix(in oklab, var(--brand-navy) 0%, transparent) var(--tw-gradient-to-position);
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
-}
-.via-brandGreen {
-  --tw-gradient-to: color-mix(in oklab, var(--brand-green) 0%, transparent) var(--tw-gradient-to-position);
-  --tw-gradient-stops: var(--tw-gradient-from), var(--brand-green) var(--tw-gradient-via-position), var(--tw-gradient-to);
-}
-.to-brandBlue {
-  --tw-gradient-to: var(--brand-blue) var(--tw-gradient-to-position);
-}
-
-/* Fallback utilities (commonly used but may need CSS support) */
+/* Small utility */
 .text-balance { text-wrap: balance; }
 
-/* Base: keep controls readable in both themes; page bg handled by layout */
+/* =========================
+   Base layer
+   ========================= */
 @layer base {
   /* Smooth fonts */
-  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-  /* Text selection */
+  /* Text selection color (uses rgb(var()) with color-mix) */
   ::selection {
-    background: color-mix(in oklab, var(--brand-blue) 18%, #0000);
+    background: color-mix(in oklab, rgb(var(--brand-blue-rgb)) 18%, transparent);
     color: inherit;
   }
 
@@ -61,7 +55,7 @@
     @apply text-slate-400;
   }
 
-  /* Default control backgrounds (can be overridden per component) */
+  /* Default control backgrounds (override per component as needed) */
   input, select, textarea {
     @apply bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700;
   }
@@ -69,13 +63,13 @@
   /* Accessible focus */
   :focus-visible {
     outline: 0;
-    box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand-blue) 80%, #fff 0%);
+    box-shadow: 0 0 0 2px color-mix(in oklab, rgb(var(--brand-blue-rgb)) 80%, #fff 0%);
   }
   input:focus, select:focus, textarea:focus, button:focus {
-    @apply outline-none ring-2 ring-[#39a0ca];
+    @apply outline-none ring-2 ring-brandBlue;
   }
 
-  /* Reduced motion friendliness */
+  /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
     * {
       animation-duration: 0.01ms !important;
@@ -86,21 +80,16 @@
   }
 
   /* Scrollbar (WebKit) */
-  *::-webkit-scrollbar {
-    width: 10px; height: 10px;
-  }
-  *::-webkit-scrollbar-thumb {
-    background-color: rgba(0,0,0,.15);
-    border-radius: 9999px;
-  }
-  .dark *::-webkit-scrollbar-thumb {
-    background-color: rgba(255,255,255,.18);
-  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,.15); border-radius: 9999px; }
+  .dark *::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,.18); }
 }
 
-/* Reusable surfaces and UI atoms */
+/* =========================
+   Components layer
+   ========================= */
 @layer components {
-  /* General translucent card */
+  /* Translucent cards */
   .card-surface {
     @apply bg-white/80 dark:bg-white/5
            backdrop-blur-md
@@ -109,7 +98,6 @@
            rounded-2xl shadow-sm;
   }
 
-  /* Hero-sized translucent surface (a little softer) */
   .hero-surface {
     @apply bg-white/70 dark:bg-white/5
            backdrop-blur-md
@@ -119,7 +107,7 @@
            p-6 md:p-8;
   }
 
-  /* Solid card (used for lists, tables, panels) */
+  /* Solid card */
   .card {
     @apply bg-white dark:bg-slate-900/40
            text-gray-900 dark:text-slate-100
@@ -127,10 +115,8 @@
            rounded-2xl shadow-sm;
   }
 
-  /* Container wrapper used across pages */
-  .container-page {
-    @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8;
-  }
+  /* Container wrapper */
+  .container-page { @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8; }
 
   /* Inputs */
   .input {
@@ -138,34 +124,28 @@
            bg-white dark:bg-slate-800
            border border-gray-300 dark:border-slate-700
            placeholder:text-gray-500 dark:placeholder:text-slate-400
-           focus:outline-none focus:ring-2 focus:ring-[#39a0ca];
+           focus:outline-none focus:ring-2 focus:ring-brandBlue;
   }
   .select {
     @apply w-full rounded-lg px-3 py-2
            bg-white dark:bg-slate-800
            border border-gray-300 dark:border-slate-700
-           focus:outline-none focus:ring-2 focus:ring-[#39a0ca];
+           focus:outline-none focus:ring-2 focus:ring-brandBlue;
   }
   .textarea {
     @apply w-full rounded-lg px-3 py-2
            bg-white dark:bg-slate-800
            border border-gray-300 dark:border-slate-700
            placeholder:text-gray-500 dark:placeholder:text-slate-400
-           focus:outline-none focus:ring-2 focus:ring-[#39a0ca];
+           focus:outline-none focus:ring-2 focus:ring-brandBlue;
   }
-  .label {
-    @apply block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1;
-  }
+  .label { @apply block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1; }
 
-  /* Buttons */
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2
-           rounded-xl px-4 py-2 font-semibold
-           text-white bg-[#161748]
-           hover:opacity-90 active:opacity-95
-           shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#39a0ca]
-           disabled:opacity-60 disabled:cursor-not-allowed;
-  }
+  /* Buttons
+     NOTE: gradient buttons are provided by the Tailwind plugin
+     (.btn-gradient-primary, .btn-gradient-accent, .btn-gradient-hero).
+     Only outline & danger are defined here.
+  */
   .btn-outline {
     @apply inline-flex items-center justify-center gap-2
            rounded-xl px-4 py-2 font-semibold
@@ -173,29 +153,15 @@
            text-gray-900 dark:text-slate-100
            border border-gray-300 dark:border-slate-700
            hover:bg-gray-50 dark:hover:bg-slate-700
-           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#39a0ca]
+           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brandBlue
            disabled:opacity-60 disabled:cursor-not-allowed;
   }
-  .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2
-           rounded-lg border
-           bg-white dark:bg-slate-800
-           text-gray-700 dark:text-slate-200
-           border-gray-300 dark:border-slate-700
-           hover:bg-gray-50 dark:hover:bg-slate-700;
-  }
+
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2
            rounded-lg px-3 py-1.5 text-sm
            text-white bg-red-600 hover:bg-red-700
            focus:outline-none focus:ring-2 focus:ring-red-400
-           disabled:opacity-60 disabled:cursor-not-allowed;
-  }
-  .btn-success {
-    @apply inline-flex items-center justify-center gap-2
-           rounded-xl px-4 py-2 font-semibold
-           text-white bg-emerald-600 hover:bg-emerald-700
-           focus:outline-none focus:ring-2 focus:ring-emerald-400
            disabled:opacity-60 disabled:cursor-not-allowed;
   }
 
@@ -204,31 +170,20 @@
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs
            bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700;
   }
-  .badge-verified {
-    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs
-           bg-[#161748] text-white;
-  }
+  .badge-verified { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs bg-brandNavy text-white; }
 
-  /* Skeleton loader (used widely) */
+  /* Skeleton */
   .skeleton {
     @apply animate-pulse bg-gray-200/70 dark:bg-slate-700/40;
-    background-image: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255,255,255,.35),
-      transparent
-    );
+    background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
     background-size: 200% 100%;
     background-position: 200% 0;
   }
 
-  /* Subtle shadow used by hero headers */
-  .shadow-soft { @apply shadow-[0_10px_30px_-10px_rgba(0,0,0,0.25)]; }
+  .shadow-soft { box-shadow: 0 10px 30px -10px rgba(0,0,0,0.25); }
 
-  /* Optional utility for links on light surfaces */
-  .link { @apply text-[#161748] hover:text-[#f95d9b]; }
+  .link { @apply text-brandNavy hover:text-brandPink; }
 
-  /* Inline kbd styling for shortcuts */
   kbd {
     @apply inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px]
            bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700
@@ -236,24 +191,20 @@
   }
 }
 
-/* Utilities layer for tiny fallbacks/extensions */
+/* =========================
+   Utilities layer
+   ========================= */
 @layer utilities {
-  /* Fallback for line-clamp-2 if plugin is not enabled */
   .line-clamp-2 {
-    /* Standard property for modern engines */
-    line-clamp: 2;
-    /* WebKit legacy */
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    /* Shared */
     overflow: hidden;
   }
 
-  /* Break long tokens (ids, hashes) gracefully */
   .break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
 
-  /* Prose tweaks when using @tailwind/typography (if present) */
+  /* Prose tweaks (if @tailwind/typography is present) */
   .prose :where(code):not(:where([class~="not-prose"] *)) {
     @apply rounded-md bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 text-[0.85em];
   }

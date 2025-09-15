@@ -132,34 +132,41 @@ export default function SellClient() {
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Prefill phone from profile (NEW) + normal gate checks — minimal change
+  // Prefill phone from profile + gate checks
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/me", { cache: "no-store" });
-        if (cancelled) return;
 
         if (res.status === 401) {
-          router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell")}`);
+          if (!cancelled) {
+            router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell")}`);
+          }
+          return;
+        }
+        if (!res.ok) {
+          if (!cancelled) {
+            setAllowed(true);
+            setReady(true);
+          }
           return;
         }
 
         const me = (await res.json().catch(() => null)) as Me | null;
 
-        if (me && me.profileComplete === false) {
+        if (!cancelled && me && me.profileComplete === false) {
           router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell")}`);
           return;
         }
 
-        // NEW: prefill phone once from profile if empty
         if (!cancelled && !phone && me?.whatsapp) {
-          setPhone(me.whatsapp); // (input accepts 07… or 2547…; normalization happens on submit)
+          setPhone(me.whatsapp);
         }
 
-        setAllowed(true);
+        if (!cancelled) setAllowed(true);
       } catch {
-        setAllowed(true); // fail-open
+        if (!cancelled) setAllowed(true); // fail-open
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -387,7 +394,7 @@ export default function SellClient() {
         <p className="text-white/90">List your item — it takes less than 2 minutes.</p>
       </div>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-6">
+      <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
         {/* Title & Price */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
@@ -399,6 +406,7 @@ export default function SellClient() {
               placeholder="e.g. iPhone 13 Pro 256GB"
               required
               minLength={3}
+              aria-label="Listing title"
             />
           </div>
           <div>
@@ -414,6 +422,7 @@ export default function SellClient() {
               }
               placeholder="e.g. 35000"
               aria-describedby="price-help"
+              aria-label="Price in Kenyan shillings"
             />
             <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
               Leave empty for <em>Contact for price</em>.
@@ -424,6 +433,7 @@ export default function SellClient() {
                 className="rounded border-gray-300 dark:border-slate-600"
                 checked={negotiable}
                 onChange={(e) => setNegotiable(e.target.checked)}
+                aria-label="Negotiable price"
               />
               Negotiable price
             </label>
@@ -443,6 +453,7 @@ export default function SellClient() {
               className="select"
               value={condition}
               onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
+              aria-label="Item condition"
             >
               <option value="brand new">Brand New</option>
               <option value="pre-owned">Pre-Owned</option>
@@ -454,6 +465,7 @@ export default function SellClient() {
               className="select"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
+              aria-label="Category"
             >
               {cats.map((c) => (
                 <option key={c.name} value={c.name}>
@@ -468,6 +480,7 @@ export default function SellClient() {
               className="select"
               value={subcategory}
               onChange={(e) => setSubcategory(e.target.value)}
+              aria-label="Subcategory"
             >
               {subcats.map((s) => (
                 <option key={s.name} value={s.name}>
@@ -487,6 +500,7 @@ export default function SellClient() {
               value={brand}
               onChange={(e) => setBrand(e.target.value)}
               placeholder="e.g. Samsung"
+              aria-label="Brand"
             />
           </div>
           <div>
@@ -496,6 +510,7 @@ export default function SellClient() {
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="e.g. Nairobi"
+              aria-label="Location"
             />
           </div>
           <div>
@@ -506,6 +521,7 @@ export default function SellClient() {
               onChange={(e) => setPhone(e.target.value)}
               placeholder="07XXXXXXXX or 2547XXXXXXXX"
               aria-invalid={!!phone && !looksLikeValidKePhone(phone)}
+              aria-label="WhatsApp phone number (optional)"
             />
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
               If provided, we’ll normalize as{" "}
@@ -525,6 +541,7 @@ export default function SellClient() {
             placeholder="Describe the item, condition, accessories, warranty, etc."
             required
             minLength={10}
+            aria-label="Listing description"
           />
         </div>
 
@@ -572,6 +589,7 @@ export default function SellClient() {
                       src={p.url}
                       alt={`Photo ${i + 1}`}
                       className="w-full h-32 object-cover rounded-lg border dark:border-slate-700"
+                      loading="lazy"
                     />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
                     <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
@@ -579,8 +597,9 @@ export default function SellClient() {
                         type="button"
                         onClick={() => move(i, -1)}
                         disabled={i === 0}
-                        className="btn-ghost px-2 py-1 text-xs"
+                        className="btn-outline px-2 py-1 text-xs"
                         title="Move left"
+                        aria-label="Move image left"
                       >
                         ◀
                       </button>
@@ -588,8 +607,9 @@ export default function SellClient() {
                         type="button"
                         onClick={() => move(i, +1)}
                         disabled={i === previews.length - 1}
-                        className="btn-ghost px-2 py-1 text-xs"
+                        className="btn-outline px-2 py-1 text-xs"
                         title="Move right"
+                        aria-label="Move image right"
                       >
                         ▶
                       </button>
@@ -598,6 +618,7 @@ export default function SellClient() {
                         onClick={() => removeAt(i)}
                         className="btn-danger px-2 py-1 text-xs"
                         title="Remove"
+                        aria-label="Remove image"
                       >
                         Remove
                       </button>
@@ -608,7 +629,7 @@ export default function SellClient() {
             )}
 
             {submitting && uploadPct > 0 && (
-              <div className="mt-3">
+              <div className="mt-3" aria-live="polite">
                 <div className="h-2 w-full bg-gray-200 rounded">
                   <div
                     className="h-2 bg-emerald-500 rounded transition-all"
@@ -625,11 +646,12 @@ export default function SellClient() {
           <button
             type="submit"
             disabled={!canSubmit || submitting}
-            className={`btn-primary ${(!canSubmit || submitting) && "opacity-60"}`}
+            className={`btn-gradient-primary ${(!canSubmit || submitting) ? "opacity-60" : ""}`}
+            aria-label="Post listing"
           >
             {submitting ? "Posting…" : "Post Listing"}
           </button>
-          <button type="button" onClick={() => router.back()} className="btn-outline">
+          <button type="button" onClick={() => router.back()} className="btn-outline" aria-label="Cancel">
             Cancel
           </button>
         </div>

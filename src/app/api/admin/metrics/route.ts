@@ -1,0 +1,77 @@
+// src/app/api/admin/metrics/route.ts
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { prisma } from "@/app/lib/prisma";
+import { assertAdmin } from "../_lib/guard";
+import { withApiLogging, type RequestLog } from "@/app/lib/api-logging";
+
+export const dynamic = "force-dynamic";
+
+/** Safely count Service records even if your Prisma schema has no `Service` model yet. */
+async function safeServiceCount(where?: any): Promise<number> {
+  const anyPrisma = prisma as any;
+  const svc = anyPrisma?.service;
+  if (svc && typeof svc.count === "function") {
+    return svc.count(where ? { where } : undefined);
+  }
+  // No Service model — treat as 0
+  return 0;
+}
+
+export async function GET(req: NextRequest) {
+  const denied = await assertAdmin();
+  if (denied) return denied;
+
+  return withApiLogging(req, "/api/admin/metrics", async (log: RequestLog) => {
+    const today = new Date();
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - i));
+      d.setHours(0, 0, 0, 0);
+      return d;
+    });
+
+    // Totals
+    const [usersTotal, productsTotal, servicesTotal] = await Promise.all([
+      prisma.user.count(),
+      prisma.product.count(),
+      safeServiceCount(), // safe even if Service model doesn't exist
+    ]);
+
+    // Per-day counts for the last 7 days
+    const last7d = await Promise.all(
+      days.map(async (d) => {
+        const next = new Date(d);
+        next.setDate(d.getDate() + 1);
+
+        const [u, p, s] = await Promise.all([
+          prisma.user.count({ where: { createdAt: { gte: d, lt: next } } }),
+          prisma.product.count({ where: { createdAt: { gte: d, lt: next } } }),
+          safeServiceCount({ createdAt: { gte: d, lt: next } }),
+        ]);
+
+        return {
+          date: d.toISOString().slice(0, 10),
+          users: u,
+          products: p,
+          services: s,
+        };
+      })
+    );
+
+    log.info(
+      { totals: { usersTotal, productsTotal, servicesTotal } },
+      "admin_metrics_ok"
+    );
+
+    return NextResponse.json({
+      totals: {
+        users: usersTotal,
+        products: productsTotal,
+        services: servicesTotal,
+        reveals: null, // hook up if/when you track reveals
+      },
+      last7d,
+    });
+  });
+}

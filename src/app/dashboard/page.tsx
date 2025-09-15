@@ -1,9 +1,9 @@
-// src/app/dashboard/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import DeleteListingButton from "./DeleteListingButton";
+import UserAvatar from "@/app/components/UserAvatar";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -24,6 +24,11 @@ type RecentListing = {
   category: string;
   subcategory: string;
   status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
+};
+
+type TopCat = {
+  category: string;
+  _count: { category: number };
 };
 
 function fmtKES(n?: number | null) {
@@ -63,16 +68,10 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-2 flex flex-wrap gap-3">
-          <Link
-            href="/signin?callbackUrl=%2Fdashboard"
-            className="inline-flex items-center rounded-xl bg-black px-4 py-2 font-semibold text-white hover:opacity-90"
-          >
+          <Link href="/signin?callbackUrl=%2Fdashboard" className="btn-gradient-primary">
             Sign in with email
           </Link>
-          <Link
-            href="/api/auth/signin/google?callbackUrl=%2Fdashboard"
-            className="inline-flex items-center rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50"
-          >
+          <Link href="/api/auth/signin/google?callbackUrl=%2Fdashboard" className="btn-outline">
             Continue with Google
           </Link>
         </div>
@@ -85,61 +84,53 @@ export default async function DashboardPage() {
   const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
   const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
-  const [{ me, myListingsCount, favoritesCount, newLast7Days, likesOnMyListings, topCats30, recentListingsRaw }] =
-    await Promise.all([
-      (async () => {
-        const [me, myListingsCount, favoritesCount, newLast7Days, likesOnMyListings, topCats30, recentListingsRaw] =
-          await Promise.all([
-            prisma.user.findUnique({
-              where: { id: userId },
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                subscription: true,
-                image: true,
-                createdAt: true,
-                username: true,
-              },
-            }),
-            prisma.product.count({ where: { sellerId: userId } }),
-            prisma.favorite.count({ where: { userId } }),
-            prisma.product.count({ where: { sellerId: userId, createdAt: { gte: since7d } } }),
-            prisma.favorite.count({ where: { product: { sellerId: userId } } }),
-            prisma.product.groupBy({
-              by: ["category"],
-              where: { status: "ACTIVE", createdAt: { gte: since30d } },
-              _count: { category: true },
-            }),
-            prisma.product.findMany({
-              where: { sellerId: userId },
-              orderBy: { createdAt: "desc" },
-              take: 6,
-              select: {
-                id: true,
-                name: true,
-                image: true,
-                createdAt: true,
-                price: true,
-                featured: true,
-                category: true,
-                subcategory: true,
-                status: true,
-              },
-            }),
-          ]);
-
-        return {
-          me,
-          myListingsCount,
-          favoritesCount,
-          newLast7Days,
-          likesOnMyListings,
-          topCats30,
-          recentListingsRaw,
-        };
-      })(),
-    ]);
+  const [
+    me,
+    myListingsCount,
+    favoritesCount,
+    newLast7Days,
+    likesOnMyListings,
+    topCats30Raw,
+    recentListingsRaw,
+  ] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        subscription: true,
+        image: true,
+        createdAt: true,
+        username: true,
+      },
+    }),
+    prisma.product.count({ where: { sellerId: userId } }),
+    prisma.favorite.count({ where: { userId } }),
+    prisma.product.count({ where: { sellerId: userId, createdAt: { gte: since7d } } }),
+    prisma.favorite.count({ where: { product: { sellerId: userId } } }),
+    prisma.product.groupBy({
+      by: ["category"],
+      where: { status: "ACTIVE", createdAt: { gte: since30d } },
+      _count: { category: true },
+    }),
+    prisma.product.findMany({
+      where: { sellerId: userId },
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      select: {
+        id: true,
+        name: true,
+        image: true,
+        createdAt: true,
+        price: true,
+        featured: true,
+        category: true,
+        subcategory: true,
+        status: true,
+      },
+    }),
+  ]);
 
   if (!me) {
     return (
@@ -152,11 +143,11 @@ export default async function DashboardPage() {
     );
   }
 
-  const topCategoriesSorted = [...topCats30]
+  const topCats30 = (topCats30Raw as TopCat[])
     .sort((a, b) => (b._count.category ?? 0) - (a._count.category ?? 0))
     .slice(0, 5);
 
-  const recentListings = recentListingsRaw as unknown as RecentListing[];
+  const recentListings = recentListingsRaw as RecentListing[];
   const subLabel = me.subscription === "BASIC" ? "FREE" : me.subscription ?? "FREE";
 
   /* ---------------------------------- View ---------------------------------- */
@@ -164,29 +155,26 @@ export default async function DashboardPage() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold">
-              Welcome{me.name ? `, ${me.name}` : ""} 👋
-            </h1>
-            <p className="text-white/90">Manage your listings, favorites, and account.</p>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            {/* User avatar (UserAvatar expects a numeric size) */}
+            <UserAvatar src={me.image} alt={me.name || me.email || "You"} size={40} />
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold">
+                Welcome{me.name ? `, ${me.name}` : ""} 👋
+              </h1>
+              <p className="text-white/90">Manage your listings, favorites, and account.</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-white/15 px-3 py-1 text-sm">
               Subscription: <span className="font-semibold">{subLabel}</span>
             </span>
-            <Link
-              href="/account/profile"
-              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#161748] hover:bg-white/90"
-              title="Edit account"
-            >
+            <Link href="/account/profile" className="btn-gradient-primary text-sm" title="Edit account">
               Edit Account
             </Link>
             {subLabel === "FREE" && (
-              <Link
-                href="/settings/billing"
-                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#161748] hover:bg-white/90"
-              >
+              <Link href="/settings/billing" className="btn-gradient-accent text-sm">
                 Upgrade
               </Link>
             )}
@@ -196,19 +184,16 @@ export default async function DashboardPage() {
 
       {/* Quick actions */}
       <div className="flex flex-wrap gap-3">
-        <Link href="/sell" className="rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50">
+        <Link href="/sell" className="btn-outline">
           + Post a Listing
         </Link>
-        <Link href="/saved" className="rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50">
+        <Link href="/saved" className="btn-outline">
           View Saved
         </Link>
-        <Link href="/settings/billing" className="rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50">
+        <Link href="/settings/billing" className="btn-outline">
           Billing & Subscription
         </Link>
-        <Link
-          href="/api/auth/signout"
-          className="ml-auto rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50"
-        >
+        <Link href="/api/auth/signout" className="ml-auto btn-outline">
           Sign out
         </Link>
       </div>
@@ -229,12 +214,15 @@ export default async function DashboardPage() {
             Explore market →
           </Link>
         </div>
-        {topCategoriesSorted.length === 0 ? (
+        {topCats30.length === 0 ? (
           <div className="text-gray-600 dark:text-slate-300">No data yet.</div>
         ) : (
           <ul className="grid gap-1 text-sm text-gray-800 dark:text-slate-100 sm:grid-cols-2 lg:grid-cols-3">
-            {topCategoriesSorted.map((c) => (
-              <li key={c.category} className="flex items-center justify-between border-b py-1 dark:border-slate-800">
+            {topCats30.map((c) => (
+              <li
+                key={c.category}
+                className="flex items-center justify-between border-b py-1 dark:border-slate-800"
+              >
                 <span>{c.category}</span>
                 <span className="text-gray-500 dark:text-slate-400">{c._count.category}</span>
               </li>
@@ -250,7 +238,10 @@ export default async function DashboardPage() {
           Add your social links so buyers can trust your brand.
         </p>
         <div className="flex flex-wrap gap-2">
-          <Link href="/account/profile#socials" className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">
+          <Link
+            href="/account/profile#socials"
+            className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
+          >
             Add social links
           </Link>
           {me.username && (
@@ -284,7 +275,7 @@ export default async function DashboardPage() {
                 <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
                   {p.featured ? (
                     <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
-                      Verified
+                      Featured
                     </span>
                   ) : null}
 

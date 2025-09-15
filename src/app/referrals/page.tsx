@@ -250,7 +250,7 @@ export default function ReferralsPage() {
               autoComplete="off"
               inputMode="text"
             />
-            <button type="submit" disabled={claiming || !refInput.trim()} className="btn-primary">
+            <button type="submit" disabled={claiming || !refInput.trim()} className="btn-gradient-primary">
               {claiming ? "Claiming…" : "Claim"}
             </button>
           </form>

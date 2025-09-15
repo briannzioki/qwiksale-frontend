@@ -1,4 +1,4 @@
-// src/app/monitering/route.ts
+// src/app/monitoring/route.ts
 import { NextResponse } from "next/server";
 
 export const runtime = "edge";
@@ -12,8 +12,6 @@ function envelopeUrlFromDsn(dsn: string | undefined | null): string | null {
   if (!dsn) return null;
   try {
     const u = new URL(dsn);
-    // host: oXXXXXX.ingest.sentry.io
-    // pathname: /<projectId>
     const projectId = u.pathname.replace(/^\/+/, "");
     if (!projectId) return null;
 
@@ -39,134 +37,122 @@ function resolveEnvelopeUrl(): string | null {
   return envelopeUrlFromDsn(dsn);
 }
 
+/** Resolve a CORS origin (lock to your site in prod if available). */
+function allowedOrigin(): string {
+  const base =
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
+    "";
+  try {
+    if (base) return new URL(base).origin;
+  } catch {
+    /* ignore invalid */
+  }
+  return "*";
+}
+
 /** Basic CORS headers so the browser can POST directly to this route. */
 function corsHeaders() {
+  const origin = allowedOrigin();
   return {
-    "Access-Control-Allow-Origin": "*", // lock this down to your domain if you prefer
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
     "Access-Control-Allow-Headers":
       "Content-Type, X-Sentry-Auth, Origin, Accept",
     "Access-Control-Max-Age": "86400",
-  };
+    "Vary": "Origin",
+  } as const;
+}
+
+function json(
+  body: unknown,
+  init?: ResponseInit & { noStore?: boolean }
+): NextResponse {
+  return new NextResponse(JSON.stringify(body), {
+    status: init?.status ?? 200,
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders(),
+      ...(init?.noStore ? { "Cache-Control": "no-store" } : null),
+    },
+  });
 }
 
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
-    headers: corsHeaders(),
+    headers: {
+      ...corsHeaders(),
+      "Cache-Control": "no-store",
+    },
   });
+}
+
+export async function GET() {
+  const forwardUrl = resolveEnvelopeUrl();
+  return json(
+    {
+      ok: !!forwardUrl,
+      forwardUrl: forwardUrl ? "[configured]" : null,
+      runtime: "edge",
+    },
+    { status: forwardUrl ? 200 : 500, noStore: true }
+  );
 }
 
 export async function POST(req: Request) {
   const forwardUrl = resolveEnvelopeUrl();
   if (!forwardUrl) {
-    return new NextResponse(
-      JSON.stringify({
+    return json(
+      {
         ok: false,
         error:
-          "Sentry not configured. Set SENTRY_ENVELOPE_URL or SENTRY_DSN (or NEXT_PUBLIC_SENTRY_DSN).",
-      }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders(),
-        },
-      }
+          "Sentry not configured. Set SENTRY_ENVELOPE_URL or SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN.",
+      },
+      { status: 500, noStore: true }
     );
   }
 
-  // Sentry envelopes arrive as "application/x-sentry-envelope"
-  const ct = req.headers.get("content-type") || "";
-  if (!ct.includes("application/x-sentry-envelope")) {
-    // Be tolerant: some SDKs may omit the header, but nudge for correctness.
-    // We won't reject strictly—just forward.
-  }
-
-  // Pass through the envelope body unchanged
   let bodyText = "";
   try {
-    // Edge runtime supports .text() and stream forwarding, but we need the
-    // string form for a single forward.
     bodyText = await req.text();
     if (!bodyText) {
-      return new NextResponse(
-        JSON.stringify({ ok: false, error: "Empty envelope payload" }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders(),
-          },
-        }
-      );
+      return json({ ok: false, error: "Empty envelope payload" }, {
+        status: 400,
+        noStore: true,
+      });
     }
   } catch (e: any) {
-    return new NextResponse(
-      JSON.stringify({ ok: false, error: e?.message || "Read error" }),
-      {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders(),
-        },
-      }
-    );
+    return json({ ok: false, error: e?.message || "Read error" }, {
+      status: 400,
+      noStore: true,
+    });
   }
 
-  // Forward to Sentry
   try {
     const res = await fetch(forwardUrl, {
       method: "POST",
       headers: {
-        // DSN’s publicKey is embedded inside the envelope, so no Authorization header needed.
         "Content-Type": "application/x-sentry-envelope",
       },
       body: bodyText,
-      // Avoid Next cache layers
       cache: "no-store",
     });
 
-    // Mirror Sentry status (usually 200 or 202). Respond empty for minimum overhead.
     return new NextResponse(null, {
       status: res.status,
-      headers: corsHeaders(),
+      headers: {
+        ...corsHeaders(),
+        "Cache-Control": "no-store",
+      },
     });
   } catch (e: any) {
-    return new NextResponse(
-      JSON.stringify({
+    return json(
+      {
         ok: false,
         error: e?.message || "Forward error",
-      }),
-      {
-        status: 502,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders(),
-        },
-      }
+      },
+      { status: 502, noStore: true }
     );
   }
-}
-
-/**
- * (Optional) Basic GET health-check:
- * You can `fetch('/monitering', { method: 'GET' })` to verify config at runtime.
- */
-export async function GET() {
-  const forwardUrl = resolveEnvelopeUrl();
-  return new NextResponse(
-    JSON.stringify({
-      ok: !!forwardUrl,
-      forwardUrl: forwardUrl ? "[configured]" : null,
-      runtime: "edge",
-    }),
-    {
-      status: forwardUrl ? 200 : 500,
-      headers: {
-        "Content-Type": "application/json",
-        ...corsHeaders(),
-      },
-    }
-  );
 }

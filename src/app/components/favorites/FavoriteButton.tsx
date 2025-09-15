@@ -1,6 +1,7 @@
 // src/app/components/favorites/FavoriteButton.tsx
 "use client";
 
+import type React from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useFavorite } from "@/app/hooks/useFavorite";
 
@@ -61,7 +62,10 @@ export default function FavoriteButton({
   const cooldownUntilRef = useRef<number>(0);
 
   const title = useMemo(
-    () => (isFavorited ? `Remove ${labelPrefix} from favorites` : `Add ${labelPrefix} to favorites`),
+    () =>
+      isFavorited
+        ? `Remove ${labelPrefix} from favorites`
+        : `Add ${labelPrefix} to favorites`,
     [isFavorited, labelPrefix]
   );
 
@@ -81,9 +85,13 @@ export default function FavoriteButton({
         const next = !isFavorited;
         track(next ? "favorite_add" : "favorite_remove", { productId });
         emit("qs:favorite:toggle", { productId, favorited: next });
-        setLive(next ? `${labelPrefix} saved to favorites` : `${labelPrefix} removed from favorites`);
+        setLive(
+          next
+            ? `${labelPrefix} saved to favorites`
+            : `${labelPrefix} removed from favorites`
+        );
         setTimeout(() => setLive(""), 1200);
-      } catch (err: any) {
+      } catch {
         // Hook may surface error separately; provide SR feedback anyway
         setLive("Failed to update favorites");
         setTimeout(() => setLive(""), 1200);
@@ -112,8 +120,9 @@ export default function FavoriteButton({
 
   const baseClasses =
     "inline-flex items-center gap-1 rounded-full text-sm transition select-none";
+  // Softer, on-theme accent when favorited (brand-ish blue)
   const colorClasses = isFavorited
-    ? "text-[#f95d9b] dark:text-pink-400"
+    ? "text-[#39a0ca] dark:text-[#39a0ca]"
     : "text-gray-700 dark:text-slate-200";
   const stateClasses = loading ? "opacity-60 cursor-wait" : "hover:opacity-90";
 

@@ -1,14 +1,13 @@
-// prisma/schema.prisma
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"] // <-- required for `extensions = [...]`
+  previewFeatures = ["postgresqlExtensions"] // needed for extensions = [...]
 }
 
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   directUrl  = env("DIRECT_URL")
-  extensions = [citext()] // enables @db.Citext on fields
+  extensions = [citext()] // enables @db.Citext
 }
 
 /**
@@ -63,6 +62,39 @@ enum TicketStatus {
 }
 
 /**
+ * Services
+ */
+enum RateType {
+  hour
+  day
+  fixed
+}
+
+/**
+ * Moderation reports
+ */
+enum ReportListingType {
+  product
+  service
+}
+
+/** Messaging */
+enum ListingType {
+  product
+  service
+}
+
+enum ReportReason {
+  scam
+  prohibited
+  spam
+  wrong_category
+  counterfeit
+  offensive
+  other
+}
+
+/**
  * ---------- Models ----------
  */
 
@@ -84,7 +116,15 @@ model User {
   postalCode String?
   city       String?
   country    String?
-  verified   Boolean @default(false)
+
+  // Common “location” string used in listing snapshots (optional, denormalized)
+  location String?
+
+  // Marketplace reputation snapshot fields used by creation endpoints
+  rating Float?
+  sales  Int?
+
+  verified Boolean @default(false)
 
   // Plans / roles
   subscription      Subscription @default(BASIC)
@@ -102,15 +142,26 @@ model User {
   referralsSent     Referral[] @relation("ReferralInviter")
   referralsReceived Referral[] @relation("ReferralInvitee")
 
+  reviewsGiven    Review[] @relation("UserReviewsGiven")
+  reviewsReceived Review[] @relation("UserReviewsReceived")
+
   // Timestamps
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
   products  Product[]       @relation("UserProducts")
+  services  Service[]       @relation("UserServices")
   favorites Favorite[]
   payments  Payment[]       @relation("UserPayments")
   tickets   SupportTicket[] @relation("ReporterTickets")
+  reports   Report[]        @relation("Reporters")
+
+  // Messaging back-relations (NEW: give names that match Thread relations)
+  threadsBought Thread[] @relation("ThreadBuyer")
+  threadsSold   Thread[] @relation("ThreadSeller")
+  messagesSent  Message[]
+
   sessions  Session[]
   accounts  Account[]
 }
@@ -167,18 +218,50 @@ model Product {
   tickets        SupportTicket[] @relation("TicketProducts")
 
   /// ---------- Indexes tuned for your queries ----------
-  // Home/search: ACTIVE first, then featured/newest
   @@index([status, featured, createdAt(sort: Desc)])
-  // Default browse: newest ACTIVE
   @@index([status, createdAt(sort: Desc)])
-  // Browse by category/subcategory: newest ACTIVE in that bucket
   @@index([status, category, subcategory, createdAt(sort: Desc)])
-  // Price filter/sort within ACTIVE
   @@index([status, price])
-  // Seller store pages & dashboards: seller’s ACTIVE, newest
   @@index([sellerId, status, createdAt(sort: Desc)])
-  // Brand faceting/filtering within ACTIVE (optional but cheap)
   @@index([status, brand])
+}
+
+model Service {
+  id           String        @id @default(uuid())
+  name         String
+  description  String?       @db.Text
+  category     String
+  subcategory  String?
+  price        Int?          // null => “contact for quote”
+  rateType     RateType      @default(fixed)
+  serviceArea  String?
+  availability String?
+  image        String?
+  gallery      String[]      @default([])
+  location     String?
+  status       ProductStatus @default(ACTIVE) // reuse
+  featured     Boolean       @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sellerId String?
+  seller   User?   @relation("UserServices", fields: [sellerId], references: [id])
+
+  // Seller snapshot (parity with Product for cards)
+  sellerName        String?
+  sellerPhone       String?
+  sellerLocation    String?
+  sellerMemberSince String?
+  sellerRating      Float?
+  sellerSales       Int?
+
+  /// ---------- Indexes ----------
+  @@index([status, featured, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([status, category, subcategory, createdAt(sort: Desc)])
+  @@index([status, price])
+  @@index([sellerId, status, createdAt(sort: Desc)])
 }
 
 model Favorite {
@@ -209,7 +292,7 @@ model Payment {
   merchantRequestId String? @unique
 
   accountRef  String? @db.VarChar(12)
-  resultDesc  String?            // short human/MPesa message (fail/ok)
+  resultDesc  String?
   rawCallback Json?
 
   productId String?
@@ -236,7 +319,6 @@ model ContactReveal {
   userAgent    String?
   createdAt    DateTime @default(now())
 
-  // one per (product, user); guests allowed (viewerUserId = null)
   @@unique([productId, viewerUserId])
   @@index([productId, createdAt])
   @@index([viewerUserId, createdAt])
@@ -257,7 +339,7 @@ model SupportTicket {
   productId  String?
   reporterId String?
 
-  // Optional telemetry (captured by API if columns exist)
+  // Optional telemetry
   clientIp  String?
   userAgent String?
   referer   String?
@@ -272,6 +354,78 @@ model SupportTicket {
   @@index([status, createdAt])
   @@index([productId, createdAt])
   @@index([reporterId, createdAt])
+}
+
+model Report {
+  id          String            @id @default(cuid())
+  listingId   String
+  listingType ReportListingType
+  reason      ReportReason
+  details     String?
+  ip          String?
+  userId      String?
+  user        User?             @relation("Reporters", fields: [userId], references: [id], onDelete: SetNull)
+
+  resolved     Boolean  @default(false)
+  resolvedById String?
+  resolvedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([listingType, listingId])
+  @@index([resolved, createdAt])
+  @@index([userId])
+}
+
+/**
+ * ---------- Messaging ----------
+ */
+model Thread {
+  id            String      @id @default(cuid())
+  listingType   ListingType
+  listingId     String
+
+  buyerId       String
+  sellerId      String
+
+  buyerHidden   Boolean     @default(false)
+  sellerHidden  Boolean     @default(false)
+
+  lastMessageAt DateTime    @default(now())
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  buyerLastReadAt  DateTime?
+  sellerLastReadAt DateTime?
+
+  // IMPORTANT: give each relation a distinct name and matching back-relations on User
+  buyer  User @relation("ThreadBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  seller User @relation("ThreadSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  messages Message[]
+
+  @@unique([listingType, listingId, buyerId, sellerId])
+  @@index([buyerId, lastMessageAt(sort: Desc)])
+  @@index([sellerId, lastMessageAt(sort: Desc)])
+  @@index([listingType, listingId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  threadId  String
+  senderId  String
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  deletedAt DateTime?
+  readAt    DateTime?
+
+  thread Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 /**
@@ -313,4 +467,24 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@unique([token])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  raterId   String
+  rateeId   String
+  listingId String?  // optional: product/service id
+
+  rating Int
+  text   String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rater User @relation("UserReviewsGiven", fields: [raterId], references: [id], onDelete: Cascade)
+  ratee User @relation("UserReviewsReceived", fields: [rateeId], references: [id], onDelete: Cascade)
+
+  @@index([rateeId])
+  @@index([raterId])
+  @@index([listingId])
 }

@@ -1,18 +1,12 @@
-// src/app/signin/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
-/* ------------------------------------------------------------------ */
-/* Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
 function isSafePath(p?: string | null): p is string {
-  // allow "/foo" (single leading slash), disallow absolute URLs or protocol-relative
   return !!p && /^\/(?!\/)/.test(p);
 }
 
@@ -28,11 +22,7 @@ const ERR_COPY: Record<string, string> = {
   CallbackRouteError: "Sign-in callback failed. Please retry.",
 };
 
-/* ------------------------------------------------------------------ */
-/* Component                                                          */
-/* ------------------------------------------------------------------ */
-
-export default function SignInPage() {
+function SignInPageInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -41,10 +31,7 @@ export default function SignInPage() {
 
   const urlError = sp.get("error");
   const friendlyError = useMemo(
-    () =>
-      urlError
-        ? ERR_COPY[urlError] ?? "Sign-in failed. Please try again."
-        : null,
+    () => (urlError ? ERR_COPY[urlError] ?? "Sign-in failed. Please try again." : null),
     [urlError]
   );
 
@@ -74,10 +61,6 @@ export default function SignInPage() {
     return s.trim().toLowerCase();
   }
 
-  async function afterLoginRedirect() {
-    router.replace(returnTo);
-  }
-
   async function onCreds(e: React.FormEvent) {
     e.preventDefault();
     if (!email || !password) {
@@ -97,7 +80,7 @@ export default function SignInPage() {
         return;
       }
       toast.success("Welcome back!");
-      await afterLoginRedirect();
+      router.replace(returnTo);
     } finally {
       setWorking(null);
     }
@@ -115,15 +98,13 @@ export default function SignInPage() {
   return (
     <div className="container-page py-10">
       <div className="mx-auto max-w-xl">
-        {/* Header */}
-        <div className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-[#161748] via-[#1d2b64] to-[#0b1220]">
+        <div className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
           <h1 className="text-2xl md:text-3xl font-extrabold">Sign in to QwikSale</h1>
           <p className="mt-1 text-white/85">
             Use your email & password, or continue with Google.
           </p>
         </div>
 
-        {/* Error banner */}
         {friendlyError ? (
           <div
             role="alert"
@@ -133,18 +114,20 @@ export default function SignInPage() {
           </div>
         ) : null}
 
-        {/* Form & social */}
         <div className="mt-6 grid gap-6">
-          <form onSubmit={onCreds} className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <form
+            onSubmit={onCreds}
+            className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          >
             <div className="space-y-3">
               <div>
-                <label htmlFor="email" className="block text-sm font-semibold mb-1">
+                <label htmlFor="email" className="label font-semibold">
                   Email
                 </label>
                 <input
                   id="email"
                   type="email"
-                  className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                  className="input"
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -154,14 +137,14 @@ export default function SignInPage() {
                 />
               </div>
               <div>
-                <label htmlFor="password" className="block text-sm font-semibold mb-1">
+                <label htmlFor="password" className="label font-semibold">
                   Password
                 </label>
                 <div className="relative">
                   <input
                     id="password"
                     type={showPwd ? "text" : "password"}
-                    className="w-full rounded-lg border px-3 py-2 pr-24 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                    className="input pr-24"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -173,7 +156,7 @@ export default function SignInPage() {
                   />
                   <button
                     type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md border px-2 py-1 text-xs dark:border-slate-700"
+                    className="btn-outline absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs"
                     onClick={() => setShowPwd((s) => !s)}
                     aria-pressed={showPwd}
                     aria-label={showPwd ? "Hide password" : "Show password"}
@@ -182,9 +165,7 @@ export default function SignInPage() {
                   </button>
                 </div>
                 <div id="password-help" className="mt-1 flex items-center gap-3">
-                  <p className="text-xs text-gray-600 dark:text-slate-400">
-                    Minimum 6 characters.
-                  </p>
+                  <p className="text-xs text-gray-600 dark:text-slate-400">Minimum 6 characters.</p>
                   {caps && (
                     <span className="text-[11px] text-amber-600 dark:text-amber-400">
                       Caps Lock is ON
@@ -196,7 +177,8 @@ export default function SignInPage() {
               <button
                 type="submit"
                 disabled={!!working}
-                className="mt-2 w-full rounded-xl bg-[#161748] text-white px-4 py-2.5 font-semibold hover:opacity-95 disabled:opacity-60"
+                aria-busy={working === "creds"}
+                className="btn-gradient-primary mt-2 w-full"
               >
                 {working === "creds" ? "Signing in…" : "Sign in"}
               </button>
@@ -219,7 +201,8 @@ export default function SignInPage() {
             <button
               onClick={onGoogle}
               disabled={!!working}
-              className="w-full rounded-xl border px-4 py-3 font-semibold hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 disabled:opacity-60"
+              aria-busy={working === "google"}
+              className="btn-outline w-full py-3"
               aria-label="Continue with Google"
               type="button"
             >
@@ -238,8 +221,7 @@ export default function SignInPage() {
             </p>
             <div className="mt-3 text-[12px] text-gray-500 dark:text-slate-400">
               <span className="opacity-80">Returning from a protected page?</span>{" "}
-              You’ll be sent back to <code className="font-mono">{returnTo}</code> after
-              sign-in.
+              You’ll be sent back to <code className="font-mono">{returnTo}</code> after sign-in.
             </div>
           </div>
 
@@ -252,5 +234,13 @@ export default function SignInPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div />}>
+      <SignInPageInner />
+    </Suspense>
   );
 }

@@ -31,14 +31,10 @@ function parseIds(raw?: string | null): string[] {
 }
 
 export default function Analytics() {
-  // read envs via bracket notation to avoid TS4111
-  const gaIds = useMemo(
-    () => parseIds(process.env["NEXT_PUBLIC_GA_ID"] ?? null),
-    []
-  );
+  // ✅ Use DOT notation for public envs so Next can inline them on the client
+  const gaIds = useMemo(() => parseIds(process.env["NEXT_PUBLIC_GA_ID"]), []);
   const debug = process.env["NEXT_PUBLIC_ANALYTICS_DEBUG"] === "1";
-  const defaultConsent =
-    (process.env["NEXT_PUBLIC_GA_DEFAULT_CONSENT"] || "").toLowerCase() || "granted"; // "granted" | "denied"
+  const defaultConsent = (process.env["NEXT_PUBLIC_GA_DEFAULT_CONSENT"] || "granted").toLowerCase();
 
   const pathname = usePathname();
   const searchParams = useSearchParams();

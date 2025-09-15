@@ -63,7 +63,7 @@ export default function SentryTestPage() {
     Sentry.addBreadcrumb({
       category: "action",
       level: "info",
-      message: "User pressed ‘Add breadcrumb’",
+      message: "User pressed â€˜Add breadcrumbâ€™",
       data: { time: new Date().toISOString() },
     });
     alert("Breadcrumb added (check breadcrumb trail on subsequent events).");
@@ -82,9 +82,9 @@ export default function SentryTestPage() {
     try {
       const res = await fetch("/monitoring", { method: "POST", body: "noop" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      alert("Tunnel reachable ✅");
+      alert("Tunnel reachable âœ…");
     } catch {
-      alert("Tunnel blocked ❌");
+      alert("Tunnel blocked âŒ");
     }
   }
 
@@ -104,7 +104,7 @@ export default function SentryTestPage() {
 
       <div className="card p-5 space-y-4">
         <div className="flex gap-2 flex-wrap">
-          <button className="btn-primary" onClick={captureMessage}>
+          <button className="btn-gradient-primary" onClick={captureMessage}>
             Send message
           </button>
 
@@ -124,11 +124,11 @@ export default function SentryTestPage() {
             Start transaction
           </button>
 
-          <button className="btn-ghost" onClick={addBreadcrumb}>
+          <button className="btn-outline" onClick={addBreadcrumb}>
             Add breadcrumb
           </button>
 
-          <button className="btn-ghost" onClick={setUser}>
+          <button className="btn-outline" onClick={setUser}>
             Set user context
           </button>
 

@@ -32,7 +32,7 @@ function looksLikeValidKePhone(input: string) {
   return /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
 }
 
-// ✅ 3–24; letters/digits/._; no leading/trailing sep; no doubles
+// 3–24; letters/digits/._; no leading/trailing sep; no doubles
 const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 function looksLikeValidUsername(u: string) {
   return USERNAME_RE.test(u);
@@ -68,7 +68,7 @@ export default function CompleteProfileClient() {
 
   const [nameStatus, setNameStatus] = useState<NameStatus>("idle");
   const usernameAbort = useRef<AbortController | null>(null);
-  const redirectedRef = useRef(false); // 🚧 prevent ping-pong redirects
+  const redirectedRef = useRef(false); // prevent ping-pong redirects
 
   const whatsappNormalized = useMemo(
     () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
@@ -264,12 +264,12 @@ export default function CompleteProfileClient() {
 
         <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4" noValidate>
           <div>
-            <label htmlFor="username" className="block text-sm font-semibold mb-1">
+            <label htmlFor="username" className="label">
               Username
             </label>
             <input
               id="username"
-              className="w-full rounded-lg border px-3 py-2"
+              className="input"
               placeholder="e.g. brian254"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -298,9 +298,9 @@ export default function CompleteProfileClient() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1">WhatsApp (optional)</label>
+            <label className="label">WhatsApp (optional)</label>
             <input
-              className="w-full rounded-lg border px-3 py-2"
+              className="input"
               placeholder="07XXXXXXXX or 2547XXXXXXXX"
               value={whatsapp}
               onChange={(e) => setWhatsapp(e.target.value)}
@@ -314,18 +314,18 @@ export default function CompleteProfileClient() {
 
           <div className="grid gap-3 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-semibold mb-1">City (optional)</label>
+              <label className="label">City (optional)</label>
               <input
-                className="w-full rounded-lg border px-3 py-2"
+                className="input"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
                 disabled={saving}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">Country (optional)</label>
+              <label className="label">Country (optional)</label>
               <input
-                className="w-full rounded-lg border px-3 py-2"
+                className="input"
                 value={country}
                 onChange={(e) => setCountry(e.target.value)}
                 disabled={saving}
@@ -335,21 +335,22 @@ export default function CompleteProfileClient() {
 
           <div className="grid gap-3 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-semibold mb-1">Postal code (optional)</label>
+              <label className="label">Postal code (optional)</label>
               <input
-                className="w-full rounded-lg border px-3 py-2"
+                className="input"
                 value={postalCode}
                 onChange={(e) => setPostal(e.target.value)}
                 disabled={saving}
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">Address (optional)</label>
+              <label className="label">Address (optional)</label>
               <input
-                className="w-full rounded-lg border px-3 py-2"
+                className="input"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 disabled={saving}
+                placeholder="Street, estate, etc."
               />
             </div>
           </div>
@@ -358,13 +359,13 @@ export default function CompleteProfileClient() {
             <button
               type="submit"
               disabled={saving || nameStatus === "checking"}
-              className="rounded-xl bg-[#161748] text-white px-4 py-2 font-semibold hover:opacity-90 disabled:opacity-60"
+              className="btn-gradient-primary"
             >
               {saving ? "Saving…" : "Save & continue"}
             </button>
             <button
               type="button"
-              className="rounded-xl border px-4 py-2 disabled:opacity-60"
+              className="btn-outline"
               onClick={() => router.replace(ret)}
               disabled={saving}
             >

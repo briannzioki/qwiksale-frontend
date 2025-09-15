@@ -66,16 +66,28 @@ export function normalizeMsisdnKE(input: string): string | null {
   return null;
 }
 
+/** Cross-runtime base64 (Node & Edge) */
+function toBase64(s: string): string {
+  // Node
+  // @ts-ignore Buffer may not exist on Edge
+  if (typeof Buffer !== "undefined" && typeof Buffer.from === "function") {
+    // @ts-ignore
+    return Buffer.from(s, "utf8").toString("base64");
+  }
+  // Edge/Browser
+  return btoa(unescape(encodeURIComponent(s)));
+}
+
 /** Small fetch helper with timeout/abort */
 async function fetchWithTimeout(
-  input: RequestInfo,
+  input: RequestInfo | URL,
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS
 ) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(input, { ...init, signal: controller.signal });
+    const res = await fetch(input, { ...init, signal: controller.signal, cache: "no-store" });
     return res;
   } finally {
     clearTimeout(t);
@@ -133,14 +145,13 @@ async function sendViaAfricaTalking(to: string, message: string, timeoutMs: numb
     return { ok: false, to, provider: p, status, error: errMsg, raw };
   }
 
-  // Success shape reference:
-  // { SMSMessageData: { Message: "...", Recipients: [ { number, cost, status, messageId, statusCode } ] } }
+  // { SMSMessageData: { Recipients: [ { number, cost, status, messageId, statusCode } ] } }
   const r0 = raw?.SMSMessageData?.Recipients?.[0];
   const success = r0 && String(r0.status).toLowerCase() === "success";
   return {
     ok: !!success,
     to,
-    provider: "africastalking" as const,
+    provider: p,
     status,
     messageId: r0?.messageId,
     cost: r0?.cost,
@@ -171,7 +182,7 @@ async function sendViaTwilio(to: string, message: string, timeoutMs: number): Pr
     Body: message,
   });
 
-  const auth = Buffer.from(`${TWILIO_SID}:${TWILIO_AUTH}`).toString("base64");
+  const auth = toBase64(`${TWILIO_SID}:${TWILIO_AUTH}`);
 
   const res = await fetchWithTimeout(
     endpoint,
@@ -198,14 +209,14 @@ async function sendViaTwilio(to: string, message: string, timeoutMs: number): Pr
     const err =
       (raw && (raw.message || raw.error)) ||
       `Twilio error HTTP ${status}`;
-    return { ok: false, to, provider: "twilio" as const, status, error: err, raw };
+    return { ok: false, to, provider: p, status, error: err, raw };
   }
 
   // Typical success includes `sid`
   return {
     ok: true,
     to,
-    provider: "twilio" as const,
+    provider: p,
     status,
     messageId: raw?.sid,
     raw,
@@ -219,7 +230,7 @@ async function sendViaTwilio(to: string, message: string, timeoutMs: number): Pr
 async function sendViaMock(to: string, message: string): Promise<SmsResult> {
   // eslint-disable-next-line no-console
   console.info("[sms:mock] to=%s msg=%s", to, message);
-  return { ok: true, to, provider: "mock" as const, messageId: "dry_run" };
+  return { ok: true, to, provider: "mock", messageId: "dry_run" };
 }
 
 /* ------------------------------------------------------------------ */
@@ -233,7 +244,7 @@ async function sendViaMock(to: string, message: string): Promise<SmsResult> {
 export async function sendSmsAT(to: string, message: string): Promise<SmsResult> {
   const msisdn = normalizeMsisdnKE(to);
   if (!msisdn) {
-    return { ok: false, to, provider: "africastalking" as const, error: "Invalid Kenyan phone" };
+    return { ok: false, to, provider: "africastalking", error: "Invalid Kenyan phone" };
   }
   return sendViaAfricaTalking(msisdn, message, DEFAULT_TIMEOUT_MS);
 }
@@ -251,18 +262,13 @@ export async function sendSms(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const retries = Math.max(0, Math.min(3, opts.retries ?? 1)); // cap to 3
 
-  const msisdn =
-    provider === "twilio"
-      ? // Twilio expects E.164; we normalize then add + later
-        normalizeMsisdnKE(toRaw)
-      : normalizeMsisdnKE(toRaw);
-
+  const msisdn = normalizeMsisdnKE(toRaw);
   if (!msisdn) {
     return { ok: false, to: toRaw, provider, error: "Invalid Kenyan phone" };
   }
 
   let attempt = 0;
-  let last: SmsResult = { ok: false, to: msisdn, provider: provider as SmsProvider };
+  let last: SmsResult = { ok: false, to: msisdn, provider };
 
   // Basic retry loop for transient network failures / 5xx
   while (attempt <= retries) {
@@ -272,12 +278,12 @@ export async function sendSms(
       }
       if (provider === "twilio") {
         const res = await sendViaTwilio(msisdn, message, timeoutMs);
-        if (res.ok || (res.status && res.status < 500)) return res;
+        if (res.ok || (res.status && res.status < 500)) return res; // don't retry 4xx
         last = res;
       } else {
         // africastalking
         const res = await sendViaAfricaTalking(msisdn, message, timeoutMs);
-        if (res.ok || (res.status && res.status < 500)) return res;
+        if (res.ok || (res.status && res.status < 500)) return res; // don't retry 4xx
         last = res;
       }
     } catch (e: any) {
@@ -291,11 +297,18 @@ export async function sendSms(
 
     attempt += 1;
     if (attempt <= retries) {
-      // small backoff
-      const wait = 300 * attempt;
-      await new Promise((r) => setTimeout(r, wait));
+      // small linear backoff (fast)
+      await new Promise((r) => setTimeout(r, 300 * attempt));
     }
   }
 
   return last;
+}
+
+/** Optional quick config sanity helper */
+export function canSendSms(provider: SmsProvider = ENV.SMS_PROVIDER || "africastalking") {
+  if (provider === "mock") return true;
+  if (provider === "africastalking") return !!(ENV.AT_USERNAME && ENV.AT_API_KEY);
+  if (provider === "twilio") return !!(ENV.TWILIO_SID && ENV.TWILIO_AUTH && ENV.TWILIO_FROM);
+  return false;
 }

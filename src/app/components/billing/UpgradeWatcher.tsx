@@ -1,13 +1,13 @@
 // src/app/components/billing/UpgradeWatcher.tsx
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { usePaymentStatusPoll } from "@/app/hooks/usePaymentStatusPoll";
 
 /**
  * Watches an upgrade/payment status and reports progress.
  *
- * - Renames callback to end with "Action" (Next.js 15-friendly if passed from Server Components).
+ * - Callback ends with "Action" (Next.js 15-friendly if passed from Server Components).
  * - Announces changes via `aria-live` for screen readers.
  * - Emits lightweight client events for analytics/debug:
  *     - "qs:billing:poll"        { paymentId, status, attempts, isPolling }
@@ -16,7 +16,7 @@ import { usePaymentStatusPoll } from "@/app/hooks/usePaymentStatusPoll";
  */
 export default function UpgradeWatcher({
   paymentId,
-  onDoneAction, // ✅ safe name for Server Actions or client callbacks
+  onDoneAction,
   showDetails = true,
 }: {
   paymentId: string;
@@ -26,21 +26,20 @@ export default function UpgradeWatcher({
 }) {
   const announceRef = useRef<HTMLSpanElement | null>(null);
 
-  // small helper to dispatch window events
-  const emit = (name: string, detail?: unknown) => {
+  // Stable helper to dispatch window events
+  const emit = useCallback((name: string, detail?: unknown) => {
     // eslint-disable-next-line no-console
     console.log(`[qs:event] ${name}`, detail);
     if (typeof window !== "undefined" && "CustomEvent" in window) {
       window.dispatchEvent(new CustomEvent(name, { detail }));
     }
-  };
+  }, []);
 
   const {
     status,
     isPolling,
     attempts,
     error,
-    // Note: these config values are consumed by the hook; we only mirror them here for UI
   } = usePaymentStatusPoll(paymentId, {
     onSuccess: async () => {
       emit("qs:billing:done", { paymentId, finalStatus: "SUCCESS" });
@@ -64,13 +63,13 @@ export default function UpgradeWatcher({
     maxAttempts: 60,
   });
 
-  // Mirror the same limits for progress display (keep in sync with above)
+  // Keep this in sync with the hook's maxAttempts above
   const maxAttempts = 60;
 
   const pct = useMemo(() => {
     const p = Math.min(100, Math.round((attempts / maxAttempts) * 100));
     return Number.isFinite(p) ? p : 0;
-  }, [attempts]);
+  }, [attempts, maxAttempts]);
 
   // Live announcer for status/attempts
   useEffect(() => {
@@ -79,9 +78,11 @@ export default function UpgradeWatcher({
     const el = announceRef.current;
     if (!el) return;
     el.textContent = `Payment ${status}. ${attempts} checks.`;
-    const t = setTimeout(() => (el.textContent = ""), 1200);
+    const t = setTimeout(() => {
+      if (announceRef.current) announceRef.current.textContent = "";
+    }, 1200);
     return () => clearTimeout(t);
-  }, [attempts, isPolling, paymentId, status]);
+  }, [attempts, emit, isPolling, paymentId, status]);
 
   // TIMEOUT path: when the hook stops polling with an error
   useEffect(() => {
@@ -106,10 +107,7 @@ export default function UpgradeWatcher({
       <div className="flex items-center gap-2">
         <StatusDot running={isPolling} status={status} />
         <div>
-          Status:{" "}
-          <span className="font-medium">
-            {status}
-          </span>
+          Status: <span className="font-medium">{status}</span>
         </div>
       </div>
 

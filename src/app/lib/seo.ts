@@ -8,15 +8,22 @@ function resolveSiteUrl(): string {
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
     "https://qwiksale.sale";
-  // strip trailing slashes
-  return raw.replace(/\/+$/, "");
+
+  // trim whitespace & trailing slashes
+  const trimmed = String(raw).trim().replace(/\/+$/, "");
+
+  // ensure http(s) scheme to avoid relative/protocol-less values
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return "https://qwiksale.sale";
+  }
+  return trimmed;
 }
 
 export const SITE_URL = resolveSiteUrl();
 
 /** Ensure path starts with a single leading slash; strip duplicate slashes. */
 export function normalizePath(pathname: string): string {
-  const p = pathname || "/";
+  const p = String(pathname || "/");
   return ("/" + p.replace(/^\/+/, "")).replace(/\/{2,}/g, "/");
 }
 
@@ -85,7 +92,19 @@ export function canonicalFor(
   searchParams?: URLSearchParams | Record<string, string | number | undefined | null>,
   opts?: { page?: number }
 ) {
-  const keep = ["q", "category", "location", "min", "max", "sort"];
+  // 🔧 Align with your actual filters used across the site
+  const keep = [
+    "q",
+    "category",
+    "subcategory",
+    "brand",
+    "condition",
+    "location",
+    "minPrice",
+    "maxPrice",
+    "sort",
+    "featured",
+  ];
   const sp = cleanedSearchParams(searchParams, keep);
 
   // Encode pagination canonically (page=1 omitted)

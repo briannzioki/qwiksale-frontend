@@ -21,6 +21,8 @@ type Listing = {
   featured?: boolean | null;
 };
 
+const PLACEHOLDER = "/placeholder/default.jpg";
+
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || n <= 0) return "Price on request";
   try {
@@ -78,14 +80,18 @@ export async function generateMetadata(
 
   const priceTxt = fmtKES(listing.price);
   const town = listing.location ? ` — ${listing.location}` : "";
-  const images = [listing.image, ...listing.gallery].filter(Boolean) as string[];
+
+  // unique, truthy images for OG/Twitter
+  const images = Array.from(
+    new Set([listing.image, ...(listing.gallery || [])].filter(Boolean) as string[])
+  );
 
   return {
     title: `${listing.name} • ${priceTxt}${town}`,
     description: listing.description ?? undefined,
     alternates: { canonical: `/listing/${listing.id}` },
     openGraph: {
-      type: "website", // <-- 'product' is not a supported type in Next Metadata
+      type: "website",
       title: listing.name,
       description: listing.description ?? undefined,
       images: images.length ? images : undefined,
@@ -106,13 +112,17 @@ export default async function ListingPage(
   const product = await getListing(id);
   if (!product) notFound();
 
-  const images = [product.image, ...product.gallery].filter(Boolean) as string[];
+  // unique images, with placeholder fallback for UI
+  const images = Array.from(
+    new Set([product.image, ...(product.gallery || [])].filter(Boolean) as string[])
+  );
+  const hero = images[0] ?? PLACEHOLDER;
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
-    image: images,
+    image: images.length ? images : [PLACEHOLDER],
     description: product.description ?? undefined,
     category:
       [product.category, product.subcategory].filter(Boolean).join(" / ") ||
@@ -120,8 +130,7 @@ export default async function ListingPage(
     offers: {
       "@type": "Offer",
       priceCurrency: "KES",
-      price:
-        typeof product.price === "number" ? String(product.price) : undefined,
+      price: typeof product.price === "number" ? String(product.price) : undefined,
       availability: "https://schema.org/InStock",
     },
     areaServed: product.location ?? undefined,
@@ -143,40 +152,33 @@ export default async function ListingPage(
         <div className="mx-auto max-w-5xl grid gap-6 lg:grid-cols-5">
           {/* Gallery */}
           <section className="lg:col-span-3 space-y-3">
-            {images.length > 0 ? (
-              <>
-                <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gray-100">
-                  <Image
-                    src={images[0]!}
-                    alt={product.name}
-                    fill
-                    sizes="(max-width: 1024px) 100vw, 768px"
-                    className="object-cover"
-                    priority
-                  />
-                </div>
-                {images.length > 1 && (
-                  <div className="grid grid-cols-4 gap-2">
-                    {images.slice(1, 5).map((src, i) => (
-                      <div
-                        key={i}
-                        className="relative aspect-square overflow-hidden rounded-lg bg-gray-100"
-                      >
-                        <Image
-                          src={src}
-                          alt={`${product.name} ${i + 2}`}
-                          fill
-                          sizes="(max-width: 1024px) 25vw, 180px"
-                          className="object-cover"
-                        />
-                      </div>
-                    ))}
+            <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gray-100">
+              <Image
+                src={hero}
+                alt={product.name}
+                fill
+                sizes="(max-width: 1024px) 100vw, 768px"
+                className="object-cover"
+                priority
+              />
+            </div>
+
+            {images.length > 1 && (
+              <div className="grid grid-cols-4 gap-2">
+                {images.slice(1, 5).map((src, i) => (
+                  <div
+                    key={src + i}
+                    className="relative aspect-square overflow-hidden rounded-lg bg-gray-100"
+                  >
+                    <Image
+                      src={src}
+                      alt={`${product.name} ${i + 2}`}
+                      fill
+                      sizes="(max-width: 1024px) 25vw, 180px"
+                      className="object-cover"
+                    />
                   </div>
-                )}
-              </>
-            ) : (
-              <div className="aspect-square rounded-xl bg-gray-100 flex items-center justify-center text-gray-500">
-                No photo
+                ))}
               </div>
             )}
           </section>
@@ -187,9 +189,7 @@ export default async function ListingPage(
               <h1 className="text-xl font-semibold">{product.name}</h1>
               <div className="mt-1 text-gray-700">{fmtKES(product.price)}</div>
               {product.location && (
-                <div className="text-gray-600 mt-1">
-                  Location: {product.location}
-                </div>
+                <div className="text-gray-600 mt-1">Location: {product.location}</div>
               )}
               {product.condition && (
                 <div className="text-gray-600">Condition: {product.condition}</div>

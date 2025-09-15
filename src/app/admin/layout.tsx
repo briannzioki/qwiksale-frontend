@@ -1,6 +1,6 @@
-// src/app/admin/layout.tsx (or wherever your AdminLayout lives)
+// src/app/admin/layout.tsx
 import Link from "next/link";
-import { requireAdmin } from "@/app/lib/authz";
+import { requireAdmin } from "@/app/lib/authz"; // assumes you have this; see note below
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Redirects or throws if not admin
+  // Redirect or throw if not admin
   await requireAdmin("/admin");
 
   return (
@@ -23,31 +23,51 @@ export default async function AdminLayout({
       </a>
 
       <header
-        className="sticky top-0 z-30 bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white"
+        className="sticky top-0 z-30 bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow"
         aria-label="Admin header"
       >
-        <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="mx-auto max-w-7xl px-6 py-4">
           <div className="flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-extrabold">Admin</h1>
-            <nav aria-label="Admin navigation" className="flex gap-2">
+            <div className="flex items-center gap-3">
               <Link
-                href="/admin"
+                href="/"
+                className="rounded-md bg-white/10 px-2 py-1 text-sm font-semibold hover:bg-white/15"
+                aria-label="Back to site"
+                title="Back to site"
+              >
+                ← Site
+              </Link>
+              <h1 className="text-xl font-extrabold tracking-tight">Admin</h1>
+            </div>
+            <nav aria-label="Admin navigation" className="flex gap-2 text-sm">
+              <Link
+                href="/admin/dashboard"
                 className="rounded-xl bg-white/15 px-3 py-1 hover:bg-white/25 transition"
               >
                 Dashboard
               </Link>
               <Link
-                href="/"
+                href="/admin/users"
                 className="rounded-xl bg-white/15 px-3 py-1 hover:bg-white/25 transition"
               >
-                Site
+                Users
+              </Link>
+              <Link
+                href="/admin/listings"
+                className="rounded-xl bg-white/15 px-3 py-1 hover:bg-white/25 transition"
+              >
+                Listings
               </Link>
             </nav>
           </div>
         </div>
       </header>
 
-      <main id="admin-main" role="main" className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+      <main
+        id="admin-main"
+        role="main"
+        className="mx-auto max-w-7xl px-6 py-6 space-y-6"
+      >
         {children}
       </main>
     </div>

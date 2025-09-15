@@ -1,9 +1,9 @@
 // src/app/components/ProductCard.tsx
 "use client";
 
-import React, { useEffect, useRef, useCallback } from "react";
-import Image from "next/image";
+import { useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
 
 type Props = {
@@ -50,7 +50,6 @@ function getBlurDataURL(width = 640, height = 360): string {
 /* ----------------------- Analytics: client-only event bus ----------------------- */
 
 function trackClient(event: string, payload?: Record<string, unknown>) {
-  // Always log in dev so you see events flowing
   // eslint-disable-next-line no-console
   console.log("[qs:track]", event, payload);
   if (typeof window !== "undefined" && "CustomEvent" in window) {
@@ -106,8 +105,8 @@ export default function ProductCard({
       ref={cardRef}
       className={[
         "group relative block rounded-xl border bg-white p-3 shadow-sm",
-        "hover:shadow-md hover:border-gray-200",
-        "dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-700",
+        "border-black/5 hover:border-black/10 hover:shadow-md",
+        "dark:bg-gray-900 dark:border-white/10 dark:hover:border-white/15",
         className,
       ].join(" ")}
       aria-label={`${name}${typeof price === "number" ? `, priced at ${formatKES(price)}` : ""}`}
@@ -122,23 +121,23 @@ export default function ProductCard({
         </span>
       )}
 
-      {/* Image */}
-      <div className="relative w-full h-40 overflow-hidden rounded-lg border border-gray-100 dark:border-gray-800">
-        <Image
+      {/* Image (Cloudinary via SmartImage) */}
+      <div className="relative h-40 w-full overflow-hidden rounded-lg border border-white/10 dark:border-white/10">
+        <SmartImage
           src={url}
           alt={name || "Product image"}
           fill
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
           placeholder="blur"
           blurDataURL={getBlurDataURL(640, 360)}
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           priority={false}
         />
       </div>
 
       {/* Meta */}
       <div className="space-y-1">
-        <div className="font-medium line-clamp-1 text-gray-900 dark:text-gray-100" title={name}>
+        <div className="line-clamp-1 font-medium text-gray-900 dark:text-gray-100" title={name}>
           {name}
         </div>
         {typeof price === "number" ? (

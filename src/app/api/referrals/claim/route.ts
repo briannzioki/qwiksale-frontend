@@ -1,12 +1,10 @@
-// src/app/api/referrals/claim/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/db";
 import { auth } from "@/auth";
 import { extendByDays } from "@/app/lib/subscription";
-import type { Prisma } from "@prisma/client";
 
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
@@ -29,16 +27,6 @@ type Body = { code?: string };
 /**
  * POST /api/referrals/claim
  * Body: { code: string }
- *
- * Links the current user to an inviter (by referral code) and creates a *qualified*
- * referral row immediately (adjust if you need a separate qualification step).
- *
- * Safety:
- * - Validates code format
- * - Disallows self-referral
- * - Idempotent (rejects if already linked or already has a referral)
- * - Runs all state changes in a transaction to avoid races
- * - Milestone-based GOLD extension for inviter
  */
 export async function POST(req: Request) {
   try {
@@ -72,7 +60,7 @@ export async function POST(req: Request) {
     const now = new Date();
 
     // All mutations inside a transaction to avoid race conditions
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await prisma.$transaction(async (tx: any) => {
       // Re-read current user inside the txn to avoid race with other claims
       const me = await tx.user.findUnique({
         where: { id: meId },

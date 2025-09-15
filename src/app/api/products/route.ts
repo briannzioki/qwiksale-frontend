@@ -1,4 +1,3 @@
-// src/app/api/products/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -80,12 +79,6 @@ const productListSelect = {
   },
 } as const;
 
-/** email of the demo/seed user we want to hide by default (set in Vercel env) */
-const DEMO_EMAIL =
-  process.env["SEED_DEMO_USER_EMAIL"] ||
-  process.env["DEMO_SELLER_EMAIL"] ||
-  "";
-
 /* ------------------------- GET /api/products ------------------------- */
 export async function GET(req: NextRequest) {
   try {
@@ -116,10 +109,6 @@ export async function GET(req: NextRequest) {
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), 60, 1, 200);
 
-    // flags controlling demo visibility & search-like detection
-    const includeDemo = toBool(url.searchParams.get("includeDemo")) === true;
-    const isSearchLike = q.length > 0 || !!category || !!subcategory || !!brand;
-
     // Build where (default to ACTIVE items)
     const where: any = { status: "ACTIVE" };
     const and: any[] = [];
@@ -132,6 +121,7 @@ export async function GET(req: NextRequest) {
           { category: { contains: q, mode: "insensitive" } },
           { subcategory: { contains: q, mode: "insensitive" } },
           { description: { contains: q, mode: "insensitive" } },
+          { sellerName: { contains: q, mode: "insensitive" } }, // seller snapshot
         ],
       });
     }
@@ -153,20 +143,10 @@ export async function GET(req: NextRequest) {
       and.push({ price });
     }
 
-    // Hide demo/seeded data unless explicitly included
-    if (!includeDemo) {
-      if (DEMO_EMAIL) {
-        and.push({
-          NOT: { seller: { is: { email: { equals: DEMO_EMAIL, mode: "insensitive" } } } },
-        });
-      }
-      // Filter out obvious seeded clones
-      and.push({ NOT: { name: { contains: "• Batch" } } });
-    }
-
     if (and.length > 0) where.AND = and;
 
     // Sorting
+    const isSearchLike = q.length > 0 || !!category || !!subcategory || !!brand;
     let orderBy: any;
     if (sort === "price_asc") {
       orderBy = { price: "asc" as const };
@@ -175,7 +155,6 @@ export async function GET(req: NextRequest) {
     } else if (sort === "featured") {
       orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
     } else {
-      // default: on searches, surface featured first; on home, newest first
       orderBy = isSearchLike
         ? [{ featured: "desc" as const }, { createdAt: "desc" as const }]
         : { createdAt: "desc" as const };
@@ -225,7 +204,6 @@ export async function GET(req: NextRequest) {
     const items = (productsRaw as unknown as Array<any>).map((p) => {
       const favoritesCount: number = p?._count?.favorites ?? 0;
 
-      // SAFETY: never assume `favorites` exists on the type — check at runtime.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const rel = (p as any)?.favorites;
       const isFavoritedByMe: boolean = Array.isArray(rel) && rel.length > 0;

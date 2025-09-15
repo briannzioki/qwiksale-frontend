@@ -1,4 +1,3 @@
-// src/app/admin/page.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -6,7 +5,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
-import type { Prisma } from "@prisma/client";
 
 /* =========================
    Selects -> Inferred row types
@@ -19,9 +17,17 @@ const userSelect = {
   role: true, // "USER" | "MODERATOR" | "ADMIN"
   subscription: true, // "BASIC" | "GOLD" | "PLATINUM"
   createdAt: true,
-} satisfies Prisma.UserSelect;
+} as const;
 
-type AdminUserRow = Prisma.UserGetPayload<{ select: typeof userSelect }>;
+type AdminUserRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  username: string | null;
+  role: "USER" | "MODERATOR" | "ADMIN";
+  subscription: "BASIC" | "GOLD" | "PLATINUM";
+  createdAt: Date;
+};
 
 const productSelect = {
   id: true,
@@ -34,9 +40,20 @@ const productSelect = {
   subcategory: true,
   createdAt: true,
   seller: { select: { id: true, username: true, name: true } },
-} satisfies Prisma.ProductSelect;
+} as const;
 
-type AdminProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
+type AdminProductRow = {
+  id: string;
+  name: string;
+  image: string | null;
+  price: number | null;
+  featured: boolean;
+  status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
+  category: string;
+  subcategory: string;
+  createdAt: Date;
+  seller: { id: string; username: string | null; name: string | null } | null;
+};
 
 /* =========================
    Formatters
@@ -78,12 +95,12 @@ export default async function AdminPage() {
         orderBy: { createdAt: "desc" },
         take: 8,
         select: userSelect,
-      }),
+      }) as Promise<AdminUserRow[]>,
       prisma.product.findMany({
         orderBy: { createdAt: "desc" },
         take: 10,
         select: productSelect,
-      }),
+      }) as Promise<AdminProductRow[]>,
     ]);
 
   return (

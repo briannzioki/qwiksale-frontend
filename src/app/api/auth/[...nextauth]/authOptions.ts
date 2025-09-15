@@ -4,7 +4,10 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 
-import { prisma } from "@/server/db";
+// ⬇️ Use the same prisma instance path as the rest of the app
+import { prisma } from "@/app/lib/prisma";
+
+// If your password helpers live elsewhere, adjust the path accordingly.
 import { verifyPassword, hashPassword } from "@/server/auth";
 
 /**
@@ -17,6 +20,8 @@ import { verifyPassword, hashPassword } from "@/server/auth";
  */
 
 const isProd = process.env.NODE_ENV === "production";
+
+// If you host multiple subdomains, set NEXTAUTH_COOKIE_DOMAIN (e.g., .qwiksale.sale)
 const cookieDomain =
   isProd && process.env["NEXTAUTH_COOKIE_DOMAIN"]
     ? process.env["NEXTAUTH_COOKIE_DOMAIN"]
@@ -38,19 +43,19 @@ const ALLOWED_CALLBACK_PATHS = new Set<string>([
 export const authOptions: NextAuthOptions = {
   debug: process.env["NEXTAUTH_DEBUG"] === "1",
 
-  ...(process.env["NEXTAUTH_SECRET"]
-    ? { secret: process.env["NEXTAUTH_SECRET"] as string }
-    : {}),
+  ...(process.env["NEXTAUTH_SECRET"] ? { secret: process.env["NEXTAUTH_SECRET"]! } : {}),
 
   adapter: PrismaAdapter(prisma),
 
   session: {
     strategy: "jwt",
+    // token lifetime (30d) & rolling refresh window (24h)
     maxAge: 30 * 24 * 60 * 60,
     updateAge: 24 * 60 * 60,
   },
 
   cookies: {
+    // Use a __Secure- cookie in production on HTTPS
     sessionToken: {
       name: isProd ? "__Secure-next-auth.session-token" : "next-auth.session-token",
       options: {
@@ -76,6 +81,7 @@ export const authOptions: NextAuthOptions = {
         const email = credentials?.email?.toLowerCase().trim() || "";
         const password = credentials?.password ?? "";
 
+        // Basic gate to avoid user enumeration
         const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!EMAIL_RE.test(email) || password.length < 6) {
           await new Promise((r) => setTimeout(r, 250));
@@ -90,7 +96,7 @@ export const authOptions: NextAuthOptions = {
             name: true,
             image: true,
             passwordHash: true,
-            accounts: { select: { provider: true }, take: 1 },
+            // accounts: { select: { provider: true }, take: 1 }, // keep if needed later
             subscription: true,
             username: true,
             referralCode: true,
@@ -98,6 +104,7 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (user) {
+          // Password-less account (e.g., Google-only)
           if (!user.passwordHash) {
             throw new Error(
               "This email is linked to a social login. Use “Continue with Google”."
@@ -116,6 +123,7 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
+        // Optional auto-signup for new email+password users
         if (!ALLOW_CREDS_AUTO_SIGNUP) {
           await new Promise((r) => setTimeout(r, 250));
           return null;
@@ -130,11 +138,12 @@ export const authOptions: NextAuthOptions = {
       },
     }),
 
+    // Google (optional if env vars missing)
     ...(process.env["GOOGLE_CLIENT_ID"] && process.env["GOOGLE_CLIENT_SECRET"]
       ? [
           Google({
-            clientId: process.env["GOOGLE_CLIENT_ID"] as string,
-            clientSecret: process.env["GOOGLE_CLIENT_SECRET"] as string,
+            clientId: process.env["GOOGLE_CLIENT_ID"]!,
+            clientSecret: process.env["GOOGLE_CLIENT_SECRET"]!,
           }),
         ]
       : []),
@@ -145,10 +154,15 @@ export const authOptions: NextAuthOptions = {
     async redirect({ url, baseUrl }) {
       try {
         const u = new URL(url, baseUrl);
-        if (u.origin !== baseUrl) return baseUrl; // external → home
-        if (u.pathname === "/signup") return baseUrl; // break old loop
-        if (ALLOWED_CALLBACK_PATHS.has(u.pathname) || u.pathname === "/") return u.toString();
+        // Block external redirects
+        if (u.origin !== baseUrl) return baseUrl;
+        // Avoid looping to /signup
+        if (u.pathname === "/signup") return baseUrl;
+        if (ALLOWED_CALLBACK_PATHS.has(u.pathname) || u.pathname === "/") {
+          return u.toString();
+        }
 
+        // Respect callbackUrl if it's safe and allowed
         const cb = u.searchParams.get("callbackUrl");
         if (cb) {
           const cbu = new URL(cb, baseUrl);
@@ -157,15 +171,19 @@ export const authOptions: NextAuthOptions = {
             return cbu.toString();
           }
         }
-      } catch {}
+      } catch {
+        // fall through to baseUrl
+      }
       return baseUrl;
     },
 
     async jwt({ token, user, trigger }) {
-      if (user?.id) (token as any)["uid"] = user.id;
+      // Add uid on initial sign-in
+      if (user?.id) (token as any).uid = user.id;
 
+      // On sign-in or session.update, refresh profile fields into the token
       if (user?.id || trigger === "update") {
-        const uid = (user?.id as string) || ((token as any)["uid"] as string | undefined);
+        const uid = (user?.id as string) || (token as any).uid;
         if (uid) {
           const profile = await prisma.user.findUnique({
             where: { id: uid },
@@ -176,23 +194,22 @@ export const authOptions: NextAuthOptions = {
             },
           });
           if (profile) {
-            (token as any)["subscription"] = profile.subscription ?? null;
-            (token as any)["username"] = profile.username ?? null;
-            (token as any)["referralCode"] = profile.referralCode ?? null;
+            (token as any).subscription = profile.subscription ?? null;
+            (token as any).username = profile.username ?? null;
+            (token as any).referralCode = profile.referralCode ?? null;
           }
         }
       }
-
       return token;
     },
 
     async session({ session, token }) {
-      if (session.user && (token as any)?.["uid"]) {
-        (session.user as any).id = (token as any)["uid"] as string;
+      if (session.user && (token as any)?.uid) {
+        (session.user as any).id = (token as any).uid as string;
       }
-      (session.user as any).subscription = (token as any)["subscription"] ?? null;
-      (session.user as any).username = (token as any)["username"] ?? null;
-      (session.user as any).referralCode = (token as any)["referralCode"] ?? null;
+      (session.user as any).subscription = (token as any).subscription ?? null;
+      (session.user as any).username = (token as any).username ?? null;
+      (session.user as any).referralCode = (token as any).referralCode ?? null;
       return session;
     },
   },

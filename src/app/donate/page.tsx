@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 
-/** --------------------------- Helpers & Types --------------------------- **/
+/* --------------------------- Helpers & Types --------------------------- */
 
 /** Normalize various phone formats to 2547XXXXXXXX */
 function normalizeMsisdn(input: string): string {
@@ -21,24 +21,24 @@ const fmtKES = (n: number) =>
     Math.max(0, Math.floor(n))
   )}`;
 
-/** Sensible preset amounts */
+/** Preset donation amounts */
 const PRESETS = [200, 500, 1000, 2500] as const;
 
 /** Upper bound to prevent fat-finger inputs */
 const MAX_DONATION = 1_000_000;
 
-/** ------------------------------- Page -------------------------------- **/
+/* ------------------------------- Page -------------------------------- */
 
 export default function DonatePage() {
   const [amount, setAmount] = useState<number | "">("");
   const [activePreset, setActivePreset] = useState<number | null>(PRESETS[0]);
   const [phone, setPhone] = useState("");
-  const [status, setStatus] = useState<string>("");
-  const [error, setError] = useState<string>("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Prefill phone from localStorage or a public test env var
+  // Prefill phone from localStorage or test env var
   useEffect(() => {
     try {
       const saved = localStorage.getItem("qs_last_msisdn") || "";
@@ -47,11 +47,12 @@ export default function DonatePage() {
         return;
       }
     } catch {
-      /* noop */
+      /* ignore */
     }
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore — safe in client code for public envs
-    const test = typeof process !== "undefined" ? (process.env.NEXT_PUBLIC_TEST_MSISDN as string | undefined) : undefined;
+    const test =
+      typeof process !== "undefined"
+        ? (process.env["NEXT_PUBLIC_TEST_MSISDN"] as string | undefined)
+        : undefined;
     if (test) setPhone(test);
   }, []);
 
@@ -73,13 +74,16 @@ export default function DonatePage() {
     );
   }, [phone, amount, submitting]);
 
-  // Keep custom field safe & clamped
+  // Safely set custom amount
   function setCustomAmount(raw: string) {
     if (raw === "") {
       setAmount("");
       return;
     }
-    const cleaned = Math.max(1, Math.min(MAX_DONATION, Math.floor(Number(raw) || 0)));
+    const cleaned = Math.max(
+      1,
+      Math.min(MAX_DONATION, Math.floor(Number(raw) || 0))
+    );
     setAmount(cleaned);
   }
 
@@ -105,7 +109,7 @@ export default function DonatePage() {
     try {
       localStorage.setItem("qs_last_msisdn", msisdn);
     } catch {
-      /* noop */
+      /* ignore */
     }
 
     // Abort any in-flight request
@@ -119,14 +123,12 @@ export default function DonatePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortRef.current.signal,
-        // Your server sets AccountReference/TransactionDesc internally
         body: JSON.stringify({ amount: amt, msisdn, mode: "paybill" }),
       });
 
-      const data = await res.json().catch(() => ({} as any));
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
-        // Daraja typically returns ResponseCode === "0" on success
         const ok =
           data?.ResponseCode === "0" ||
           !!data?.CheckoutRequestID ||
@@ -135,16 +137,20 @@ export default function DonatePage() {
         if (ok) {
           const msg =
             data?.CustomerMessage ||
-            "STK push sent. Approve the request on your phone to complete the donation.";
+            "STK push sent. Approve on your phone to complete the donation.";
           setStatus(msg);
           toast.success("STK push sent ✨");
-          // Optional: lightweight analytic ping
+
           try {
-            // @ts-ignore (Plausible optional)
+            // @ts-ignore — optional analytics
             window.plausible?.("Donation Initiated", { props: { amount: amt } });
-          } catch {}
+          } catch {
+            /* ignore */
+          }
         } else {
-          setStatus("Request sent. If you didn’t receive a prompt, try again.");
+          setStatus(
+            "Request sent. If you didn’t receive a prompt, please try again."
+          );
         }
       } else {
         const msg =
@@ -169,7 +175,7 @@ export default function DonatePage() {
   return (
     <div className="mx-auto max-w-xl p-6">
       {/* Header */}
-      <section className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
+      <section className="rounded-2xl p-6 text-white shadow-sm bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
         <h1 className="text-2xl md:text-3xl font-extrabold">Support QwikSale</h1>
         <p className="mt-1 text-white/90">
           Your donation keeps the marketplace fast, safe, and ad-free.
@@ -177,10 +183,14 @@ export default function DonatePage() {
       </section>
 
       {/* Form */}
-      <form onSubmit={donate} className="mt-6 rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <form
+        onSubmit={donate}
+        className="mt-6 rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
         <p className="text-gray-700 dark:text-slate-300">
-          We’re a neutral mediator — sellers handle their own sales. Donations help us tackle spam,
-          improve trust & safety, and build new features for everyone.
+          We’re a neutral mediator — sellers handle their own sales. Donations
+          help us tackle spam, improve trust & safety, and build new features
+          for everyone.
         </p>
 
         {/* Amount presets */}
@@ -199,11 +209,11 @@ export default function DonatePage() {
                     setActivePreset(v);
                     setAmount(v);
                   }}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold border transition focus:outline-none focus:ring-2
-                    ${active
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold border transition focus:outline-none focus:ring-2 ${
+                    active
                       ? "bg-brandNavy text-white border-brandNavy ring-brandNavy/40"
                       : "bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800"
-                    }`}
+                  }`}
                   aria-pressed={active}
                 >
                   {fmtKES(v)}
@@ -213,11 +223,11 @@ export default function DonatePage() {
             <button
               type="button"
               onClick={() => setActivePreset(null)}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold border transition focus:outline-none focus:ring-2
-                ${activePreset === null
+              className={`rounded-xl px-4 py-2 text-sm font-semibold border transition focus:outline-none focus:ring-2 ${
+                activePreset === null
                   ? "bg-brandNavy text-white border-brandNavy ring-brandNavy/40"
                   : "bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800"
-                }`}
+              }`}
               aria-pressed={activePreset === null}
             >
               Custom
@@ -240,19 +250,28 @@ export default function DonatePage() {
                 aria-describedby="amountHelp"
               />
               {typeof amount === "number" && amount > 0 && (
-                <span className="text-sm text-gray-600 dark:text-slate-300">{fmtKES(amount)}</span>
+                <span className="text-sm text-gray-600 dark:text-slate-300">
+                  {fmtKES(amount)}
+                </span>
               )}
             </div>
           )}
-          <p id="amountHelp" className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+          <p
+            id="amountHelp"
+            className="mt-1 text-xs text-gray-500 dark:text-slate-400"
+          >
             Minimum 1 KES. Max {fmtKES(MAX_DONATION)} (to prevent mistakes).
           </p>
         </div>
 
         {/* Phone number */}
         <div className="mt-5">
-          <label htmlFor="donation-phone" className="block text-sm font-semibold text-gray-800 dark:text-slate-100">
-            Phone (Safaricom) — format <span className="font-mono">2547XXXXXXXX</span>
+          <label
+            htmlFor="donation-phone"
+            className="block text-sm font-semibold text-gray-800 dark:text-slate-100"
+          >
+            Phone (Safaricom) — format{" "}
+            <span className="font-mono">2547XXXXXXXX</span>
           </label>
           <input
             id="donation-phone"
@@ -264,7 +283,10 @@ export default function DonatePage() {
             required
             aria-describedby="phoneHelp"
           />
-          <p id="phoneHelp" className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+          <p
+            id="phoneHelp"
+            className="mt-1 text-xs text-gray-500 dark:text-slate-400"
+          >
             We’ll send a one-time STK push to this number.
           </p>
         </div>
@@ -274,9 +296,11 @@ export default function DonatePage() {
           <button
             type="submit"
             disabled={!canSubmit}
-            className={`rounded-xl px-5 py-3 text-white font-semibold shadow transition focus:outline-none focus:ring-2
-              ${canSubmit ? "bg-brandNavy hover:opacity-90 ring-brandNavy/40"
-                          : "bg-gray-300 cursor-not-allowed ring-transparent"}`}
+            className={`rounded-xl px-5 py-3 text-white font-semibold shadow transition focus:outline-none focus:ring-2 ${
+              canSubmit
+                ? "bg-brandNavy hover:opacity-90 ring-brandNavy/40"
+                : "bg-gray-300 cursor-not-allowed ring-transparent"
+            }`}
           >
             {submitting ? "Processing…" : "Donate via M-Pesa"}
           </button>
@@ -308,24 +332,32 @@ export default function DonatePage() {
           )}
         </div>
 
-        {/* Status & errors (aria-live for screenreaders) */}
+        {/* Status & errors */}
         <div className="mt-4 space-y-2">
           {status && (
-            <div className="text-sm text-gray-700 dark:text-slate-300" role="status" aria-live="polite">
+            <div
+              className="text-sm text-gray-700 dark:text-slate-300"
+              role="status"
+              aria-live="polite"
+            >
               {status}
             </div>
           )}
           {error && (
-            <div className="text-sm text-red-600 dark:text-red-400" role="alert" aria-live="assertive">
+            <div
+              className="text-sm text-red-600 dark:text-red-400"
+              role="alert"
+              aria-live="assertive"
+            >
               {error}
             </div>
           )}
         </div>
 
         <div className="mt-4 text-[12px] text-gray-500 dark:text-slate-400">
-          After you approve on your phone, we’ll receive a confirmation. If anything looks stuck,
-          try again — callbacks can take a moment. Questions?{" "}
-          <a className="underline" href="/support">Contact support</a>.
+          After you approve on your phone, we’ll receive a confirmation. If
+          anything looks stuck, try again — callbacks can take a moment.
+          Questions? <a className="underline" href="/support">Contact support</a>.
         </div>
       </form>
     </div>

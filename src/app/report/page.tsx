@@ -1,7 +1,7 @@
 // src/app/report/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import Link from "next/link";
@@ -16,7 +16,7 @@ const MAX_MESSAGE_LEN = 1200;
 const MAX_URL_LEN = 512;
 const MAX_ID_LEN = 64;
 
-export default function ReportPage() {
+function ReportPageInner() {
   const sp = useSearchParams();
   const initialProductId = (sp.get("productId") || sp.get("id") || "").slice(0, MAX_ID_LEN);
 
@@ -90,7 +90,8 @@ export default function ReportPage() {
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     try {
-      const res = await fetch("/api/support", {
+      // ✅ FIX: post to the correct API route
+      const res = await fetch("/api/report", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         cache: "no-store",
@@ -204,7 +205,7 @@ export default function ReportPage() {
           </div>
 
           <div className="flex gap-3">
-            <button disabled={!canSubmit} className="btn-primary">
+            <button disabled={!canSubmit} className="btn-gradient-primary">
               {submitting ? "Sending…" : "Send report"}
             </button>
             <button
@@ -229,5 +230,13 @@ export default function ReportPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div />}>
+      <ReportPageInner />
+    </Suspense>
   );
 }

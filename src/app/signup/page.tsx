@@ -1,7 +1,6 @@
-// src/app/signup/page.tsx
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { Suspense, useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -9,28 +8,24 @@ import toast from "react-hot-toast";
 
 /* ----------------------------- helpers ----------------------------- */
 function isSafePath(p?: string | null): p is string {
-  // allow "/foo" (single leading slash), disallow absolute URLs or protocol-relative
   return !!p && /^\/(?!\/)/.test(p);
 }
 
-// Try to delete both dev and prod callback-url cookies, with/without apex domain
 function clearStaleCallbackCookies() {
   if (typeof document === "undefined") return;
 
   const names = [
-    "__Secure-next-auth.callback-url", // prod
-    "next-auth.callback-url",          // dev
+    "__Secure-next-auth.callback-url",
+    "next-auth.callback-url",
   ];
 
   const host = location.hostname;
   const domains = new Set<string | undefined>([undefined, host]);
 
-  // If we're on a subdomain or the bare domain, also try the apex
   const parts = host.split(".");
   if (parts.length >= 2) {
     const apex = "." + parts.slice(-2).join(".");
     domains.add(apex);
-    // explicitly include your prod apex too
     domains.add(".qwiksale.sale");
   }
 
@@ -64,7 +59,7 @@ const ERR_COPY: Record<string, string> = {
 };
 
 /* ----------------------------- component --------------------------- */
-export default function SignUpPage() {
+function SignUpPageInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const returnToRaw = sp.get("callbackUrl");
@@ -82,7 +77,6 @@ export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [working, setWorking] = useState<"creds" | "google" | null>(null);
 
-  // 🔧 Nuke stale callback cookies to avoid redirect loops (e.g., /signup sticking)
   useEffect(() => {
     clearStaleCallbackCookies();
   }, []);
@@ -107,12 +101,11 @@ export default function SignUpPage() {
 
     try {
       setWorking("creds");
-      // Use Credentials provider (authorize() handles create-or-login).
       const res = await signIn("credentials", {
         email: email.trim().toLowerCase(),
         password,
-        redirect: false, // we handle navigation
-        callbackUrl: returnTo, // still set for consistency
+        redirect: false,
+        callbackUrl: returnTo,
       });
       if (!res || res.error) {
         toast.error(
@@ -155,7 +148,6 @@ export default function SignUpPage() {
   return (
     <div className="container-page py-10">
       <div className="mx-auto max-w-2xl">
-        {/* Hero / value prop */}
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#161748] via-[#1d2b64] to-[#0b1220] p-8 text-white shadow-xl ring-1 ring-white/10">
           <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
@@ -165,7 +157,6 @@ export default function SignUpPage() {
             Buy & sell with confidence across Kenya. It takes less than a minute.
           </p>
 
-          {/* Trust mini-badges */}
           <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/85">
             <Badge icon="🔒">Secure & private</Badge>
             <Badge icon="⚡">Fast posting</Badge>
@@ -174,15 +165,13 @@ export default function SignUpPage() {
           </div>
         </div>
 
-        {/* Optional URL-error banner (also shows as toast) */}
         {friendlyError ? (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
             {friendlyError}
           </div>
         ) : null}
 
         <div className="mt-8 grid gap-6">
-          {/* Google CTA */}
           <div className="rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
             <button
               onClick={onGoogle}
@@ -199,7 +188,6 @@ export default function SignUpPage() {
             </p>
           </div>
 
-          {/* Divider */}
           <div className="relative my-2 flex items-center justify-center">
             <div className="h-px w-full bg-gradient-to-r from-transparent via-gray-200 to-transparent dark:via-slate-800" />
             <span className="absolute -top-3 bg-white px-3 text-xs text-gray-500 dark:bg-slate-950 dark:text-slate-400">
@@ -207,7 +195,6 @@ export default function SignUpPage() {
             </span>
           </div>
 
-          {/* Email/password form */}
           <form
             onSubmit={onCreate}
             className="rounded-2xl border bg-white p-6 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
@@ -252,7 +239,6 @@ export default function SignUpPage() {
                   </button>
                 </div>
 
-                {/* strength meter */}
                 <div className="mt-2">
                   <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800">
                     <div
@@ -315,7 +301,6 @@ export default function SignUpPage() {
             </div>
           </form>
 
-          {/* Why QwikSale (soft reassurance) */}
           <section className="rounded-2xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h2 className="text-base font-semibold">Why people stay with QwikSale</h2>
             <ul className="mt-3 grid gap-3 text-sm text-gray-700 dark:text-slate-300 md:grid-cols-2">
@@ -339,7 +324,6 @@ export default function SignUpPage() {
   );
 }
 
-/* ----------------------------- tiny UI bits ----------------------------- */
 function Badge({ children, icon }: { children: React.ReactNode; icon: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] ring-1 ring-white/15 backdrop-blur">
@@ -365,5 +349,13 @@ function Spark() {
     <svg viewBox="0 0 20 20" className="mt-0.5 h-4 w-4 text-brandBlue" fill="currentColor" aria-hidden>
       <path d="M10 2l1.8 4.2L16 8l-4.2 1.8L10 14l-1.8-4.2L4 8l4.2-1.8L10 2z" />
     </svg>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div />}>
+      <SignUpPageInner />
+    </Suspense>
   );
 }

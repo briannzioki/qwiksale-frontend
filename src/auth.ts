@@ -1,4 +1,6 @@
 // src/auth.ts
+import "server-only";
+
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";

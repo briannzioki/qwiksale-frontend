@@ -1,52 +1,46 @@
-// src/app/sell/page.tsx
+"use client";
+
 import Link from "next/link";
-import { getServerSession } from "@/app/lib/auth"; // centralized wrapper around auth()
-import SellClient from "./SellClient";
 
-/** Ensure auth is evaluated on each request (don’t statically cache this page). */
-export const dynamic = "force-dynamic";
+/**
+ * /sell — Sell landing page
+ * Keep this lightweight and client-only (no search params, no data fetching).
+ * Links out to specific flows like posting a service.
+ */
+export default function SellLandingPage() {
+  return (
+    <div className="container-page py-8">
+      <div className="mx-auto max-w-2xl space-y-6 text-center">
+        {/* Hero */}
+        <div className="rounded-2xl p-8 text-white bg-gradient-to-br from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
+          <h1 className="text-3xl font-extrabold tracking-tight">Sell on QwikSale</h1>
+          <p className="mt-2 text-white/90">
+            Post what you offer and start getting messages from interested buyers.
+          </p>
+        </div>
 
-export default async function SellPage() {
-  const session = await getServerSession();
+        {/* Actions */}
+        <div className="card p-6 space-y-4">
+          <p className="text-sm text-gray-700 dark:text-slate-200">
+            Choose what you want to post:
+          </p>
 
-  if (!session) {
-    // No server redirect → show a friendly gate with a sign-in CTA
-    const callbackUrl = encodeURIComponent("/sell");
-    return (
-      <div className="container-page py-8">
-        <div className="mx-auto max-w-xl card-surface p-6 space-y-4">
-          <div>
-            <h1 className="text-2xl font-bold mb-2">Sign in required</h1>
-            <p className="text-gray-700 dark:text-slate-300">
-              You need to sign in to post a listing.
-            </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link href="/sell/service" className="btn-gradient-primary">
+              Post a service
+            </Link>
+            {/* If you later add a dedicated product flow, link it here */}
+            {/* <Link href="/sell/product" className="btn-outline">Post a product</Link> */}
+            <Link href="/" className="btn-outline">
+              Cancel
+            </Link>
           </div>
 
-          <div className="flex gap-3">
-            <Link href={`/signin?callbackUrl=${callbackUrl}`} className="btn-primary">
-              Sign in
-            </Link>
-            <Link href="/" className="btn-ghost">
-              Go back home
-            </Link>
-          </div>
-
-          <p className="text-xs text-gray-500">
-            By posting, you agree to our{" "}
-            <Link href="/safety" className="underline">
-              Safety Guidelines
-            </Link>{" "}
-            and{" "}
-            <Link href="/privacy" className="underline">
-              Privacy Policy
-            </Link>
-            .
+          <p className="text-xs text-gray-500 dark:text-slate-400">
+            You can add photos, pricing, and contact details after you choose a flow.
           </p>
         </div>
       </div>
-    );
-  }
-
-  // Authenticated → load the client form/flow
-  return <SellClient />;
+    </div>
+  );
 }

@@ -5,9 +5,11 @@ import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
+type Tone = "neutral" | "danger";
+
 /**
- * Danger action button to delete a listing.
- * - Safe with Next.js 15: no generic `onClick` props from Server; callback ends with "Action"
+ * Danger/neutral action button to delete a listing.
+ * - Next.js 15 safe: `afterDeleteAction` name avoids Server Action collisions
  * - Double-guarded (confirm dialog + cooldown)
  * - Emits client events:
  *    - "qs:track"            { event: "listing_delete", payload: { id } }
@@ -16,9 +18,10 @@ import toast from "react-hot-toast";
 export default function DeleteListingButton({
   id,
   className,
-  afterDeleteAction, // ✅ safe name for Server Actions if passed from a Server Component
+  afterDeleteAction,
   label = "Delete",
   confirmText = "Delete this listing? This cannot be undone.",
+  tone = "neutral", // ← default: not too red, matches theme
 }: {
   id: string;
   className?: string;
@@ -26,6 +29,8 @@ export default function DeleteListingButton({
   afterDeleteAction?: () => void | Promise<void>;
   label?: string;
   confirmText?: string;
+  /** Visual tone; "neutral" keeps within site theme, "danger" uses red accents. */
+  tone?: Tone;
 }) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -40,14 +45,17 @@ export default function DeleteListingButton({
     }
   }, []);
 
-  const track = useCallback((event: string, payload?: Record<string, unknown>) => {
-    // eslint-disable-next-line no-console
-    console.log("[qs:track]", event, payload);
-    emit("qs:track", { event, payload });
-  }, [emit]);
+  const track = useCallback(
+    (event: string, payload?: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log("[qs:track]", event, payload);
+      emit("qs:track", { event, payload });
+    },
+    [emit]
+  );
 
   const handleDelete = useCallback(async () => {
-    // Basic cooldown to avoid double-click spam
+    // Basic cooldown
     const now = Date.now();
     if (now < cooldownUntilRef.current || isDeleting) return;
     cooldownUntilRef.current = now + 800;
@@ -61,12 +69,9 @@ export default function DeleteListingButton({
       const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
         method: "DELETE",
         signal: ac.signal,
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
-      // Try to parse JSON but be resilient
       let j: any = null;
       try {
         j = await r.json();
@@ -83,18 +88,14 @@ export default function DeleteListingButton({
       toast.success("Listing deleted");
       track("listing_delete", { id });
 
-      // Fire a lightweight client event for any listeners (e.g., list pages)
       emit("qs:listing:deleted", { id });
 
-      // Optional post-delete hook (can be a Server Action)
       try {
         await afterDeleteAction?.();
       } catch (e) {
-        // Log but don't block UX
         console.error("[DeleteListingButton] afterDeleteAction error:", e);
       }
 
-      // Refresh server components
       startTransition(() => router.refresh());
     } catch (e: any) {
       const message =
@@ -106,7 +107,14 @@ export default function DeleteListingButton({
     } finally {
       setIsDeleting(false);
     }
-  }, [afterDeleteAction, confirmText, id, router, startTransition, track, emit, isDeleting]);
+  }, [afterDeleteAction, confirmText, id, isDeleting, router, track, emit]);
+
+  const toneClasses =
+    tone === "danger"
+      ? // classic red (only when explicitly requested)
+        "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/20"
+      : // theme-friendly neutral (default): subtle navy/blue/gray
+        "border-gray-300 text-gray-800 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800";
 
   return (
     <button
@@ -115,7 +123,11 @@ export default function DeleteListingButton({
       disabled={isDeleting}
       className={
         className ??
-        "inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/20"
+        [
+          "inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-semibold transition",
+          toneClasses,
+          isDeleting ? "opacity-60 cursor-wait" : "",
+        ].join(" ")
       }
       aria-label="Delete listing"
       aria-busy={isDeleting}

@@ -1,12 +1,10 @@
-// src/app/api/account/delete/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/app/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/db";
 
 // (optional) light throttling if you already have this helper in your project.
 // If not present, these calls are wrapped in try/catch and safely ignored.
@@ -146,22 +144,22 @@ async function handle(req: NextRequest) {
     }
 
     // We'll collect Prisma operations into a single transaction.
-    // Use a precise type so TS knows this is the *array* overload.
-    const ops: Prisma.PrismaPromise<unknown>[] = [];
+    // Keep it simple to avoid TS inference issues.
+    const ops: any[] = [];
 
     // 1) Favorites: by user and on their products
     try {
       if ((prisma as any).favorite?.deleteMany) {
         ops.push(
-          ((prisma as any).favorite.deleteMany({
+          (prisma as any).favorite.deleteMany({
             where: { userId },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
         if (productIds.length > 0) {
           ops.push(
-            ((prisma as any).favorite.deleteMany({
+            (prisma as any).favorite.deleteMany({
               where: { productId: { in: productIds } },
-            }) as unknown) as Prisma.PrismaPromise<unknown>
+            })
           );
         }
       }
@@ -173,14 +171,14 @@ async function handle(req: NextRequest) {
     try {
       if ((prisma as any).referral?.deleteMany) {
         ops.push(
-          ((prisma as any).referral.deleteMany({
+          (prisma as any).referral.deleteMany({
             where: { inviterId: userId },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
         ops.push(
-          ((prisma as any).referral.deleteMany({
+          (prisma as any).referral.deleteMany({
             where: { inviteeId: userId },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
       }
     } catch {
@@ -191,10 +189,10 @@ async function handle(req: NextRequest) {
     try {
       if ((prisma as any).supportTicket?.updateMany) {
         ops.push(
-          ((prisma as any).supportTicket.updateMany({
+          (prisma as any).supportTicket.updateMany({
             where: { reporterId: userId },
             data: { reporterId: null },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
       }
     } catch {
@@ -206,15 +204,15 @@ async function handle(req: NextRequest) {
       if ((prisma as any).contactReveal?.deleteMany) {
         if (productIds.length > 0) {
           ops.push(
-            ((prisma as any).contactReveal.deleteMany({
+            (prisma as any).contactReveal.deleteMany({
               where: { productId: { in: productIds } },
-            }) as unknown) as Prisma.PrismaPromise<unknown>
+            })
           );
         }
         ops.push(
-          ((prisma as any).contactReveal.deleteMany({
+          (prisma as any).contactReveal.deleteMany({
             where: { viewerUserId: userId },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
       }
     } catch {
@@ -225,9 +223,9 @@ async function handle(req: NextRequest) {
     try {
       if ((prisma as any).account?.deleteMany) {
         ops.push(
-          ((prisma as any).account.deleteMany({
+          (prisma as any).account.deleteMany({
             where: { userId },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
       }
     } catch {
@@ -238,9 +236,9 @@ async function handle(req: NextRequest) {
     try {
       if ((prisma as any).verificationToken?.deleteMany) {
         ops.push(
-          ((prisma as any).verificationToken.deleteMany({
+          (prisma as any).verificationToken.deleteMany({
             where: { identifier: { contains: email } },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
       }
     } catch {
@@ -251,16 +249,16 @@ async function handle(req: NextRequest) {
     try {
       if ((prisma as any).payment?.deleteMany) {
         ops.push(
-          ((prisma as any).payment.deleteMany({
+          (prisma as any).payment.deleteMany({
             where: { userId },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
       }
       if ((prisma as any).order?.deleteMany) {
         ops.push(
-          ((prisma as any).order.deleteMany({
+          (prisma as any).order.deleteMany({
             where: { buyerId: userId },
-          }) as unknown) as Prisma.PrismaPromise<unknown>
+          })
         );
       }
     } catch {

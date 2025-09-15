@@ -1,5 +1,3 @@
-// src/app/data/categories.ts
-
 /* ============================================================================
   QwikSale · Categories Catalog (typed, indexed, and utilities)
   - Broad structural typing to avoid literal-union brittleness
@@ -35,26 +33,50 @@ export const categories = [
           "Phone Accessories",
           "Chargers & Cables",
           "Power Banks",
+          "Screen Protectors",
+          "Cases & Covers",
+          "Earphones & Headsets",
         ],
       },
       {
         name: "Computers & Laptops",
-        subsubcategories: ["Laptops", "Desktops", "Monitors", "Computer Accessories", "Printers & Scanners"],
+        subsubcategories: [
+          "Laptops",
+          "Desktops",
+          "Monitors",
+          "Computer Accessories",
+          "Printers & Scanners",
+          "Storage & Drives",
+          "Networking",
+        ],
       },
       {
         name: "Home Appliances",
-        subsubcategories: ["Televisions", "Sound Systems", "Refrigerators", "Cookers & Ovens", "Washing Machines", "Microwaves"],
+        subsubcategories: [
+          "Televisions",
+          "Sound Systems",
+          "Refrigerators",
+          "Cookers & Ovens",
+          "Washing Machines",
+          "Microwaves",
+          "Fans & Heaters",
+          "Vacuum Cleaners",
+          "Small Kitchen Appliances",
+        ],
       },
       { name: "Gaming", subsubcategories: ["Consoles", "Controllers", "Games", "VR"] },
-      { name: "Cameras", subsubcategories: ["DSLR", "Mirrorless", "Lenses", "Action Cameras"] },
+      { name: "Cameras", subsubcategories: ["DSLR", "Mirrorless", "Lenses", "Action Cameras", "Drones"] },
     ],
   },
   {
     name: "Vehicles",
     subcategories: [
-      { name: "Cars", subsubcategories: ["Sedans", "SUVs", "Pickups", "Trucks", "Vans & Buses"] },
-      { name: "Motorcycles", subsubcategories: ["Street Bikes", "Scooters", "Off-road"] },
-      { name: "Vehicle Parts & Accessories", subsubcategories: ["Tyres & Rims", "Batteries", "Engines & Gearboxes", "Car Electronics"] },
+      { name: "Cars", subsubcategories: ["Sedans", "SUVs", "Pickups", "Trucks", "Vans & Buses", "Hatchbacks"] },
+      { name: "Motorcycles", subsubcategories: ["Street Bikes", "Scooters", "Off-road", "Boda"] },
+      {
+        name: "Vehicle Parts & Accessories",
+        subsubcategories: ["Tyres & Rims", "Batteries", "Engines & Gearboxes", "Car Electronics", "Lighting", "Interior Accessories"],
+      },
     ],
   },
   {
@@ -62,7 +84,10 @@ export const categories = [
     subcategories: [
       { name: "Houses & Apartments for Sale" },
       { name: "Houses & Apartments for Rent" },
-      { name: "Land & Plots", subsubcategories: ["Residential Plots", "Commercial Plots", "Farms & Acreage"] },
+      {
+        name: "Land & Plots",
+        subsubcategories: ["Residential Plots", "Commercial Plots", "Farms & Acreage"],
+      },
       { name: "Commercial Property" },
     ],
   },
@@ -105,6 +130,170 @@ export const categories = [
   {
     name: "Others",
     subcategories: [{ name: "Books" }, { name: "Stationery" }, { name: "Arts & Crafts" }, { name: "Miscellaneous" }],
+  },
+
+  /* ------------------------------- EXPANDED: Services ---------------------- */
+  {
+    name: "Services",
+    subcategories: [
+      {
+        name: "Home Cleaning",
+        subsubcategories: [
+          "Mama Fua",
+          "Deep Cleaning",
+          "Move-in/Move-out",
+          "Laundry & Ironing",
+          "Carpet Cleaning",
+          "Sofa & Upholstery",
+          "Mattress Cleaning",
+          "Window Cleaning",
+          "Post-Construction Cleaning",
+        ],
+      },
+      {
+        name: "Repairs & Maintenance",
+        subsubcategories: [
+          "Cobblers",
+          "Phone Repair",
+          "Computer Repair",
+          "Appliance Repair",
+          "Plumbing",
+          "Electrical",
+          "Carpentry",
+          "Masonry",
+          "Painting",
+          "Roofing",
+          "Welding & Fabrication",
+          "Satellite TV Setup",
+          "CCTV & Alarm Installation",
+          "Gate & Grill Works",
+        ],
+      },
+      {
+        name: "Beauty & Wellness",
+        subsubcategories: [
+          "Salon",
+          "Barber",
+          "Braiding",
+          "Nails",
+          "Makeup Artists",
+          "Spa & Massage",
+          "Mobile Stylists",
+          "Locs & Retouch",
+        ],
+      },
+      {
+        name: "Tuition & Lessons",
+        subsubcategories: [
+          "Academic Tutors (KCPE/KCSE)",
+          "University Tutors",
+          "Driving School",
+          "Languages (English/Swahili)",
+          "Languages (French/Chinese)",
+          "Music Lessons (Guitar/Piano/Drums)",
+          "Coding & Tech Lessons",
+          "Photography Classes",
+        ],
+      },
+      {
+        name: "Delivery & Errands",
+        subsubcategories: [
+          "Motorbike Delivery",
+          "Courier Services",
+          "Food Delivery",
+          "Errand Services",
+          "Moving & Relocation",
+          "Parcel Services",
+        ],
+      },
+      {
+        name: "Events",
+        subsubcategories: [
+          "Photography",
+          "Videography",
+          "Catering",
+          "DJ & Sound",
+          "MCs",
+          "Tents & Chairs",
+          "Event Decor",
+          "Event Planning",
+          "Cakes & Pastry",
+        ],
+      },
+      {
+        name: "Automotive Services",
+        subsubcategories: [
+          "Mechanics",
+          "Car Wash",
+          "Detailing",
+          "Tyre Services",
+          "Panel Beating & Painting",
+          "Wheel Alignment & Balancing",
+          "Car AC Service",
+          "Diagnostics",
+        ],
+      },
+      {
+        name: "Professional Services",
+        subsubcategories: [
+          "Accounting & Tax",
+          "Legal",
+          "Graphic Design",
+          "Web Development",
+          "Mobile App Development",
+          "Digital Marketing",
+          "Printing & Branding",
+          "Architecture",
+          "Interior Design",
+          "Real Estate Agents",
+        ],
+      },
+      {
+        name: "Construction",
+        subsubcategories: [
+          "Contractors",
+          "Fundis",
+          "Borehole Drilling",
+          "Quantity Surveyors",
+          "Site Supervisors",
+          "Glass & Aluminium",
+          "Flooring & Tiling",
+          "Gypsum & Ceilings",
+        ],
+      },
+      {
+        name: "IT & Tech",
+        subsubcategories: [
+          "IT Support",
+          "Networking",
+          "Data Recovery",
+          "Cybersecurity",
+          "Cloud & DevOps",
+          "POS & Inventory Setup",
+          "Software Installation",
+        ],
+      },
+      {
+        name: "Childcare & Family",
+        subsubcategories: ["Nanny & Babysitting", "Daycare", "Home Schooling", "Elder Care"],
+      },
+      {
+        name: "Pets & Vets",
+        subsubcategories: ["Pet Grooming", "Pet Training", "Pet Boarding", "Veterinary Services"],
+      },
+      {
+        name: "Fitness & Coaching",
+        subsubcategories: ["Personal Trainers", "Yoga & Pilates", "Football Coaching", "Dance & Zumba"],
+      },
+      {
+        name: "Agriculture & Farm",
+        subsubcategories: ["Veterinary (Livestock)", "Agrovet Services", "Farm Labour", "Irrigation Setup", "Greenhouse Installation"],
+      },
+      {
+        name: "Pest & Fumigation",
+        subsubcategories: ["Residential", "Commercial", "Termites", "Rodents", "Bedbugs", "Mosquito Control"],
+      },
+    ],
   },
 ] as const satisfies readonly CategoryNode[];
 
@@ -252,7 +441,6 @@ export function suggestCategories(query: string, limit = 8): string[] {
   const q = (query || "").trim();
   if (!q) return [];
 
-  // Ensure tokens is string[] (not (string | undefined)[])
   const tokens = q
     .toLowerCase()
     .split(/\s+/)

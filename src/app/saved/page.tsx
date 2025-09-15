@@ -89,7 +89,7 @@ export default function SavedPage() {
         const data = await getJson<ApiResponse>("/api/favorites?format=full&limit=100");
         if (!cancelled) setFavItems(Array.isArray(data?.items) ? data.items : []);
       } catch (e: any) {
-        // Gracefully treat 401 as “not signed in”
+        // Gracefully treat 401 as â€œnot signed inâ€
         const msg = e?.message || "Failed to load favorites";
         if (!cancelled) setErr(msg);
       } finally {
@@ -166,19 +166,19 @@ export default function SavedPage() {
       ) : sessionStatus === "unauthenticated" ? (
         <div className="card p-6 flex items-center justify-between">
           <div className="text-sm text-gray-700 dark:text-slate-200">
-            You’re not signed in. Sign in to see your saved items synced across devices.
+            Youâ€™re not signed in. Sign in to see your saved items synced across devices.
           </div>
-          <a className="btn-primary" href={`/signin?callbackUrl=${encodeURIComponent("/saved")}`}>
+          <a className="btn-gradient-primary" href={`/signin?callbackUrl=${encodeURIComponent("/saved")}`}>
             Sign in
           </a>
         </div>
       ) : loading ? (
-        <div className="text-gray-600 dark:text-slate-300">Loading your favorites…</div>
+        <div className="text-gray-600 dark:text-slate-300">Loading your favoritesâ€¦</div>
       ) : err && !list.length ? (
         <div className="card p-6 space-y-3">
           <div className="text-red-600">{err}</div>
           <div className="text-sm text-gray-700 dark:text-slate-200">
-            Showing local favorites isn’t available yet. Try again shortly.
+            Showing local favorites isnâ€™t available yet. Try again shortly.
           </div>
         </div>
       ) : list.length === 0 ? (
@@ -187,7 +187,7 @@ export default function SavedPage() {
           <Link href="/" className="link">
             homepage
           </Link>{" "}
-          and tap the heart ❤️.
+          and tap the heart â¤ï¸.
         </div>
       ) : (
         <>
@@ -203,9 +203,7 @@ export default function SavedPage() {
                   <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800 group-hover:border-brandBlue/60">
                     <div className="relative">
                       {p.featured ? (
-                        <span className="absolute top-2 left-2 z-10 rounded-md bg-brandNavy text-white text-xs px-2 py-1 shadow">
-                          Verified
-                        </span>
+                        <span className="absolute top-2 left-2 z-10 rounded-md bg-brandNavy text-white text-xs px-2 py-1 shadow">Featured</span>
                       ) : null}
 
                       {/* Image with blur shimmer */}
@@ -231,7 +229,7 @@ export default function SavedPage() {
                             e.preventDefault();
                             copyLink(p.id);
                           }}
-                          className="btn-ghost px-2 py-1 text-xs"
+                          className="btn-outline px-2 py-1 text-xs"
                           title="Copy link"
                         >
                           Copy
@@ -244,7 +242,7 @@ export default function SavedPage() {
                         {p.name}
                       </h3>
                       <p className="text-sm text-gray-500 dark:text-slate-400 line-clamp-1">
-                        {p.category} • {p.subcategory}
+                        {p.category} â€¢ {p.subcategory}
                       </p>
                       {p.brand && (
                         <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
@@ -264,7 +262,7 @@ export default function SavedPage() {
             <Link href="/" className="btn-outline">
               Continue browsing
             </Link>
-            <Link href="/sell" className="btn-ghost">
+            <Link href="/sell" className="btn-outline">
               Post a listing
             </Link>
           </div>

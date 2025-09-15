@@ -69,7 +69,7 @@ export async function GET(req: Request) {
     const offset = (page - 1) * pageSize;
 
     // Optional synonyms expansion (small set)
-    const synonyms =
+    const synonyms: { word: string }[] =
       q.length > 0
         ? await prisma.$queryRaw<{ word: string }[]>`
             SELECT unnest(expands_to) as word
@@ -108,7 +108,7 @@ export async function GET(req: Request) {
         : `"createdAt" DESC`;
 
     // Compose expanded terms VALUES list placeholders for CTE
-    const expanded = [q, ...synonyms.map((s) => s.word)];
+    const expanded = [q, ...synonyms.map((s: { word: string }) => s.word)];
     const valuesPlaceholders =
       expanded.length > 1
         ? expanded.slice(1).map((_w, i) => `($${i + 2})`).join(",")
@@ -200,12 +200,18 @@ export async function GET(req: Request) {
         pageSize,
         hasMore,
         facets: {
-          towns: facetTown.filter((f) => f.town).map((f) => ({ value: f.town, count: f.count })),
-          categories: facetCategory.filter((f) => f.category).map((f) => ({ value: f.category, count: f.count })),
-          brands: facetBrand.filter((f) => f.brand).map((f) => ({ value: f.brand, count: f.count })),
+          towns: facetTown
+            .filter((f: { town: string; count: number }) => f.town)
+            .map((f: { town: string; count: number }) => ({ value: f.town, count: f.count })),
+          categories: facetCategory
+            .filter((f: { category: string; count: number }) => f.category)
+            .map((f: { category: string; count: number }) => ({ value: f.category, count: f.count })),
+          brands: facetBrand
+            .filter((f: { brand: string; count: number }) => f.brand)
+            .map((f: { brand: string; count: number }) => ({ value: f.brand, count: f.count })),
           conditions: facetCondition
-            .filter((f) => f.condition)
-            .map((f) => ({ value: f.condition, count: f.count })),
+            .filter((f: { condition: string; count: number }) => f.condition)
+            .map((f: { condition: string; count: number }) => ({ value: f.condition, count: f.count })),
         },
       }),
       {

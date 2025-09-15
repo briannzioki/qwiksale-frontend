@@ -1,18 +1,6 @@
+// sentry.server.config.ts
 import * as Sentry from "@sentry/nextjs";
-
-/* ------------------------- tiny guards/utils ------------------------- */
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === "object";
-}
-
-function scrub(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  return value
-    .replace(/\b254[17]\d{8}\b/g, (m) => m.slice(0, 6) + "***" + m.slice(-3))
-    .replace(/CheckoutRequestID=\w+/g, "CheckoutRequestID=***")
-    .replace(/MerchantRequestID=\w+/g, "MerchantRequestID=***");
-}
+import type { ErrorEvent, EventHint } from "@sentry/nextjs";
 
 /* ------------------------------ env ------------------------------ */
 
@@ -28,30 +16,37 @@ const environment =
 
 const isProd = environment === "production";
 
-/* ---------------------------- options ---------------------------- */
+/* ------------------------- tiny guards/utils ------------------------- */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object";
+}
+function scrub(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  return value
+    .replace(/\b254[17]\d{8}\b/g, (m) => m.slice(0, 6) + "***" + m.slice(-3))
+    .replace(/CheckoutRequestID=\w+/g, "CheckoutRequestID=***")
+    .replace(/MerchantRequestID=\w+/g, "MerchantRequestID=***");
+}
 
-const options: Sentry.BrowserOptions = {
+/* ---------------------------- options ---------------------------- */
+// IMPORTANT: omit `dsn` here; add it conditionally below
+const options: Sentry.NodeOptions = {
   environment,
   tracesSampleRate: isProd ? 0.2 : 0.05,
   profilesSampleRate: isProd ? 0.1 : 0,
   sendDefaultPii: false,
 
-  // NOTE: must be ErrorEvent + EventHint, and must return ErrorEvent|null
-  beforeSend(event: Sentry.ErrorEvent, _hint: Sentry.EventHint): Sentry.ErrorEvent | null {
+  beforeSend(event: ErrorEvent, _hint: EventHint): ErrorEvent | null {
     try {
-      // shallow copy so we can rewrite safely
-      const next: Sentry.ErrorEvent = { ...event };
+      const next: ErrorEvent = { ...event };
 
       if (next.request) {
-        // Work with a local copy to avoid mutating the original reference
         const req: Record<string, unknown> = { ...(next.request as any) };
         const url = String(req["url"] ?? "");
 
-        // Drop whole request for sensitive endpoints — use delete, not = undefined
         if (url.includes("/api/mpesa")) {
           delete (next as any).request;
         } else {
-          // Redact known sensitive fields
           delete req["cookies"];
           delete req["headers"];
           delete req["data"];
@@ -68,9 +63,7 @@ const options: Sentry.BrowserOptions = {
             for (const f of frames as Array<Record<string, unknown>>) {
               const vars = f["vars"];
               if (isRecord(vars)) {
-                for (const k of Object.keys(vars)) {
-                  vars[k] = scrub(vars[k]);
-                }
+                for (const k of Object.keys(vars)) vars[k] = scrub(vars[k]);
               }
             }
           }
@@ -79,38 +72,14 @@ const options: Sentry.BrowserOptions = {
 
       return next;
     } catch {
-      return event; // must return the original event on failure
+      return event;
     }
   },
-
-  // Signature allows optional hint and must return Breadcrumb|null
-  beforeBreadcrumb(breadcrumb: Sentry.Breadcrumb, _hint?: Sentry.BreadcrumbHint): Sentry.Breadcrumb | null {
-    try {
-      if (breadcrumb?.message) {
-        breadcrumb.message = String(scrub(breadcrumb.message));
-      }
-
-      if (isRecord(breadcrumb?.data)) {
-        const d = breadcrumb.data as Record<string, unknown>;
-        if (typeof d["url"] === "string") d["url"] = String(scrub(d["url"]));
-        if (typeof d["request_body"] === "string") d["request_body"] = String(scrub(d["request_body"]));
-        if (typeof d["response_body"] === "string") d["response_body"] = String(scrub(d["response_body"]));
-      }
-    } catch {
-      /* no-op */
-    }
-    return breadcrumb;
-  },
-
-  // MUST be mutable (not readonly) to satisfy types
-  denyUrls: [
-    /^chrome-extension:\/\//,
-    /extensions\//,
-    /^moz-extension:\/\//,
-  ] as Array<string | RegExp>,
 };
 
-// Only set dsn when defined (avoid string | undefined mismatch)
-if (dsn) options.dsn = dsn;
+// Only add DSN when defined (satisfies exactOptionalPropertyTypes)
+if (dsn) {
+  options.dsn = dsn;
+}
 
 Sentry.init(options);
