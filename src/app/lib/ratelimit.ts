@@ -93,8 +93,6 @@ export async function checkRateLimit(headers: Headers, p: RLParams): Promise<RLR
   // Fast path: Upstash present
   if (upstashRedis && RatelimitCtor) {
     // Construct a small ratelimiter for the window/limit provided.
-    // The constructor + Redis client are light and safe to reuse; but even if
-    // created per-call, @upstash/redis handles connection reuse underneath.
     const { Ratelimit } = require("@upstash/ratelimit") as typeof import("@upstash/ratelimit");
     const rl = new RatelimitCtor({
       redis: upstashRedis,
@@ -105,17 +103,18 @@ export async function checkRateLimit(headers: Headers, p: RLParams): Promise<RLR
 
     const res = await rl.limit(key);
     if (res.success) {
-      // Estimate: time until the window fully resets for this key
-      const retryAfterSec = res.reset ? Math.max(1, Math.ceil((res.reset - Date.now()) / 1000)) : Math.ceil(p.windowMs / 1000);
+      const retryAfterSec = res.reset
+        ? Math.max(1, Math.ceil((res.reset - Date.now()) / 1000))
+        : Math.ceil(p.windowMs / 1000);
       return { ok: true, retryAfterSec };
     }
 
-    const retryAfterSec =
-      res.reset ? Math.max(1, Math.ceil((res.reset - Date.now()) / 1000)) : Math.ceil(p.windowMs / 1000);
+    const retryAfterSec = res.reset
+      ? Math.max(1, Math.ceil((res.reset - Date.now()) / 1000))
+      : Math.ceil(p.windowMs / 1000);
 
     // Optional extended cooldown
     if (p.blockMs && res.reset && res.reset - Date.now() < p.blockMs) {
-      // “Extend” by writing a small key with TTL (best-effort)
       try {
         await upstashRedis!.set(`rlblock:${key}`, "1", { ex: Math.ceil(p.blockMs / 1000) });
       } catch {

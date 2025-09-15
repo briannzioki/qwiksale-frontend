@@ -34,7 +34,7 @@ export async function GET(
     if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     if (typeof checkRateLimit === "function") {
-      const rl = checkRateLimit(req.headers, {
+      const rl = await checkRateLimit(req.headers, {
         name: "messages_thread_read",
         limit: 120,
         windowMs: 60_000,
@@ -104,7 +104,7 @@ export async function POST(
     if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     if (typeof checkRateLimit === "function") {
-      const rl = checkRateLimit(req.headers, {
+      const rl = await checkRateLimit(req.headers, {
         name: "messages_thread_send",
         limit: 30,
         windowMs: 60_000,
