@@ -1,7 +1,8 @@
+// middleware.ts
 import { withAuth } from "next-auth/middleware";
 import { NextResponse, type NextRequest } from "next/server";
 
-/* ------------------- Edge-safe helpers (no Node Buffer) ------------------- */
+/* ------------------- Edge-safe helpers ------------------- */
 function makeNonce() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   let binary = "";
@@ -12,7 +13,7 @@ function makeUUID() {
   return (crypto as any)?.randomUUID?.() ?? `${Date.now().toString(36)}-${makeNonce()}`;
 }
 
-/* ---------------------------- Security / CSP ------------------------------ */
+/* ------------------------- Security / CSP ------------------------- */
 function buildSecurityHeaders(nonce: string, isDev: boolean) {
   const imgSrc = [
     "'self'",
@@ -73,7 +74,7 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
   return headers;
 }
 
-/* ------------------------- tiny guards for JSON POSTs ------------------------- */
+/* -------------------- JSON body guard (select POSTs) -------------------- */
 function mustBeJson(req: NextRequest) {
   if (req.method !== "POST") return null;
   const ct = (req.headers.get("content-type") || "").toLowerCase();
@@ -86,13 +87,17 @@ function mustBeJson(req: NextRequest) {
   return null;
 }
 
-/* --------------------- Unified middleware (auth + CSP + cookie) -------------------- */
+/* --------------------- Main middleware body --------------------- */
 export default withAuth(
   function middleware(req: NextRequest) {
     const p = req.nextUrl.pathname;
 
-    // ⛔️ Never touch NextAuth / Vercel internal routes
-    if (p.startsWith("/api/auth") || p.startsWith("/_vercel")) {
+    // Hard opt-out: never touch NextAuth/analytics/health
+    if (
+      p.startsWith("/api/auth") ||
+      p.startsWith("/_vercel") ||
+      p.startsWith("/api/health")
+    ) {
       return NextResponse.next();
     }
 
@@ -100,7 +105,7 @@ export default withAuth(
       process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview";
     const nonce = makeNonce();
 
-    // JSON guards for sensitive POST endpoints
+    // JSON guard on specific endpoints
     if (
       (p === "/api/billing/upgrade" && req.method === "POST") ||
       (p.startsWith("/api/products/") && p.endsWith("/promote") && req.method === "POST")
@@ -114,13 +119,12 @@ export default withAuth(
     forwarded.set("x-nonce", nonce);
     const res = NextResponse.next({ request: { headers: forwarded } });
 
-    // Security headers (skip on /api/auth above)
+    // Security headers
     const sec = buildSecurityHeaders(nonce, isDev);
     for (const [k, v] of sec.entries()) res.headers.set(k, v);
 
-    // Device cookie
-    const DID = req.cookies.get("qs_did")?.value;
-    if (!DID) {
+    // Device cookie (host-only)
+    if (!req.cookies.get("qs_did")?.value) {
       const did = makeUUID();
       res.cookies.set({
         name: "qs_did",
@@ -139,13 +143,8 @@ export default withAuth(
     callbacks: {
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
-
-        // Require login for /sell
         const needsAuth = p.startsWith("/sell");
-
-        // Require admin for /admin and /api/admin
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
-
         if (needsAdmin) return !!token && (token as any).role === "admin";
         if (needsAuth) return !!token;
         return true;
@@ -154,10 +153,11 @@ export default withAuth(
   }
 );
 
-/* ----------------------------- Route matcher ------------------------------ */
-// Exclude static assets, sitemaps, NextAuth, and Vercel’s internal paths.
+/* ----------------------------- Matcher ----------------------------- */
+/** Exclude NextAuth & Vercel at the matcher level too (belt & suspenders) */
 export const config = {
   matcher: [
+    // Everything except static, next/image, favicons/sitemaps, NextAuth, and Vercel
     "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|_vercel).*)",
   ],
 };

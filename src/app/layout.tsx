@@ -7,7 +7,6 @@ import crypto from "crypto";
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
 import Providers from "./providers";
 import AppShell from "./components/AppShell";
-import Header from "./components/Header"; // mounts your signed-in header w/ avatar
 import DevToolsMount from "./components/DevToolsMount";
 import { fontVars } from "./fonts";
 
@@ -113,7 +112,7 @@ export default async function RootLayout({
   // CSP nonce from middleware (or local fallback)
   let nonce: string;
   try {
-    const h = await headers(); // ✅ await the async headers() in Next 15
+    const h = await headers(); // ✅ Next 15 headers() is async
     nonce = h.get("x-nonce") ?? crypto.randomBytes(16).toString("base64");
   } catch {
     nonce = crypto.randomBytes(16).toString("base64");
@@ -184,7 +183,7 @@ export default async function RootLayout({
         data-env={isPreview ? "preview" : "prod"}
       >
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
-          {/* Providers must wrap Header so it can read auth and render the avatar */}
+          {/* Providers wrap AppShell so it can read auth etc. */}
           <Providers>
             <AppShell>{children}</AppShell>
           </Providers>
