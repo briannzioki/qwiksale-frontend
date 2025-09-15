@@ -6,6 +6,7 @@ import { InfiniteClient } from "./InfiniteClient";
 
 /** Always render fresh – results depend on query string. */
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs"; // 👈 ensure Node.js runtime for SSR fetches
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -62,7 +63,6 @@ function nextQuery(base: URLSearchParams, patch: Record<string, string | undefin
     if (v == null || v === "") q.delete(k);
     else q.set(k, v);
   }
-  // normalize page when filters change
   if ("category" in patch || "subcategory" in patch || "brand" in patch || "q" in patch || "type" in patch) {
     q.delete("page");
   }
@@ -70,11 +70,11 @@ function nextQuery(base: URLSearchParams, patch: Record<string, string | undefin
   return s ? `/search?${s}` : "/search";
 }
 function siteUrl() {
-  return (
+  const raw =
     process.env["NEXT_PUBLIC_SITE_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
-    ""
-  ).replace(/\/+$/, "");
+    (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "");
+  return (raw || "").replace(/\/+$/, "");
 }
 
 const SORT_OPTIONS: { value: "top" | "new" | "price_asc" | "price_desc"; label: string }[] = [
@@ -92,7 +92,6 @@ export default async function SearchPage({
   // Next 15: searchParams is a Promise
   searchParams: Promise<SearchParams>;
 }) {
-  // resolve the promise
   const sp = await searchParams;
 
   const type = (getParam(sp, "type") || "product") as "product" | "service";
@@ -133,14 +132,14 @@ export default async function SearchPage({
 
   // Fetch initial page server-side (SSR fallback)
   const endpoint = type === "product" ? "/api/products/search" : "/api/services/search";
-  const res = await fetch(`${base}${endpoint}?${qs.toString()}`, { cache: "no-store" }).catch(() => null);
+  const url = `${base}${endpoint}?${qs.toString()}`;
+  const res = await fetch(url, { cache: "no-store" }).catch(() => null);
 
   const emptyProducts: Envelope<ProductHit> = { page: 1, pageSize, total: 0, totalPages: 1, items: [] };
   const emptyServices: Envelope<ServiceHit> = { page: 1, pageSize, total: 0, totalPages: 1, items: [] };
 
   const data = (await res?.json().catch(() => null)) || (type === "product" ? emptyProducts : emptyServices);
 
-  // If page is out of bounds (e.g., user typed page=999), normalize
   if ((data as any).page !== page) {
     const qp = new URLSearchParams();
     Object.entries(sp).forEach(([k, v]) => {
@@ -152,12 +151,7 @@ export default async function SearchPage({
   }
 
   const headerTitle = type === "product" ? "Search" : "Search Services";
-  const emptyTitle = "No results";
-  const emptyMsg = type === "product"
-    ? "Try different keywords or remove some filters."
-    : "Try different keywords or broaden your filters.";
 
-  // Build params for InfiniteClient WITHOUT undefined fields
   const clientParams = {
     ...(q ? { q } : {}),
     ...(category ? { category } : {}),
@@ -285,7 +279,7 @@ export default async function SearchPage({
           />
         </div>
 
-        {/* Verified + Sort */}
+        {/* Featured / Verified + Sort */}
         <div className="md:col-span-2 flex items-end gap-2">
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-200">
             <input
@@ -294,7 +288,7 @@ export default async function SearchPage({
               defaultChecked={verifiedOnly}
               className="rounded border-gray-300 dark:border-slate-600"
             />
-            Verified only
+            Featured only
           </label>
         </div>
         <div className="md:col-span-2">
