@@ -186,7 +186,6 @@ export default async function RootLayout({
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
           {/* Providers must wrap Header so it can read auth and render the avatar */}
           <Providers>
-            <Header />
             <AppShell>{children}</AppShell>
           </Providers>
 
