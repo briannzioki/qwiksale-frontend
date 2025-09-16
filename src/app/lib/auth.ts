@@ -1,4 +1,5 @@
 // src/app/lib/auth.ts
+import "server-only";
 
 // Centralized NextAuth helpers (NextAuth v5 via src/auth.ts)
 // NOTE: Your src/auth.ts does not export signIn/signOut, so we only import auth.
@@ -20,6 +21,8 @@ export type SessionUser = {
   image?: string | null;
   // add any custom fields you attach in callbacks here
 };
+
+export type Session = Awaited<ReturnType<typeof auth>>;
 
 /* ------------------------------------------------------------------ */
 /*                          Core session access                        */
@@ -43,8 +46,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 /** Returns the current user's id if present, else null. */
 export async function requireUserId(): Promise<string | null> {
   const u = await getSessionUser();
-  const id = (u?.id ?? null) as string | null;
-  return id || null;
+  return (u?.id as string | undefined) ?? null;
 }
 
 /** Boolean convenience. */

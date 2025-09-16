@@ -17,6 +17,7 @@ const ALLOW_CREDS_AUTO_SIGNUP =
 const ALLOWED_CALLBACK_PATHS = new Set<string>([
   "/",
   "/sell",
+  "/saved",                // ✅ allow your Saved page
   "/account/profile",
   "/account/complete-profile",
 ]);
@@ -24,7 +25,7 @@ const ALLOWED_CALLBACK_PATHS = new Set<string>([
 export const authOptions: NextAuthOptions = {
   debug: process.env["NEXTAUTH_DEBUG"] === "1",
 
-  // NOTE: do NOT set trustHost here; use env AUTH_TRUST_HOST=true in Vercel.
+  // Let NextAuth manage secure cookies; provide secret via env.
   ...(process.env["NEXTAUTH_SECRET"] ? { secret: process.env["NEXTAUTH_SECRET"]! } : {}),
 
   adapter: PrismaAdapter(prisma),
@@ -32,11 +33,8 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30d
-    updateAge: 24 * 60 * 60,   // refresh window
+    updateAge: 24 * 60 * 60,
   },
-
-  // ❌ Remove custom cookies config. Let NextAuth set
-  // __Secure-next-auth.session-token automatically on HTTPS.
 
   pages: { signIn: "/signin" },
 
@@ -91,8 +89,8 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!ALLOW_CREDS_AUTO_SIGNUP) {
-          await new Promise((r) => setTimeout(r, 250));
-          return null;
+            await new Promise((r) => setTimeout(r, 250));
+            return null;
         }
 
         const passwordHash = await hashPassword(password);

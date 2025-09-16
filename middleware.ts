@@ -10,6 +10,7 @@ function makeNonce() {
   return btoa(binary);
 }
 function makeUUID() {
+  // Random device id for host-only cookie
   return (crypto as any)?.randomUUID?.() ?? `${Date.now().toString(36)}-${makeNonce()}`;
 }
 
@@ -92,10 +93,17 @@ export default withAuth(
   function middleware(req: NextRequest) {
     const p = req.nextUrl.pathname;
 
-    // Hard opt-out: never touch NextAuth/analytics/health
+    // Hard opt-out: never touch NextAuth or common infra/static
     if (
-      p.startsWith("/api/auth") ||
+      p.startsWith("/api/auth") || // NextAuth callbacks/providers/csrf/etc
+      p.startsWith("/_next") ||    // Next.js internals (incl. static/css/js)
       p.startsWith("/_vercel") ||
+      p === "/favicon.ico" ||
+      p.startsWith("/icon") ||
+      p === "/robots.txt" ||
+      p === "/sitemap.xml" ||
+      p.startsWith("/sitemaps") ||
+      p.startsWith("/.well-known") ||
       p.startsWith("/api/health")
     ) {
       return NextResponse.next();
@@ -105,7 +113,7 @@ export default withAuth(
       process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview";
     const nonce = makeNonce();
 
-    // JSON guard on specific endpoints
+    // JSON guard on specific endpoints only (never on /api/auth/**)
     if (
       (p === "/api/billing/upgrade" && req.method === "POST") ||
       (p.startsWith("/api/products/") && p.endsWith("/promote") && req.method === "POST")
@@ -123,7 +131,7 @@ export default withAuth(
     const sec = buildSecurityHeaders(nonce, isDev);
     for (const [k, v] of sec.entries()) res.headers.set(k, v);
 
-    // Device cookie (host-only)
+    // Device cookie (host-only; does NOT replace NextAuth cookies)
     if (!req.cookies.get("qs_did")?.value) {
       const did = makeUUID();
       res.cookies.set({
@@ -143,8 +151,17 @@ export default withAuth(
     callbacks: {
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
-        const needsAuth = p.startsWith("/sell");
+
+        // Gate only what truly needs auth
+        const needsAuth =
+          p.startsWith("/sell") ||
+          p.startsWith("/account") ||
+          p.startsWith("/dashboard") ||
+          p.startsWith("/messages") ||
+          p.startsWith("/saved"); // if your Saved page is only for signed-in users
+
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
+
         if (needsAdmin) return !!token && (token as any).role === "admin";
         if (needsAuth) return !!token;
         return true;
@@ -154,10 +171,9 @@ export default withAuth(
 );
 
 /* ----------------------------- Matcher ----------------------------- */
-/** Exclude NextAuth & Vercel at the matcher level too (belt & suspenders) */
+/** Exclude NextAuth & static at the matcher level too (belt & suspenders) */
 export const config = {
   matcher: [
-    // Everything except static, next/image, favicons/sitemaps, NextAuth, and Vercel
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|_vercel).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|_vercel|\\.well-known).*)",
   ],
 };

@@ -19,6 +19,7 @@ export interface SessionUser {
 
 /** Server-side session helper (typed). */
 export async function auth() {
+  // Central place all code should use to read the session.
   return getServerSession(authOptions);
 }
 export type Session = Awaited<ReturnType<typeof auth>>;
@@ -45,7 +46,6 @@ export async function requireAuth(callbackUrl?: string) {
  */
 export async function requireUser(callbackUrl?: string): Promise<SessionUser> {
   const session = await requireAuth(callbackUrl);
-  // Narrow to our shape
   const u = session.user as SessionUser | undefined;
   if (!u?.id) {
     redirect(`/signin?callbackUrl=${encodeURIComponent(callbackUrl ?? "/")}`);
