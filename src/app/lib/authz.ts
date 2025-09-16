@@ -1,4 +1,6 @@
 // src/app/lib/authz.ts
+import "server-only";
+
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/lib/prisma";
@@ -47,6 +49,8 @@ const getCurrentUserRole = cache(async (): Promise<Role> => {
     where: { id: u.id as string },
     select: { role: true },
   });
+
+  // If there’s a row but role is null/undefined, treat as USER by default.
   return (row?.role as Role) ?? "USER";
 });
 
@@ -57,21 +61,22 @@ const getCurrentUserRole = cache(async (): Promise<Role> => {
 /** True if the logged-in user is on the env email allowlist. */
 export async function isAllowlistedAdminEmail(): Promise<boolean> {
   const u = await getSessionUser();
-  const email = u?.email?.toLowerCase();
+  const email = u?.email?.toLowerCase() ?? null;
   return !!(email && ADMIN_EMAILS_ALLOWLIST.has(email));
 }
 
 /** Returns true if user is considered admin (env allowlist OR DB role). */
 export async function isAdminUser(): Promise<boolean> {
   if (await isAllowlistedAdminEmail()) return true;
-
   const role = await getCurrentUserRole();
   return role === "ADMIN";
 }
 
 /** Returns true if user has at least the required role. */
-export async function hasRoleAtLeast(min: Exclude<Role, null | undefined>): Promise<boolean> {
-  // Admin allowlist always grants ADMIN
+export async function hasRoleAtLeast(
+  min: Exclude<Role, null | undefined>
+): Promise<boolean> {
+  // Admin allowlist always grants ADMIN-equivalent
   if (await isAllowlistedAdminEmail()) return true;
 
   const role = await getCurrentUserRole();
@@ -125,7 +130,10 @@ export async function requireRoleOrRedirect(
 }
 
 /** Generic role assertion (throws instead of redirecting). */
-export async function assertRoleAtLeast(min: Exclude<Role, null | undefined>, message = "Forbidden"): Promise<void> {
+export async function assertRoleAtLeast(
+  min: Exclude<Role, null | undefined>,
+  message = "Forbidden"
+): Promise<void> {
   const ok = await hasRoleAtLeast(min);
   if (!ok) throw new Error(message);
 }

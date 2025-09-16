@@ -1,6 +1,7 @@
-import { getServerSession } from "next-auth";
-import { getRequestLogger } from "@/app/lib/logger";
+// src/app/lib/api-logging.ts
 import type { NextRequest } from "next/server";
+import { getRequestLogger } from "@/app/lib/logger";
+import { auth } from "@/auth"; // use the shared NextAuth session helper
 
 /**
  * Build a child logger bound to this request.
@@ -12,8 +13,9 @@ export async function getLoggerForRequest(
   route?: string | null
 ) {
   const requestId: string | null = req.headers.get("x-request-id");
-  const session = await getServerSession(); // assumes your next-auth config is wired up
-  const userId: string | null = (session?.user as { id?: string } | undefined)?.id ?? null;
+  const session = await auth();
+  const userId: string | null =
+    (session?.user as { id?: string } | undefined)?.id ?? null;
 
   return getRequestLogger({
     requestId: requestId ?? null,

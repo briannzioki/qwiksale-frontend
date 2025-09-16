@@ -1,7 +1,7 @@
 // src/app/lib/api-logging.ts
-import { getServerSession } from "next-auth";
 import type { NextRequest } from "next/server";
 import { getRequestLogger } from "@/app/lib/logger";
+import { auth } from "@/auth"; // ← use the centralized session helper
 
 /** Shape of the per-request logger function */
 export type RequestLog = ReturnType<typeof getRequestLogger>;
@@ -12,7 +12,7 @@ export async function getLoggerForRequest(
   route?: string | null
 ): Promise<RequestLog> {
   const requestId = req.headers.get("x-request-id");
-  const session = await getServerSession();
+  const session = await auth();
   const userId = ((session?.user as any)?.id ?? null) as string | null;
   return getRequestLogger({
     requestId: requestId ?? null,
