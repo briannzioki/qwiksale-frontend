@@ -117,6 +117,9 @@ importers:
       autoprefixer:
         specifier: ^10.4.21
         version: 10.4.21(postcss@8.5.6)
+      client-only:
+        specifier: 0.0.1
+        version: 0.0.1
       cross-env:
         specifier: ^10.0.0
         version: 10.0.0
@@ -165,6 +168,9 @@ importers:
       prisma:
         specifier: ^6.15.0
         version: 6.16.1(magicast@0.3.5)(typescript@5.9.2)
+      server-only:
+        specifier: 0.0.1
+        version: 0.0.1
       tailwindcss:
         specifier: ^3.4.14
         version: 3.4.17
@@ -4278,6 +4284,9 @@ packages:
 
   serialize-javascript@6.0.2:
     resolution: {integrity: sha512-Saa1xPByTTq2gdeFZYLLo+RFE35NHZkAbqZeWNd3BpzppeVisAqpDjcp8dyf6uIvEqJRd46jemmyA4iFIeVk8g==}
+
+  server-only@0.0.1:
+    resolution: {integrity: sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA==}
 
   set-function-length@1.2.2:
     resolution: {integrity: sha512-pgRc4hJ4/sNjWCSS9AmnS40x3bNMDTknHgL5UaMBTMyJnU90EgWh1Rz+MC9eFu4BuN/UwZjKQuY/1v3rM7HMfg==}
@@ -9549,6 +9558,8 @@ snapshots:
   serialize-javascript@6.0.2:
     dependencies:
       randombytes: 2.1.0
+
+  server-only@0.0.1: {}
 
   set-function-length@1.2.2:
     dependencies:
