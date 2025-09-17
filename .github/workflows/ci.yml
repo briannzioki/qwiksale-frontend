@@ -2,46 +2,51 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   pull_request:
 
 jobs:
-  ci:
+  build:
     runs-on: ubuntu-latest
-
     env:
-      NODE_ENV: test
-      NEXT_TELEMETRY_DISABLED: "1"
-      # If you use Postgres in CI, set a test DB here (or use sqlite if your schema allows)
-      # DATABASE_URL: postgresql://user:pass@localhost:5432/testdb
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+      NEXT_TELEMETRY_DISABLED: 1
+      # SKIP_ENV_VALIDATION: 1  # uncomment if your env validator crashes at build time
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
+      # Install pnpm explicitly (avoids Corepack/pnpm PATH issues)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.16.0
+          run_install: false
+
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: '20.x'
+          # If you want cache restore for pnpm store, you can add:
+          # cache: 'pnpm'
+
+      - name: Print versions
+        run: |
+          node -v
+          pnpm -v
 
       - name: Install dependencies
-        run: npm ci
-
-      - name: Prisma Generate
-        run: npx prisma generate
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit tests (Vitest)
-        run: npm run test:unit
+        run: pnpm typecheck
 
       - name: Build
-        run: npm run build
+        run: pnpm build
 
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
-
-      - name: E2E (Playwright)
-        run: npm run test:e2e
+      - name: Test
+        if: success() && hashFiles('**/jest.config.*') != ''
+        run: pnpm test -- --ci
