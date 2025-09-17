@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
+import { revalidatePath, revalidateTag } from "next/cache"; // ← ADD
 
 /* ---------------- analytics (console-only for now) ---------------- */
 type AnalyticsEvent =
@@ -320,6 +321,18 @@ export async function PATCH(req: NextRequest) {
       select,
     });
 
+    // ---- revalidate caches after update ----
+    try {
+      revalidateTag("home:active");
+      revalidateTag("products:latest");
+      revalidateTag(`product:${productId}`);
+      revalidateTag(`user:${userId}:listings`);
+      revalidatePath("/");
+      revalidatePath(`/product/${productId}`);
+    } catch {
+      /* best-effort */
+    }
+
     track("product_update_success", {
       reqId,
       productId,
@@ -376,6 +389,18 @@ export async function DELETE(req: NextRequest) {
       prisma.favorite.deleteMany({ where: { productId } }),
       prisma.product.delete({ where: { id: productId } }),
     ]);
+
+    // ---- revalidate caches after delete ----
+    try {
+      revalidateTag("home:active");
+      revalidateTag("products:latest");
+      revalidateTag(`product:${productId}`);
+      revalidateTag(`user:${userId}:listings`);
+      revalidatePath("/");
+      revalidatePath(`/product/${productId}`);
+    } catch {
+      /* best-effort */
+    }
 
     track("product_delete_success", { reqId, productId });
 

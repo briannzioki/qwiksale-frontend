@@ -1,4 +1,3 @@
-// src/app/api/products/[id]/contact/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -73,8 +72,8 @@ export function OPTIONS() {
 /* ----------------------------- GET (with throttle) ----------------------------- */
 export async function GET(req: NextRequest) {
   try {
-    const productId = getId(req);
-    if (!productId) return noStore({ error: "Missing id" }, { status: 400 });
+    const listingId = getId(req);
+    if (!listingId) return noStore({ error: "Missing id" }, { status: 400 });
 
     // viewer is optional (guests allowed)
     const session = await auth().catch(() => null);
@@ -85,7 +84,7 @@ export async function GET(req: NextRequest) {
       name: "products_contact_reveal",
       limit: 5,
       windowMs: 60_000,
-      extraKey: `${viewerUserId ?? "anon"}:${productId}`,
+      extraKey: `${viewerUserId ?? "anon"}:${listingId}`,
     });
     if (!rl.ok) {
       return tooMany(
@@ -96,7 +95,7 @@ export async function GET(req: NextRequest) {
 
     // Minimal public fields
     const product = await prisma.product.findUnique({
-      where: { id: productId },
+      where: { id: listingId },
       select: {
         id: true,
         name: true,
@@ -116,14 +115,15 @@ export async function GET(req: NextRequest) {
     const WIN_IP_HR = new Date(now - 60 * 60 * 1000);     // 1 hour
     const WIN_DEVICE_15 = new Date(now - 15 * 60 * 1000); // 15 minutes
 
-    const MAX_PER_IP_PER_HOUR = 12; // generous per IP
-    const MAX_PER_DEVICE_15MIN = 6; // same IP + UA ≈ device
+    const MAX_PER_IP_PER_HOUR = 12;
+    const MAX_PER_DEVICE_15MIN = 6;
 
-    // Count recent reveals per IP for this product
+    // Count recent reveals per IP for this listing
     if (ip) {
       const ipCount = await prisma.contactReveal.count({
         where: {
-          productId,
+          listingType: "product",
+          listingId,
           ip,
           createdAt: { gte: WIN_IP_HR },
         },
@@ -138,11 +138,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Count recent reveals per (IP + UA) for this product
+    // Count recent reveals per (IP + UA) for this listing
     if (ip && ua) {
       const devCount = await prisma.contactReveal.count({
         where: {
-          productId,
+          listingType: "product",
+          listingId,
           ip,
           userAgent: ua,
           createdAt: { gte: WIN_DEVICE_15 },
@@ -160,14 +161,16 @@ export async function GET(req: NextRequest) {
 
     // Light telemetry — never block user on errors
     const referer = validUrl(req.headers.get("referer"));
+    void referer; // (add column later if you want)
+
     prisma.contactReveal
       .create({
         data: {
-          productId,
+          listingType: "product",
+          listingId,
           viewerUserId: viewerUserId ?? null,
           ip: ip ?? null,
           userAgent: ua,
-          // referer, // add column in schema if desired
         },
       })
       .catch(() => void 0);

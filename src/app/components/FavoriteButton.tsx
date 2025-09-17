@@ -3,69 +3,115 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-// File name is American English; the hook name in your store may vary.
-// We'll accept either isFavourite or isFavorited at runtime.
+// If your store exports useFavorites instead, switch the import line.
 import { useFavourites as useStoreMaybe } from "../lib/favoritesStore";
-// ^ If your store exports `useFavorites` instead, just change the import to:
-// import { useFavorites as useStoreMaybe } from "../lib/favoritesStore";
 
-type Props = {
-  productId: string | number;
+type Kind = "product" | "service";
+
+type BaseProps = {
   /** Small overlay style used on cards */
   compact?: boolean;
-  /** Accessible label prefix (e.g., "Listing", "Item"). */
+  /** Accessible label prefix (e.g., "Listing", "Item", "Service"). */
   labelPrefix?: string;
   /** Optional extra classes for the button. */
   className?: string;
 };
 
+type ProductProps = BaseProps & { productId: string | number; serviceId?: never; id?: never; type?: never };
+type ServiceProps = BaseProps & { serviceId: string | number; productId?: never; id?: never; type?: never };
+type GenericProps = BaseProps & { id: string | number; type?: Kind; productId?: never; serviceId?: never };
+type Props = ProductProps | ServiceProps | GenericProps;
+
 /* ------------------------ tiny client analytics ------------------------ */
 function trackClient(event: string, payload?: Record<string, unknown>) {
-  // lightweight/no-op friendly
   try {
     // eslint-disable-next-line no-console
     console.log("[qs:track]", event, payload);
     if (typeof window !== "undefined" && "CustomEvent" in window) {
       window.dispatchEvent(new CustomEvent("qs:track", { detail: { event, payload } }));
     }
-  } catch {
-    /* noop */
-  }
+  } catch {}
 }
 
-/* --------------------------------- UI --------------------------------- */
-export default function FavoriteButton({
-  productId,
-  compact = false,
-  labelPrefix = "Item",
-  className = "",
-}: Props) {
-  const pid = useMemo(() => String(productId), [productId]);
+export default function FavoriteButton(props: Props) {
+  // Resolve id + type while staying backward-compatible
+  const targetId = useMemo(() => {
+    if ("productId" in props && props.productId != null) return String(props.productId);
+    if ("serviceId" in props && props.serviceId != null) return String(props.serviceId);
+    if ("id" in props && props.id != null) return String(props.id);
+    return "";
+  }, [props]);
 
-  // Store is intentionally `any` so this component can tolerate
-  // either `isFavourite` or `isFavorited`, and whatever `toggle` returns.
+  const targetType: Kind = useMemo(() => {
+    if ("serviceId" in props && props.serviceId != null) return "service";
+    if ("productId" in props && props.productId != null) return "product";
+    if ("type" in props && props.type) return props.type!;
+    return "product";
+  }, [props]);
+
+  const {
+    compact = false,
+    labelPrefix = targetType === "service" ? "Service" : "Item",
+    className = "",
+  } = props as BaseProps;
+
+  // Store is intentionally `any` so this component can tolerate:
+  // - isFavourite(id) or isFavorited(id)
+  // - isFavorited(id, type) (future)
+  // - toggle(id) or toggle(id, type)
   const store = (useStoreMaybe as unknown as () => any)();
 
-  const storeIds: string[] = Array.isArray(store?.ids) ? store.ids.map(String) : [];
-  const storeIsFav: ((id: string) => boolean) =
-    store?.isFavourite || store?.isFavorited || ((id: string) => storeIds.includes(id));
-  const storeToggle: (id: string) => Promise<boolean> | boolean =
-    typeof store?.toggle === "function" ? store.toggle : async () => false;
+  // Helpers that try (id, type) arity first, then (id)
+  const callIsFav = useCallback(
+    (id: string, type: Kind): boolean => {
+      const f = store?.isFavourite || store?.isFavorited;
+      if (typeof f === "function") {
+        try {
+          if (f.length >= 2) return !!f(id, type);
+          return !!f(id);
+        } catch {}
+      }
+      const ids: string[] = Array.isArray(store?.ids) ? store.ids.map(String) : [];
+      return ids.includes(id);
+    },
+    [store]
+  );
+
+  const callToggle = useCallback(
+    async (id: string, type: Kind): Promise<boolean> => {
+      const t = store?.toggle;
+      if (typeof t === "function") {
+        try {
+          if (t.length >= 2) {
+            const res = await t(id, type);
+            if (typeof res === "boolean") return res;
+            return callIsFav(id, type);
+          } else {
+            const res = await t(id);
+            if (typeof res === "boolean") return res;
+            return callIsFav(id, type);
+          }
+        } catch {
+          return callIsFav(id, type); // fallback check
+        }
+      }
+      // No toggle in store – pretend it failed
+      throw new Error("Favorites not available");
+    },
+    [store, callIsFav]
+  );
 
   // Local state mirrors store with optimistic updates
   const [fav, setFav] = useState<boolean>(false);
   const [pending, setPending] = useState(false);
   const cooldownRef = useRef<number>(0);
   const mountedRef = useRef(false);
-
-  // A11y live region for screen readers
   const [live, setLive] = useState("");
 
   // Hydration-safe sync from store
   useEffect(() => {
-    setFav(storeIsFav(pid));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pid, storeIds.join("|")]); // join → stable dep for array contents
+    setFav(callIsFav(targetId, targetType));
+  }, [callIsFav, targetId, targetType]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -82,41 +128,34 @@ export default function FavoriteButton({
 
   const onClick = useCallback(
     async (e: React.MouseEvent<HTMLButtonElement>) => {
-      // Prevent <Link> parents from navigating
       e.preventDefault();
       e.stopPropagation();
+      if (!targetId) return;
 
-      // Basic cooldown to avoid rapid double toggles
       const now = Date.now();
-      if (now < cooldownRef.current) return;
+      if (now < cooldownRef.current || pending) return;
       cooldownRef.current = now + 600;
 
-      if (pending) return;
       setPending(true);
-
-      // Optimistic UI
       const prev = fav;
       const next = !prev;
       setFav(next);
 
       try {
-        const result = await storeToggle(pid);
-        // `toggle` may return the canonical state or nothing; coerce sensibly
-        const confirmed = typeof result === "boolean" ? result : storeIsFav(pid);
+        const confirmed = await callToggle(targetId, targetType);
         setFav(confirmed);
 
         toast.dismiss();
         if (confirmed) {
           toast.success("Saved to favorites");
-          trackClient("favorite_add", { productId: pid });
+          trackClient("favorite_add", { id: targetId, type: targetType });
           announce(`${labelPrefix} saved to favorites`);
         } else {
           toast("Removed from favorites", { icon: "💔" });
-          trackClient("favorite_remove", { productId: pid });
+          trackClient("favorite_remove", { id: targetId, type: targetType });
           announce(`${labelPrefix} removed from favorites`);
         }
       } catch {
-        // Rollback optimistic update on error
         setFav(prev);
         toast.dismiss();
         toast.error("Could not update favorites. Please try again.");
@@ -125,32 +164,18 @@ export default function FavoriteButton({
         if (mountedRef.current) setPending(false);
       }
     },
-    [announce, fav, labelPrefix, pending, pid, storeIsFav, storeToggle]
+    [announce, callToggle, fav, labelPrefix, pending, targetId, targetType]
   );
 
   const aria = fav ? "Unsave" : "Save";
   const title = `${aria} ${labelPrefix}`;
 
   const heart = (
-    <svg
-      width={compact ? 18 : 20}
-      height={compact ? 18 : 20}
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={pending ? "opacity-70" : ""}
-    >
+    <svg width={compact ? 18 : 20} height={compact ? 18 : 20} viewBox="0 0 24 24" aria-hidden="true" className={pending ? "opacity-70" : ""}>
       {fav ? (
-        <path
-          fill="currentColor"
-          d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6.02 3.99 4 6.5 4c1.73 0 3.4.82 4.5 2.1C12.1 4.82 13.77 4 15.5 4 18.01 4 20 6.02 20 8.5c0 3.78-3.4 6.86-8.55 11.53L12 21.35z"
-        />
+        <path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6.02 3.99 4 6.5 4c1.73 0 3.4.82 4.5 2.1C12.1 4.82 13.77 4 15.5 4 18.01 4 20 6.02 20 8.5c0 3.78-3.4 6.86-8.55 11.53L12 21.35z" />
       ) : (
-        <path
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          d="M12.1 20.55l-.1.1-.1-.1C7.14 16.24 4 13.39 4 9.9 4 7.6 5.6 6 7.9 6c1.54 0 3.04.99 3.6 2.36h1c.56-1.37 2.06-2.36 3.6-2.36 2.3 0 3.9 1.6 3.9 3.9 0 3.49-3.14 6.34-8.8 10.65z"
-        />
+        <path fill="none" stroke="currentColor" strokeWidth="2" d="M12.1 20.55l-.1.1-.1-.1C7.14 16.24 4 13.39 4 9.9 4 7.6 5.6 6 7.9 6c1.54 0 3.04.99 3.6 2.36h1c.56-1.37 2.06-2.36 3.6-2.36 2.3 0 3.9 1.6 3.9 3.9 0 3.49-3.14 6.34-8.8 10.65z" />
       )}
     </svg>
   );
@@ -158,11 +183,7 @@ export default function FavoriteButton({
   if (compact) {
     return (
       <>
-        {/* Live region for screen readers */}
-        <span className="sr-only" aria-live="polite">
-          {live}
-        </span>
-
+        <span className="sr-only" aria-live="polite">{live}</span>
         <button
           type="button"
           onClick={onClick}
@@ -172,9 +193,8 @@ export default function FavoriteButton({
           title={title}
           className={[
             "absolute top-2 right-2 rounded-full p-2 shadow-md border transition",
-            fav
-              ? "text-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
-              : "text-gray-700 bg-white/95 hover:bg-white dark:bg-gray-900 dark:text-slate-200",
+            fav ? "text-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
+                : "text-gray-700 bg-white/95 hover:bg-white dark:bg-gray-900 dark:text-slate-200",
             "border-gray-200 dark:border-gray-700",
             pending ? "cursor-wait opacity-75" : "",
             className,
@@ -188,10 +208,7 @@ export default function FavoriteButton({
 
   return (
     <>
-      <span className="sr-only" aria-live="polite">
-        {live}
-      </span>
-
+      <span className="sr-only" aria-live="polite">{live}</span>
       <button
         type="button"
         onClick={onClick}
@@ -201,9 +218,8 @@ export default function FavoriteButton({
         title={title}
         className={[
           "rounded-lg border px-5 py-3 font-semibold flex items-center gap-2 transition",
-          fav
-            ? "text-[#f95d9b] border-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
-            : "hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700",
+          fav ? "text-[#f95d9b] border-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
+              : "hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700",
           "border-gray-300 text-gray-900 dark:text-slate-100",
           pending ? "opacity-75 cursor-wait" : "",
           className,

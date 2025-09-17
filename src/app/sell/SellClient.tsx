@@ -7,7 +7,7 @@ import { useProducts } from "../lib/productsStore";
 import toast from "react-hot-toast";
 
 type FilePreview = { file: File; url: string; key: string };
-type Me = { id: string; email: string | null; profileComplete: boolean; whatsapp?: string | null };
+type Me = { id: string; email: string | null; profileComplete?: boolean; whatsapp?: string | null };
 
 const MAX_FILES = 6;
 const MAX_MB = 5;
@@ -106,7 +106,7 @@ async function uploadToCloudinary(
   return p;
 }
 
-export default function SellClient() {
+export default function SellProductClient() {
   const router = useRouter();
 
   // ---------------------- Profile Gate (no server redirects) ----------------------
@@ -153,7 +153,8 @@ export default function SellClient() {
           return;
         }
 
-        const me = (await res.json().catch(() => null)) as Me | null;
+        const j = (await res.json().catch(() => null)) as any;
+        const me: Me | null = j?.user ?? null; // ← FIX: parse shape from /api/me
 
         if (!cancelled && me && me.profileComplete === false) {
           router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell")}`);
@@ -174,7 +175,7 @@ export default function SellClient() {
     return () => {
       cancelled = true;
     };
-  }, [router]); // intentionally not depending on `phone` to avoid refetch loops
+  }, [router]); // intentionally not depending on `phone`
 
   // Zustand store (optional)
   const store = useProducts() as any;
@@ -363,12 +364,17 @@ export default function SellClient() {
           ? String((created as any).id)
           : "";
 
-      toast.success("Listing posted!");
-      router.push(createdId ? `/sell/success?id=${createdId}` : "/sell/success");
+      toast.success("Product posted!");
+
+      // Redirect straight to the product page so it’s visible immediately everywhere.
+      router.push(createdId ? `/product/${createdId}` : "/");
+
+      // 🔄 Ensure home/category lists and any cached RSC segments refresh.
+      router.refresh();
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error(err);
-      toast.error(err?.message || "Failed to post listing.");
+      toast.error(err?.message || "Failed to post product.");
     } finally {
       setSubmitting(false);
       setUploadPct(0);
@@ -379,7 +385,7 @@ export default function SellClient() {
     return (
       <div className="container-page py-10">
         <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
-          <h1 className="text-2xl font-bold">Post a Listing</h1>
+          <h1 className="text-2xl font-bold">Post a Product</h1>
           <p className="text-white/90">Checking your account…</p>
         </div>
       </div>
@@ -390,7 +396,7 @@ export default function SellClient() {
     <div className="container-page py-6">
       {/* Header card */}
       <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-        <h1 className="text-2xl font-bold text-balance">Post a Listing</h1>
+        <h1 className="text-2xl font-bold text-balance">Post a Product</h1>
         <p className="text-white/90">List your item — it takes less than 2 minutes.</p>
       </div>
 
@@ -467,7 +473,7 @@ export default function SellClient() {
               onChange={(e) => setCategory(e.target.value)}
               aria-label="Category"
             >
-              {cats.map((c) => (
+              {categories.map((c) => (
                 <option key={c.name} value={c.name}>
                   {c.name}
                 </option>
@@ -647,9 +653,9 @@ export default function SellClient() {
             type="submit"
             disabled={!canSubmit || submitting}
             className={`btn-gradient-primary ${(!canSubmit || submitting) ? "opacity-60" : ""}`}
-            aria-label="Post listing"
+            aria-label="Post product"
           >
-            {submitting ? "Posting…" : "Post Listing"}
+            {submitting ? "Posting…" : "Post Product"}
           </button>
           <button type="button" onClick={() => router.back()} className="btn-outline" aria-label="Cancel">
             Cancel

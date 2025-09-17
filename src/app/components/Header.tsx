@@ -1,3 +1,4 @@
+// src/app/components/Header.tsx
 "use client";
 
 import Link from "next/link";
@@ -6,7 +7,7 @@ import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
 import { useEffect, useState } from "react";
 import UserAvatar from "@/app/components/UserAvatar";
-import SearchCombobox from "@/app/components/SearchCombobox";
+import SearchBox from "@/app/components/SearchBox";
 
 /** Simple helper for active link classes */
 function NavLink({
@@ -44,11 +45,17 @@ export default function Header() {
 
   type ExtendedUser = Session["user"] & { username?: string | null };
   const user: ExtendedUser | null = (session?.user as ExtendedUser) ?? null;
-
   const username = user?.username ?? undefined;
 
   // Mobile menu
   const [open, setOpen] = useState(false);
+
+  // Close drawer whenever route changes
+  const pathname = usePathname();
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
   useEffect(() => {
     const onHash = () => setOpen(false);
     window.addEventListener("hashchange", onHash);
@@ -75,9 +82,9 @@ export default function Header() {
           QwikSale
         </Link>
 
-        {/* Desktop search (ARIA combobox) */}
-        <div className="hidden flex-1 md:flex">
-          <SearchCombobox />
+        {/* Desktop search (now uses SearchBox with button) */}
+        <div className="hidden md:flex flex-1">
+          <SearchBox className="w-full" placeholder="Search phones, cars, services…" />
         </div>
 
         {/* Primary nav (desktop) */}
@@ -151,9 +158,9 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Mobile search row */}
+      {/* Mobile search row (use the same SearchBox so it includes the button) */}
       <div className="border-t bg-white/90 px-4 py-2 dark:border-slate-800 dark:bg-slate-900/90 md:hidden">
-        <SearchCombobox />
+        <SearchBox placeholder="Search phones, cars, services…" />
       </div>
 
       {/* Mobile drawer */}

@@ -1,9 +1,11 @@
+// src/app/search/InfiniteClient.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProductCard from "@/app/components/ProductCard";
 import ServiceCard from "@/app/components/ServiceCard";
 import InfiniteLoader from "@/app/components/InfiniteLoader";
+import type { Sort } from "./SearchClient";
 
 type Envelope<T> = {
   page: number;
@@ -27,7 +29,9 @@ type ProductHit = {
 
 type ServiceHit = {
   id: string;
-  name: string;
+  /** Prefer `name`, but support legacy `title`. */
+  name?: string | null;
+  title?: string | null;
   image?: string | null;
   price?: number | null;
   rateType?: "hour" | "day" | "fixed" | null;
@@ -42,16 +46,18 @@ type BaseParams = {
   subcategory?: string;
   brand?: string;
   condition?: string;
-  verifiedOnly?: boolean;
+  /** matches your page param name */
+  featured?: boolean;
   minPrice?: number;
   maxPrice?: number;
-  sort: "top" | "new" | "price_asc" | "price_desc";
+  /** 🔒 use unified sort enum */
+  sort: Sort;
   pageSize: number;
   type: "product" | "service";
 };
 
 type Props = {
-  /** "/api/products/search" or "/api/services/search" */
+  /** "/api/products" or "/api/services" (already consistent with your page) */
   endpoint: string;
   /** Initial page rendered by the server (page 1) */
   initial: Envelope<ProductHit> | Envelope<ServiceHit>;
@@ -65,7 +71,7 @@ function buildQS(params: Record<string, unknown>) {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === "") continue;
-    if (typeof v === "boolean") q.set(k, v ? "1" : "0");
+    if (typeof v === "boolean") q.set(k, v ? "true" : "false");
     else q.set(k, String(v));
   }
   return q.toString();
@@ -93,6 +99,7 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const ioRef = useRef<IntersectionObserver | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const timeoutRef = useRef<number | null>(null);
 
   const fetchNext = useCallback(async () => {
     if (loading || done) return;
@@ -116,7 +123,7 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
         subcategory: params.subcategory || undefined,
         brand: params.brand || undefined,
         condition: params.condition || undefined,
-        verifiedOnly: params.verifiedOnly ? 1 : undefined,
+        featured: params.featured ? true : undefined,
         minPrice: typeof params.minPrice === "number" ? params.minPrice : undefined,
         maxPrice: typeof params.maxPrice === "number" ? params.maxPrice : undefined,
         sort: params.sort,
@@ -129,11 +136,10 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
         signal: controller.signal,
       });
 
-      // Specific handling for rate limit
       if (res.status === 429) {
         const j = await res.json().catch(() => ({}));
         setError(j?.error || "You’re loading too fast. Please wait.");
-        setTimeout(() => setError(null), 3000);
+        window.setTimeout(() => setError(null), 3000);
         setLoading(false);
         return;
       }
@@ -166,7 +172,7 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
     }
   }, [endpoint, page, totalPages, params, loading, done]);
 
-  // Setup IntersectionObserver
+  // Setup IntersectionObserver (with debounced trigger & proper cleanup)
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -178,7 +184,11 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
         if (done || loading) return;
         for (const e of entries) {
           if (e.isIntersecting) {
-            fetchNext();
+            if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+            timeoutRef.current = window.setTimeout(() => {
+              fetchNext();
+              timeoutRef.current = null;
+            }, 120);
             break;
           }
         }
@@ -188,6 +198,10 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
 
     ioRef.current.observe(el);
     return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
       ioRef.current?.disconnect();
       ioRef.current = null;
     };
@@ -197,6 +211,7 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     };
   }, []);
 
@@ -205,7 +220,7 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
       {/* Pages 2+ render here (page 1 was SSR in the server page) */}
       {items.length > 0 && (
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-          {items.map((it, idx) =>
+          {items.map((it) =>
             isProduct ? (
               <ProductCard
                 key={(it as ProductHit).id}
@@ -216,13 +231,12 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
                 {...(typeof (it as ProductHit).featured === "boolean"
                   ? { featured: (it as ProductHit).featured }
                   : {})}
-                position={idx + 1}
               />
             ) : (
               <ServiceCard
                 key={(it as ServiceHit).id}
                 id={(it as ServiceHit).id}
-                name={(it as ServiceHit).name}
+                name={(it as ServiceHit).name ?? (it as ServiceHit).title ?? "Service"}
                 image={(it as ServiceHit).image ?? null}
                 price={(it as ServiceHit).price ?? null}
                 {...((it as ServiceHit).rateType ? { rateType: (it as ServiceHit).rateType } : {})}
@@ -247,9 +261,9 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
         </div>
       )}
 
-      {/* Loader + sentinel — matches your InfiniteLoader API: { onLoad, disabled? } */}
+      {/* Loader + sentinel */}
       <div ref={sentinelRef} className="mt-4">
-        <InfiniteLoader onLoad={fetchNext} disabled={done || loading} />
+        <InfiniteLoader onLoadAction={fetchNext} disabled={done || loading} />
       </div>
     </>
   );

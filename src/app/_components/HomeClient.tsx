@@ -10,7 +10,12 @@ import HomeClientHero from "../components/HomeClientHero";
 /* ======================
    Types
    ====================== */
-type ApiItem = {
+
+// Unified “mode” switcher
+type Mode = "products" | "services";
+
+// Product item shape (from /api/products)
+type ProductItem = {
   id: string;
   name: string;
   category: string;
@@ -21,23 +26,44 @@ type ApiItem = {
   image?: string | null;
   featured?: boolean;
   location?: string | null;
+  createdAt?: string;
 };
 
+// Service item shape (from /api/services)
+type ServiceItem = {
+  id: string;
+  title: string;
+  category: string;
+  subcategory: string;
+  price?: number | null;
+  thumbnailUrl?: string | null;
+  featured?: boolean;
+  location?: string | null;
+  createdAt?: string;
+};
+
+// Facets
 type FacetEntry = { value: string; count: number };
-type Facets = {
+
+type ProductFacets = {
   categories?: FacetEntry[];
   brands?: FacetEntry[];
   conditions?: FacetEntry[];
 };
 
-type PageResponse = {
+type ServiceFacets = {
+  categories?: FacetEntry[];
+  subcategories?: FacetEntry[];
+};
+
+type PageResponse<TItems> = {
   mode?: "page";
   page: number;
   pageSize: number;
   total: number;
   totalPages: number;
-  items: ApiItem[];
-  facets?: Facets;
+  items: TItems[];
+  facets?: ProductFacets | ServiceFacets;
 };
 
 type ErrorResponse = { error: string };
@@ -67,11 +93,11 @@ function shimmer(width: number, height: number) {
     <rect id="r" width="${width}" height="${height}" fill="url(#g)" />
     <animate xlink:href="#r" attributeName="x" from="-${width}" to="${width}" dur="1.2s" repeatCount="indefinite"  />
   </svg>`;
-  // Guard: ensure we have a base64 encoder in all runtimes
   const encode =
     typeof window === "undefined"
       ? (str: string) => Buffer.from(str).toString("base64")
-      : (str: string) => (globalThis.btoa ? globalThis.btoa(str) : Buffer.from(str).toString("base64"));
+      : (str: string) =>
+          (globalThis.btoa ? globalThis.btoa(str) : Buffer.from(str).toString("base64"));
   return `data:image/svg+xml;base64,${encode(svg)}`;
 }
 
@@ -112,13 +138,14 @@ const PLACE_LUT: Record<string, { name: string; lat: number; lng: number }> = ((
   const lut: Record<string, { name: string; lat: number; lng: number }> = {};
   for (const p of KENYA_PLACES) {
     lut[p.name.toLowerCase()] = { name: p.name, lat: p.lat, lng: p.lng };
-    (p.aliases || []).forEach((a) => (lut[a.toLowerCase()] = { name: p.name, lat: p.lat, lng: p.lng }));
+    (p.aliases || []).forEach(
+      (a) => (lut[a.toLowerCase()] = { name: p.name, lat: p.lat, lng: p.lng })
+    );
   }
   return lut;
 })();
 
 function normPlaceString(s: string) {
-  // keep only letters, numbers, comma & space; collapse spaces
   return s.toLowerCase().replace(/[^a-z0-9,\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
@@ -159,7 +186,8 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   const sinDLat = Math.sin(dLat / 2);
   const sinDLon = Math.sin(dLon / 2);
   const c =
-    2 * Math.asin(Math.sqrt(sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon));
+    2 *
+    Math.asin(Math.sqrt(sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon));
   return Math.round(R * c);
 }
 
@@ -182,6 +210,12 @@ export default function HomeClient() {
   const router = useRouter();
   const sp = useSearchParams();
 
+  // Mode from URL (?t=products|services). Default: products (keeps current UX)
+  const [mode, setMode] = React.useState<Mode>(() => {
+    const t = (sp.get("t") || "").toLowerCase();
+    return t === "services" ? "services" : "products";
+  });
+
   // URL state (initialize from current query)
   const [q, setQ] = React.useState(sp.get("q") || "");
   const [category, setCategory] = React.useState(sp.get("category") || "");
@@ -198,20 +232,21 @@ export default function HomeClient() {
   });
 
   // Debounced inputs
-  const dq = useDebounced(q);
-  const dcategory = useDebounced(category);
-  const dsubcategory = useDebounced(subcategory);
-  const dbrand = useDebounced(brand);
-  const dcondition = useDebounced(condition);
-  const dminPrice = useDebounced(minPrice);
-  const dmaxPrice = useDebounced(maxPrice);
-  const dfeaturedOnly = useDebounced(featuredOnly);
-  const dsort = useDebounced(sort);
-  const dpage = useDebounced(page);
+  const dmode = useDebounced(mode, DEBOUNCE_MS);
+  const dq = useDebounced(q, DEBOUNCE_MS);
+  const dcategory = useDebounced(category, DEBOUNCE_MS);
+  const dsubcategory = useDebounced(subcategory, DEBOUNCE_MS);
+  const dbrand = useDebounced(brand, DEBOUNCE_MS);
+  const dcondition = useDebounced(condition, DEBOUNCE_MS);
+  const dminPrice = useDebounced(minPrice, DEBOUNCE_MS);
+  const dmaxPrice = useDebounced(maxPrice, DEBOUNCE_MS);
+  const dfeaturedOnly = useDebounced(featuredOnly, DEBOUNCE_MS);
+  const dsort = useDebounced(sort, DEBOUNCE_MS);
+  const dpage = useDebounced(page, DEBOUNCE_MS);
 
   // Data
-  const [res, setRes] = React.useState<PageResponse | null>(null);
-  const [facets, setFacets] = React.useState<Facets | undefined>(undefined);
+  const [res, setRes] = React.useState<PageResponse<ProductItem | ServiceItem> | null>(null);
+  const [facets, setFacets] = React.useState<ProductFacets | ServiceFacets | undefined>(undefined);
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
 
@@ -237,8 +272,8 @@ export default function HomeClient() {
     if (dq) params.set("q", dq);
     if (dcategory) params.set("category", dcategory);
     if (dsubcategory) params.set("subcategory", dsubcategory);
-    if (dbrand) params.set("brand", dbrand);
-    if (dcondition) params.set("condition", dcondition);
+    if (dbrand && dmode === "products") params.set("brand", dbrand);
+    if (dcondition && dmode === "products") params.set("condition", dcondition);
     if (dminPrice) params.set("minPrice", dminPrice);
     if (dmaxPrice) params.set("maxPrice", dmaxPrice);
     if (dfeaturedOnly) params.set("featured", "true");
@@ -258,20 +293,23 @@ export default function HomeClient() {
     dfeaturedOnly,
     dsort,
     dpage,
+    dmode,
     includeFacets,
   ]);
 
   // Keep URL in sync (shallow) without spamming history
   const lastUrlRef = React.useRef<string>("");
   React.useEffect(() => {
-    const next = queryString ? `/?${queryString}` : "/";
+    // Always include ?t=
+    const base = `/?t=${dmode}`;
+    const next = queryString ? `${base}&${queryString}` : base;
     if (next !== lastUrlRef.current) {
       lastUrlRef.current = next;
       router.replace(next);
     }
-  }, [router, queryString]);
+  }, [router, queryString, dmode]);
 
-  // Fetch products (with abort + small retry)
+  // Fetch from products or services (with abort + small retry)
   React.useEffect(() => {
     const ac = new AbortController();
 
@@ -281,11 +319,13 @@ export default function HomeClient() {
         setErr(null);
       }
       try {
-        const r = await fetch(`/api/products?${queryString}`, {
-          cache: "no-store",
+        const endpoint = dmode === "products" ? "/api/products" : "/api/services";
+        const url = queryString ? `${endpoint}?${queryString}` : endpoint;
+        const r = await fetch(url, {
+          cache: "no-store", // CSR: guaranteed fresh; server tags don’t apply here
           signal: ac.signal,
         });
-        const json = (await r.json()) as PageResponse | ErrorResponse;
+        const json = (await r.json()) as PageResponse<ProductItem | ServiceItem> | ErrorResponse;
         if (!r.ok || "error" in json) {
           const msg = ("error" in json && json.error) || `Request failed (${r.status})`;
           if (attempt < 2 && !ac.signal.aborted) return load(attempt + 1);
@@ -294,7 +334,7 @@ export default function HomeClient() {
           setFacets(undefined);
           return;
         }
-        const pageJson = json as PageResponse;
+        const pageJson = json as PageResponse<ProductItem | ServiceItem>;
         setRes(pageJson);
         setFacets(pageJson.facets);
       } catch (e: any) {
@@ -311,7 +351,7 @@ export default function HomeClient() {
 
     load();
     return () => ac.abort();
-  }, [queryString]);
+  }, [queryString, dmode]);
 
   // Pagination derived
   const pageNum = res?.page ?? 1;
@@ -320,13 +360,14 @@ export default function HomeClient() {
   const canPrev = pageNum > 1;
   const canNext = pageNum < totalPages;
 
-  const items: ApiItem[] = Array.isArray(res?.items) ? res!.items : [];
+  const items = Array.isArray(res?.items) ? res!.items : [];
 
-  // Facet clicks
+  // Facet clicks (mode-aware)
   const applyFacet = React.useCallback(
-    (type: "category" | "brand" | "condition", value: string) => {
+    (type: "category" | "brand" | "condition" | "subcategory", value: string) => {
       setPage(1);
       if (type === "category") setCategory(value);
+      if (type === "subcategory") setSubcategory(value);
       if (type === "brand") setBrand(value);
       if (type === "condition") setCondition(value);
     },
@@ -365,16 +406,61 @@ export default function HomeClient() {
     [myLoc]
   );
 
+  // Mode toggle button component
+  const ModeToggle = () => (
+    <div className="card-surface p-2 sticky top-[64px] z-30">
+      <div className="inline-flex rounded-xl border overflow-hidden shadow-sm" role="tablist" aria-label="Mode">
+        <button
+          type="button"
+          onClick={() => {
+            setMode("products");
+            setPage(1);
+          }}
+          className={`px-4 py-2 text-sm ${
+            mode === "products"
+              ? "bg-[#161748] text-white"
+              : "bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-200"
+          }`}
+          aria-pressed={mode === "products"}
+          role="tab"
+          aria-selected={mode === "products"}
+        >
+          Products
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMode("services");
+            setPage(1);
+          }}
+          className={`px-4 py-2 text-sm border-l ${
+            mode === "services"
+              ? "bg-[#161748] text-white"
+              : "bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-200"
+          }`}
+          aria-pressed={mode === "services"}
+          role="tab"
+          aria-selected={mode === "services"}
+        >
+          Services
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-6">
       {/* Authenticated hero */}
       <HomeClientHero />
 
+      {/* Mode Toggle */}
+      <ModeToggle />
+
       {/* =======================
           Sticky Filter Bar
           ======================= */}
       <section
-        className="card-surface p-4 sticky top-[64px] z-20 backdrop-blur supports-[backdrop-filter]:bg-white/75 dark:supports-[backdrop-filter]:bg-slate-900/70"
+        className="card-surface p-4 sticky top-[112px] z-20 backdrop-blur supports-[backdrop-filter]:bg-white/75 dark:supports-[backdrop-filter]:bg-slate-900/70"
         aria-label="Filters"
       >
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
@@ -389,7 +475,7 @@ export default function HomeClient() {
                 setPage(1);
                 setQ(e.target.value);
               }}
-              placeholder="Name, brand, category…"
+              placeholder={mode === "services" ? "Service, category…" : "Name, brand, category…"}
               className="mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#39a0ca]"
               aria-label="Search items"
             />
@@ -423,16 +509,16 @@ export default function HomeClient() {
                 setPage(1);
                 setSubcategory(e.target.value);
               }}
-              placeholder="e.g. Phones & Tablets"
+              placeholder={mode === "services" ? "e.g. Plumbing" : "e.g. Phones & Tablets"}
               className="mt-1 w-full rounded-lg border px-3 py-2"
               aria-label="Subcategory"
             />
           </div>
 
-          {/* Brand */}
+          {/* Brand (products only) */}
           <div className="md:col-span-2">
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
-              Brand
+              Brand {mode === "services" ? "(n/a)" : ""}
             </label>
             <input
               value={brand}
@@ -440,16 +526,17 @@ export default function HomeClient() {
                 setPage(1);
                 setBrand(e.target.value);
               }}
-              placeholder="e.g. Samsung"
+              placeholder={mode === "services" ? "—" : "e.g. Samsung"}
               className="mt-1 w-full rounded-lg border px-3 py-2"
               aria-label="Brand"
+              disabled={mode === "services"}
             />
           </div>
 
-          {/* Condition */}
+          {/* Condition (products only) */}
           <div className="md:col-span-1">
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
-              Condition
+              Condition {mode === "services" ? "(n/a)" : ""}
             </label>
             <select
               value={condition}
@@ -459,6 +546,7 @@ export default function HomeClient() {
               }}
               className="mt-1 w-full rounded-lg border px-3 py-2"
               aria-label="Condition"
+              disabled={mode === "services"}
             >
               <option value="">Any</option>
               <option value="brand new">Brand New</option>
@@ -474,6 +562,7 @@ export default function HomeClient() {
               </label>
               <input
                 type="number"
+                inputMode="numeric"
                 min={0}
                 value={minPrice}
                 onChange={(e) => {
@@ -490,6 +579,7 @@ export default function HomeClient() {
               </label>
               <input
                 type="number"
+                inputMode="numeric"
                 min={0}
                 value={maxPrice}
                 onChange={(e) => {
@@ -540,16 +630,16 @@ export default function HomeClient() {
               {q && chip(`q: ${q}`)}
               {category && chip(`category: ${category}`)}
               {subcategory && chip(`subcategory: ${subcategory}`)}
-              {brand && chip(`brand: ${brand}`)}
-              {condition && chip(`condition: ${condition}`)}
+              {mode === "products" && brand && chip(`brand: ${brand}`)}
+              {mode === "products" && condition && chip(`condition: ${condition}`)}
               {minPrice && chip(`min: ${minPrice}`)}
               {maxPrice && chip(`max: ${maxPrice}`)}
               {featuredOnly && chip("featured only")}
               {(q ||
                 category ||
                 subcategory ||
-                brand ||
-                condition ||
+                (mode === "products" && brand) ||
+                (mode === "products" && condition) ||
                 minPrice ||
                 maxPrice ||
                 featuredOnly) && (
@@ -576,17 +666,23 @@ export default function HomeClient() {
       </section>
 
       {/* =======================
-          Facets (when present)
+          Facets (mode-aware)
           ======================= */}
       {facets &&
-      (facets.categories?.length || facets.brands?.length || facets.conditions?.length) ? (
+      ((mode === "products" &&
+        ((facets as ProductFacets).categories?.length ||
+          (facets as ProductFacets).brands?.length ||
+          (facets as ProductFacets).conditions?.length)) ||
+        (mode === "services" &&
+          ((facets as ServiceFacets).categories?.length ||
+            (facets as ServiceFacets).subcategories?.length))) ? (
         <section className="card-surface p-4" aria-label="Facets">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Categories */}
             <div>
               <div className="text-sm font-semibold mb-2">Top Categories</div>
               <div className="flex flex-wrap gap-2">
-                {(facets.categories || []).map((f) => (
+                {((facets as any).categories || []).map((f: FacetEntry) => (
                   <button
                     key={`cat-${f.value}`}
                     onClick={() => applyFacet("category", f.value)}
@@ -599,40 +695,53 @@ export default function HomeClient() {
                 ))}
               </div>
             </div>
-            {/* Brands */}
+
+            {/* Brands (products) or Subcategories (services) */}
             <div>
-              <div className="text-sm font-semibold mb-2">Top Brands</div>
+              <div className="text-sm font-semibold mb-2">
+                {mode === "products" ? "Top Brands" : "Top Subcategories"}
+              </div>
               <div className="flex flex-wrap gap-2">
-                {(facets.brands || []).map((f) => (
+                {(mode === "products"
+                  ? ((facets as ProductFacets).brands || [])
+                  : ((facets as ServiceFacets).subcategories || [])
+                ).map((f: FacetEntry) => (
                   <button
-                    key={`brand-${f.value}`}
-                    onClick={() => applyFacet("brand", f.value)}
+                    key={(mode === "products" ? "brand-" : "sub-") + f.value}
+                    onClick={() =>
+                      applyFacet(mode === "products" ? "brand" : "subcategory", f.value)
+                    }
                     className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
                     title={`${f.count} items`}
-                    aria-label={`Filter by brand ${f.value}`}
+                    aria-label={`Filter by ${mode === "products" ? "brand" : "subcategory"} ${f.value}`}
                   >
                     {f.value} <span className="opacity-60">({f.count})</span>
                   </button>
                 ))}
               </div>
             </div>
-            {/* Conditions */}
-            <div>
-              <div className="text-sm font-semibold mb-2">Condition</div>
-              <div className="flex flex-wrap gap-2">
-                {(facets.conditions || []).map((f) => (
-                  <button
-                    key={`cond-${f.value}`}
-                    onClick={() => applyFacet("condition", f.value)}
-                    className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
-                    title={`${f.count} items`}
-                    aria-label={`Filter by condition ${f.value}`}
-                  >
-                    {f.value} <span className="opacity-60">({f.count})</span>
-                  </button>
-                ))}
+
+            {/* Conditions (products only) */}
+            {mode === "products" ? (
+              <div>
+                <div className="text-sm font-semibold mb-2">Condition</div>
+                <div className="flex flex-wrap gap-2">
+                  {((facets as ProductFacets).conditions || []).map((f) => (
+                    <button
+                      key={`cond-${f.value}`}
+                      onClick={() => applyFacet("condition", f.value)}
+                      className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
+                      title={`${f.count} items`}
+                      aria-label={`Filter by condition ${f.value}`}
+                    >
+                      {f.value} <span className="opacity-60">({f.count})</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div aria-hidden className="md:block hidden" />
+            )}
           </div>
         </section>
       ) : null}
@@ -646,7 +755,7 @@ export default function HomeClient() {
             ? "Loading…"
             : err
             ? "Error loading listings"
-            : `${total} items • page ${pageNum} of ${totalPages}`}
+            : `${total} ${mode} • page ${pageNum} of ${totalPages}`}
         </p>
         <div className="flex items-center gap-2">
           <button
@@ -654,7 +763,9 @@ export default function HomeClient() {
             disabled={!canPrev || loading}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             className={`rounded-lg px-3 py-1.5 border ${
-              canPrev && !loading ? "hover:bg-gray-50 dark:hover:bg-slate-800" : "opacity-50 cursor-not-allowed"
+              canPrev && !loading
+                ? "hover:bg-gray-50 dark:hover:bg-slate-800"
+                : "opacity-50 cursor-not-allowed"
             }`}
             aria-label="Previous page"
           >
@@ -665,7 +776,9 @@ export default function HomeClient() {
             disabled={!canNext || loading}
             onClick={() => setPage((p) => p + 1)}
             className={`rounded-lg px-3 py-1.5 border ${
-              canNext && !loading ? "hover:bg-gray-50 dark:hover:bg-slate-800" : "opacity-50 cursor-not-allowed"
+              canNext && !loading
+                ? "hover:bg-gray-50 dark:hover:bg-slate-800"
+                : "opacity-50 cursor-not-allowed"
             }`}
             aria-label="Next page"
           >
@@ -682,63 +795,73 @@ export default function HomeClient() {
       ) : err ? (
         <div className="card-surface p-6 text-red-600">{err}</div>
       ) : items.length === 0 ? (
-        <div className="text-gray-500 dark:text-slate-400">No items found.</div>
+        <div className="text-gray-500 dark:text-slate-400">No {mode} found.</div>
       ) : (
         <section
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6"
           aria-label="Search results"
         >
-          {items.map((p) => {
-            const locInfo = computeDistanceText(p.location);
+          {items.map((raw) => {
+            const isProduct = mode === "products";
+            const p = raw as ProductItem;
+            const s = raw as ServiceItem;
+
+            const title = isProduct ? p.name : s.title;
+            const imageUrl = isProduct ? p.image : s.thumbnailUrl;
+            const price = (isProduct ? p.price : s.price) ?? null;
+            const featured = (isProduct ? p.featured : s.featured) ?? false;
+            const categoryText = isProduct
+              ? `${p.category} • ${p.subcategory}`
+              : `${s.category} • ${s.subcategory}`;
+            const location = isProduct ? p.location : s.location;
+
+            const locInfo = computeDistanceText(location);
             const blur = shimmer(800, 440);
+            const href = isProduct ? `/product/${p.id}` : `/service/${s.id}`;
+
             return (
-              <Link key={p.id} href={`/product/${p.id}`} className="relative group">
+              <Link key={(isProduct ? p.id : s.id) + "-" + mode} href={href} className="relative group">
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800">
                   <div className="relative">
-                    {p.featured && (
+                    {featured && (
                       <span className="absolute top-2 left-2 z-10 rounded-md bg-[#161748] text-white text-xs px-2 py-1 shadow">
                         Featured
                       </span>
                     )}
                     <Image
-                      alt={p.name}
-                      src={p.image || FALLBACK_IMG}
+                      alt={title}
+                      src={imageUrl || FALLBACK_IMG}
                       width={800}
                       height={440}
                       className="w-full h-44 object-cover bg-gray-100 dark:bg-slate-800"
                       placeholder="blur"
                       blurDataURL={blur}
                       priority={false}
-                      // Avoid optimizing SVGs (next/image limitation)
-                      unoptimized={Boolean(p.image?.endsWith?.(".svg"))}
+                      unoptimized={Boolean((imageUrl as string | undefined)?.endsWith?.(".svg"))}
                       onError={makeOnImgError(FALLBACK_IMG)}
                       loading="lazy"
                     />
                     <div className="absolute top-2 right-2 z-10">
-                      <FavoriteButton productId={p.id} />
+                      {isProduct ? <FavoriteButton productId={p.id} /> : null}
                     </div>
                   </div>
                   <div className="p-4">
                     <h3 className="font-semibold text-gray-900 dark:text-slate-100 line-clamp-1">
-                      {p.name}
+                      {title}
                     </h3>
                     <p className="text-sm text-gray-500 dark:text-slate-400 line-clamp-1">
-                      {p.category} • {p.subcategory}
+                      {categoryText}
                     </p>
-                    {p.brand && (
-                      <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                        Brand: {p.brand}
-                      </p>
-                    )}
-
                     {/* Price */}
-                    <p className="text-[#161748] dark:text-[#39a0ca] font-bold mt-2">{fmtKES(p.price)}</p>
+                    <p className="text-[#161748] dark:text-[#39a0ca] font-bold mt-2">
+                      {fmtKES(price)}
+                    </p>
 
                     {/* Location + Distance (Kenya-only) */}
-                    {(p.location || locInfo) && (
+                    {(location || locInfo) && (
                       <p className="mt-1 text-xs text-gray-600 dark:text-slate-300 flex items-center gap-2">
                         <span className="inline-flex items-center rounded-full border px-2 py-0.5">
-                          {locInfo?.place || p.location}
+                          {locInfo?.place || location}
                         </span>
                         {locInfo?.distanceKm !== undefined && (
                           <span className="inline-flex items-center rounded-full border px-2 py-0.5">
@@ -746,7 +869,9 @@ export default function HomeClient() {
                           </span>
                         )}
                         {geoDenied && (
-                          <span className="text-[11px] opacity-60">(enable location for distance)</span>
+                          <span className="text-[11px] opacity-60">
+                            (enable location for distance)
+                          </span>
                         )}
                       </p>
                     )}
@@ -766,7 +891,10 @@ export default function HomeClient() {
    ====================== */
 function SkeletonGrid() {
   return (
-    <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6" aria-hidden>
+    <section
+      className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6"
+      aria-hidden
+    >
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}

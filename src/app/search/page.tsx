@@ -1,12 +1,14 @@
+// src/app/search/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ProductCard from "@/app/components/ProductCard";
 import ServiceCard from "@/app/components/ServiceCard";
 import { InfiniteClient } from "./InfiniteClient";
+import type { Sort } from "./SearchClient"; // 
 
 /** Always render fresh – results depend on query string. */
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs"; // 👈 ensure Node.js runtime for SSR fetches
+export const runtime = "nodejs";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -32,7 +34,9 @@ type ProductHit = {
 
 type ServiceHit = {
   id: string;
-  name: string;
+  /** Prefer `name`, but support legacy `title`. */
+  name?: string | null;
+  title?: string | null;
   image?: string | null;
   price?: number | null;
   rateType?: "hour" | "day" | "fixed" | null;
@@ -57,18 +61,6 @@ function getParam(sp: SearchParams, k: string): string | undefined {
   const v = sp[k];
   return Array.isArray(v) ? v[0] : (v as string | undefined);
 }
-function nextQuery(base: URLSearchParams, patch: Record<string, string | undefined>) {
-  const q = new URLSearchParams(base.toString());
-  for (const [k, v] of Object.entries(patch)) {
-    if (v == null || v === "") q.delete(k);
-    else q.set(k, v);
-  }
-  if ("category" in patch || "subcategory" in patch || "brand" in patch || "q" in patch || "type" in patch) {
-    q.delete("page");
-  }
-  const s = q.toString();
-  return s ? `/search?${s}` : "/search";
-}
 function siteUrl() {
   const raw =
     process.env["NEXT_PUBLIC_SITE_URL"] ||
@@ -77,9 +69,9 @@ function siteUrl() {
   return (raw || "").replace(/\/+$/, "");
 }
 
-const SORT_OPTIONS: { value: "top" | "new" | "price_asc" | "price_desc"; label: string }[] = [
-  { value: "top", label: "Top" },
-  { value: "new", label: "Newest" },
+const SORT_OPTIONS: { value: Sort; label: string }[] = [
+  { value: "newest", label: "Newest" },
+  { value: "featured", label: "Featured first" },
   { value: "price_asc", label: "Price ↑" },
   { value: "price_desc", label: "Price ↓" },
 ];
@@ -100,19 +92,12 @@ export default async function SearchPage({
   const subcategory = getParam(sp, "subcategory");
   const brand = getParam(sp, "brand");
   const condition = getParam(sp, "condition");
-  const verifiedOnly = toBool(getParam(sp, "verifiedOnly"));
+  const featuredOnly = toBool(getParam(sp, "featured"));
   const minPrice = toNum(getParam(sp, "minPrice"));
   const maxPrice = toNum(getParam(sp, "maxPrice"));
   const page = Math.max(1, toNum(getParam(sp, "page"), 1) || 1);
   const pageSize = Math.min(96, Math.max(1, toNum(getParam(sp, "pageSize"), 24) || 24));
-  const sort = ((getParam(sp, "sort") as any) || "top") as "top" | "new" | "price_asc" | "price_desc";
-
-  // Preserve original params to rebuild links
-  const baseSearch = new URLSearchParams();
-  Object.entries(sp).forEach(([k, v]) => {
-    if (Array.isArray(v)) v.forEach((x) => baseSearch.append(k, String(x)));
-    else if (v) baseSearch.set(k, String(v));
-  });
+  const sort = ((getParam(sp, "sort") as Sort) || "newest") as Sort;
 
   // Build querystring for API calls
   const qs = new URLSearchParams();
@@ -121,7 +106,7 @@ export default async function SearchPage({
   if (subcategory) qs.set("subcategory", subcategory);
   if (brand) qs.set("brand", brand);
   if (condition) qs.set("condition", condition);
-  if (verifiedOnly) qs.set("verifiedOnly", "1");
+  if (featuredOnly) qs.set("featured", "true");
   if (typeof minPrice === "number") qs.set("minPrice", String(minPrice));
   if (typeof maxPrice === "number") qs.set("maxPrice", String(maxPrice));
   qs.set("page", String(page));
@@ -130,16 +115,21 @@ export default async function SearchPage({
 
   const base = siteUrl();
 
-  // Fetch initial page server-side (SSR fallback)
-  const endpoint = type === "product" ? "/api/products/search" : "/api/services/search";
+  // Endpoints consistent with HomeClient and your API
+  const endpoint = type === "product" ? "/api/products" : "/api/services";
   const url = `${base}${endpoint}?${qs.toString()}`;
+
+  // Fetch initial page server-side (SSR fallback)
   const res = await fetch(url, { cache: "no-store" }).catch(() => null);
 
   const emptyProducts: Envelope<ProductHit> = { page: 1, pageSize, total: 0, totalPages: 1, items: [] };
   const emptyServices: Envelope<ServiceHit> = { page: 1, pageSize, total: 0, totalPages: 1, items: [] };
 
-  const data = (await res?.json().catch(() => null)) || (type === "product" ? emptyProducts : emptyServices);
+  const data =
+    (await res?.json().catch(() => null)) ||
+    (type === "product" ? emptyProducts : emptyServices);
 
+  // If API adjusted page (e.g., asked for page > totalPages), align URL
   if ((data as any).page !== page) {
     const qp = new URLSearchParams();
     Object.entries(sp).forEach(([k, v]) => {
@@ -158,13 +148,13 @@ export default async function SearchPage({
     ...(subcategory ? { subcategory } : {}),
     ...(brand ? { brand } : {}),
     ...(condition ? { condition } : {}),
-    ...(verifiedOnly ? { verifiedOnly: true } : {}),
+    ...(featuredOnly ? { featured: true } : {}),
     ...(typeof minPrice === "number" ? { minPrice } : {}),
     ...(typeof maxPrice === "number" ? { maxPrice } : {}),
     sort,
     pageSize,
     type,
-  };
+  } as const;
 
   return (
     <div className="container-page py-6">
@@ -183,7 +173,11 @@ export default async function SearchPage({
       </div>
 
       {/* Controls */}
-      <form className="mt-4 grid grid-cols-1 gap-3 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:grid-cols-12">
+      <form
+        className="mt-4 grid grid-cols-1 gap-3 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:grid-cols-12"
+        method="GET"
+        action="/search"
+      >
         {/* Type */}
         <div className="md:col-span-2">
           <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Type</label>
@@ -279,13 +273,13 @@ export default async function SearchPage({
           />
         </div>
 
-        {/* Featured / Verified + Sort */}
+        {/* Featured + Sort */}
         <div className="md:col-span-2 flex items-end gap-2">
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-200">
             <input
               type="checkbox"
-              name="verifiedOnly"
-              defaultChecked={verifiedOnly}
+              name="featured"
+              defaultChecked={featuredOnly}
               className="rounded border-gray-300 dark:border-slate-600"
             />
             Featured only
@@ -340,7 +334,7 @@ export default async function SearchPage({
               <ServiceCard
                 key={s.id}
                 id={s.id}
-                name={s.name}
+                name={s.name ?? s.title ?? "Service"}
                 image={s.image ?? null}
                 price={s.price ?? null}
                 {...(s.rateType ? { rateType: s.rateType } : {})}

@@ -17,11 +17,11 @@ function noStore(json: unknown, init?: ResponseInit) {
 
 /**
  * Return the signed-in user's minimal profile used by clients:
- * { id, email, username, phone, whatsapp, address, postalCode, city, country }
+ * { id, email, username, image, phone, whatsapp, address, postalCode, city, country }
  *
  * NOTE:
- * - If you're not storing `phone`, it will be `null`.
- * - Cached is explicitly disabled (clients expect fresh data).
+ * - If you're not storing `phone`, remove it below (and from the client).
+ * - Cache is explicitly disabled (clients expect fresh data).
  */
 export async function GET() {
   try {
@@ -38,8 +38,9 @@ export async function GET() {
         id: true,
         email: true,
         username: true,
-        // Depending on your schema, you may or may not have `phone`
-        phone: true as any, // keep as any if the field might not exist in your Prisma types
+        image: true,           // <-- add profile photo
+        // If your schema doesn't have `phone`, remove the next line.
+        phone: true as any,    // keep as any if the field might not exist in Prisma types
         whatsapp: true,
         address: true,
         postalCode: true,
@@ -52,11 +53,12 @@ export async function GET() {
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    // Ensure absent optional fields return as null (not undefined) for stable client parsing
+    // Return nulls (not undefined) for stability in clients
     const safe = {
       id: user.id,
       email: user.email ?? null,
       username: user.username ?? null,
+      image: user.image ?? null,
       phone: (user as any).phone ?? null,
       whatsapp: user.whatsapp ?? null,
       address: user.address ?? null,

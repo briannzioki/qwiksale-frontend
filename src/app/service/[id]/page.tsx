@@ -1,3 +1,4 @@
+// src/app/service/[id]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -9,7 +10,7 @@ import FavoriteButton from "@/app/components/FavoriteButton";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
 import { buildProductSeo } from "@/app/lib/seo";
 import Gallery from "@/app/components/Gallery";
-import ContactModalService from "../../components/ContactModalService";
+import ContactModalService from "@/app/components/ContactModalService";
 
 type ServiceFetched = {
   id: string;
@@ -210,7 +211,7 @@ export default function ServicePage() {
                   Edit
                 </Link>
                 <DeleteListingButton
-                  id={data.id}
+                  serviceId={data.id}
                   className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
                   label="Delete"
                   confirmText="Delete this service? This cannot be undone."
