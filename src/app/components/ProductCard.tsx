@@ -1,7 +1,7 @@
 // src/app/components/ProductCard.tsx
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
@@ -12,22 +12,22 @@ type Props = {
   price?: number | null;
   image?: string | null;
   featured?: boolean;
+  /** 0-based position in the feed, used for analytics + image priority */
   position?: number;
+  /** Next.js prefetch (default true) */
   prefetch?: boolean;
   className?: string;
 };
 
 /* ----------------------- Utils ----------------------- */
 
-function formatKES(value: number) {
+function formatKES(value?: number | null) {
+  if (!value || value <= 0) return "Contact for price";
   try {
-    return new Intl.NumberFormat("en-KE", {
-      style: "currency",
-      currency: "KES",
-      maximumFractionDigits: 0,
-    }).format(value);
+    // Consistent with app: "KES 12,345"
+    return `KES ${new Intl.NumberFormat("en-KE").format(value)}`;
   } catch {
-    return `KSh ${Number(value).toLocaleString("en-KE")}`;
+    return `KES ${Number(value).toLocaleString("en-KE")}`;
   }
 }
 
@@ -69,9 +69,14 @@ export default function ProductCard({
   prefetch = true,
   className = "",
 }: Props) {
+  const href = useMemo(() => `/product/${encodeURIComponent(id)}`, [id]);
+
   const url = image || "/placeholder/default.jpg";
   const cardRef = useRef<HTMLAnchorElement | null>(null);
   const seenRef = useRef(false);
+
+  // Make top-of-feed images priority for faster LCP (e.g., first 8)
+  const priority = typeof position === "number" ? position < 8 : false;
 
   // One-time product_view when first visible
   useEffect(() => {
@@ -94,12 +99,14 @@ export default function ProductCard({
   }, [id, name, price, position]);
 
   const onClick = useCallback(() => {
-    trackClient("product_click", { id, name, price, position, href: `/product/${id}` });
-  }, [id, name, price, position]);
+    trackClient("product_click", { id, name, price, position, href });
+  }, [id, name, price, position, href]);
+
+  const priceText = formatKES(price);
 
   return (
     <Link
-      href={`/product/${id}`}
+      href={href}
       prefetch={prefetch}
       onClick={onClick}
       ref={cardRef}
@@ -109,12 +116,12 @@ export default function ProductCard({
         "dark:bg-gray-900 dark:border-white/10 dark:hover:border-white/15",
         className,
       ].join(" ")}
-      aria-label={`${name}${typeof price === "number" ? `, priced at ${formatKES(price)}` : ""}`}
+      aria-label={`${name}${priceText ? `, ${priceText}` : ""}`}
     >
       {/* Featured badge */}
       {featured && (
         <span
-          className="absolute left-3 top-3 z-10 select-none rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white shadow"
+          className="absolute left-3 top-3 z-10 select-none rounded-md bg-[#161748] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white shadow"
           aria-hidden="true"
         >
           FEATURED
@@ -131,22 +138,18 @@ export default function ProductCard({
           className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
           placeholder="blur"
           blurDataURL={getBlurDataURL(640, 360)}
-          priority={false}
+          priority={priority}
         />
       </div>
 
       {/* Meta */}
-      <div className="space-y-1">
+      <div className="mt-2 space-y-1">
         <div className="line-clamp-1 font-medium text-gray-900 dark:text-gray-100" title={name}>
           {name}
         </div>
-        {typeof price === "number" ? (
-          <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-            {formatKES(price)}
-          </div>
-        ) : (
-          <div className="text-xs text-gray-500 dark:text-gray-400">Price on request</div>
-        )}
+        <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+          {priceText}
+        </div>
       </div>
     </Link>
   );

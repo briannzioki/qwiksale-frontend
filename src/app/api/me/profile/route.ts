@@ -15,7 +15,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-const USERNAME_RE = /^[a-zA-Z0-9._]{3,24}$/;
+const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 function looksLikeValidUsername(u: string) {
   return USERNAME_RE.test(u);
 }
@@ -31,9 +31,19 @@ const RESERVED = new Set(
 function normalizeName(input: unknown): string | undefined {
   if (typeof input !== "string") return undefined;
   const s = input.trim().replace(/\s+/g, " ");
-  if (s.length > 80) return s.slice(0, 80);
-  // allow clearing by sending empty string; change to `undefined` to ignore empties
-  return s;
+  if (!s) return ""; // allow clearing with empty
+  return s.length > 80 ? s.slice(0, 80) : s;
+}
+
+function normalizeImageUrl(input: unknown): string | null | undefined {
+  // undefined => ignore, null/"" => clear, string => trimmed url-ish (clamped)
+  if (input === null) return null;
+  if (typeof input !== "string") return undefined;
+  const s = input.trim();
+  if (!s) return null;
+  // soft guard; we don't hard-validate CDNs here
+  if (!/^https?:\/\//i.test(s)) return null; // treat non-url-ish as clear
+  return s.length > 2048 ? s.slice(0, 2048) : s;
 }
 
 /* -------------------- KE phone helpers -------------------- */
@@ -52,6 +62,38 @@ function looksLikeValidKePhone(s?: string) {
   return !!s && /^254(7|1)\d{8}$/.test(s);
 }
 
+/* ---------------------------------- GET ---------------------------------- */
+export async function GET() {
+  try {
+    const session = await auth();
+    const userId = (session as any)?.user?.id as string | undefined;
+    if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        name: true,
+        image: true,
+        whatsapp: true,
+        address: true,
+        postalCode: true,
+        city: true,
+        country: true,
+      },
+    });
+    if (!user) return noStore({ error: "Not found" }, { status: 404 });
+    return noStore({ user });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("[/api/me/profile GET] error:", e);
+    return noStore({ error: "Server error" }, { status: 500 });
+  }
+}
+
+/* --------------------------------- PATCH --------------------------------- */
 export async function PATCH(req: Request) {
   try {
     const session = await auth();
@@ -61,6 +103,7 @@ export async function PATCH(req: Request) {
     const body = (await req.json().catch(() => ({}))) as {
       name?: string | null;
       username?: string | null;
+      image?: string | null;        // <-- accept profile photo URL
       whatsapp?: string | null;
       address?: string | null;
       postalCode?: string | null;
@@ -98,6 +141,13 @@ export async function PATCH(req: Request) {
         return noStore({ error: "Username is already taken." }, { status: 409 });
       }
       data["username"] = username;
+    }
+
+    // image (optional; allow clear)
+    const normImage = normalizeImageUrl(body?.image);
+    if (normImage !== undefined) {
+      // normImage may be null (clear) or a trimmed url
+      data["image"] = normImage;
     }
 
     // whatsapp (optional; normalize, validate if provided; allow clear)
@@ -143,9 +193,6 @@ export async function PATCH(req: Request) {
       },
     });
 
-    // Optional: If you rely on NextAuth JWT fields (username, etc.), the client can call
-    // `signIn("credentials", { redirect: false })` with `callbackUrl: location.href` or
-    // `update()` to refresh the session. For now we just return the updated user.
     return noStore({ ok: true, user });
   } catch (e) {
     // eslint-disable-next-line no-console

@@ -104,6 +104,9 @@ export function canonicalFor(
     "maxPrice",
     "sort",
     "featured",
+    "rateType",        // "fixed" | "hour" | "day"
+    "serviceArea",
+    "availability",
   ];
   const sp = cleanedSearchParams(searchParams, keep);
 

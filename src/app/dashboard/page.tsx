@@ -1,3 +1,4 @@
+// src/app/dashboard/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/auth";
@@ -311,8 +312,9 @@ export default async function DashboardPage() {
                       >
                         View
                       </Link>
+                      {/* MINIMAL PATCH: route to the new product editor path */}
                       <Link
-                        href={`/sell?id=${p.id}`}
+                        href={`/sell/product?id=${p.id}`}
                         className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
                         title="Edit listing"
                       >

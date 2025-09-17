@@ -2,28 +2,49 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { categories } from "../../data/categories";
 import toast from "react-hot-toast";
-import { formatKES } from "@/app/lib/money";
-import { validateKenyanPhone, normalizeKenyanPhone } from "@/app/lib/phone";
+
+// If you keep a separate categories list for services, import it here.
+// For now we just provide small defaults to avoid coupling.
+const SERVICE_CATEGORIES = [
+  { name: "Home Services", subcategories: [{ name: "Cleaning" }, { name: "Repairs" }] },
+  { name: "Automotive", subcategories: [{ name: "Mechanic" }, { name: "Car Wash" }] },
+  { name: "Events", subcategories: [{ name: "Photography" }, { name: "Catering" }] },
+] as const;
 
 type FilePreview = { file: File; url: string; key: string };
-type Me = { id: string; email: string | null; profileComplete: boolean; whatsapp?: string | null };
+type Me = { id: string; email: string | null; profileComplete?: boolean; whatsapp?: string | null };
 
 const MAX_FILES = 6;
 const MAX_MB = 5;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-// Cloudinary (client-safe) — mirror SellClient
+// Cloudinary (client-safe)
 const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
-const UPLOAD_PRESET = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? ""; // unsigned preset if available
+const UPLOAD_PRESET = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? ""; // unsigned preset if you have one
+
+/* ----------------------------- Phone helpers ----------------------------- */
+function normalizePhone(raw: string): string {
+  const trimmed = (raw || "").trim();
+  if (/^\+254(7|1)\d{8}$/.test(trimmed)) return trimmed.replace(/^\+/, "");
+  let s = trimmed.replace(/\D+/g, "");
+  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) s = "254" + s.slice(1);
+  if (/^7\d{8}$/.test(s) || /^1\d{8}$/.test(s)) s = "254" + s;
+  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
+  return s;
+}
+function looksLikeValidKePhone(input: string): boolean {
+  return /^254(7|1)\d{8}$/.test(normalizePhone(input));
+}
 
 /* --------------------------- Cloudinary uploader -------------------------- */
 async function uploadToCloudinary(
   file: File,
   opts?: { onProgress?: (pct: number) => void; folder?: string }
 ): Promise<{ secure_url: string; public_id: string }> {
-  if (!CLOUD_NAME) throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  if (!CLOUD_NAME) {
+    throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  }
   const folder = opts?.folder || "qwiksale";
   const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
   const fd = new FormData();
@@ -35,7 +56,9 @@ async function uploadToCloudinary(
     fd.append("folder", folder);
     const res = await fetch(endpoint, { method: "POST", body: fd });
     const json: any = await res.json();
-    if (!res.ok || !json.secure_url) throw new Error(json?.error?.message || "Cloudinary upload failed");
+    if (!res.ok || !json.secure_url) {
+      throw new Error(json?.error?.message || "Cloudinary upload failed");
+    }
     return { secure_url: json.secure_url, public_id: json.public_id };
   }
 
@@ -52,7 +75,6 @@ async function uploadToCloudinary(
   fd.append("signature", sigJson.signature);
   fd.append("folder", folder);
 
-  // XHR for progress (signed flow)
   const xhr = new XMLHttpRequest();
   const p = new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
     xhr.upload.onprogress = (evt) => {
@@ -88,59 +110,53 @@ export default function SellServiceClient() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
   // ----------------------------- Form state -----------------------------
-  const [name, setName] = useState<string>(""); // service title (e.g., "House Cleaning")
-  const [rate, setRate] = useState<number | "">("");
-  const [rateUnit, setRateUnit] = useState<"hour" | "fixed">("hour");
-  const [negotiable, setNegotiable] = useState<boolean>(false);
+  const [name, setName] = useState<string>("");
+  const [price, setPrice] = useState<number | "">(""); // nullable -> "Contact for quote"
+  const [rateType, setRateType] = useState<"hour" | "day" | "fixed">("fixed");
 
-  const [serviceArea, setServiceArea] = useState<string>("Nairobi"); // area/coverage
-  const [availability, setAvailability] = useState<"weekdays" | "weekends" | "24/7">("weekdays");
-  const [experienceYears, setExperienceYears] = useState<number | "">("");
+  const [category, setCategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.name || ""));
+  const [subcategory, setSubcategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.subcategories?.[0]?.name || ""));
 
-  // Category is locked to "Services"; subcategory limited to Services tree
-  const [category] = useState<string>("Services");
-  const [subcategory, setSubcategory] = useState<string>("");
-
-  const [location, setLocation] = useState<string>("Nairobi"); // meeting/dispatch location (if needed)
-  const [phone, setPhone] = useState<string>(""); // prefill from /api/me.whatsapp
+  const [serviceArea, setServiceArea] = useState<string>("");
+  const [availability, setAvailability] = useState<string>("");
+  const [location, setLocation] = useState<string>("Nairobi");
+  const [phone, setPhone] = useState<string>("");
   const [description, setDescription] = useState<string>("");
+
   const [previews, setPreviews] = useState<FilePreview[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Prefill phone from profile (matching SellClient logic)
+  // Prefill phone from profile + gate checks
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/me", { cache: "no-store" });
 
-        // explicit 401 redirect remains
         if (res.status === 401) {
-          if (!cancelled) {
-            router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`);
-          }
+          if (!cancelled) router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`);
           return;
         }
-        // handle other non-OKs gracefully (scan-friendly: uses res.ok)
         if (!res.ok) {
           if (!cancelled) {
-            setAllowed(true); // fail-open
+            setAllowed(true);
             setReady(true);
           }
           return;
         }
 
-        const me = (await res.json().catch(() => null)) as Me | null;
+        const j = (await res.json().catch(() => null)) as any;
+        const me: Me | null = j?.user ?? null;
 
         if (!cancelled && me && me.profileComplete === false) {
           router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell/service")}`);
           return;
         }
-
         if (!cancelled && !phone && me?.whatsapp) setPhone(me.whatsapp);
+
         if (!cancelled) setAllowed(true);
       } catch {
         if (!cancelled) setAllowed(true); // fail-open
@@ -151,30 +167,27 @@ export default function SellServiceClient() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  // Readonly-friendly typing for categories data, filter to Services only
-  type SubCat = { readonly name: string; readonly subsubcategories?: readonly string[] };
-  type Cat = { readonly name: string; readonly subcategories: readonly SubCat[] };
-  const cats: readonly Cat[] = categories as unknown as readonly Cat[];
+  // Derived options (kept local to avoid importing product categories)
+  type Sub = { readonly name: string };
+  type Cat = { readonly name: string; readonly subcategories: readonly Sub[] };
+  const cats: readonly Cat[] = SERVICE_CATEGORIES;
 
-  const serviceSubcats: ReadonlyArray<{ name: string }> = useMemo(() => {
-    const services = cats.find((c) => c.name === "Services");
-    const list = (services?.subcategories ?? []).map((s) => ({ name: s.name }));
-    return list as ReadonlyArray<{ name: string }>;
-  }, [cats]);
+  const subcats = useMemo(() => {
+    const found = cats.find((c) => c.name === category);
+    return (found?.subcategories ?? []) as readonly Sub[];
+  }, [cats, category]);
 
   useEffect(() => {
-    if (!serviceSubcats.length) {
+    if (!subcats.length) {
       setSubcategory("");
       return;
     }
-    const first = serviceSubcats[0];
-    if (!serviceSubcats.some((s) => s.name === subcategory)) {
-      if (first) setSubcategory(String(first.name));
+    if (!subcats.some((s) => s.name === subcategory)) {
+      setSubcategory(subcats[0]?.name || "");
     }
-  }, [serviceSubcats, subcategory]);
+  }, [subcats, subcategory]);
 
   useEffect(() => {
     return () => {
@@ -182,16 +195,13 @@ export default function SellServiceClient() {
     };
   }, [previews]);
 
-  const normalizedPhone = phone ? normalizeKenyanPhone(phone) ?? "" : "";
-  const rateNum = rate === "" ? 0 : Number(rate);
-  const phoneOk = !phone || validateKenyanPhone(phone).ok;
+  const normalizedPhone = phone ? normalizePhone(phone) : "";
+  const phoneOk = !phone || looksLikeValidKePhone(phone);
 
   const canSubmit =
     name.trim().length >= 3 &&
-    !!subcategory &&
+    !!category &&
     description.trim().length >= 10 &&
-    (rate === "" || (typeof rate === "number" && rate >= 0)) &&
-    (experienceYears === "" || (typeof experienceYears === "number" && experienceYears >= 0)) &&
     phoneOk;
 
   function filesToAdd(files: FileList | File[]) {
@@ -292,40 +302,47 @@ export default function SellServiceClient() {
         ? uploaded.map((u) => u.secure_url)
         : previews.map((p) => p.url);
 
-      // Payload for creation — API expects `price` and `rateType`
+      // Service payload (matches /api/services/create)
       const payload = {
         name: name.trim(),
         description: description.trim(),
-        category, // "Services"
-        subcategory,
-        price: rate === "" ? null : Math.max(0, Math.round(Number(rate))), // null => contact for quote
-        rateType: rateUnit, // "hour" | "fixed"
-        serviceArea: serviceArea.trim(),
-        availability, // "weekdays" | "weekends" | "24/7"
+        category,
+        subcategory: subcategory || undefined,
+        price: price === "" ? null : Math.max(0, Math.round(Number(price))),
+        rateType,
+        serviceArea: serviceArea || undefined,
+        availability: availability || undefined,
         image: imageUrl,
         gallery,
         location: location.trim(),
-        // Optional per-listing override; if empty the server will use profile whatsapp
         sellerPhone: normalizedPhone || undefined,
-        // extra client-only fields (ignored server-side but harmless):
-        negotiable,
-        experienceYears: experienceYears === "" ? undefined : Math.max(0, Number(experienceYears)),
       };
 
+      // POST to services create
       const r = await fetch("/api/services/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify(payload),
       });
-      const j = await r.json().catch(() => ({} as any));
-      if (!r.ok || (j as any)?.error) {
-        throw new Error((j as any)?.error || `Failed to create (${r.status})`);
-      }
 
-      const createdId = String((j as any).id || (j as any).serviceId || "");
+      // Handle rate limiting & errors
+      if (r.status === 429) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error || "You’re posting too fast. Please slow down.");
+      }
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j?.error) throw new Error(j?.error || `Failed to create (${r.status})`);
+
+      const createdId: string = j?.serviceId || "";
       toast.success("Service posted!");
-      router.push(createdId ? `/sell/success?id=${createdId}` : "/sell/success");
+
+      // Navigate to the new service page…
+      router.push(createdId ? `/service/${createdId}` : "/");
+
+      // …and nudge server components / caches to refetch.
+      // If you add route segment/tag-based revalidation later, you can trigger it here as well.
+      router.refresh();
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error(err);
@@ -340,7 +357,7 @@ export default function SellServiceClient() {
     return (
       <div className="container-page py-10">
         <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
-          <h1 className="text-2xl font-bold">Offer a Service</h1>
+          <h1 className="text-2xl font-bold">Post a Service</h1>
           <p className="text-white/90">Checking your account…</p>
         </div>
       </div>
@@ -351,12 +368,12 @@ export default function SellServiceClient() {
     <div className="container-page py-6">
       {/* Header card */}
       <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-        <h1 className="text-2xl font-bold text-balance">Offer a Service</h1>
+        <h1 className="text-2xl font-bold text-balance">Post a Service</h1>
         <p className="text-white/90">List your service — it takes less than 2 minutes.</p>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
-        {/* Title & Rate */}
+        {/* Title & Price */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
             <label className="label">Service Title</label>
@@ -364,62 +381,84 @@ export default function SellServiceClient() {
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. House Cleaning / Mama Fua"
+              placeholder="e.g. Deep Cleaning for Apartments"
               required
               minLength={3}
               aria-label="Service title"
             />
           </div>
           <div>
-            <label className="label">Rate (KES)</label>
+            <label className="label">Base Price (KES)</label>
             <input
               type="number"
               inputMode="numeric"
               min={0}
               className="input"
-              value={rate}
-              onChange={(e) => setRate(e.target.value === "" ? "" : Number(e.target.value))}
-              placeholder="e.g. 800"
-              aria-describedby="rate-help"
-              aria-label="Rate in Kenyan shillings"
+              value={price}
+              onChange={(e) =>
+                setPrice(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              placeholder="e.g. 1500 (leave blank for quote)"
+              aria-describedby="price-help"
+              aria-label="Price in Kenyan shillings"
             />
-            <div className="mt-2 flex items-center gap-2">
-              <select
-                className="select"
-                value={rateUnit}
-                onChange={(e) => setRateUnit(e.target.value as "hour" | "fixed")}
-                aria-label="Rate unit"
-              >
-                <option value="hour">per hour</option>
-                <option value="fixed">fixed</option>
-              </select>
-              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-200">
+            <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+              Leave empty for <em>Contact for quote</em>.
+            </p>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+              <label className="inline-flex items-center gap-2">
                 <input
-                  type="checkbox"
+                  type="radio"
+                  name="rateType"
+                  value="fixed"
+                  checked={rateType === "fixed"}
+                  onChange={() => setRateType("fixed")}
                   className="rounded border-gray-300 dark:border-slate-600"
-                  checked={negotiable}
-                  onChange={(e) => setNegotiable(e.target.checked)}
-                  aria-label="Negotiable rate"
                 />
-                Negotiable
+                Fixed
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="rateType"
+                  value="hour"
+                  checked={rateType === "hour"}
+                  onChange={() => setRateType("hour")}
+                  className="rounded border-gray-300 dark:border-slate-600"
+                />
+                /hour
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="rateType"
+                  value="day"
+                  checked={rateType === "day"}
+                  onChange={() => setRateType("day")}
+                  className="rounded border-gray-300 dark:border-slate-600"
+                />
+                /day
               </label>
             </div>
-            {typeof rate === "number" && rate > 0 && (
-              <div className="text-xs mt-1 text-gray-600 dark:text-slate-400">
-                You entered: {formatKES(rateNum)} {rateUnit === "hour" ? "per hour" : "(fixed)"}
-              </div>
-            )}
-            <p id="rate-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              Leave empty for <em>Contact for rate</em>.
-            </p>
           </div>
         </div>
 
-        {/* Category (locked), Subcategory, Area */}
+        {/* Category, Subcategory, Area */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="label">Category</label>
-            <input className="input" value="Services" readOnly aria-label="Category (Services)" />
+            <select
+              className="select"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              aria-label="Category"
+            >
+              {SERVICE_CATEGORIES.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="label">Subcategory</label>
@@ -427,9 +466,9 @@ export default function SellServiceClient() {
               className="select"
               value={subcategory}
               onChange={(e) => setSubcategory(e.target.value)}
-              aria-label="Service subcategory"
+              aria-label="Subcategory"
             >
-              {serviceSubcats.map((s) => (
+              {subcats.map((s) => (
                 <option key={s.name} value={s.name}>
                   {s.name}
                 </option>
@@ -437,44 +476,27 @@ export default function SellServiceClient() {
             </select>
           </div>
           <div>
-            <label className="label">Service Area</label>
+            <label className="label">Service Area (optional)</label>
             <input
               className="input"
               value={serviceArea}
               onChange={(e) => setServiceArea(e.target.value)}
-              placeholder="e.g. Nairobi, Westlands, CBD"
+              placeholder="e.g. Nairobi CBD, Westlands"
               aria-label="Service area"
             />
           </div>
         </div>
 
-        {/* Availability, Experience, Location */}
+        {/* Availability, Location, Phone */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="label">Availability</label>
-            <select
-              className="select"
-              value={availability}
-              onChange={(e) => setAvailability(e.target.value as "weekdays" | "weekends" | "24/7")}
-              aria-label="Availability"
-            >
-              <option value="weekdays">Weekdays</option>
-              <option value="weekends">Weekends</option>
-              <option value="24/7">24/7</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Experience (years, optional)</label>
+            <label className="label">Availability (optional)</label>
             <input
-              type="number"
-              min={0}
               className="input"
-              value={experienceYears}
-              onChange={(e) =>
-                setExperienceYears(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))
-              }
-              placeholder="e.g. 3"
-              aria-label="Experience in years"
+              value={availability}
+              onChange={(e) => setAvailability(e.target.value)}
+              placeholder="e.g. Mon–Sat 8am–6pm"
+              aria-label="Availability"
             />
           </div>
           <div>
@@ -487,22 +509,19 @@ export default function SellServiceClient() {
               aria-label="Location"
             />
           </div>
-        </div>
-
-        {/* Phone (optional) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-3">
+          <div>
             <label className="label">Phone (WhatsApp, optional)</label>
             <input
               className="input"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="07XXXXXXXX or 2547XXXXXXXX"
-              aria-invalid={!!phone && !validateKenyanPhone(phone).ok}
+              aria-invalid={!!phone && !looksLikeValidKePhone(phone)}
               aria-label="WhatsApp phone number (optional)"
             />
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              Normalized: <code className="font-mono">{normalizedPhone || "—"}</code>
+              If provided, we’ll normalize as{" "}
+              <code className="font-mono">{normalizedPhone || "—"}</code>
             </div>
           </div>
         </div>
@@ -515,7 +534,7 @@ export default function SellServiceClient() {
             rows={5}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe your service, scope, supplies, response time, guarantees, etc."
+            placeholder="Describe your service, experience, what’s included, etc."
             required
             minLength={10}
             aria-label="Service description"

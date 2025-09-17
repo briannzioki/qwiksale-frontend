@@ -157,7 +157,7 @@ model User {
   tickets   SupportTicket[] @relation("ReporterTickets")
   reports   Report[]        @relation("Reporters")
 
-  // Messaging back-relations (NEW: give names that match Thread relations)
+  // Messaging back-relations
   threadsBought Thread[] @relation("ThreadBuyer")
   threadsSold   Thread[] @relation("ThreadSeller")
   messagesSent  Message[]
@@ -399,7 +399,7 @@ model Thread {
   buyerLastReadAt  DateTime?
   sellerLastReadAt DateTime?
 
-  // IMPORTANT: give each relation a distinct name and matching back-relations on User
+  // IMPORTANT: relation names align with User model
   buyer  User @relation("ThreadBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
   seller User @relation("ThreadSeller", fields: [sellerId], references: [id], onDelete: Cascade)
 

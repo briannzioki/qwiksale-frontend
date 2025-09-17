@@ -17,6 +17,7 @@ type Me = {
   postalCode: string | null;
   city: string | null;
   country: string | null;
+  image?: string | null; // <-- allow existing avatar from server
 };
 
 function normalizeKePhone(raw: string): string {
@@ -49,10 +50,11 @@ export default function CompleteProfileClient() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // sanitize next/return to internal path
+  // Default redirect goes to dashboard (unless a safe ?next/return provided)
   const ret = useMemo(() => {
-    const raw = sp.get("next") || sp.get("return") || "/";
-    return isSafePath(raw) ? raw : "/";
+    const raw = sp.get("next") || sp.get("return");
+    if (isSafePath(raw)) return raw;
+    return "/dashboard";
   }, [sp]);
 
   const [loading, setLoading] = useState(true);
@@ -65,6 +67,11 @@ export default function CompleteProfileClient() {
   const [postalCode, setPostal] = useState("");
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("");
+
+  // NEW: profile photo (URL) + tiny live check
+  const [imageUrl, setImageUrl] = useState("");
+  const [imgOk, setImgOk] = useState<boolean | null>(null);
+  const imgTestRef = useRef<HTMLImageElement | null>(null);
 
   const [nameStatus, setNameStatus] = useState<NameStatus>("idle");
   const usernameAbort = useRef<AbortController | null>(null);
@@ -116,6 +123,7 @@ export default function CompleteProfileClient() {
         setPostal(u.postalCode ?? "");
         setCity(u.city ?? "");
         setCountry(u.country ?? "");
+        setImageUrl((u.image ?? "").trim()); // <-- initial avatar if any
       } catch (e: any) {
         if (e?.name !== "AbortError") toast.error("Could not load your account. Try again.");
       } finally {
@@ -174,6 +182,24 @@ export default function CompleteProfileClient() {
     return () => clearTimeout(t);
   }, [username]);
 
+  /* ------------------- Tiny live probe for profile photo URL ------------------- */
+  useEffect(() => {
+    setImgOk(null);
+    if (!imageUrl) return;
+    const img = new Image();
+    imgTestRef.current = img;
+    img.onload = () => {
+      if (imgTestRef.current === img) setImgOk(true);
+    };
+    img.onerror = () => {
+      if (imgTestRef.current === img) setImgOk(false);
+    };
+    img.src = imageUrl;
+    return () => {
+      if (imgTestRef.current === img) imgTestRef.current = null;
+    };
+  }, [imageUrl]);
+
   /* ----------------------------------- Save ----------------------------------- */
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
@@ -205,6 +231,7 @@ export default function CompleteProfileClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: u,
+          image: imageUrl || null, // <-- send profile photo URL
           whatsapp: whatsappNormalized || null,
           address: address.trim() || null,
           postalCode: postalCode.trim() || null,
@@ -216,7 +243,7 @@ export default function CompleteProfileClient() {
       if (!r.ok || j?.error) throw new Error(j?.error || `Failed to save (${r.status})`);
 
       toast.success("Profile saved!");
-      router.replace(ret);
+      router.replace(ret); // goes to /dashboard by default now
     } catch (e: any) {
       toast.error(e?.message || "Could not save profile");
     } finally {
@@ -258,11 +285,12 @@ export default function CompleteProfileClient() {
         <div className="hero-surface">
           <h1 className="text-2xl md:text-3xl font-extrabold mb-1">Complete your profile</h1>
           <p className="text-sm text-white/80 dark:text-slate-300">
-            Add a username and (optionally) WhatsApp and address details.
+            Add a username and (optionally) a profile photo, WhatsApp, and address details.
           </p>
         </div>
 
         <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4" noValidate>
+          {/* Username */}
           <div>
             <label htmlFor="username" className="label">
               Username
@@ -297,6 +325,44 @@ export default function CompleteProfileClient() {
             )}
           </div>
 
+          {/* Profile photo (URL) */}
+          <div>
+            <label htmlFor="image" className="label">
+              Profile photo (URL)
+            </label>
+            <input
+              id="image"
+              className="input"
+              placeholder="https://…/your-photo.jpg"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value.trim())}
+              disabled={saving}
+              inputMode="url"
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-200 dark:bg-slate-700 border">
+                {imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={imageUrl} alt="Preview" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full grid place-items-center text-xs text-gray-500">
+                    No photo
+                  </div>
+                )}
+              </div>
+              <p className="text-xs">
+                {imageUrl
+                  ? imgOk === false
+                    ? "🔴 Can’t load image (check the URL)."
+                    : imgOk === true
+                    ? "🟢 Looks good."
+                    : "Loading preview…"
+                  : "Paste a direct link to your photo."}
+              </p>
+            </div>
+          </div>
+
+          {/* WhatsApp */}
           <div>
             <label className="label">WhatsApp (optional)</label>
             <input
@@ -312,6 +378,7 @@ export default function CompleteProfileClient() {
             </p>
           </div>
 
+          {/* Location */}
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label className="label">City (optional)</label>
@@ -333,6 +400,7 @@ export default function CompleteProfileClient() {
             </div>
           </div>
 
+          {/* Address */}
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label className="label">Postal code (optional)</label>
@@ -355,6 +423,7 @@ export default function CompleteProfileClient() {
             </div>
           </div>
 
+          {/* Actions */}
           <div className="flex gap-2 pt-2">
             <button
               type="submit"

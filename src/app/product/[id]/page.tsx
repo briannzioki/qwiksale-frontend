@@ -1,3 +1,4 @@
+// src/app/product/[id]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -274,6 +275,7 @@ export default function ProductPage() {
                   </Link>
                   <DeleteListingButton
                     id={display.id}
+                    type="product"             // <-- add this to satisfy the union prop
                     className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
                     label="Delete"
                     confirmText="Delete this listing? This cannot be undone."
@@ -350,7 +352,8 @@ export default function ProductPage() {
               )}
               {seller.memberSince && (
                 <p>
-                  <span className="font-medium">Member since:</span> {seller.memberSince}</p>
+                  <span className="font-medium">Member since:</span> {seller.memberSince}
+                </p>
               )}
               {typeof seller.rating === "number" && (
                 <p>

@@ -8,7 +8,7 @@ type Props = {
   images: string[];                // array of Cloudinary IDs or absolute URLs
   initialIndex?: number;           // default 0
   className?: string;
-  onClose?: () => void;
+  onCloseAction?: () => void;      // renamed for client component prop-serializability rule
   /** If true, renders a fullscreen lightbox dialog overlay; if false, inline gallery only */
   lightbox?: boolean;
 };
@@ -17,7 +17,7 @@ export default function Gallery({
   images,
   initialIndex = 0,
   className = "",
-  onClose,
+  onCloseAction,
   lightbox = true,
 }: Props) {
   const safeImages = useMemo(
@@ -45,7 +45,7 @@ export default function Gallery({
 
   const closeLightbox = () => {
     setOpen(false);
-    onClose?.();
+    onCloseAction?.();
   };
 
   const goPrev = useCallback(() => {
@@ -68,7 +68,7 @@ export default function Gallery({
       // If cur was invalid (NaN/undefined), fall back to desired
       return Number.isFinite(cur as number) ? clampedCur : desired;
     });
-  }, [safeImages, safeImages.length, initialIndex]);
+  }, [safeImages, initialIndex]); // ← removed redundant safeImages.length
 
   // Keyboard support (←/→/Esc) when modal is open
   useEffect(() => {

@@ -73,19 +73,20 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
+    // Accept both product-like (name/image) and service-like (title/thumbnailUrl) payloads
     const payload = {
-      name: s(body.name),
-      description: clip(s(body.description), 5000),
-      category: s(body.category) || "Services",
-      subcategory: s(body.subcategory),
-      price: n(body.price), // null => contact for quote
-      rateType: s(body.rateType),
-      serviceArea: s(body.serviceArea),
-      availability: s(body.availability),
-      image: s(body.image),
-      gallery: arr(body.gallery),
-      sellerPhone: normalizeMsisdn(s(body.sellerPhone)),
-      location: s(body.location) || s(body.serviceArea),
+      name: s((body as any).name) || s((body as any).title),
+      description: clip(s((body as any).description), 5000),
+      category: s((body as any).category) || "Services",
+      subcategory: s((body as any).subcategory),
+      price: n((body as any).price), // null => contact for quote
+      rateType: s((body as any).rateType),
+      serviceArea: s((body as any).serviceArea),
+      availability: s((body as any).availability),
+      image: s((body as any).image) || s((body as any).thumbnailUrl),
+      gallery: arr((body as any).gallery),
+      sellerPhone: normalizeMsisdn(s((body as any).sellerPhone)),
+      location: s((body as any).location) || s((body as any).serviceArea),
     };
 
     // validation
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
       select: { id: true, name: true, username: true, createdAt: true },
     });
 
-    // write
+    // write (ensure status ACTIVE so it shows immediately on home)
     const created = await db.service.create({
       data: {
         name: payload.name,
@@ -136,8 +137,9 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
 
-    return noStore({ serviceId: created.id });
+    return noStore({ serviceId: created.id }, { status: 201 });
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("[services/create POST] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }

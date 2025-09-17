@@ -8,34 +8,91 @@ import toast from "react-hot-toast";
 type Tone = "neutral" | "danger";
 
 /**
- * Danger/neutral action button to delete a listing.
- * - Next.js 15 safe: `afterDeleteAction` name avoids Server Action collisions
- * - Double-guarded (confirm dialog + cooldown)
- * - Emits client events:
- *    - "qs:track"            { event: "listing_delete", payload: { id } }
- *    - "qs:listing:deleted"  { id }
+ * DeleteListingButton
+ *
+ * Works for both products and services.
+ * Accepts any of:
+ *  - { productId: string }
+ *  - { serviceId: string }
+ *  - { id: string, type: "product" | "service" }   // fallback form
+ *
+ * Other props:
+ *  - afterDeleteAction?: () => void | Promise<void>
+ *  - label?: string
+ *  - confirmText?: string
+ *  - tone?: "neutral" | "danger"
+ *  - className?: string
+ *
+ * Emits client events:
+ *    - "qs:track"            { event: "listing_delete", payload: { id, type } }
+ *    - "qs:listing:deleted"  { id, type }
  */
-export default function DeleteListingButton({
-  id,
-  className,
-  afterDeleteAction,
-  label = "Delete",
-  confirmText = "Delete this listing? This cannot be undone.",
-  tone = "neutral", // ← default: not too red, matches theme
-}: {
-  id: string;
+type BaseProps = {
   className?: string;
-  /** Optional callback (can be a Server Action). Runs after a successful delete. */
   afterDeleteAction?: () => void | Promise<void>;
   label?: string;
   confirmText?: string;
-  /** Visual tone; "neutral" keeps within site theme, "danger" uses red accents. */
   tone?: Tone;
-}) {
+};
+
+type ProductProps = BaseProps & {
+  productId: string;
+  serviceId?: never;
+  id?: never;
+  type?: "product";
+};
+
+type ServiceProps = BaseProps & {
+  serviceId: string;
+  productId?: never;
+  id?: never;
+  type?: "service";
+};
+
+type GenericProps = BaseProps & {
+  id: string;
+  type: "product" | "service";
+  productId?: never;
+  serviceId?: never;
+};
+
+type Props = ProductProps | ServiceProps | GenericProps;
+
+export default function DeleteListingButton(props: Props) {
+  const {
+    className,
+    afterDeleteAction,
+    label = "Delete",
+    confirmText,
+    tone = "neutral",
+  } = props;
+
+  // Resolve target type + id from flexible props
+  const targetType: "product" | "service" =
+    "type" in props && props.type
+      ? props.type
+      : "productId" in props && props.productId
+      ? "product"
+      : "serviceId" in props && props.serviceId
+      ? "service"
+      : "product"; // default
+
+  const targetId: string =
+    ("productId" in props && props.productId) ||
+    ("serviceId" in props && props.serviceId) ||
+    ("id" in props && props.id) ||
+    "";
+
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [_, startTransition] = useTransition();
   const cooldownUntilRef = useRef<number>(0);
+
+  const effectiveConfirm =
+    confirmText ??
+    (targetType === "service"
+      ? "Delete this service? This cannot be undone."
+      : "Delete this listing? This cannot be undone.");
 
   const emit = useCallback((name: string, detail?: unknown) => {
     // eslint-disable-next-line no-console
@@ -55,18 +112,28 @@ export default function DeleteListingButton({
   );
 
   const handleDelete = useCallback(async () => {
+    if (!targetId) {
+      toast.error("Missing listing id");
+      return;
+    }
+
     // Basic cooldown
     const now = Date.now();
     if (now < cooldownUntilRef.current || isDeleting) return;
     cooldownUntilRef.current = now + 800;
 
-    if (!confirm(confirmText)) return;
+    if (!confirm(effectiveConfirm)) return;
 
     setIsDeleting(true);
     const ac = new AbortController();
 
     try {
-      const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
+      const endpoint =
+        targetType === "service"
+          ? `/api/services/${encodeURIComponent(targetId)}`
+          : `/api/products/${encodeURIComponent(targetId)}`;
+
+      const r = await fetch(endpoint, {
         method: "DELETE",
         signal: ac.signal,
         headers: { "Content-Type": "application/json" },
@@ -85,10 +152,10 @@ export default function DeleteListingButton({
       }
 
       toast.dismiss();
-      toast.success("Listing deleted");
-      track("listing_delete", { id });
+      toast.success("Deleted");
+      track("listing_delete", { id: targetId, type: targetType });
 
-      emit("qs:listing:deleted", { id });
+      emit("qs:listing:deleted", { id: targetId, type: targetType });
 
       try {
         await afterDeleteAction?.();
@@ -107,14 +174,12 @@ export default function DeleteListingButton({
     } finally {
       setIsDeleting(false);
     }
-  }, [afterDeleteAction, confirmText, id, isDeleting, router, track, emit]);
+  }, [afterDeleteAction, effectiveConfirm, isDeleting, targetId, targetType, router, track, emit]);
 
   const toneClasses =
     tone === "danger"
-      ? // classic red (only when explicitly requested)
-        "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/20"
-      : // theme-friendly neutral (default): subtle navy/blue/gray
-        "border-gray-300 text-gray-800 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800";
+      ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/20"
+      : "border-gray-300 text-gray-800 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800";
 
   return (
     <button

@@ -9,6 +9,7 @@ import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
+import { revalidatePath, revalidateTag } from "next/cache"; // ← ADD
 
 /* ----------------------------- tiny utils ----------------------------- */
 
@@ -296,6 +297,18 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true },
     });
+
+    // ----- NEW: revalidate feed/search caches so listing appears immediately -----
+    try {
+      // Adjust these to match your fetch tags in Home/Search
+      revalidateTag("home:active");
+      revalidateTag("products:latest");
+      revalidateTag(`user:${me.id}:listings`);
+      // Also nuke the homepage path for good measure (cheap in Next 15)
+      revalidatePath("/");
+    } catch {
+      /* best-effort; ignore */
+    }
 
     track("product_create_success", {
       reqId,

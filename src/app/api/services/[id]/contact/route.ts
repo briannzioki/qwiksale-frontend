@@ -1,4 +1,3 @@
-// src/app/api/services/[id]/contact/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,37 +38,17 @@ function getClientIp(req: NextRequest): string | null {
   return null;
 }
 
-/* Use a permissive alias so this route compiles even before you generate Prisma types for `Service`. */
-const db: any = prisma;
-
-/* ----------------------------- CORS (optional) ----------------------------- */
-export function OPTIONS() {
-  const origin =
-    process.env["NEXT_PUBLIC_SITE_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
-    "*";
-
-  const res = new NextResponse(null, { status: 204 });
-  res.headers.set("Access-Control-Allow-Origin", origin);
-  res.headers.set("Vary", "Origin");
-  res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.headers.set("Access-Control-Max-Age", "86400");
-  res.headers.set("Cache-Control", "no-store");
-  return res;
-}
-
 /* ------------------------------- GET ------------------------------- */
 export async function GET(req: NextRequest) {
   try {
-    const id = getId(req);
-    if (!id) return noStore({ error: "Missing id" }, { status: 400 });
+    const listingId = getId(req);
+    if (!listingId) return noStore({ error: "Missing id" }, { status: 400 });
 
     const session = await auth().catch(() => null);
     const viewerUserId = (session as any)?.user?.id as string | undefined;
 
-    const svc = await db.service.findUnique({
-      where: { id },
+    const svc = await prisma.service.findUnique({
+      where: { id: listingId },
       select: {
         id: true,
         name: true,
@@ -81,13 +60,17 @@ export async function GET(req: NextRequest) {
     if (!svc) return noStore({ error: "Not found" }, { status: 404 });
 
     // telemetry (non-blocking)
-    db.contactReveal
+    const ip = getClientIp(req);
+    const ua = req.headers.get("user-agent") || null;
+
+    prisma.contactReveal
       .create({
         data: {
-          productId: id, // reuse same table if desired; or add a dedicated serviceId column in your schema
+          listingType: "service",
+          listingId,
           viewerUserId: viewerUserId ?? null,
-          ip: getClientIp(req),
-          userAgent: req.headers.get("user-agent") || null,
+          ip: ip ?? null,
+          userAgent: ua,
         },
       })
       .catch(() => {});
@@ -106,4 +89,21 @@ export async function GET(req: NextRequest) {
     console.warn("[services/:id/contact GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
+}
+
+/* ----------------------------- CORS (optional) ----------------------------- */
+export function OPTIONS() {
+  const origin =
+    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
+    "*";
+
+  const res = new NextResponse(null, { status: 204 });
+  res.headers.set("Access-Control-Allow-Origin", origin);
+  res.headers.set("Vary", "Origin");
+  res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.headers.set("Access-Control-Max-Age", "86400");
+  res.headers.set("Cache-Control", "no-store");
+  return res;
 }
