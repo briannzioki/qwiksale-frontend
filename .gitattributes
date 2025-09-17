@@ -1,0 +1,3 @@
+* text=auto
+*.prisma text eol=lf
+
