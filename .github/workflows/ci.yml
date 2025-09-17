@@ -20,9 +20,9 @@ jobs:
     timeout-minutes: 15
     env:
       NEXT_TELEMETRY_DISABLED: 1
-      # Safe placeholders so build never needs secrets/DB
       NEXT_PUBLIC_SITE_URL: https://qwiksale.sale
       NEXT_PUBLIC_APP_URL: https://qwiksale.sale
+      NODE_OPTIONS: --max-old-space-size=2048
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'pnpm'
+          cache: pnpm
 
       - name: Install deps
         run: pnpm install --frozen-lockfile
