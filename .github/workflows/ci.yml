@@ -12,19 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-          cache: 'pnpm'   # cache pnpm store via pnpm-lock.yaml
-
-      # ? Install pnpm explicitly (no Corepack)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          # match your package.json -> "packageManager": "pnpm@10.16.0"
           version: 10.16.0
           run_install: false
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "pnpm"
 
       - name: Print versions
         run: |
@@ -41,5 +39,5 @@ jobs:
         run: pnpm build
 
       - name: Test
-        if: success() && hashFiles('**/jest.config.*') != ''
+        if: success() && hashFiles("**/jest.config.*") != ""
         run: pnpm test -- --ci
