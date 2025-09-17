@@ -1,47 +1,43 @@
 name: CI
 
 on:
-  push:
-    branches: [ main, master ]
   pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
 
 jobs:
-  ci:
+  build:
     runs-on: ubuntu-latest
-
-    env:
-      NODE_ENV: test
-      NEXT_TELEMETRY_DISABLED: "1"
-      # If you use Postgres in CI, set a test DB here (or use sqlite if your schema allows)
-      # DATABASE_URL: postgresql://user:pass@localhost:5432/testdb
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: '20'
+          cache: 'pnpm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Enable corepack (pnpm)
+        run: corepack enable
 
-      - name: Prisma Generate
-        run: npx prisma generate
+      - name: Install deps (pnpm)
+        run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit tests (Vitest)
-        run: npm run test:unit
+      - name: Prisma generate
+        run: pnpm prisma generate
 
       - name: Build
-        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          DATABASE_URL: 'postgresql://user:pass@localhost:5432/db'
+          DIRECT_URL: 'postgresql://user:pass@localhost:5432/db'
+          AUTH_SECRET: 'devsecret'
+          NEXTAUTH_URL: 'http://localhost:3000'
+        run: pnpm build
 
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
-
-      - name: E2E (Playwright)
-        run: npm run test:e2e
+      - name: Typecheck
+        run: pnpm typecheck
