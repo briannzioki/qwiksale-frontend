@@ -12,19 +12,30 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
+      # Install pnpm (makes `pnpm` available in PATH)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      # Setup Node & enable pnpm lockfile caching
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable corepack (pnpm)
-        run: corepack enable
+      - name: Print tool versions
+        run: |
+          node -v
+          pnpm -v
 
-      - name: Install deps (pnpm)
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Prisma generate
