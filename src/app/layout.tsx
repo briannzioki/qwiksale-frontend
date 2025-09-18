@@ -1,5 +1,5 @@
 // src/app/layout.tsx
-// Edge/Node compatible (no Node imports)
+export const runtime = "nodejs";
 
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
@@ -36,7 +36,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   let i = 0;
   const len = bytes.length;
 
-  // Full 3-byte chunks
   while (i + 2 < len) {
     const b0 = bytes[i] as number;
     const b1 = bytes[i + 1] as number;
@@ -46,7 +45,6 @@ function bytesToBase64(bytes: Uint8Array): string {
     i += 3;
   }
 
-  // Remainder (1 or 2 bytes)
   const rem = len - i;
   if (rem === 1) {
     const b0 = bytes[i] as number;
@@ -97,10 +95,7 @@ export const metadata: Metadata = {
   description:
     "QwikSale — Kenya’s trusted marketplace for all items. List your items, find great deals, and contact sellers directly.",
   keywords: ["QwikSale", "Kenya", "marketplace", "buy and sell", "peer to peer", "mpesa"],
-  alternates: {
-    canonical: siteUrl + "/",
-    languages: { "en-KE": "/", en: "/" },
-  },
+  alternates: { canonical: siteUrl + "/", languages: { "en-KE": "/", en: "/" } },
   manifest: "/manifest.webmanifest",
   openGraph: {
     type: "website",
