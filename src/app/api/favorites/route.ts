@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { track } from "@/app/lib/analytics";
@@ -15,16 +15,17 @@ function noStore(jsonOrRes: unknown, init?: ResponseInit): NextResponse {
       ? jsonOrRes
       : NextResponse.json(jsonOrRes as any, init);
 
+  // Never cache — user-specific
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
-  // Important for per-user responses so cache/CDN knows to vary by cookie
-  res.headers.set("Vary", "Cookie");
+  // Vary on auth-related headers so CDNs won’t mix users
+  res.headers.set("Vary", "Cookie, Authorization");
   return res;
 }
 
 async function requireUserId(): Promise<string | null> {
-  const session = await auth();
+  const session = await auth().catch(() => null);
   const id = (session?.user as { id?: string } | undefined)?.id;
   if (id) return id ?? null;
 
@@ -40,24 +41,32 @@ async function requireUserId(): Promise<string | null> {
 
 /** Local wrapper to avoid EventName union friction while we roll out events. */
 function trackSafe(event: string, props: Record<string, unknown> = {}): void {
-  (track as any)(event, props);
+  try {
+    (track as any)(event, props);
+  } catch {
+    // best-effort analytics; never throw
+  }
 }
 
-/** Extracts a productId from query or JSON body (never throws). */
-async function getProductIdFromReq(req: Request): Promise<string> {
+/** Extract a productId from query (?productId|id) or JSON body (best-effort). */
+async function getProductIdFromReq(req: NextRequest): Promise<string> {
   const url = new URL(req.url);
 
-  // 1) Query param (productId or id)
+  // Query param (productId or id)
   const qp = (url.searchParams.get("productId") ?? url.searchParams.get("id"))?.trim();
   if (qp) return qp;
 
-  // 2) JSON body (optional)
+  // Optional JSON body
   let body: unknown = null;
   try {
-    body = await req.json();
+    // Only bother reading body for mutating verbs (avoid consuming streams elsewhere)
+    if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
+      body = await req.json();
+    }
   } catch {
     /* ignore non-JSON */
   }
+
   const pid =
     typeof (body as any)?.productId === "string"
       ? (body as any).productId.trim()
@@ -65,7 +74,7 @@ async function getProductIdFromReq(req: Request): Promise<string> {
   return pid;
 }
 
-function parseBool(v: string | null, def = false) {
+function parseBool(v: string | null, def = false): boolean {
   if (v == null) return def;
   const t = v.trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(t)) return true;
@@ -80,7 +89,7 @@ function parseBool(v: string | null, def = false) {
  *   &limit=number (default 50, max 200)
  *   &cursor=isoTimestamp (paginate by createdAt)
  */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const userId = await requireUserId();
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
@@ -93,7 +102,7 @@ export async function GET(req: Request) {
     const limitRaw = Number(url.searchParams.get("limit") || "50");
     const limit = Math.min(Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50), 200);
 
-    const cursorStr = url.searchParams.get("cursor") || "";
+    const cursorStr = (url.searchParams.get("cursor") || "").trim();
     const cursorDate = cursorStr ? new Date(cursorStr) : null;
     const cursorValid = !!cursorDate && !Number.isNaN(cursorDate.getTime());
 
@@ -130,8 +139,8 @@ export async function GET(req: Request) {
         },
       });
 
-      const lastFull = favorites.at(-1);
-      const nextCursor = lastFull?.createdAt ? lastFull.createdAt.toISOString() : null;
+      const last = favorites.length ? favorites[favorites.length - 1] : undefined;
+      const nextCursor = last?.createdAt ? last.createdAt.toISOString() : null;
 
       trackSafe("favorites_listed", {
         userId,
@@ -154,7 +163,7 @@ export async function GET(req: Request) {
     });
 
     const ids = rows.map((r) => r.productId);
-    const lastRow = rows.at(-1);
+    const lastRow = rows.length ? rows[rows.length - 1] : undefined;
     const nextCursor = lastRow?.createdAt ? lastRow.createdAt.toISOString() : null;
 
     trackSafe("favorites_listed", {
@@ -173,7 +182,7 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const userId = await requireUserId();
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
@@ -195,7 +204,7 @@ export async function POST(req: Request) {
 
     trackSafe("favorite_added", { userId, productId: pid });
 
-    return noStore({ ok: true, added: true, productId: pid });
+    return noStore({ ok: true, added: true, productId: pid }, { status: 201 });
   } catch (e: unknown) {
     // eslint-disable-next-line no-console
     console.error("POST /api/favorites error:", e);
@@ -204,7 +213,7 @@ export async function POST(req: Request) {
   }
 }
 
-export async function DELETE(req: Request) {
+export async function DELETE(req: NextRequest) {
   try {
     const userId = await requireUserId();
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
@@ -228,9 +237,19 @@ export async function DELETE(req: Request) {
 }
 
 export async function HEAD() {
+  // Explicit 204 with no body; still set no-store headers
   return noStore(new NextResponse(null, { status: 204 }));
 }
 
 export async function OPTIONS() {
-  return noStore({ ok: true }, { status: 200 });
+  const res = new NextResponse(null, {
+    status: 204,
+    headers: {
+      Allow: "GET, POST, DELETE, HEAD, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, HEAD, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    },
+  });
+  return noStore(res);
 }

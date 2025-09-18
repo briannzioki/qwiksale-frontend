@@ -1,43 +1,27 @@
+// src/app/api/account/delete/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/db";
-
-// (optional) light throttling if you already have this helper in your project.
-// If not present, these calls are wrapped in try/catch and safely ignored.
-let throttle:
-  | ((
-      key: string,
-      max: number,
-      windowSec: number
-    ) => Promise<{ allowed: boolean }>)
-  | null = null;
-
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const mod = require("@/app/api/auth/otp/_store") as {
-    throttle: (
-      key: string,
-      max: number,
-      windowSec: number
-    ) => Promise<{ allowed: boolean }>;
-  };
-  throttle = mod?.throttle ?? null;
-} catch {
-  throttle = null;
-}
+import { prisma } from "@/app/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 /* ----------------------------------------------------------------------------
  * tiny utils
  * -------------------------------------------------------------------------- */
-function noStore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
+function noStore(jsonOrRes: unknown, init?: ResponseInit) {
+  const res =
+    jsonOrRes instanceof NextResponse
+      ? jsonOrRes
+      : NextResponse.json(jsonOrRes as any, init);
+
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  // Per-user responses should vary by cookie to avoid accidental caching
+  res.headers.set("Vary", "Cookie");
   return res;
 }
 
@@ -79,16 +63,33 @@ async function parseConfirm(req: NextRequest): Promise<Parsed> {
 }
 
 /* ----------------------------------------------------------------------------
+ * optional throttling (lazy, ESM-friendly)
+ * -------------------------------------------------------------------------- */
+type ThrottleFn = (
+  key: string,
+  max: number,
+  windowSec: number
+) => Promise<{ allowed: boolean }>;
+
+let _throttleOnce: Promise<ThrottleFn | null> | null = null;
+async function getThrottle(): Promise<ThrottleFn | null> {
+  if (_throttleOnce) return _throttleOnce;
+  _throttleOnce = import("@/app/api/auth/otp/_store")
+    .then((m: any) => (typeof m?.throttle === "function" ? (m.throttle as ThrottleFn) : null))
+    .catch(() => null);
+  return _throttleOnce;
+}
+
+/* ----------------------------------------------------------------------------
  * core handler
  * -------------------------------------------------------------------------- */
 async function handle(req: NextRequest) {
   try {
-    // Throttle by IP a bit to avoid abuse (best-effort)
+    // Best-effort IP throttle
     try {
+      const throttle = await getThrottle();
       if (throttle) {
-        const hdrs = req.headers; // always present on NextRequest
-
-        // SAFE: guard the first-hop access and trim with optional chaining
+        const hdrs = req.headers;
         const forwarded = hdrs.get("x-forwarded-for") || "";
         const firstHop = forwarded.split(",")[0]?.trim();
         const ip =
@@ -98,17 +99,15 @@ async function handle(req: NextRequest) {
           "ip:unknown";
 
         const th = await throttle(`acctdel:ip:${ip}`, 6, 60); // 6/min/IP
-        if (!th.allowed)
-          return noStore(
-            { error: "Too many requests, try again later." },
-            { status: 429 }
-          );
+        if (!th.allowed) {
+          return noStore({ error: "Too many requests, try again later." }, { status: 429 });
+        }
       }
     } catch {
       /* ignore throttle errors */
     }
 
-    const session = await auth();
+    const session = await auth().catch(() => null);
     const userId = (session as any)?.user?.id as string | undefined;
     const sessionEmail = (session as any)?.user?.email as string | undefined;
 
@@ -143,18 +142,13 @@ async function handle(req: NextRequest) {
       productIds = [];
     }
 
-    // We'll collect Prisma operations into a single transaction.
-    // Keep it simple to avoid TS inference issues.
-    const ops: any[] = [];
+    // Collect operations for a single transaction
+    const ops: Prisma.PrismaPromise<any>[] = [];
 
     // 1) Favorites: by user and on their products
     try {
       if ((prisma as any).favorite?.deleteMany) {
-        ops.push(
-          (prisma as any).favorite.deleteMany({
-            where: { userId },
-          })
-        );
+        ops.push((prisma as any).favorite.deleteMany({ where: { userId } }));
         if (productIds.length > 0) {
           ops.push(
             (prisma as any).favorite.deleteMany({
@@ -170,16 +164,8 @@ async function handle(req: NextRequest) {
     // 2) Referrals
     try {
       if ((prisma as any).referral?.deleteMany) {
-        ops.push(
-          (prisma as any).referral.deleteMany({
-            where: { inviterId: userId },
-          })
-        );
-        ops.push(
-          (prisma as any).referral.deleteMany({
-            where: { inviteeId: userId },
-          })
-        );
+        ops.push((prisma as any).referral.deleteMany({ where: { inviterId: userId } }));
+        ops.push((prisma as any).referral.deleteMany({ where: { inviteeId: userId } }));
       }
     } catch {
       /* ignore */
@@ -222,11 +208,7 @@ async function handle(req: NextRequest) {
     // 5) OAuth Accounts (NextAuth) — detach first to avoid FK surprises
     try {
       if ((prisma as any).account?.deleteMany) {
-        ops.push(
-          (prisma as any).account.deleteMany({
-            where: { userId },
-          })
-        );
+        ops.push((prisma as any).account.deleteMany({ where: { userId } }));
       }
     } catch {
       /* ignore */
@@ -248,18 +230,10 @@ async function handle(req: NextRequest) {
     // 7) Payments / orders (if present): best-effort
     try {
       if ((prisma as any).payment?.deleteMany) {
-        ops.push(
-          (prisma as any).payment.deleteMany({
-            where: { userId },
-          })
-        );
+        ops.push((prisma as any).payment.deleteMany({ where: { userId } }));
       }
       if ((prisma as any).order?.deleteMany) {
-        ops.push(
-          (prisma as any).order.deleteMany({
-            where: { buyerId: userId },
-          })
-        );
+        ops.push((prisma as any).order.deleteMany({ where: { buyerId: userId } }));
       }
     } catch {
       /* ignore */
@@ -277,7 +251,7 @@ async function handle(req: NextRequest) {
 
     await prisma.$transaction(ops);
 
-    // Let the client perform signOut() + redirect; we just confirm deletion.
+    // Let the client signOut() + redirect; we just confirm deletion.
     return noStore({ ok: true });
   } catch (e) {
     // eslint-disable-next-line no-console

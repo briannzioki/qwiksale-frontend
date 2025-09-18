@@ -1,18 +1,14 @@
+// src/app/api/referrals/stats/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 
-/**
- * GET /api/referrals/stats
- *
- * Returns the caller's referral code (creating one if missing) and some counts.
- * Optional: include=recent -> returns last 20 referrals with invitee email if available.
- */
-
+/* ----------------------------- helpers ----------------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -21,61 +17,49 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-// Build a human-ish code from username + random suffix
+function hasValidDbUrl(): boolean {
+  const u = process.env["DATABASE_URL"] ?? "";
+  return /^postgres(ql)?:\/\//i.test(u);
+}
+
 function makeCodeFrom(username?: string | null): string {
-  const base = (username || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
-    .slice(0, 12);
+  const base = (username || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
   const rand = Math.random().toString(36).slice(2, 8);
   return `${base || "qs"}-${rand}`;
 }
 
 /**
- * Atomically ensure a unique referral code is set.
- * Uses UPDATE … WHERE referralCode IS NULL RETURNING to avoid races.
- * Retries on unique conflicts (P2002).
+ * Atomically set referralCode if null.
+ * Uses SQL `UPDATE ... WHERE referralCode IS NULL RETURNING` (Postgres).
+ * Falls back to retrying Prisma updates on unique conflicts.
  */
 async function ensureReferralCodeAtomic(userId: string, username?: string | null) {
-  // quick short-circuit if already set
-  const current = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { referralCode: true },
-  });
+  // short-circuit
+  const current = await prisma.user.findUnique({ where: { id: userId }, select: { referralCode: true } });
   if (current?.referralCode) return current.referralCode;
 
   let lastErr: unknown = null;
-
   for (let attempt = 0; attempt < 6; attempt++) {
     const code = makeCodeFrom(username);
-
     try {
+      // Prefer a single-shot SQL update when provider is Postgres
       const rowsRaw = await prisma.$queryRaw<Array<{ referralCode: string }>>`
         UPDATE "User"
         SET "referralCode" = ${code}
         WHERE "id" = ${userId} AND "referralCode" IS NULL
         RETURNING "referralCode"
       `;
-
-      // Defensive: $queryRaw can be any; ensure it's an array before indexing.
       const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
-
-      if (rows.length > 0 && rows[0] && typeof rows[0].referralCode === "string") {
+      if (rows.length > 0 && typeof rows[0]?.referralCode === "string") {
         return rows[0].referralCode;
       }
 
-      // Nothing returned — either no row matched or code was set concurrently.
-      const after = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { referralCode: true },
-      });
+      // Maybe another request raced and set it — re-check
+      const after = await prisma.user.findUnique({ where: { id: userId }, select: { referralCode: true } });
       if (after?.referralCode) return after.referralCode;
-
-      // Still null: retry with a new code
-      continue;
+      continue; // still null: try again with a new random code
     } catch (e: any) {
-      // Unique clash on the randomly generated code; retry
-      if (e && e.code === "P2002") {
+      if (e?.code === "P2002") { // unique constraint clash on referralCode
         lastErr = e;
         continue;
       }
@@ -83,36 +67,46 @@ async function ensureReferralCodeAtomic(userId: string, username?: string | null
     }
   }
 
-  // Final check before giving up
-  const final = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { referralCode: true },
-  });
+  // Final re-check
+  const final = await prisma.user.findUnique({ where: { id: userId }, select: { referralCode: true } });
   if (final?.referralCode) return final.referralCode;
-
   throw lastErr || new Error("Failed to assign referral code");
 }
 
 function baseUrlFrom(req: NextRequest): string {
   const envUrl =
     process.env["NEXT_PUBLIC_APP_URL"] ||
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
     process.env["APP_URL"] ||
-    process.env["SITE_URL"] ||
     "";
   if (envUrl) return envUrl.replace(/\/+$/, "");
 
-  const proto =
-    req.headers.get("x-forwarded-proto") ||
-    (process.env.NODE_ENV === "production" ? "https" : "http");
-  const host =
-    req.headers.get("x-forwarded-host") ||
-    req.headers.get("host") ||
-    "localhost:3000";
+  const proto = req.headers.get("x-forwarded-proto") || (process.env.NODE_ENV === "production" ? "https" : "http");
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000";
   return `${proto}://${host}`.replace(/\/+$/, "");
 }
 
-/** GET /api/referrals/stats */
+/* --------------------------------- GET --------------------------------- */
+/**
+ * GET /api/referrals/stats
+ * Returns caller’s referral code (creating if missing) + counts.
+ * Optional: `?include=recent` adds up to 20 latest referrals.
+ */
 export async function GET(req: NextRequest) {
+  if (!hasValidDbUrl()) {
+    return noStore({
+      ok: true,
+      code: null,
+      shareUrl: null,
+      copyText: null,
+      share: { whatsapp: null, twitter: null },
+      counts: { invited: 0, qualified: 0 },
+      qualifiedOnUser: 0,
+      recent: [],
+      note: "no-database-url",
+    });
+  }
+
   try {
     const session = await auth();
     const uid = (session as any)?.user?.id as string | undefined;
@@ -122,38 +116,25 @@ export async function GET(req: NextRequest) {
       .toLowerCase()
       .includes("recent");
 
-    // Fetch minimal user info
+    // Minimal user info
     const me = await prisma.user.findUnique({
       where: { id: uid },
-      select: {
-        id: true,
-        username: true,
-        referralCode: true,
-        referralQualified: true,
-      },
+      select: { id: true, username: true, referralCode: true, referralQualified: true },
     });
     if (!me) return noStore({ error: "Not found" }, { status: 404 });
 
-    // Ensure code exists
-    const referralCode =
-      me.referralCode || (await ensureReferralCodeAtomic(me.id, me.username));
+    // Ensure referral code
+    const referralCode = me.referralCode || (await ensureReferralCodeAtomic(me.id, me.username));
 
     // Counts
     const [totalInvites, totalQualified] = await Promise.all([
-      prisma.referral.count({ where: { inviterId: uid } }),
-      prisma.referral.count({
-        where: { inviterId: uid, qualifiedAt: { not: null } },
-      }),
+      (prisma as any).referral?.count?.({ where: { inviterId: uid } }) ?? 0,
+      (prisma as any).referral?.count?.({ where: { inviterId: uid, qualifiedAt: { not: null } } }) ?? 0,
     ]);
 
-    // Optional recent list
+    // Optional recent (try with relation; fall back if schema differs)
     let recent:
-      | Array<{
-          id: string;
-          inviteeEmail: string | null;
-          createdAt: Date;
-          qualifiedAt: Date | null;
-        }>
+      | Array<{ id: string; inviteeEmail: string | null; createdAt: string; qualifiedAt: string | null }>
       | undefined;
 
     if (includeRecent) {
@@ -161,36 +142,49 @@ export async function GET(req: NextRequest) {
         id: string;
         createdAt: Date;
         qualifiedAt: Date | null;
-        invitee: { email: string | null } | null;
+        invitee?: { email: string | null } | null;
+        inviteeEmail?: string | null; // fallback column if relation missing
       };
 
-      const recentRaw = (await prisma.referral.findMany({
-        where: { inviterId: uid },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        select: {
-          id: true,
-          createdAt: true,
-          qualifiedAt: true,
-          invitee: { select: { email: true } }, // requires a `invitee` relation
-        },
-      })) as RecentRow[];
+      let recentRaw: RecentRow[] = [];
+      try {
+        recentRaw = (await (prisma as any).referral.findMany({
+          where: { inviterId: uid },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          select: {
+            id: true,
+            createdAt: true,
+            qualifiedAt: true,
+            invitee: { select: { email: true } },
+          },
+        })) as RecentRow[];
+      } catch {
+        // Fallback: no relation, try a plain column
+        try {
+          recentRaw = (await (prisma as any).referral.findMany({
+            where: { inviterId: uid },
+            orderBy: { createdAt: "desc" },
+            take: 20,
+            select: { id: true, createdAt: true, qualifiedAt: true, inviteeEmail: true },
+          })) as RecentRow[];
+        } catch {
+          recentRaw = [];
+        }
+      }
 
-      recent = recentRaw.map((r: RecentRow) => ({
+      recent = recentRaw.map((r) => ({
         id: r.id,
-        inviteeEmail: r.invitee?.email ?? null,
-        createdAt: r.createdAt,
-        qualifiedAt: r.qualifiedAt,
+        inviteeEmail: (r.invitee?.email ?? r.inviteeEmail) ?? null,
+        createdAt: r.createdAt.toISOString(),
+        qualifiedAt: r.qualifiedAt ? r.qualifiedAt.toISOString() : null,
       }));
     }
 
-    // Helpful share URLs
     const base = baseUrlFrom(req);
     const shareUrl = `${base}/signup?ref=${encodeURIComponent(referralCode)}`;
     const copyText = `Join me on QwikSale! Sign up with my invite: ${shareUrl}`;
-    const waText = encodeURIComponent(
-      `Join me on QwikSale! Sign up with my invite: ${shareUrl}`
-    );
+    const waText = encodeURIComponent(copyText);
     const whatsappShare = `https://wa.me/?text=${waText}`;
     const twitterShare = `https://twitter.com/intent/tweet?text=${waText}`;
 
