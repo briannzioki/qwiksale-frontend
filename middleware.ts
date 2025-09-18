@@ -1,17 +1,30 @@
-// middleware.ts
+// src/middleware.ts
 import { withAuth } from "next-auth/middleware";
 import { NextResponse, type NextRequest } from "next/server";
 
 /* ------------------- Edge-safe helpers ------------------- */
-function makeNonce() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
+function getCrypto(): Crypto | undefined {
+  return (globalThis as any)?.crypto as Crypto | undefined;
+}
+
+function makeNonce(): string {
+  const c = getCrypto();
+  const bytes = new Uint8Array(16);
+  if (c?.getRandomValues) {
+    c.getRandomValues(bytes);
+  } else {
+    // Extremely rare fallback; still fine for a CSP nonce
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  // base64 via btoa on Edge/runtime
   let binary = "";
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
-function makeUUID() {
-  // Random device id for host-only cookie
-  return (crypto as any)?.randomUUID?.() ?? `${Date.now().toString(36)}-${makeNonce()}`;
+
+function makeUUID(): string {
+  const c = getCrypto() as any;
+  return typeof c?.randomUUID === "function" ? c.randomUUID() : `${Date.now().toString(36)}-${makeNonce()}`;
 }
 
 /* ------------------------- Security / CSP ------------------------- */
@@ -93,14 +106,14 @@ export default withAuth(
   function middleware(req: NextRequest) {
     const p = req.nextUrl.pathname;
 
-    // Allow preflight requests to pass through
+    // Allow preflight
     if (req.method === "OPTIONS") return NextResponse.next();
 
     // Hard opt-out: never touch NextAuth or common infra/static/health
     if (
       p.startsWith("/api/auth") || // NextAuth callbacks/providers/csrf/etc
       p.startsWith("/api/health") || // health probes (runtime + db)
-      p.startsWith("/_next") ||    // Next.js internals (incl. static/css/js)
+      p.startsWith("/_next") || // Next internals (incl. static/css/js)
       p.startsWith("/_vercel") ||
       p === "/favicon.ico" ||
       p.startsWith("/icon") ||
@@ -112,12 +125,12 @@ export default withAuth(
       return NextResponse.next();
     }
 
-    const isDev =
-      process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview";
+    const isPreview = process.env.VERCEL_ENV === "preview";
+    const isDev = process.env.NODE_ENV !== "production" || isPreview;
 
-    // Only treat as HTML navigation if the client accepts HTML
-    const accept = req.headers.get("accept") || "";
-    const isHtml = accept.includes("text/html");
+    // HTML navigation detection (simple + robust)
+    const accept = (req.headers.get("accept") || "").toLowerCase();
+    const isHtml = accept.includes("text/html") || accept.includes("*/*");
 
     // JSON guard on specific endpoints only (never on /api/auth/**)
     if (
@@ -128,7 +141,7 @@ export default withAuth(
       if (bad) return bad;
     }
 
-    // Forward nonce to app (only needed for HTML)
+    // Forward nonce to app (only for HTML)
     const nonce = isHtml ? makeNonce() : "";
     const forwarded = new Headers(req.headers);
     if (isHtml) forwarded.set("x-nonce", nonce);
@@ -168,7 +181,7 @@ export default withAuth(
           p.startsWith("/account") ||
           p.startsWith("/dashboard") ||
           p.startsWith("/messages") ||
-          p.startsWith("/saved"); // if your Saved page is only for signed-in users
+          p.startsWith("/saved");
 
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
 
