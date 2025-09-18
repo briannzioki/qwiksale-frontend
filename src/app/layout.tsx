@@ -1,3 +1,4 @@
+﻿export const runtime = "nodejs";
 // src/app/layout.tsx
 // Edge/Node compatible (no Node imports)
 
@@ -93,9 +94,9 @@ export const metadata: Metadata = {
     }
   })(),
   applicationName: "QwikSale",
-  title: { default: "QwikSale", template: "%s · QwikSale" },
+  title: { default: "QwikSale", template: "%s Â· QwikSale" },
   description:
-    "QwikSale — Kenya’s trusted marketplace for all items. List your items, find great deals, and contact sellers directly.",
+    "QwikSale â€” Kenyaâ€™s trusted marketplace for all items. List your items, find great deals, and contact sellers directly.",
   keywords: ["QwikSale", "Kenya", "marketplace", "buy and sell", "peer to peer", "mpesa"],
   alternates: {
     canonical: siteUrl + "/",
@@ -106,7 +107,7 @@ export const metadata: Metadata = {
     type: "website",
     url: siteUrl + "/",
     siteName: "QwikSale",
-    title: "QwikSale — Kenya’s trusted marketplace for all items.",
+    title: "QwikSale â€” Kenyaâ€™s trusted marketplace for all items.",
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
     images: [{ url: `${siteUrl}/og-image.png`, width: 1200, height: 630, alt: "QwikSale" }],
@@ -114,7 +115,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "QwikSale — Kenya’s trusted marketplace for all items.",
+    title: "QwikSale â€” Kenyaâ€™s trusted marketplace for all items.",
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
     images: [`${siteUrl}/og-image.png`],
@@ -274,3 +275,4 @@ gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: true });
     </html>
   );
 }
+
