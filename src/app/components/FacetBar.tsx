@@ -10,20 +10,9 @@ export type Facets = {
 
 type Props = {
   facets?: Facets | null;
-
-  /**
-   * Optional callback when a chip is clicked.
-   * Rename ends with "Action" to satisfy Next.js 15 serialization rules if passed from a Server Component.
-   * You can also skip this and just listen to the client event "qs:facet:pick".
-   */
-  onPickAction?: (
-    kind: "category" | "brand" | "condition",
-    value: string
-  ) => void | Promise<void>;
-
+  onPickAction?: (kind: "category" | "brand" | "condition", value: string) => void | Promise<void>;
   className?: string;
-
-  /** Maximum chips per section (default 12) */
+  /** Maximum chips per section (default 10) */
   maxPerSection?: number;
 };
 
@@ -39,15 +28,13 @@ function hasAnyFacets(f?: Facets | null) {
 }
 
 function emit<T = unknown>(name: string, detail?: T) {
-  // eslint-disable-next-line no-console
-  console.log(`[qs:event] ${name}`, detail);
   if (typeof window !== "undefined" && "CustomEvent" in window) {
     window.dispatchEvent(new CustomEvent(name, { detail }));
   }
 }
 
 function slug(s: string) {
-  return s
+  return (s || "")
     .toLowerCase()
     .normalize?.("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -63,15 +50,13 @@ export default function FacetBar({
   facets,
   onPickAction,
   className = "",
-  maxPerSection = 12,
+  maxPerSection = 10, // slightly lower default keeps DOM lighter
 }: Props) {
-  // If nothing to show, render nothing (prevents blank white area)
   if (!hasAnyFacets(facets)) return null;
 
-  // Defensive clamp on per-section limit
   const limit = Number.isFinite(maxPerSection)
     ? Math.max(0, Math.floor(maxPerSection))
-    : 12;
+    : 10;
 
   const Section = ({
     title,
@@ -79,32 +64,28 @@ export default function FacetBar({
     kind,
   }: {
     title: string;
-    items: Facet[]; // required; callers pass [] if empty
+    items: Facet[];
     kind: "category" | "brand" | "condition";
   }) => {
     if (!items.length) return null;
 
-    // Deduplicate by value (case-insensitive), keep highest count if duplicates arrive
+    // Dedupe by value (case-insensitive), keep highest count
     const dedupMap = new Map<string, Facet>();
     for (const it of items) {
-      const key = it.value.toLowerCase();
+      const key = (it.value || "").toLowerCase();
       const prev = dedupMap.get(key);
       if (!prev || (prev?.count ?? 0) < (it?.count ?? 0)) {
         dedupMap.set(key, it);
       }
     }
-    const deduped = Array.from(dedupMap.values());
-
-    // Slice after dedupe
-    const top = deduped.slice(0, limit);
+    const top = Array.from(dedupMap.values()).slice(0, limit);
 
     async function pick(value: string) {
       emit("qs:facet:pick", { kind, value });
       try {
         await onPickAction?.(kind, value);
       } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error("[FacetBar] onPickAction error:", e);
+        // optional: swallow
       }
     }
 
@@ -115,14 +96,15 @@ export default function FacetBar({
         </h3>
         <ul className="flex flex-wrap gap-2" role="list">
           {top.map((f) => {
-            const key = `${kind}:${slug(f.value) || f.value}`;
-            const label = `${title}: ${f.value} (${f.count})`;
-            const countTxt = nf.format(f.count);
+            const value = f.value ?? "";
+            const key = `${kind}:${slug(value) || value}`;
+            const countTxt = nf.format(f.count ?? 0);
+            const label = `${title}: ${value} (${countTxt})`;
             return (
               <li key={key}>
                 <button
                   type="button"
-                  onClick={() => pick(f.value)}
+                  onClick={() => pick(value)}
                   className="
                     inline-flex items-center gap-2
                     rounded-full px-3 py-1.5 text-sm
@@ -136,7 +118,7 @@ export default function FacetBar({
                   title={label}
                   aria-label={label}
                 >
-                  <span className="truncate max-w-[12rem]">{f.value}</span>
+                  <span className="truncate max-w-[12rem]">{value}</span>
                   <span className="text-xs opacity-70">{countTxt}</span>
                 </button>
               </li>

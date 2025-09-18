@@ -1,8 +1,10 @@
 // src/app/api/auth/[...nextauth]/authOptions.ts
+import { createTransport } from "nodemailer";
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import EmailProvider from "next-auth/providers/email"; // ✅ add this
 
 import { prisma } from "@/app/lib/prisma";
 import { verifyPassword, hashPassword } from "@/server/auth";
@@ -39,6 +41,40 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: "/signin" },
 
   providers: [
+    // ✅ Email magic-link provider (uses EMAIL_SERVER / EMAIL_FROM)
+    ...(process.env["EMAIL_SERVER"] && process.env["EMAIL_FROM"]
+      ? [
+          EmailProvider({
+            server: process.env["EMAIL_SERVER"], // e.g. smtp://user:pass@send.smtp.mailtrap.io:587
+            from: process.env["EMAIL_FROM"],     // e.g. "QwikSale <no-reply@qwiksale.sale>"
+            maxAge: 10 * 60,                     // 10 minutes
+            async sendVerificationRequest({ identifier, url, provider, theme }) {
+              const transport = createTransport(provider.server as any);
+              const { host } = new URL(url);
+
+              const subject = `Sign in to ${host}`;
+              const text = `Sign in to ${host}\n${url}\n\nIf you did not request this email, you can ignore it.`;
+              const html = `
+                <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.4">
+                  <h2 style="margin:0 0 12px 0">Sign in to <span style="color:#161748">${host}</span></h2>
+                  <p><a href="${url}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#161748;color:#fff;text-decoration:none">Click to sign in</a></p>
+                  <p style="color:#666;margin-top:12px">If you did not request this email, you can safely ignore it.</p>
+                </div>
+              `;
+
+              await transport.sendMail({
+                to: identifier,
+                from: provider.from,
+                replyTo: process.env["EMAIL_REPLY_TO"] || undefined, // 👈 uses your env
+                subject,
+                text,
+                html,
+              });
+            },
+          }),
+        ]
+      : []),
+
     Credentials({
       name: "Email & Password",
       credentials: {
@@ -89,8 +125,8 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!ALLOW_CREDS_AUTO_SIGNUP) {
-            await new Promise((r) => setTimeout(r, 250));
-            return null;
+          await new Promise((r) => setTimeout(r, 250));
+          return null;
         }
 
         const passwordHash = await hashPassword(password);

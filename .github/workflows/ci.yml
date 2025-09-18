@@ -1,1 +1,54 @@
-# (paste the YAML from above here verbatim)
+﻿name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      # Safe placeholders so build never needs secrets/DB
+      NEXT_PUBLIC_SITE_URL: https://qwiksale.sale
+      NEXT_PUBLIC_APP_URL: https://qwiksale.sale
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm prisma generate
+
+      - name: Typecheck (optional)
+        run: pnpm run typecheck --if-present
+
+      - name: Lint (optional)
+        run: pnpm run lint --if-present
+
+      - name: Build
+        run: pnpm run build

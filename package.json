@@ -29,7 +29,7 @@
     "ci": "npm run typecheck && npm run test:unit && npm run build && npm run test:e2e"
   },
   "engines": {
-    "node": ">=18.18.0 || >=20",
+    "node": "20.x",
     "npm": "please-use-pnpm",
     "yarn": "please-use-pnpm"
   },

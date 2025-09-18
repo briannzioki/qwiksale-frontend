@@ -1,9 +1,10 @@
 // src/app/layout.tsx
+// Edge/Node compatible (no Node imports)
+
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import Script from "next/script";
-import crypto from "crypto";
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
 import Providers from "./providers";
 import AppShell from "./components/AppShell";
@@ -19,6 +20,57 @@ const siteUrl = envAppUrl.replace(/\/+$/, "");
 
 const isPreview =
   process.env["VERCEL_ENV"] === "preview" || process.env["NEXT_PUBLIC_NOINDEX"] === "1";
+
+/* ----------------------------- Nonce utilities ----------------------------- */
+const BASE64_ABC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const b64 = (n: number) => BASE64_ABC.charAt(n & 63);
+
+function bytesToBase64(bytes: Uint8Array): string {
+  // Prefer Node's Buffer if available (Node runtime)
+  const g = globalThis as any;
+  if (g?.Buffer?.from) {
+    return g.Buffer.from(bytes).toString("base64");
+  }
+
+  let out = "";
+  let i = 0;
+  const len = bytes.length;
+
+  // Full 3-byte chunks
+  while (i + 2 < len) {
+    const b0 = bytes[i] as number;
+    const b1 = bytes[i + 1] as number;
+    const b2 = bytes[i + 2] as number;
+    const u = (b0 << 16) | (b1 << 8) | b2;
+    out += b64(u >> 18) + b64((u >> 12) & 63) + b64((u >> 6) & 63) + b64(u & 63);
+    i += 3;
+  }
+
+  // Remainder (1 or 2 bytes)
+  const rem = len - i;
+  if (rem === 1) {
+    const b0 = bytes[i] as number;
+    const u = b0 << 16;
+    out += b64(u >> 18) + b64((u >> 12) & 63) + "==";
+  } else if (rem === 2) {
+    const b0 = bytes[i] as number;
+    const b1 = bytes[i + 1] as number;
+    const u = (b0 << 16) | (b1 << 8);
+    out += b64(u >> 18) + b64((u >> 12) & 63) + b64((u >> 6) & 63) + "=";
+  }
+
+  return out;
+}
+
+function generateNonce(): string {
+  const arr = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
+  }
+  return bytesToBase64(arr);
+}
 
 /* -------------------------------- Viewport -------------------------------- */
 export const viewport: Viewport = {
@@ -41,10 +93,7 @@ export const metadata: Metadata = {
     }
   })(),
   applicationName: "QwikSale",
-  title: {
-    default: "QwikSale",
-    template: "%s · QwikSale",
-  },
+  title: { default: "QwikSale", template: "%s · QwikSale" },
   description:
     "QwikSale — Kenya’s trusted marketplace for all items. List your items, find great deals, and contact sellers directly.",
   keywords: ["QwikSale", "Kenya", "marketplace", "buy and sell", "peer to peer", "mpesa"],
@@ -104,18 +153,14 @@ export const metadata: Metadata = {
   category: "marketplace",
 };
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  // CSP nonce from middleware (or local fallback)
-  let nonce: string;
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Get CSP nonce from middleware if present; otherwise generate one
+  let nonce = "";
   try {
-    const h = await headers(); // ✅ Next 15 headers() is async
-    nonce = h.get("x-nonce") ?? crypto.randomBytes(16).toString("base64");
+    const h = await headers(); // Promise<ReadonlyHeaders> in Next 15
+    nonce = h.get("x-nonce") ?? generateNonce();
   } catch {
-    nonce = crypto.randomBytes(16).toString("base64");
+    nonce = generateNonce();
   }
 
   // JSON-LD (site-wide)

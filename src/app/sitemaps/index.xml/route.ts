@@ -1,5 +1,5 @@
-// src/app/sitemaps/index.xml/route.ts
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const revalidate = 3600;
 
 import { NextResponse } from "next/server";
@@ -8,9 +8,9 @@ function getBaseUrl(): string {
   const raw =
     process.env["NEXT_PUBLIC_SITE_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
-    "https://qwiksale.co";
+    "https://qwiksale.sale";
   const trimmed = String(raw).trim().replace(/\/+$/, "");
-  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.co";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.sale";
 }
 
 function xmlEscape(s: string): string {
@@ -24,9 +24,7 @@ function xmlEscape(s: string): string {
 
 function sitemapIndex(urls: string[]): string {
   const unique = Array.from(new Set(urls.filter(Boolean)));
-  const items = unique
-    .map((u) => `<sitemap><loc>${xmlEscape(u)}</loc></sitemap>`)
-    .join("\n");
+  const items = unique.map((u) => `<sitemap><loc>${xmlEscape(u)}</loc></sitemap>`).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -38,19 +36,19 @@ export async function GET() {
   try {
     const base = getBaseUrl();
     const urls = [
-      `${base}/sitemaps/towns.xml`,
       `${base}/sitemaps/categories.xml`,
+      `${base}/sitemaps/towns.xml`,
       // add more child sitemaps here
     ];
     const xml = sitemapIndex(urls);
     return new NextResponse(xml, {
-      status: 200,
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
         "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
       },
     });
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("[/sitemaps/index.xml] error:", e);
     return new NextResponse("Server error", { status: 500 });
   }
