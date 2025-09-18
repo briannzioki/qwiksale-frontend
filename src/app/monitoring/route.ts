@@ -1,7 +1,7 @@
-// src/app/monitoring/route.ts
+﻿// src/app/monitoring/route.ts
 import { NextResponse } from "next/server";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 /**
  * Build an envelope URL from a Sentry DSN.
@@ -156,3 +156,4 @@ export async function POST(req: Request) {
     );
   }
 }
+
