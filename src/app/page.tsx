@@ -9,10 +9,9 @@ import HomeClient from "./_components/HomeClient";
 export default function HomePage() {
   return (
     <main className="min-h-dvh">
-      <Suspense fallback={<div className="p-6 text-sm opacity-70">Loadingâ€¦</div>}>
+      <Suspense fallback={<div className="p-6 text-sm opacity-70">Loading…</div>}>
         <HomeClient />
       </Suspense>
     </main>
   );
 }
-
