@@ -93,9 +93,13 @@ export default withAuth(
   function middleware(req: NextRequest) {
     const p = req.nextUrl.pathname;
 
-    // Hard opt-out: never touch NextAuth or common infra/static
+    // Allow preflight requests to pass through
+    if (req.method === "OPTIONS") return NextResponse.next();
+
+    // Hard opt-out: never touch NextAuth or common infra/static/health
     if (
       p.startsWith("/api/auth") || // NextAuth callbacks/providers/csrf/etc
+      p.startsWith("/api/health") || // health probes (runtime + db)
       p.startsWith("/_next") ||    // Next.js internals (incl. static/css/js)
       p.startsWith("/_vercel") ||
       p === "/favicon.ico" ||
@@ -103,15 +107,17 @@ export default withAuth(
       p === "/robots.txt" ||
       p === "/sitemap.xml" ||
       p.startsWith("/sitemaps") ||
-      p.startsWith("/.well-known") ||
-      p.startsWith("/api/health")
+      p.startsWith("/.well-known")
     ) {
       return NextResponse.next();
     }
 
     const isDev =
       process.env.NODE_ENV !== "production" || process.env.VERCEL_ENV === "preview";
-    const nonce = makeNonce();
+
+    // Only treat as HTML navigation if the client accepts HTML
+    const accept = req.headers.get("accept") || "";
+    const isHtml = accept.includes("text/html");
 
     // JSON guard on specific endpoints only (never on /api/auth/**)
     if (
@@ -122,17 +128,21 @@ export default withAuth(
       if (bad) return bad;
     }
 
-    // Forward nonce to app
+    // Forward nonce to app (only needed for HTML)
+    const nonce = isHtml ? makeNonce() : "";
     const forwarded = new Headers(req.headers);
-    forwarded.set("x-nonce", nonce);
+    if (isHtml) forwarded.set("x-nonce", nonce);
+
     const res = NextResponse.next({ request: { headers: forwarded } });
 
-    // Security headers
-    const sec = buildSecurityHeaders(nonce, isDev);
-    for (const [k, v] of sec.entries()) res.headers.set(k, v);
+    // Security headers only for HTML navigations (avoid touching API responses)
+    if (isHtml) {
+      const sec = buildSecurityHeaders(nonce, isDev);
+      for (const [k, v] of sec.entries()) res.headers.set(k, v);
+    }
 
-    // Device cookie (host-only; does NOT replace NextAuth cookies)
-    if (!req.cookies.get("qs_did")?.value) {
+    // Device cookie (host-only; set on HTML only to avoid noisy Set-Cookie on APIs)
+    if (isHtml && !req.cookies.get("qs_did")?.value) {
       const did = makeUUID();
       res.cookies.set({
         name: "qs_did",
@@ -171,9 +181,9 @@ export default withAuth(
 );
 
 /* ----------------------------- Matcher ----------------------------- */
-/** Exclude NextAuth & static at the matcher level too (belt & suspenders) */
+/** Exclude NextAuth, health, and static at the matcher level too */
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|_vercel|\\.well-known).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|api/health|_vercel|\\.well-known).*)",
   ],
 };

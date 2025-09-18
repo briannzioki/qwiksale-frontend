@@ -21,7 +21,6 @@ function toInt(v: string | null, def: number, min: number, max: number) {
   if (!Number.isFinite(n)) return def;
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
-
 function toBool(v: string | null): boolean | undefined {
   if (v == null) return undefined;
   const t = v.trim().toLowerCase();
@@ -29,8 +28,6 @@ function toBool(v: string | null): boolean | undefined {
   if (["0", "false", "no"].includes(t)) return false;
   return undefined;
 }
-
-// normalize string params: treat "", "any", "all", "*" as undefined
 function optStr(v: string | null): string | undefined {
   const t = (v ?? "").trim();
   if (!t) return undefined;
@@ -48,18 +45,16 @@ function toSort(v: string | null): SortKey {
   return "newest";
 }
 
-/** select for list cards (lightweight) */
+/** minimal select for cards (drop description/gallery to keep JSON light) */
 const productListSelect = {
   id: true,
   name: true,
-  description: true,
   category: true,
   subcategory: true,
   brand: true,
   condition: true,
   price: true,
   image: true,
-  gallery: true,
   location: true,
   negotiable: true,
   createdAt: true,
@@ -73,7 +68,6 @@ const productListSelect = {
   sellerRating: true,
   sellerSales: true,
 
-  // light linked seller info (includes username for store links)
   seller: {
     select: { id: true, username: true, name: true, image: true, subscription: true },
   },
@@ -84,44 +78,36 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
 
-    // text query
     const q = (url.searchParams.get("q") || "").trim();
-
-    // optional filters (ignore "any"/"*"/"")
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
     const brand = optStr(url.searchParams.get("brand"));
     const condition = optStr(url.searchParams.get("condition"));
     const sellerId = optStr(url.searchParams.get("sellerId"));
-    const sellerUsername = optStr(url.searchParams.get("seller")); // username
+    const sellerUsername = optStr(url.searchParams.get("seller"));
 
-    // featured / verifiedOnly
     const featured = toBool(url.searchParams.get("featured"));
-    const verifiedOnly = toBool(url.searchParams.get("verifiedOnly")); // alias
+    const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
 
-    // price range
     const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
     const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
 
-    // sorting & pagination
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
-    const pageSize = toInt(url.searchParams.get("pageSize"), 24, 1, 200); // default 24 (matches UI)
+    const pageSize = toInt(url.searchParams.get("pageSize"), 24, 1, 200);
 
-    // Build where (default to ACTIVE items)
     const where: any = { status: "ACTIVE" };
     const and: any[] = [];
 
-    if (q.length > 0) {
+    if (q) {
       and.push({
         OR: [
           { name: { contains: q, mode: "insensitive" } },
           { brand: { contains: q, mode: "insensitive" } },
           { category: { contains: q, mode: "insensitive" } },
           { subcategory: { contains: q, mode: "insensitive" } },
-          { description: { contains: q, mode: "insensitive" } },
-          { sellerName: { contains: q, mode: "insensitive" } }, // seller snapshot
+          { sellerName: { contains: q, mode: "insensitive" } },
         ],
       });
     }
@@ -130,11 +116,9 @@ export async function GET(req: NextRequest) {
     if (brand) and.push({ brand: { contains: brand, mode: "insensitive" } });
     if (condition) and.push({ condition: { equals: condition, mode: "insensitive" } });
     if (sellerId) and.push({ sellerId });
-    if (sellerUsername) {
-      and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
-    }
+    if (sellerUsername) and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
     if (typeof featured === "boolean") and.push({ featured });
-    if (verifiedOnly === true) and.push({ featured: true }); // alias
+    if (verifiedOnly === true) and.push({ featured: true });
 
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
       const price: any = {};
@@ -142,87 +126,46 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(maxPrice)) price.lte = maxPrice;
       and.push({ price });
     }
+    if (and.length) where.AND = and;
 
-    if (and.length > 0) where.AND = and;
-
-    // Sorting
     const isSearchLike = q.length > 0 || !!category || !!subcategory || !!brand;
     let orderBy: any;
-    if (sort === "price_asc") {
-      orderBy = { price: "asc" as const };
-    } else if (sort === "price_desc") {
-      orderBy = { price: "desc" as const };
-    } else if (sort === "featured") {
-      orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
-    } else {
-      orderBy = isSearchLike
-        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }]
-        : { createdAt: "desc" as const };
-    }
+    if (sort === "price_asc") orderBy = { price: "asc" as const };
+    else if (sort === "price_desc") orderBy = { price: "desc" as const };
+    else if (sort === "featured") orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
+    else orderBy = isSearchLike ? [{ featured: "desc" as const }, { createdAt: "desc" as const }] : { createdAt: "desc" as const };
 
-    // Always add a stable tie-breaker (id) to keep pagination deterministic
-    const orderByFinal = Array.isArray(orderBy)
-      ? [...orderBy, { id: "asc" as const }]
-      : [orderBy, { id: "asc" as const }];
+    const orderByFinal = Array.isArray(orderBy) ? [...orderBy, { id: "asc" as const }] : [orderBy, { id: "asc" as const }];
 
-    // Resolve current user id (optional)
+    // Resolve current user id (optional, for isFavoritedByMe)
     const session = await auth().catch(() => null);
     const sessionUserId = (session?.user as any)?.id as string | undefined;
     let userId: string | null = sessionUserId ?? null;
     if (!userId && session?.user?.email) {
-      const u = await prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true },
-      });
+      const u = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
       userId = u?.id ?? null;
     }
 
-    // Build Prisma select dynamically to add favorites/_count only when useful
     const select: any = { ...productListSelect };
-
-    // Always compute total favorites via _count
     select._count = { select: { favorites: true } };
-
-    // Only fetch per-user favorites relation when we have a userId
     if (userId) {
-      select.favorites = {
-        where: { userId },
-        select: { productId: true },
-        take: 1, // we only need to know if at least one exists
-      };
+      select.favorites = { where: { userId }, select: { productId: true }, take: 1 };
     }
 
-    // Query
     const [total, productsRaw, facets] = await Promise.all([
       prisma.product.count({ where }),
-      prisma.product.findMany({
-        where,
-        select,
-        orderBy: orderByFinal,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      wantFacets ? computeFacets(where) : Promise.resolve(undefined),
+      prisma.product.findMany({ where, select, orderBy: orderByFinal, skip: (page - 1) * pageSize, take: pageSize }),
+      // only compute facets when explicitly requested AND page 1 (keeps Node memory low)
+      wantFacets && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
     ]);
 
-    // Shape response: add favoritesCount & isFavoritedByMe, strip helpers
-    const items = (productsRaw as unknown as Array<any>).map((p) => {
+    const items = (productsRaw as Array<any>).map((p) => {
       const favoritesCount: number = p?._count?.favorites ?? 0;
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const rel = (p as any)?.favorites;
       const isFavoritedByMe: boolean = Array.isArray(rel) && rel.length > 0;
-
-      const createdAt =
-        p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
-
+      const createdAt = p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
       const { _count, favorites, ...rest } = p;
-      return {
-        ...rest,
-        createdAt,
-        favoritesCount,
-        isFavoritedByMe,
-      };
+      return { ...rest, createdAt, favoritesCount, isFavoritedByMe };
     });
 
     return noStore({

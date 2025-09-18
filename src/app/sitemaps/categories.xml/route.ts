@@ -1,9 +1,8 @@
-// src/app/sitemaps/categories.xml/route.ts
 export const runtime = "nodejs";
-export const revalidate = 3600; // cache 1h
+export const dynamic = "force-dynamic";
+export const revalidate = 3600; // cache 1h at the edge/CDN
 
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
 
 /** Resolve a canonical absolute base URL (no trailing slash). */
 function getBaseUrl(): string {
@@ -27,49 +26,68 @@ function xmlEscape(s: string): string {
 
 function buildSitemapXml(urls: string[]): string {
   const unique = Array.from(new Set(urls.filter(Boolean)));
-  const body = unique
-    .map((u) => `<url><loc>${xmlEscape(u)}</loc></url>`)
-    .join("\n");
-
+  const body = unique.map((u) => `<url><loc>${xmlEscape(u)}</loc></url>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset
-  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${body}
 </urlset>`;
 }
 
+function buildMinimal(): string {
+  const base = getBaseUrl();
+  return buildSitemapXml([
+    `${base}/`,
+    `${base}/search`,
+  ]);
+}
+
+function hasValidDbUrl(): boolean {
+  const u = process.env["DATABASE_URL"] ?? "";
+  return /^postgres(ql)?:\/\//i.test(u);
+}
+
 export async function GET() {
+  if (!hasValidDbUrl()) {
+    // No DB set during build/preview/local → safe fallback
+    return new NextResponse(buildMinimal(), {
+      headers: {
+        "Content-Type": "application/xml; charset=utf-8",
+        "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
+      },
+    });
+  }
+
   try {
+    // Import prisma only when DB looks valid (avoids validation at bundle/parse time)
+    const { prisma } = await import("@/app/lib/prisma");
+
     // Distinct categories of ACTIVE products only.
     const rows = await prisma.product.findMany({
       where: { status: "ACTIVE" },
       select: { category: true },
       distinct: ["category"],
-      take: 5000, // safety cap
+      take: 5000,
     });
 
-    // Normalize & filter categories
     const categories = (rows as Array<{ category: string | null }>)
       .map((r) => (r.category ?? "").trim())
       .filter((c) => c.length > 0);
 
     const base = getBaseUrl();
     const urls = categories.map((c) => `${base}/category/${encodeURIComponent(c)}`);
-
     const xml = buildSitemapXml(urls);
 
     return new NextResponse(xml, {
-      status: 200,
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
-        // CDN/browser caching with SWR; mirrors the top-level `revalidate`
         "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
       },
     });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[sitemaps/categories] error:", e);
-    return new NextResponse("Server error", { status: 500 });
+    return new NextResponse(buildMinimal(), {
+      headers: { "Content-Type": "application/xml; charset=utf-8" },
+    });
   }
 }

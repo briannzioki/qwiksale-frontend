@@ -1,4 +1,7 @@
+// src/app/page.tsx
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { Suspense } from "react";
 import HomeClient from "./_components/HomeClient";

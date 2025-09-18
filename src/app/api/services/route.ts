@@ -15,13 +15,11 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Expires", "0");
   return res;
 }
-
 function toInt(v: string | null, def: number, min: number, max: number) {
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
-
 function toBool(v: string | null): boolean | undefined {
   if (v == null) return undefined;
   const t = v.trim().toLowerCase();
@@ -29,8 +27,6 @@ function toBool(v: string | null): boolean | undefined {
   if (["0", "false", "no"].includes(t)) return false;
   return undefined;
 }
-
-// normalize string params: treat "", "any", "all", "*" as undefined
 function optStr(v: string | null): string | undefined {
   const t = (v ?? "").trim();
   if (!t) return undefined;
@@ -38,7 +34,6 @@ function optStr(v: string | null): string | undefined {
   if (l === "any" || l === "all" || l === "*") return undefined;
   return t;
 }
-
 type SortKey = "newest" | "price_asc" | "price_desc" | "featured";
 function toSort(v: string | null): SortKey {
   const t = (v || "").trim().toLowerCase();
@@ -48,11 +43,10 @@ function toSort(v: string | null): SortKey {
   return "newest";
 }
 
-/** Select for list cards (lightweight) */
+/** minimal select for cards */
 const serviceListSelect = {
   id: true,
   name: true,
-  description: true,
   category: true,
   subcategory: true,
   price: true,
@@ -71,33 +65,24 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
 
-    // text query
     const q = (url.searchParams.get("q") || "").trim();
-
-    // optional filters
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
     const sellerId = optStr(url.searchParams.get("sellerId")) || optStr(url.searchParams.get("userId"));
     const sellerUsername = optStr(url.searchParams.get("seller")) || optStr(url.searchParams.get("user"));
-
-    // featured flag
     const featured = toBool(url.searchParams.get("featured"));
-
-    // price range
     const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
     const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
 
-    // sorting & pagination
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), 24, 1, 200);
 
-    // Build where (default to ACTIVE items)
     const where: any = { status: "ACTIVE" };
     const and: any[] = [];
 
-    if (q.length > 0) {
+    if (q) {
       and.push({
         OR: [
           { name: { contains: q, mode: "insensitive" } },
@@ -120,29 +105,18 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(maxPrice)) price.lte = maxPrice;
       and.push({ price });
     }
+    if (and.length) where.AND = and;
 
-    if (and.length > 0) where.AND = and;
-
-    // Sorting (mirror products)
     const isSearchLike = q.length > 0 || !!category || !!subcategory;
     let orderBy: any;
-    if (sort === "price_asc") {
-      orderBy = { price: "asc" as const };
-    } else if (sort === "price_desc") {
-      orderBy = { price: "desc" as const };
-    } else if (sort === "featured") {
-      orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
-    } else {
-      orderBy = isSearchLike
-        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }]
-        : { createdAt: "desc" as const };
-    }
+    if (sort === "price_asc") orderBy = { price: "asc" as const };
+    else if (sort === "price_desc") orderBy = { price: "desc" as const };
+    else if (sort === "featured") orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
+    else orderBy = isSearchLike ? [{ featured: "desc" as const }, { createdAt: "desc" as const }] : { createdAt: "desc" as const };
 
-    // (Optional) resolve user (parity placeholder)
     const session = await auth().catch(() => null);
     void session;
 
-    // Query
     const [total, servicesRaw, facets] = await Promise.all([
       prisma.service.count({ where }),
       prisma.service.findMany({
@@ -152,10 +126,9 @@ export async function GET(req: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      wantFacets ? computeFacets(where) : Promise.resolve(undefined),
+      wantFacets && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
     ]);
 
-    // API shape for ServiceCard / search page: name + image
     const items = (servicesRaw as Array<any>).map((s) => ({
       id: s.id,
       name: s.name,
