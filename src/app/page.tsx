@@ -1,7 +1,7 @@
 ﻿// src/app/page.tsx
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const dynamic = "force-static";
+export const revalidate = 60;
 
 import { Suspense } from "react";
 import HomeClient from "./_components/HomeClient";

@@ -1,4 +1,8 @@
 // src/app/dashboard/page.tsx
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/auth";
@@ -6,60 +10,63 @@ import { prisma } from "@/app/lib/prisma";
 import DeleteListingButton from "./DeleteListingButton";
 import UserAvatar from "@/app/components/UserAvatar";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const runtime = "nodejs";
-
+/* ----------------------------- Metadata ----------------------------- */
 export const metadata: Metadata = {
   title: "Dashboard · QwikSale",
   description: "Your QwikSale account overview, listings, and insights.",
 };
 
+/* ----------------------------- Types ----------------------------- */
 type RecentListing = {
   id: string;
   name: string;
   image: string | null;
-  createdAt: Date;
+  createdAt: string; // serialized for safe rendering
   price: number | null;
   featured: boolean | null;
-  category: string;
-  subcategory: string;
+  category: string | null;
+  subcategory: string | null;
   status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
 };
 
 type TopCat = {
-  category: string;
+  category: string | null;
   _count: { category: number };
 };
 
+/* ----------------------------- Utils ----------------------------- */
 function fmtKES(n?: number | null) {
   if (!n || n <= 0) return "Contact for price";
   try {
-    return `KES ${new Intl.NumberFormat("en-KE").format(n)}`;
+    return `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n)}`;
   } catch {
     return `KES ${n}`;
   }
 }
 
 async function getUserId(): Promise<string | null> {
-  const session = await auth();
-  const fromToken = (session?.user as any)?.id as string | undefined;
-  if (fromToken) return fromToken ?? null;
+  try {
+    const session = await auth();
+    const fromToken = (session?.user as any)?.id as string | undefined;
+    if (fromToken) return fromToken;
 
-  const email = session?.user?.email ?? null;
-  if (!email) return null;
+    const email = session?.user?.email ?? null;
+    if (!email) return null;
 
-  const u = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  });
-  return u?.id ?? null;
+    const u = await prisma.user
+      .findUnique({ where: { email }, select: { id: true } })
+      .catch(() => null);
+    return u?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
+/* ----------------------------- Page ----------------------------- */
 export default async function DashboardPage() {
   const userId = await getUserId();
 
-  /* ----------------------------- Signed out state ---------------------------- */
+  /* ------------------------- Signed-out state ------------------------- */
   if (!userId) {
     return (
       <div className="p-6 space-y-6">
@@ -80,7 +87,7 @@ export default async function DashboardPage() {
     );
   }
 
-  /* --------------------------------- Queries -------------------------------- */
+  /* ------------------------------ Queries ------------------------------ */
   const now = Date.now();
   const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
   const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
@@ -94,43 +101,49 @@ export default async function DashboardPage() {
     topCats30Raw,
     recentListingsRaw,
   ] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        subscription: true,
-        image: true,
-        createdAt: true,
-        username: true,
-      },
-    }),
-    prisma.product.count({ where: { sellerId: userId } }),
-    prisma.favorite.count({ where: { userId } }),
-    prisma.product.count({ where: { sellerId: userId, createdAt: { gte: since7d } } }),
-    prisma.favorite.count({ where: { product: { sellerId: userId } } }),
-    prisma.product.groupBy({
-      by: ["category"],
-      where: { status: "ACTIVE", createdAt: { gte: since30d } },
-      _count: { category: true },
-    }),
-    prisma.product.findMany({
-      where: { sellerId: userId },
-      orderBy: { createdAt: "desc" },
-      take: 6,
-      select: {
-        id: true,
-        name: true,
-        image: true,
-        createdAt: true,
-        price: true,
-        featured: true,
-        category: true,
-        subcategory: true,
-        status: true,
-      },
-    }),
+    prisma.user
+      .findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          subscription: true,
+          image: true,
+          createdAt: true,
+          username: true,
+        },
+      })
+      .catch(() => null),
+    prisma.product.count({ where: { sellerId: userId } }).catch(() => 0),
+    prisma.favorite.count({ where: { userId } }).catch(() => 0),
+    prisma.product.count({ where: { sellerId: userId, createdAt: { gte: since7d } } }).catch(() => 0),
+    prisma.favorite.count({ where: { product: { sellerId: userId } } }).catch(() => 0),
+    prisma.product
+      .groupBy({
+        by: ["category"],
+        where: { status: "ACTIVE", createdAt: { gte: since30d } },
+        _count: { category: true },
+      })
+      .catch(() => [] as TopCat[]),
+    prisma.product
+      .findMany({
+        where: { sellerId: userId },
+        orderBy: [{ createdAt: "desc" }],
+        take: 6,
+        select: {
+          id: true,
+          name: true,
+          image: true,
+          createdAt: true,
+          price: true,
+          featured: true,
+          category: true,
+          subcategory: true,
+          status: true,
+        },
+      })
+      .catch(() => [] as any[]),
   ]);
 
   if (!me) {
@@ -145,10 +158,18 @@ export default async function DashboardPage() {
   }
 
   const topCats30 = (topCats30Raw as TopCat[])
-    .sort((a, b) => (b._count.category ?? 0) - (a._count.category ?? 0))
+    .filter((x) => !!x.category)
+    .sort((a, b) => (b._count?.category ?? 0) - (a._count?.category ?? 0))
     .slice(0, 5);
 
-  const recentListings = recentListingsRaw as RecentListing[];
+  const recentListings: RecentListing[] = (recentListingsRaw as any[]).map((p) => ({
+    ...p,
+    category: p.category ?? null,
+    subcategory: p.subcategory ?? null,
+    createdAt:
+      p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt ?? ""),
+  }));
+
   const subLabel = me.subscription === "BASIC" ? "FREE" : me.subscription ?? "FREE";
 
   /* ---------------------------------- View ---------------------------------- */
@@ -201,10 +222,10 @@ export default async function DashboardPage() {
 
       {/* Stats */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric title="My Listings" value={myListingsCount} />
-        <Metric title="My Favorites" value={favoritesCount} />
-        <Metric title="New in last 7 days" value={newLast7Days} />
-        <Metric title="Likes on my listings" value={likesOnMyListings} />
+        <Metric title="My Listings" value={myListingsCount ?? 0} />
+        <Metric title="My Favorites" value={favoritesCount ?? 0} />
+        <Metric title="New in last 7 days" value={newLast7Days ?? 0} />
+        <Metric title="Likes on my listings" value={likesOnMyListings ?? 0} />
       </section>
 
       {/* Trends */}
@@ -221,11 +242,11 @@ export default async function DashboardPage() {
           <ul className="grid gap-1 text-sm text-gray-800 dark:text-slate-100 sm:grid-cols-2 lg:grid-cols-3">
             {topCats30.map((c) => (
               <li
-                key={c.category}
+                key={c.category ?? "uncategorized"}
                 className="flex items-center justify-between border-b py-1 dark:border-slate-800"
               >
-                <span>{c.category}</span>
-                <span className="text-gray-500 dark:text-slate-400">{c._count.category}</span>
+                <span>{c.category ?? "Uncategorized"}</span>
+                <span className="text-gray-500 dark:text-slate-400">{c._count.category ?? 0}</span>
               </li>
             ))}
           </ul>
@@ -294,15 +315,17 @@ export default async function DashboardPage() {
                   />
 
                   <div className="p-4">
-                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">{p.name}</h3>
+                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
+                      {p.name || "Unnamed item"}
+                    </h3>
                     <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
-                      {p.category} • {p.subcategory}
+                      {[p.category, p.subcategory].filter(Boolean).join(" • ") || "—"}
                     </p>
                     <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
                       {fmtKES(p.price)}
                     </p>
                     <p className="mt-1 text-[11px] text-gray-400">
-                      {new Date(p.createdAt).toLocaleDateString()}
+                      {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : ""}
                     </p>
 
                     <div className="mt-3 flex gap-2">
@@ -312,7 +335,7 @@ export default async function DashboardPage() {
                       >
                         View
                       </Link>
-                      {/* MINIMAL PATCH: route to the new product editor path */}
+                      {/* Product editor path (matches your new route) */}
                       <Link
                         href={`/sell/product?id=${p.id}`}
                         className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
@@ -335,12 +358,14 @@ export default async function DashboardPage() {
   );
 }
 
+/* ----------------------------- Small component ----------------------------- */
 function Metric({ title, value }: { title: string; value: number }) {
+  const safe = Number.isFinite(value) ? value : 0;
   return (
     <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <div className="text-sm text-gray-500 dark:text-slate-400">{title}</div>
       <div className="text-2xl font-bold text-[#161748] dark:text-white">
-        {new Intl.NumberFormat("en-KE").format(value)}
+        {new Intl.NumberFormat("en-KE").format(safe)}
       </div>
     </div>
   );

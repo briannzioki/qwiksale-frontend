@@ -1,3 +1,4 @@
+// src/app/api/services/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,8 +9,11 @@ import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 
 /* ----------------------------- tiny helpers ----------------------------- */
-function noStore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
+function noStore(jsonOrRes: unknown, init?: ResponseInit) {
+  const res =
+    jsonOrRes instanceof NextResponse
+      ? jsonOrRes
+      : NextResponse.json(jsonOrRes as any, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
@@ -60,17 +64,48 @@ const serviceListSelect = {
   },
 } as const;
 
+/** Access a Service-model compat layer that may not exist in this schema */
+function getServiceModel() {
+  const anyPrisma = prisma as any;
+  const svc =
+    anyPrisma.service ??
+    anyPrisma.services ??
+    anyPrisma.Service ??
+    anyPrisma.Services ??
+    null;
+  return typeof svc?.findMany === "function" ? svc : null;
+}
+
 /* -------------------------- GET /api/services -------------------------- */
 export async function GET(req: NextRequest) {
   try {
+    const Service = getServiceModel();
+    if (!Service) {
+      // No Service model in this schema — return an empty list gracefully.
+      return noStore({
+        page: 1,
+        pageSize: 0,
+        total: 0,
+        totalPages: 1,
+        sort: "newest" as const,
+        items: [] as any[],
+        facets: undefined,
+      });
+    }
+
     const url = new URL(req.url);
 
     const q = (url.searchParams.get("q") || "").trim();
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
-    const sellerId = optStr(url.searchParams.get("sellerId")) || optStr(url.searchParams.get("userId"));
-    const sellerUsername = optStr(url.searchParams.get("seller")) || optStr(url.searchParams.get("user"));
+    const sellerId =
+      optStr(url.searchParams.get("sellerId")) || optStr(url.searchParams.get("userId"));
+    const sellerUsername =
+      optStr(url.searchParams.get("seller")) || optStr(url.searchParams.get("user"));
     const featured = toBool(url.searchParams.get("featured"));
+    // Treat "verified" same as "featured" for now
+    const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
+
     const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
     const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
 
@@ -79,7 +114,7 @@ export async function GET(req: NextRequest) {
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), 24, 1, 200);
 
-    const where: any = { status: "ACTIVE" };
+    const where: Record<string, any> = { status: "ACTIVE" };
     const and: any[] = [];
 
     if (q) {
@@ -96,8 +131,12 @@ export async function GET(req: NextRequest) {
     if (category) and.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (sellerId) and.push({ sellerId });
-    if (sellerUsername) and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
+    if (sellerUsername)
+      and.push({
+        seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } },
+      });
     if (typeof featured === "boolean") and.push({ featured });
+    if (verifiedOnly === true) and.push({ featured: true });
 
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
       const price: any = {};
@@ -105,40 +144,51 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(maxPrice)) price.lte = maxPrice;
       and.push({ price });
     }
-    if (and.length) where.AND = and;
+    if (and.length) where["AND"] = and;
 
     const isSearchLike = q.length > 0 || !!category || !!subcategory;
     let orderBy: any;
-    if (sort === "price_asc") orderBy = { price: "asc" as const };
-    else if (sort === "price_desc") orderBy = { price: "desc" as const };
-    else if (sort === "featured") orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
-    else orderBy = isSearchLike ? [{ featured: "desc" as const }, { createdAt: "desc" as const }] : { createdAt: "desc" as const };
+    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { id: "asc" as const }];
+    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { id: "asc" as const }];
+    else if (sort === "featured")
+      orderBy = [
+        { featured: "desc" as const },
+        { createdAt: "desc" as const },
+        { id: "asc" as const },
+      ];
+    else
+      orderBy = isSearchLike
+        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "asc" as const }]
+        : [{ createdAt: "desc" as const }, { id: "asc" as const }];
 
-    const session = await auth().catch(() => null);
-    void session;
+    // Session not currently used to personalize results; call remains safe.
+    void (await auth().catch(() => null));
 
     const [total, servicesRaw, facets] = await Promise.all([
-      prisma.service.count({ where }),
-      prisma.service.findMany({
+      Service.count({ where }),
+      Service.findMany({
         where,
         select: serviceListSelect,
         orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      wantFacets && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
+      wantFacets && page === 1 ? computeFacets(where, Service) : Promise.resolve(undefined),
     ]);
 
     const items = (servicesRaw as Array<any>).map((s) => ({
-      id: s.id,
-      name: s.name,
-      category: s.category,
-      subcategory: s.subcategory,
-      price: s.price,
-      image: s.image ?? null,
-      featured: s.featured,
-      location: s.location,
-      createdAt: s?.createdAt instanceof Date ? s.createdAt.toISOString() : String(s?.createdAt ?? ""),
+      id: s.id as string,
+      name: s.name as string,
+      category: s.category as string | null,
+      subcategory: s.subcategory as string | null,
+      price: typeof s.price === "number" ? (s.price as number) : null,
+      image: (s.image as string | null) ?? null,
+      featured: Boolean(s.featured),
+      location: (s.location as string | null) ?? null,
+      createdAt:
+        s?.createdAt instanceof Date ? s.createdAt.toISOString() : String(s?.createdAt ?? ""),
+      sellerId: s.sellerId as string,
+      seller: s.seller ?? null,
     }));
 
     return noStore({
@@ -159,6 +209,11 @@ export async function GET(req: NextRequest) {
 
 /* -------------------------- POST /api/services ------------------------- */
 export async function POST(req: NextRequest) {
+  const Service = getServiceModel();
+  if (!Service) {
+    // Creating services is not supported without a Service model
+    return noStore({ error: "Service model not available in this schema." }, { status: 501 });
+  }
   const { POST: createService } = await import("./create/route");
   return createService(req);
 }
@@ -167,11 +222,11 @@ export async function POST(req: NextRequest) {
 type CatRow = { category: string | null; _count: { _all: number } };
 type SubcatRow = { subcategory: string | null; _count: { _all: number } };
 
-async function computeFacets(where: any) {
+async function computeFacets(where: any, Service: any) {
   try {
     const [catsRaw, subsRaw] = await Promise.all([
-      prisma.service.groupBy({ by: ["category"], where, _count: { _all: true } }),
-      prisma.service.groupBy({ by: ["subcategory"], where, _count: { _all: true } }),
+      Service.groupBy({ by: ["category"], where, _count: { _all: true } }),
+      Service.groupBy({ by: ["subcategory"], where, _count: { _all: true } }),
     ]);
 
     const categories = (catsRaw as CatRow[])
@@ -190,4 +245,13 @@ async function computeFacets(where: any) {
   } catch {
     return undefined;
   }
+}
+
+/* ----------------------------- misc verbs ----------------------------- */
+export async function HEAD() {
+  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
 }

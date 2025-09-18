@@ -24,11 +24,9 @@ function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
 
-// Safe read helper for Next 15 async searchParams
-function getStr(
-  sp: Record<string, string | string[] | undefined>,
-  key: string
-): string | undefined {
+type SafeSearchParams = Record<string, string | string[] | undefined>;
+
+function getStr(sp: SafeSearchParams, key: string): string | undefined {
   const v = sp[key];
   if (typeof v === "string") return v;
   if (Array.isArray(v)) return v[0];
@@ -53,23 +51,25 @@ type RevealWithProduct = Prisma.ContactRevealGetPayload<{
   include: { product: { select: { id: true; name: true } } };
 }>;
 
+const TAKE_CHOICES = [50, 100, 200, 500, 1000] as const;
+
 /* ---------- page ---------- */
 export default async function AdminRevealsPage({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams?: Promise<SafeSearchParams>;
 }) {
-  const session = await auth();
+  const session = await auth().catch(() => null);
   if (!allow(session?.user?.email ?? null)) {
     return (
-      <div className="max-w-3xl mx-auto p-6 text-sm text-gray-700">
-        <h1 className="text-lg font-semibold mb-2">Not authorized</h1>
+      <div className="mx-auto max-w-3xl p-6 text-sm text-gray-700">
+        <h1 className="mb-2 text-lg font-semibold">Not authorized</h1>
         <p>
           Your account isn’t on the admin list. Add your email to{" "}
           <code>ADMIN_EMAILS</code> (comma-separated) and redeploy.
         </p>
         <div className="mt-4">
-          <Link href="/" className="text-[#39a0ca] underline">
+          <Link href="/" className="underline text-[#39a0ca]">
             ← Back to site
           </Link>
         </div>
@@ -101,16 +101,21 @@ export default async function AdminRevealsPage({
     };
   }
 
-  // Pass args inline so Prisma infers return type WITH the `include`
-  const logs = await prisma.contactReveal.findMany({
-    ...(where ? { where } : {}),
-    orderBy: { createdAt: "desc" },
-    take: takeNum,
-    include: { product: { select: { id: true, name: true } } },
-  });
-
-  // `logs` now has `product` in its type
-  type LogRow = RevealWithProduct;
+  // Load logs (graceful failure => empty list + banner)
+  let logs: RevealWithProduct[] = [];
+  let loadError = "";
+  try {
+    logs = (await prisma.contactReveal.findMany({
+      ...(where ? { where } : {}),
+      orderBy: { createdAt: "desc" },
+      take: takeNum,
+      include: { product: { select: { id: true, name: true } } },
+    })) as RevealWithProduct[];
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[admin/reveals] prisma error:", e);
+    loadError = "Failed to load reveal logs. Please try again.";
+  }
 
   /* ---------- CSV ---------- */
   const header = [
@@ -124,8 +129,8 @@ export default async function AdminRevealsPage({
 
   const csvRows: string[][] = [
     header as unknown as string[],
-    ...logs.map((r: LogRow) => [
-      r.createdAt.toISOString(),
+    ...logs.map((r) => [
+      r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
       r.productId,
       r.product?.name ?? "",
       r.viewerUserId ?? "",
@@ -139,20 +144,20 @@ export default async function AdminRevealsPage({
 
   /* ---------- UI ---------- */
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+    <div className="mx-auto max-w-6xl p-6">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-semibold">Contact Reveals</h1>
         <div className="flex items-center gap-2">
           <a
             href={csvHref}
             download={`contact-reveals-${new Date().toISOString().slice(0, 19)}.csv`}
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
           >
             Export CSV
           </a>
           <Link
             href="/admin/reveals"
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
           >
             Refresh
           </Link>
@@ -160,40 +165,46 @@ export default async function AdminRevealsPage({
       </div>
 
       {/* Search / controls */}
-      <form className="mb-4 flex flex-col sm:flex-row gap-2" role="search">
+      <form className="mb-4 flex flex-col gap-2 sm:flex-row" role="search">
         <input
           name="q"
           defaultValue={q}
           placeholder="Search product, id, user id, IP, UA…"
-          className="flex-1 rounded-lg border px-3 py-2"
+          className="flex-1 rounded-lg border px-3 py-2 dark:border-slate-800 dark:bg-slate-900"
           aria-label="Search reveals"
         />
         <select
           name="take"
           defaultValue={String(takeNum)}
-          className="rounded-lg border px-3 py-2"
+          className="rounded-lg border px-3 py-2 dark:border-slate-800 dark:bg-slate-900"
           aria-label="Number to show"
         >
-          {[50, 100, 200, 500, 1000].map((n) => (
+          {TAKE_CHOICES.map((n) => (
             <option key={n} value={n}>
               Show {n}
             </option>
           ))}
         </select>
-        <button className="rounded-lg border px-3 py-2 hover:bg-gray-50">
+        <button className="rounded-lg border px-3 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">
           Apply
         </button>
       </form>
 
+      {loadError ? (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+          {loadError}
+        </div>
+      ) : null}
+
       {logs.length === 0 ? (
-        <div className="text-sm text-gray-600 border rounded-xl p-4">
+        <div className="rounded-xl border p-4 text-sm text-gray-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
           No reveal logs found{q ? ` for “${q}”` : ""}.
         </div>
       ) : (
-        <div className="relative overflow-x-auto rounded-xl border bg-white">
+        <div className="relative overflow-x-auto rounded-xl border bg-white dark:border-slate-800 dark:bg-slate-900">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left border-b bg-slate-50">
+              <tr className="border-b bg-slate-50 text-left dark:border-slate-800 dark:bg-slate-800/40">
                 <Th>Time (UTC)</Th>
                 <Th>Product</Th>
                 <Th>Viewer</Th>
@@ -202,11 +213,11 @@ export default async function AdminRevealsPage({
               </tr>
             </thead>
             <tbody>
-              {logs.map((r: LogRow) => (
-                <tr key={r.id} className="border-b last:border-0">
+              {logs.map((r) => (
+                <tr key={r.id} className="border-b last:border-0 dark:border-slate-800">
                   <Td className="whitespace-nowrap">
-                    <time dateTime={r.createdAt.toISOString()}>
-                      {fmtUTC.format(r.createdAt)}
+                    <time dateTime={new Date(r.createdAt).toISOString()}>
+                      {fmtUTC.format(new Date(r.createdAt))}
                     </time>
                   </Td>
                   <Td>
@@ -214,7 +225,7 @@ export default async function AdminRevealsPage({
                       className="underline"
                       href={`/product/${r.productId}`}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                     >
                       {r.product?.name ?? r.productId}
                     </a>
@@ -228,7 +239,7 @@ export default async function AdminRevealsPage({
                   </Td>
                   <Td>{r.ip || <span className="text-gray-400">—</span>}</Td>
                   <Td className="max-w-[420px]">
-                    <span className="line-clamp-2 break-all text-gray-700">
+                    <span className="line-clamp-2 break-all text-gray-700 dark:text-slate-200">
                       {r.userAgent || "—"}
                     </span>
                   </Td>
@@ -239,7 +250,7 @@ export default async function AdminRevealsPage({
         </div>
       )}
 
-      <p className="mt-3 text-xs text-gray-500">
+      <p className="mt-3 text-xs text-gray-500 dark:text-slate-400">
         Showing {logs.length} of latest reveals
         {q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on the
         server.
