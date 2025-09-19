@@ -1,0 +1,52 @@
+﻿name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - deploy/**
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # Install pnpm that matches your repo's packageManager (pnpm@10.16.0)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.16.0
+
+      - name: Show tool versions
+        run: |
+          node -v
+          pnpm -v
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        env:
+          # Add any build-time env here if needed (safe, non-secrets).
+          NEXT_TELEMETRY_DISABLED: "1"
+          CI: "true"
+        run: pnpm run build
