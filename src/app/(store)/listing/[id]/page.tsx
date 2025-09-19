@@ -1,7 +1,5 @@
+export const revalidate = 300;
 // src/app/(store)/listing/[id]/page.tsx
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
@@ -70,16 +68,16 @@ async function getListing(id: string): Promise<Listing | null> {
   };
 }
 
-/** Next 15 expects params as a Promise — await it */
+/** Next 15 expects params as a Promise â€” await it */
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
   const { id } = await params;
   const listing = await getListing(id);
-  if (!listing) return { title: "Listing not found • QwikSale" };
+  if (!listing) return { title: "Listing not found â€¢ QwikSale" };
 
   const priceTxt = fmtKES(listing.price);
-  const town = listing.location ? ` — ${listing.location}` : "";
+  const town = listing.location ? ` â€” ${listing.location}` : "";
 
   // unique, truthy images for OG/Twitter
   const images = Array.from(
@@ -87,7 +85,7 @@ export async function generateMetadata(
   );
 
   return {
-    title: `${listing.name} • ${priceTxt}${town}`,
+    title: `${listing.name} â€¢ ${priceTxt}${town}`,
     description: listing.description ?? undefined,
     alternates: { canonical: `/listing/${listing.id}` },
     openGraph: {

@@ -1,7 +1,5 @@
+export const revalidate = 600;
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 import { Suspense } from "react";
 import HomeClient from "./_components/HomeClient";
 

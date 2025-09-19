@@ -1,5 +1,4 @@
 "use client";
-
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -12,7 +11,7 @@ function isSafePath(p?: string | null): p is string {
 
 const ERR_COPY: Record<string, string> = {
   CredentialsSignin:
-    "Email or password is incorrect. If you registered with Google, use “Continue with Google”.",
+    "Email or password is incorrect. If you registered with Google, use â€œContinue with Googleâ€.",
   OAuthSignin: "We couldn't start Google sign-in. Please try again.",
   OAuthCallback: "Google sign-in failed. Please try again.",
   OAuthAccountNotLinked:
@@ -145,7 +144,7 @@ function SignInPageInner() {
                     id="password"
                     type={showPwd ? "text" : "password"}
                     className="input pr-24"
-                    placeholder="••••••••"
+                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyUp={(e) => setCaps(e.getModifierState("CapsLock"))}
@@ -180,7 +179,7 @@ function SignInPageInner() {
                 aria-busy={working === "creds"}
                 className="btn-gradient-primary mt-2 w-full"
               >
-                {working === "creds" ? "Signing in…" : "Sign in"}
+                {working === "creds" ? "Signing inâ€¦" : "Sign in"}
               </button>
 
               <div className="flex items-center justify-between text-xs text-gray-600 dark:text-slate-400">
@@ -206,10 +205,10 @@ function SignInPageInner() {
               aria-label="Continue with Google"
               type="button"
             >
-              {working === "google" ? "Opening Google…" : "Continue with Google"}
+              {working === "google" ? "Opening Googleâ€¦" : "Continue with Google"}
             </button>
             <p className="mt-2 text-[12px] text-gray-500 dark:text-slate-400">
-              By continuing, you agree to QwikSale’s{" "}
+              By continuing, you agree to QwikSaleâ€™s{" "}
               <Link className="underline" href="/terms">
                 Terms
               </Link>{" "}
@@ -221,7 +220,7 @@ function SignInPageInner() {
             </p>
             <div className="mt-3 text-[12px] text-gray-500 dark:text-slate-400">
               <span className="opacity-80">Returning from a protected page?</span>{" "}
-              You’ll be sent back to <code className="font-mono">{returnTo}</code> after sign-in.
+              Youâ€™ll be sent back to <code className="font-mono">{returnTo}</code> after sign-in.
             </div>
           </div>
 

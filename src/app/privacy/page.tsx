@@ -1,6 +1,8 @@
 // src/app/privacy/page.tsx
 
-export const metadata = {
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
   title: "Privacy Policy — QwikSale",
   description:
     "How QwikSale collects, uses, shares, and protects your information, plus your choices and rights (GDPR, CPRA, Kenya DPA).",

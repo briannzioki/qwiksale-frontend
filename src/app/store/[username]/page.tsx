@@ -1,8 +1,6 @@
+export const revalidate = 300;
 // src/app/store/[username]/page.tsx
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -140,9 +138,9 @@ export default async function StorePage({
           <div>
             <h1 className="text-2xl md:text-3xl font-extrabold">@{user.username}</h1>
             <p className="text-white/90 text-sm">
-              {user.name ? `${user.name} • ` : ""}
+              {user.name ? `${user.name} â€¢ ` : ""}
               Member since {new Date(user.createdAt).getFullYear()}
-              {user.city || user.country ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}` : ""}
+              {user.city || user.country ? ` â€¢ ${[user.city, user.country].filter(Boolean).join(", ")}` : ""}
             </p>
           </div>
           <div className="ml-auto">
@@ -160,7 +158,7 @@ export default async function StorePage({
         </div>
 
         {products.length === 0 ? (
-          <div className="text-gray-600 dark:text-slate-300">This store hasn’t posted any items yet.</div>
+          <div className="text-gray-600 dark:text-slate-300">This store hasnâ€™t posted any items yet.</div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((p) => {
@@ -189,7 +187,7 @@ export default async function StorePage({
                         {p.name || "Unnamed item"}
                       </h3>
                       <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
-                        {[p.category, p.subcategory].filter(Boolean).join(" • ") || "—"}
+                        {[p.category, p.subcategory].filter(Boolean).join(" â€¢ ") || "â€”"}
                       </p>
                       <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">{fmtKES(p.price)}</p>
                       <p className="mt-1 text-[11px] text-gray-400">

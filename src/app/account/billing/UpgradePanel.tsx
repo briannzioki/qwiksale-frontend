@@ -169,7 +169,7 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
           <div className="mt-2">
             <UpgradeWatcher
               paymentId={paymentId}
-              onDone={(s) => {
+              onDoneAction={(s) => {
                 setStatusDone(s);
                 if (s === "SUCCESS") {
                   setMessage("Payment confirmed! Your account will reflect the new tier shortly.");

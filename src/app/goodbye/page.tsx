@@ -1,7 +1,5 @@
+export const revalidate = 3600;
 // src/app/goodbye/page.tsx
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 import Link from "next/link";
 import type { Metadata } from "next";
 
