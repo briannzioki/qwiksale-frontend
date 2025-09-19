@@ -1,14 +1,17 @@
-// src/app/components/SearchBox.tsx
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import SearchCombobox, { type ComboItem } from "@/app/components/SearchCombobox";
+import SearchCombobox from "@/app/components/SearchCombobox"; // no generic in JSX
 
 type SuggestionType = "name" | "brand" | "category" | "subcategory" | "service";
+type SuggestionMeta = { type: SuggestionType };
 
-type SuggestionMeta = {
-  type: SuggestionType;
+// local shape (keeps us decoupled from the combobox file)
+type ComboItem<TMeta = unknown> = {
+  id: string;
+  label: string;
+  meta?: TMeta;
 };
 
 const DEBOUNCE_MS = 160;
@@ -45,11 +48,13 @@ export default function SearchBox({
         | null;
 
       if (!json?.items || !Array.isArray(json.items)) return [];
-      return json.items.map((s, idx) => ({
-        id: `${s.type}:${s.value}:${idx}`,
-        label: s.label,
-        meta: { type: s.type },
-      }));
+      return json.items.map(
+        (s: { label: string; value: string; type: SuggestionType }, idx: number) => ({
+          id: `${s.type}:${s.value}:${idx}`,
+          label: s.label,
+          meta: { type: s.type },
+        })
+      );
     },
     []
   );
@@ -61,7 +66,7 @@ export default function SearchBox({
 
       if (picked?.meta?.type) {
         const t = picked.meta.type;
-        const label = picked.label; // if you also have stable .value, put it into meta and use that
+        const label = picked.label;
 
         if (t === "brand") {
           params.set("brand", label);
@@ -101,15 +106,15 @@ export default function SearchBox({
         <input ref={inputRef} className="hidden" autoFocus={autoFocus} aria-hidden="true" tabIndex={-1} />
 
         <div className="flex-1">
-          <SearchCombobox<SuggestionMeta>
+          <SearchCombobox
             value={q}
-            onChange={setQ}
-            onSelect={(item) => go(item.label, item)}
-            fetchSuggestions={fetchSuggest}
+            onChangeAction={(v: string) => setQ(v)}
+            onSelectAction={(item: ComboItem<SuggestionMeta>) => go(item.label, item)}
+            fetchSuggestionsAction={fetchSuggest}
             placeholder={placeholder}
             debounceMs={DEBOUNCE_MS}
             ariaLabel="Search products, brands, categories or services"
-            renderItem={(it, active) => (
+            renderItemAction={(it: ComboItem<SuggestionMeta>, active: boolean) => (
               <div
                 className={classNames(
                   "flex w-full items-center justify-between gap-3 text-left",

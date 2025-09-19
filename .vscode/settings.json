@@ -1,3 +1,17 @@
 {
-    "typescript.tsdk": "node_modules\\typescript\\lib"
+  "typescript.tsdk": "node_modules\\typescript\\lib",
+
+  // Silence Tailwind/PostCSS at-rule warnings in the editor
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "less.lint.unknownAtRules": "ignore",
+  "css.validate": false,
+
+  // Better class name suggestions in strings
+  "editor.quickSuggestions": { "strings": true },
+
+  // Recognize classes inside your classNames() helper
+  "tailwindCSS.experimental.classRegex": [
+    ["classNames\\(([^)]*)\\)", "(?:'|\"|`)([^'\"`]*)(?:'|\"|`)"]
+  ]
 }

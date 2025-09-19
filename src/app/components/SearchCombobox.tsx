@@ -1,4 +1,3 @@
-// src/app/components/SearchCombobox.tsx
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -6,34 +5,37 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 export type ComboItem<TMeta = unknown> = {
   id: string;
   label: string;
-  /** optional metadata you can use onSelect (e.g., type:"brand") */
+  /** optional metadata you can use onSelectAction (e.g., type:"brand") */
   meta?: TMeta;
 };
 
-type Props<TMeta = unknown> = {
+export type Props<TMeta = unknown> = {
   /** Controlled value (text in the input) */
   value?: string;
+
   /** Called on every input change OR when an item is chosen */
-  onChange?: (v: string) => void;
+  onChangeAction?: (v: string) => void;
+
   /** Called when a specific item is chosen (Enter on an option / click) */
-  onSelect?: (item: ComboItem<TMeta>) => void;
+  onSelectAction?: (item: ComboItem<TMeta>) => void;
 
   /**
    * If you want the combobox to fully manage fetching, provide this.
    * If you pass `items`, the combobox will render those instead (and skip fetching).
    */
-  fetchSuggestions?: (q: string) => Promise<ComboItem<TMeta>[]>;
-  /** Provide static/controlled items (takes precedence over fetchSuggestions if passed) */
+  fetchSuggestionsAction?: (q: string) => Promise<ComboItem<TMeta>[]>;
+
+  /** Provide static/controlled items (takes precedence over fetchSuggestionsAction if passed) */
   items?: ComboItem<TMeta>[];
 
   placeholder?: string;
   className?: string;
 
-  /** Optional: how many ms to wait before calling fetchSuggestions */
+  /** Optional: how many ms to wait before calling fetchSuggestionsAction */
   debounceMs?: number;
 
   /** Optional custom item renderer */
-  renderItem?: (item: ComboItem<TMeta>, active: boolean) => React.ReactNode;
+  renderItemAction?: (item: ComboItem<TMeta>, active: boolean) => React.ReactNode;
 
   /** Optional aria-label for the input (if no visible label) */
   ariaLabel?: string;
@@ -41,14 +43,14 @@ type Props<TMeta = unknown> = {
 
 export default function SearchCombobox<TMeta = unknown>({
   value = "",
-  onChange,
-  onSelect,
-  fetchSuggestions,
+  onChangeAction,
+  onSelectAction,
+  fetchSuggestionsAction,
   items: controlledItems,
   placeholder = "Search…",
   className = "",
   debounceMs = 150,
-  renderItem,
+  renderItemAction,
   ariaLabel = "Search",
 }: Props<TMeta>) {
   const inputId = useId();
@@ -77,7 +79,7 @@ export default function SearchCombobox<TMeta = unknown>({
       setItems(controlledItems);
       return;
     }
-    if (!fetchSuggestions) return;
+    if (!fetchSuggestionsAction) return;
 
     if (timerRef.current != null) {
       window.clearTimeout(timerRef.current);
@@ -88,7 +90,7 @@ export default function SearchCombobox<TMeta = unknown>({
       const ac = new AbortController();
       abortRef.current = ac;
       try {
-        const res = await fetchSuggestions(q);
+        const res = await fetchSuggestionsAction(q);
         setItems(Array.isArray(res) ? res : []);
         setOpen(true);
         setActive(null);
@@ -104,7 +106,7 @@ export default function SearchCombobox<TMeta = unknown>({
       }
       abortRef.current?.abort();
     };
-  }, [q, fetchSuggestions, controlledItems, debounceMs]);
+  }, [q, fetchSuggestionsAction, controlledItems, debounceMs]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -125,8 +127,8 @@ export default function SearchCombobox<TMeta = unknown>({
       if (active != null && items[active]) {
         e.preventDefault();
         const chosen = items[active];
-        onChange?.(chosen.label);
-        onSelect?.(chosen);
+        onChangeAction?.(chosen.label);
+        onSelectAction?.(chosen);
         setOpen(false);
       }
     } else if (e.key === "Escape") {
@@ -152,7 +154,7 @@ export default function SearchCombobox<TMeta = unknown>({
         value={q}
         onChange={(e) => {
           setQ(e.target.value);
-          onChange?.(e.target.value);
+          onChangeAction?.(e.target.value);
           setOpen(true);
         }}
         onKeyDown={handleKeyDown}
@@ -184,12 +186,12 @@ export default function SearchCombobox<TMeta = unknown>({
               onMouseEnter={() => setActive(i)}
               onMouseDown={(e) => e.preventDefault()} // prevent blur before click
               onClick={() => {
-                onChange?.(it.label);
-                onSelect?.(it);
+                onChangeAction?.(it.label);
+                onSelectAction?.(it);
                 setOpen(false);
               }}
             >
-              {renderItem ? renderItem(it, i === active) : it.label}
+              {renderItemAction ? renderItemAction(it, i === active) : it.label}
             </li>
           ))}
         </ul>
