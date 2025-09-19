@@ -53,7 +53,8 @@ const TAKE_CHOICES = [50, 100, 200, 500, 1000] as const;
 export default async function AdminRevealsPage({
   searchParams,
 }: {
-  searchParams?: SafeSearchParams;
+  // Accept both object and Promise (Next 15 can provide either)
+  searchParams?: SafeSearchParams | Promise<SafeSearchParams>;
 }) {
   const session = await auth().catch(() => null);
   if (!allow(session?.user?.email ?? null)) {
@@ -73,7 +74,8 @@ export default async function AdminRevealsPage({
     );
   }
 
-  const sp = searchParams ?? {};
+  // Resolve maybe-promise search params into a plain object
+  const sp: SafeSearchParams = await (searchParams ?? {});
   const qRaw = (getStr(sp, "q") || "").trim();
   const q = qRaw.length > 120 ? qRaw.slice(0, 120) : qRaw;
 
