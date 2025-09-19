@@ -16,7 +16,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Install pnpm first so it's on PATH for later steps
       - name: Setup pnpm 10.16.0
         uses: pnpm/action-setup@v4
         with:
@@ -39,4 +38,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # OPTIONAL: only needed if you run prisma migrate or require direct URL during build
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: pnpm build
