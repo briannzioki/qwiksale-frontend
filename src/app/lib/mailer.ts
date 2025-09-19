@@ -1,84 +1,76 @@
 // src/app/lib/mailer.ts
-import type { Options } from "nodemailer/lib/smtp-transport";
+import type { Transporter } from "nodemailer";
+import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-let provider: "resend" | "smtp" | "console" = "console";
+const FROM = process.env["EMAIL_FROM"] || "QwikSale <no-reply@qwiksale.sale>";
+const REPLY_TO = process.env["EMAIL_REPLY_TO"] || "Support <support@qwiksale.sale>";
+const RESEND_KEY = process.env["RESEND_API_KEY"];
+const SMTP_URL = process.env["EMAIL_SERVER"];
 
-// Lazy deps to keep edge bundles slim
-let ResendMod: any = null;
-let nodemailer: any = null;
+// Prefer Resend in prod
+const resend = RESEND_KEY ? new Resend(RESEND_KEY) : null;
 
-const RESEND_API_KEY = process.env["RESEND_API_KEY"] || "";
-const MAIL_FROM =
-  process.env["MAIL_FROM"] ||
-  process.env["RESEND_FROM"] ||
-  process.env["SMTP_FROM"] ||
-  "QwikSale <no-reply@qwiksale.sale>";
-
-if (RESEND_API_KEY) {
-  provider = "resend";
-} else if (process.env["SMTP_URL"] || process.env["SMTP_HOST"]) {
-  provider = "smtp";
-} else {
-  provider = "console";
+// Fallback SMTP (Mailtrap) for local dev
+let smtp: Transporter | null = null;
+if (!RESEND_KEY && SMTP_URL) {
+  smtp = nodemailer.createTransport(SMTP_URL);
 }
 
-export async function sendMail(to: string, subject: string, html: string): Promise<void> {
-  if (!to) throw new Error("sendMail: missing 'to'");
-  if (!subject) throw new Error("sendMail: missing 'subject'");
-  if (!html) throw new Error("sendMail: missing 'html'");
+async function sendViaResend(to: string, subject: string, html: string, replyTo?: string) {
+  if (!resend) throw new Error("Resend not configured");
+  // Resend uses `reply_to`
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject,
+    html,
+    ...(replyTo || REPLY_TO ? { reply_to: replyTo || REPLY_TO } : {}),
+  } as any);
+}
 
-  if (provider === "resend") {
-    if (!ResendMod) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      ResendMod = require("resend");
-    }
-    const resend = new ResendMod.Resend(RESEND_API_KEY);
-    await resend.emails.send({ from: MAIL_FROM, to, subject, html });
-    return;
-  }
+async function sendViaSmtp(to: string, subject: string, html: string, replyTo?: string) {
+  if (!smtp) throw new Error("SMTP not configured");
+  await smtp.sendMail({
+    from: FROM,
+    to,
+    subject,
+    html,
+    replyTo: replyTo || REPLY_TO,
+  });
+}
 
-  if (provider === "smtp") {
-    if (!nodemailer) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      nodemailer = require("nodemailer");
-    }
-    const url = process.env["SMTP_URL"];
-    const transport =
-      url
-        ? nodemailer.createTransport(url)
-        : nodemailer.createTransport({
-            host: process.env["SMTP_HOST"],
-            port: Number(process.env["SMTP_PORT"] || 587),
-            secure: !!process.env["SMTP_SECURE"], // "true" to force TLS
-            auth: process.env["SMTP_USER"]
-              ? { user: process.env["SMTP_USER"], pass: process.env["SMTP_PASS"] }
-              : undefined,
-          } as Options);
+/** Primary helper used by the app */
+export async function sendMail(
+  to: string,
+  subject: string,
+  html: string,
+  opts?: { replyTo?: string }
+) {
+  if (resend) return sendViaResend(to, subject, html, opts?.replyTo);
+  if (smtp) return sendViaSmtp(to, subject, html, opts?.replyTo);
 
-    await transport.sendMail({ from: MAIL_FROM, to, subject, html });
-    return;
-  }
-
-  // Fallback: don’t crash in dev/preview
+  // Last resort: avoid silent failure in dev
   // eslint-disable-next-line no-console
-  console.log(`[mailer:console] to=${to} subject=${subject}\n${html}`);
+  console.warn("[mailer] No mail transport configured. Set RESEND_API_KEY or EMAIL_SERVER.");
+  if (process.env.NODE_ENV !== "production") return;
+  throw new Error("No mail transport configured");
 }
 
+/** Optional convenience for the cron digest */
 export async function sendWeeklyDigest(args: {
   to: string;
   name?: string | null;
-  weeklyCount: number; // e.g. views+saves+new listings
+  weeklyCount: number;
   since: Date;
 }) {
   const { to, name, weeklyCount, since } = args;
-  const subject = "Your QwikSale weekly digest";
   const html = `
-    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5">
+    <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;">
       <h2 style="margin:0 0 12px">Hi ${name || "there"} 👋</h2>
-      <p>Here’s your activity since <strong>${since.toDateString()}</strong>:</p>
-      <p><strong>Total highlights:</strong> ${weeklyCount}</p>
-      <p><a href="${process.env["NEXT_PUBLIC_SITE_URL"] || "https://qwiksale.sale"}/dashboard" style="color:#39a0ca">Open your dashboard →</a></p>
+      <p>In the last 7 days (since ${since.toDateString()}), you had <strong>${weeklyCount}</strong> new events.</p>
+      <p><a href="${process.env["NEXT_PUBLIC_APP_URL"] || "https://qwiksale.sale"}/dashboard" style="color:#39a0ca">Open your dashboard →</a></p>
     </div>
   `;
-  await sendMail(to, subject, html);
+  await sendMail(to, "Your QwikSale weekly digest", html);
 }
