@@ -53,8 +53,8 @@ const TAKE_CHOICES = [50, 100, 200, 500, 1000] as const;
 export default async function AdminRevealsPage({
   searchParams,
 }: {
-  // Accept both object and Promise (Next 15 can provide either)
-  searchParams?: SafeSearchParams | Promise<SafeSearchParams>;
+  // Next 15: when present, searchParams is a Promise
+  searchParams?: Promise<SafeSearchParams>;
 }) {
   const session = await auth().catch(() => null);
   if (!allow(session?.user?.email ?? null)) {
@@ -74,8 +74,8 @@ export default async function AdminRevealsPage({
     );
   }
 
-  // Resolve maybe-promise search params into a plain object
-  const sp: SafeSearchParams = await (searchParams ?? {});
+  // Resolve promised search params (awaiting a non-promise is fine in JS)
+  const sp: SafeSearchParams = (await searchParams) ?? {};
   const qRaw = (getStr(sp, "q") || "").trim();
   const q = qRaw.length > 120 ? qRaw.slice(0, 120) : qRaw;
 
@@ -106,7 +106,6 @@ export default async function AdminRevealsPage({
       include: { product: { select: { id: true, name: true } } },
     })) as RevealWithProduct[];
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error("[admin/reveals] prisma error:", e);
     loadError = "Failed to load reveal logs. Please try again.";
   }
