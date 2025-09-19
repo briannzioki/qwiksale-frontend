@@ -1,4 +1,3 @@
-# .github/workflows/ci.yml
 name: CI
 
 on:
@@ -16,13 +15,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Install pnpm first so setup-node can locate the pnpm store for caching
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.16.0
-          run_install: false
-
       - name: Setup Node.js (20.x) + cache pnpm store
         uses: actions/setup-node@v4
         with:
@@ -30,12 +22,18 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.16.0
+          run_install: false
+
       - name: Show tool versions
         run: |
           node -v
           pnpm -v
 
-      - name: Install dependencies
+      - name: Install
         run: pnpm install --frozen-lockfile
 
       - name: Build
