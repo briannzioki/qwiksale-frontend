@@ -10,22 +10,60 @@ import { auth } from "@/auth";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
+/* ------------------------------ types ------------------------------ */
+type MessageRow = {
+  id: string;
+  senderId: string;
+  body: string;
+  createdAt: Date;
+  readAt: Date | null;
+};
+
+type ThreadRow = {
+  id: string;
+  buyerId: string;
+  sellerId: string;
+  listingId: string | null;
+  listingType: string | null;
+  buyerLastReadAt: Date | null;
+  sellerLastReadAt: Date | null;
+};
+
+type ParamCtx = { params: Promise<{ id: string }> };
+
 /* ------------------------------ helpers ------------------------------ */
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie");
   return res;
 }
 
-/** GET /api/messages/[id] — read thread & messages (marks other side as read) */
-export async function GET(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> } // 👈 Next 15 expects a Promise here
-) {
+function requireJson(req: NextRequest): NextResponse | null {
+  if (req.method !== "POST") return null;
+  const ct = (req.headers.get("content-type") || "").toLowerCase();
+  if (!ct.includes("application/json")) {
+    return noStore({ error: "Content-Type must be application/json" }, { status: 400 });
+  }
+  return null;
+}
+
+function iso(d: unknown): string | null {
+  if (!d) return null;
   try {
-    const { id } = await context.params; // 👈 await it
+    const dt = d instanceof Date ? d : new Date(String(d));
+    return Number.isNaN(+dt) ? null : dt.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+/* -------------------------------- GET -------------------------------- */
+export async function GET(req: NextRequest, context: ParamCtx) {
+  try {
+    const { id } = await context.params;
     const threadId = String(id || "").trim();
     if (!threadId) return noStore({ error: "Missing id" }, { status: 400 });
 
@@ -43,7 +81,7 @@ export async function GET(
       if (!rl.ok) return tooMany("Please slow down.", rl.retryAfterSec);
     }
 
-    const thread = await prisma.thread.findUnique({
+    const thread = (await prisma.thread.findUnique({
       where: { id: threadId },
       select: {
         id: true,
@@ -54,16 +92,17 @@ export async function GET(
         buyerLastReadAt: true,
         sellerLastReadAt: true,
       },
-    });
+    })) as ThreadRow | null;
+
     if (!thread || (thread.buyerId !== uid && thread.sellerId !== uid)) {
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    const messages = await prisma.message.findMany({
+    const messages = (await prisma.message.findMany({
       where: { threadId, deletedAt: null },
       orderBy: { createdAt: "asc" },
       select: { id: true, senderId: true, body: true, createdAt: true, readAt: true },
-    });
+    })) as MessageRow[];
 
     const otherId = thread.buyerId === uid ? thread.sellerId : thread.buyerId;
 
@@ -74,14 +113,28 @@ export async function GET(
       }),
       prisma.thread.update({
         where: { id: threadId },
-        data:
-          thread.buyerId === uid
-            ? { buyerLastReadAt: new Date() }
-            : { sellerLastReadAt: new Date() },
+        data: thread.buyerId === uid ? { buyerLastReadAt: new Date() } : { sellerLastReadAt: new Date() },
       }),
     ]);
 
-    return noStore({ thread, messages });
+    const out = {
+      thread: {
+        ...thread,
+        buyerLastReadAt: iso(thread.buyerLastReadAt),
+        sellerLastReadAt: iso(thread.sellerLastReadAt),
+      },
+      messages: messages.map((m: MessageRow) => ({
+        id: m.id,
+        senderId: m.senderId,
+        body: m.body,
+        createdAt: iso(m.createdAt),
+        readAt: iso(m.readAt),
+      })),
+    };
+
+    const res = noStore(out);
+    res.headers.set("X-Thread-Id", threadId);
+    return res;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[messages/:id GET] error", e);
@@ -89,13 +142,13 @@ export async function GET(
   }
 }
 
-/** POST /api/messages/[id] — send a message to an existing thread */
-export async function POST(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> } // 👈 Promise again
-) {
+/* -------------------------------- POST ------------------------------- */
+export async function POST(req: NextRequest, context: ParamCtx) {
   try {
-    const { id } = await context.params; // 👈 await it
+    const guard = requireJson(req);
+    if (guard) return guard;
+
+    const { id } = await context.params;
     const threadId = String(id || "").trim();
     if (!threadId) return noStore({ error: "Missing id" }, { status: 400 });
 
@@ -126,7 +179,7 @@ export async function POST(
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    const b = await req.json().catch(() => ({}));
+    const b = (await req.json().catch(() => ({}))) as { body?: unknown };
     const body = (b?.body ? String(b.body) : "").trim();
     if (!body) return noStore({ error: "Message cannot be empty" }, { status: 400 });
     if (body.length > 5000) return noStore({ error: "Too long" }, { status: 400 });
@@ -136,10 +189,21 @@ export async function POST(
       prisma.thread.update({ where: { id: threadId }, data: { lastMessageAt: new Date() } }),
     ]);
 
-    return noStore({ ok: true });
+    const res = noStore({ ok: true }, { status: 201 });
+    res.headers.set("X-Thread-Id", threadId);
+    return res;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[messages/:id POST] error", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
+}
+
+/* -------------------------------- misc -------------------------------- */
+export async function HEAD() {
+  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
 }

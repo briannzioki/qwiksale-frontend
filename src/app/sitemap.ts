@@ -1,3 +1,4 @@
+// src/app/sitemap.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -16,28 +17,31 @@ function hasValidDbUrl(): boolean {
   return /^postgres(ql)?:\/\//i.test(u);
 }
 
+/** Keep well under the 50k per-file sitemap limit. */
+const MAX_LINKS = 45_000;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();
   const now = new Date();
 
-  // Static entries you want indexed (always emitted)
+  // Always-emit static routes
   const staticRoutes: MetadataRoute.Sitemap = [
-    { url: `${base}/`, lastModified: now, changeFrequency: "daily", priority: 1 },
-    { url: `${base}/sell`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
-    { url: `${base}/browse`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
-    { url: `${base}/account/billing`, lastModified: now, changeFrequency: "monthly", priority: 0.4 },
+    { url: `${base}/`,               lastModified: now, changeFrequency: "daily",   priority: 1 },
+    { url: `${base}/sell`,           lastModified: now, changeFrequency: "weekly",  priority: 0.6 },
+    { url: `${base}/browse`,         lastModified: now, changeFrequency: "daily",   priority: 0.7 },
+    { url: `${base}/account/billing`,lastModified: now, changeFrequency: "monthly", priority: 0.4 },
   ];
 
   if (!hasValidDbUrl()) {
-    // No DB available in this env (e.g., local build/preview) — return static only
+    // No DB in this environment → return static-only sitemap
     return staticRoutes;
   }
 
   try {
-    // Import prisma only if DB looks valid
+    // Import Prisma only when we know the connection string is valid
     const { prisma } = await import("@/app/lib/prisma");
 
-    // Fetch identifiers only, keep it cheap and bounded
+    // Fetch identifiers only; keep bounded
     const [products, services] = await Promise.all([
       prisma.product.findMany({
         where: { status: "ACTIVE" },
@@ -45,10 +49,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         take: 5000,
         orderBy: { updatedAt: "desc" },
       }) as Promise<Array<{ id: string; updatedAt: Date }>>,
-      // If Service model doesn't exist in schema, fall back to []
       (async () => {
         try {
-          // ts-expect-error – service may not exist in some schemas
+          // Some schemas won’t have Service — just return []
+          // ts-expect-error conditional model presence
           return (await prisma.service.findMany({
             where: { status: "ACTIVE" },
             select: { id: true, updatedAt: true },
@@ -75,10 +79,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.75,
     }));
 
-    return [...staticRoutes, ...productUrls, ...serviceUrls];
+    // De-dupe by URL just in case, then cap
+    const all = [...staticRoutes, ...productUrls, ...serviceUrls];
+    const seen = new Set<string>();
+    const deduped: MetadataRoute.Sitemap = [];
+    for (const item of all) {
+      if (!seen.has(item.url)) {
+        seen.add(item.url);
+        deduped.push(item);
+        if (deduped.length >= MAX_LINKS) break;
+      }
+    }
+
+    return deduped;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[sitemap.ts] error:", e);
+    // Fail closed with a valid static sitemap
     return staticRoutes;
   }
 }

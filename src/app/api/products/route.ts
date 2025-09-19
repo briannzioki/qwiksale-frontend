@@ -1,3 +1,4 @@
+// src/app/api/products/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,11 +9,16 @@ import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 
 /* ----------------------------- tiny helpers ----------------------------- */
-function noStore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
+function noStore(jsonOrRes: unknown, init?: ResponseInit): NextResponse {
+  const res =
+    jsonOrRes instanceof NextResponse
+      ? jsonOrRes
+      : NextResponse.json(jsonOrRes as any, init);
+  // never cache: this can personalize based on auth/cookies
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Cookie, Authorization, Accept-Encoding");
   return res;
 }
 
@@ -45,7 +51,7 @@ function toSort(v: string | null): SortKey {
   return "newest";
 }
 
-/** minimal select for cards (drop description/gallery to keep JSON light) */
+/** SELECT only what cards need (keeps JSON light). Avoid big nested includes. */
 const productListSelect = {
   id: true,
   name: true,
@@ -54,24 +60,30 @@ const productListSelect = {
   brand: true,
   condition: true,
   price: true,
-  image: true,
+  image: true, // thumbnail/single cover URL if you have it
   location: true,
   negotiable: true,
   createdAt: true,
   featured: true,
   sellerId: true,
 
-  // flattened seller snapshot
+  // flattened seller snapshot (columns on Product)
   sellerName: true,
   sellerLocation: true,
   sellerMemberSince: true,
   sellerRating: true,
   sellerSales: true,
 
+  // tiny seller relation (for avatar/username)
   seller: {
     select: { id: true, username: true, name: true, image: true, subscription: true },
   },
 } as const;
+
+/* ----------------------------- safety caps ------------------------------ */
+const MAX_PAGE_SIZE = 48;          // never allow more than this per request
+const DEFAULT_PAGE_SIZE = 24;
+const MAX_RESULT_WINDOW = 10_000;  // max records we’ll allow skipping with page/skip
 
 /* ------------------------- GET /api/products ------------------------- */
 export async function GET(req: NextRequest) {
@@ -94,10 +106,13 @@ export async function GET(req: NextRequest) {
 
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
-    const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
-    const pageSize = toInt(url.searchParams.get("pageSize"), 24, 1, 200);
 
-    const where: any = { status: "ACTIVE" };
+    // pagination (supports cursor OR page/skip; cursor wins if provided)
+    const cursor = optStr(url.searchParams.get("cursor"));
+    const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
+    const pageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+
+    const where: Record<string, any> = { status: "ACTIVE" };
     const and: any[] = [];
 
     if (q) {
@@ -111,12 +126,14 @@ export async function GET(req: NextRequest) {
         ],
       });
     }
+    // NOTE: if you truly need case-insensitive equals, Prisma allows `mode` on string filters.
     if (category) and.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (brand) and.push({ brand: { contains: brand, mode: "insensitive" } });
     if (condition) and.push({ condition: { equals: condition, mode: "insensitive" } });
     if (sellerId) and.push({ sellerId });
-    if (sellerUsername) and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
+    if (sellerUsername)
+      and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
     if (typeof featured === "boolean") and.push({ featured });
     if (verifiedOnly === true) and.push({ featured: true });
 
@@ -126,49 +143,101 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(maxPrice)) price.lte = maxPrice;
       and.push({ price });
     }
-    if (and.length) where.AND = and;
+    if (and.length) where["AND"] = and;
 
     const isSearchLike = q.length > 0 || !!category || !!subcategory || !!brand;
-    let orderBy: any;
-    if (sort === "price_asc") orderBy = { price: "asc" as const };
-    else if (sort === "price_desc") orderBy = { price: "desc" as const };
-    else if (sort === "featured") orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }];
-    else orderBy = isSearchLike ? [{ featured: "desc" as const }, { createdAt: "desc" as const }] : { createdAt: "desc" as const };
 
-    const orderByFinal = Array.isArray(orderBy) ? [...orderBy, { id: "asc" as const }] : [orderBy, { id: "asc" as const }];
+    // Default sort -> tie-break on id for stable ordering
+    let orderBy: any;
+    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { id: "desc" as const }];
+    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { id: "desc" as const }];
+    else if (sort === "featured")
+      orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    else
+      orderBy = isSearchLike
+        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
+        : [{ createdAt: "desc" as const }, { id: "desc" as const }];
 
     // Resolve current user id (optional, for isFavoritedByMe)
-    const session = await auth().catch(() => null);
-    const sessionUserId = (session?.user as any)?.id as string | undefined;
-    let userId: string | null = sessionUserId ?? null;
-    if (!userId && session?.user?.email) {
-      const u = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
-      userId = u?.id ?? null;
+    let userId: string | null = null;
+    try {
+      const session = await auth();
+      const sId = (session?.user as any)?.id as string | undefined;
+      userId = sId ?? null;
+      if (!userId && session?.user?.email) {
+        const u = await prisma.user.findUnique({
+          where: { email: session.user.email },
+          select: { id: true },
+        });
+        userId = u?.id ?? null;
+      }
+    } catch {
+      /* ignore auth errors */
     }
 
     const select: any = { ...productListSelect };
+    // counts and per-user favorite flag (lightweight: take 1)
     select._count = { select: { favorites: true } };
     if (userId) {
       select.favorites = { where: { userId }, select: { productId: true }, take: 1 };
     }
 
+    // Guard result window if using page/skip (to avoid huge DB offsets)
+    if (!cursor) {
+      const skipEst = (page - 1) * pageSize;
+      if (skipEst > MAX_RESULT_WINDOW) {
+        return noStore({
+          page,
+          pageSize,
+          total: 0,
+          totalPages: 0,
+          sort,
+          items: [],
+          facets: wantFacets ? { categories: [], brands: [], conditions: [] } : undefined,
+          nextCursor: null,
+          hasMore: false,
+        });
+      }
+    }
+
+    // Build the findMany() args (cursor wins; otherwise skip/page)
+    const listArgs: any = {
+      where,
+      select,
+      orderBy,
+      take: pageSize + 1, // fetch +1 to know if there’s a next page
+    };
+    if (cursor) {
+      listArgs.cursor = { id: cursor };
+      listArgs.skip = 1;
+    } else {
+      listArgs.skip = (page - 1) * pageSize;
+    }
+
     const [total, productsRaw, facets] = await Promise.all([
       prisma.product.count({ where }),
-      prisma.product.findMany({ where, select, orderBy: orderByFinal, skip: (page - 1) * pageSize, take: pageSize }),
-      // only compute facets when explicitly requested AND page 1 (keeps Node memory low)
-      wantFacets && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
+      prisma.product.findMany(listArgs),
+      // only compute facets when explicitly requested AND first page (keeps DB/heap light)
+      wantFacets && !cursor && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
     ]);
 
-    const items = (productsRaw as Array<any>).map((p) => {
+    const hasMore = (productsRaw as unknown[]).length > pageSize;
+    const data = hasMore ? (productsRaw as unknown[]).slice(0, pageSize) : (productsRaw as unknown[]);
+    const last = data[data.length - 1] as any | undefined;
+    const nextCursor = hasMore ? (last?.id ?? null) : null;
+
+    // map to response shape + small numbers/strings only
+    const items = (data as Array<any>).map((p) => {
       const favoritesCount: number = p?._count?.favorites ?? 0;
       const rel = (p as any)?.favorites;
       const isFavoritedByMe: boolean = Array.isArray(rel) && rel.length > 0;
-      const createdAt = p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
+      const createdAt =
+        p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
       const { _count, favorites, ...rest } = p;
       return { ...rest, createdAt, favoritesCount, isFavoritedByMe };
     });
 
-    return noStore({
+    const res = noStore({
       page,
       pageSize,
       total,
@@ -176,7 +245,11 @@ export async function GET(req: NextRequest) {
       sort,
       items,
       facets,
+      nextCursor,
+      hasMore,
     });
+    res.headers.set("X-Total-Count", String(total));
+    return res;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/products GET] error:", e);
@@ -203,26 +276,38 @@ async function computeFacets(where: any) {
       prisma.product.groupBy({ by: ["condition"], where, _count: { _all: true } }),
     ]);
 
-    const cats = (catsRaw as CatRow[])
+    const byCountDesc = (a: { _count: { _all: number } }, b: { _count: { _all: number } }) =>
+      b._count._all - a._count._all;
+
+    const categories = (catsRaw as CatRow[])
       .filter((x) => !!x.category)
-      .sort((a, b) => b._count._all - a._count._all)
+      .sort(byCountDesc)
       .slice(0, 10)
       .map((x) => ({ value: String(x.category), count: x._count._all }));
 
     const brands = (brandsRaw as BrandRow[])
       .filter((x) => !!x.brand)
-      .sort((a, b) => b._count._all - a._count._all)
+      .sort(byCountDesc)
       .slice(0, 10)
       .map((x) => ({ value: String(x.brand), count: x._count._all }));
 
     const conditions = (condsRaw as CondRow[])
       .filter((x) => !!x.condition)
-      .sort((a, b) => b._count._all - a._count._all)
+      .sort(byCountDesc)
       .slice(0, 10)
       .map((x) => ({ value: String(x.condition), count: x._count._all }));
 
-    return { categories: cats, brands, conditions };
+    return { categories, brands, conditions };
   } catch {
     return undefined;
   }
+}
+
+/* ----------------------------- misc verbs ----------------------------- */
+export async function HEAD() {
+  return noStore(new NextResponse(null, { status: 204 }));
+}
+
+export async function OPTIONS() {
+  return noStore({ ok: true }, { status: 200 });
 }

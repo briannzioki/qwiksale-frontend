@@ -34,7 +34,7 @@ function s(v?: string | null) {
 function n(v?: string | null) {
   if (v == null || v === "") return undefined;
   const num = Number(v);
-  return Number.isFinite(num) ? num : undefined;
+  return Number.isFinite(num) ? Math.trunc(num) : undefined;
 }
 function b(v?: string | null) {
   const t = (v || "").trim().toLowerCase();
@@ -51,17 +51,23 @@ function isSafeToCache(req: NextRequest, page: number, pageSize: number) {
   return true;
 }
 
+/* ----------------------------- safety caps ------------------------------ */
+const MAX_PAGE_SIZE = 48;
+const DEFAULT_PAGE_SIZE = 24;
+const MAX_RESULT_WINDOW = 10_000; // guard deep offset scans
+
+/** Lean selection for search hits: keep payload tiny. */
 const baseSelect = {
   id: true,
   name: true,
-  description: true,
+  // Omit big fields like description/gallery to avoid huge JSON.
+  // Re-add a short snippet only if you truly need it.
   category: true,
   subcategory: true,
   brand: true,
   condition: true,
   price: true,
   image: true,
-  gallery: true,
   location: true,
   negotiable: true,
   featured: true,
@@ -96,7 +102,7 @@ function shape(row: any) {
 /* ------------------------------ GET ------------------------------ */
 export async function GET(req: NextRequest) {
   try {
-    // Per-IP throttle (extraKey not needed here; IP is already used internally)
+    // Per-IP throttle
     const rl = await checkRateLimit(req.headers, {
       name: "products_search",
       limit: 60,
@@ -111,9 +117,10 @@ export async function GET(req: NextRequest) {
     const category = s(url.searchParams.get("category"));
     const subcategory = s(url.searchParams.get("subcategory"));
     const brand = s(url.searchParams.get("brand"));
-    const condition = s(url.searchParams.get("condition")); // "brand new" | "pre-owned"
+    const condition = s(url.searchParams.get("condition"));
     const minPrice = n(url.searchParams.get("minPrice"));
     const maxPrice = n(url.searchParams.get("maxPrice"));
+    const includeNoPrice = b(url.searchParams.get("includeNoPrice")) === true; // default false
     const verifiedOnly = b(url.searchParams.get("verifiedOnly"));
     const negotiable = b(url.searchParams.get("negotiable"));
     const sort = (s(url.searchParams.get("sort")) || "top") as
@@ -121,43 +128,54 @@ export async function GET(req: NextRequest) {
       | "new"
       | "price_asc"
       | "price_desc";
-    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
-    const pageSize = Math.min(
-      96,
-      Math.max(1, Number(url.searchParams.get("pageSize") || 24))
-    );
 
+    // pagination: prefer cursor; otherwise page/skip
+    const cursor = s(url.searchParams.get("cursor"));
+    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+    const rawPageSize = Number(url.searchParams.get("pageSize") || DEFAULT_PAGE_SIZE);
+    const pageSize =
+      Number.isFinite(rawPageSize) && rawPageSize > 0
+        ? Math.min(MAX_PAGE_SIZE, Math.trunc(rawPageSize))
+        : DEFAULT_PAGE_SIZE;
+
+    // WHERE
     const where: any = { status: "ACTIVE" };
+    const and: any[] = [];
 
     if (q) {
-      where.OR = [
-        { name: { contains: q, mode: "insensitive" } },
-        { description: { contains: q, mode: "insensitive" } },
-        { category: { contains: q, mode: "insensitive" } },
-        { subcategory: { contains: q, mode: "insensitive" } },
-        { brand: { contains: q, mode: "insensitive" } },
-        { location: { contains: q, mode: "insensitive" } },
-        { sellerName: { contains: q, mode: "insensitive" } },
-        { sellerLocation: { contains: q, mode: "insensitive" } },
-      ];
+      and.push({
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { brand: { contains: q, mode: "insensitive" } },
+          { category: { contains: q, mode: "insensitive" } },
+          { subcategory: { contains: q, mode: "insensitive" } },
+          { location: { contains: q, mode: "insensitive" } },
+          { sellerName: { contains: q, mode: "insensitive" } },
+          { sellerLocation: { contains: q, mode: "insensitive" } },
+        ],
+      });
     }
-    if (category) where.category = category;
-    if (subcategory) where.subcategory = subcategory;
-    if (brand) where.brand = brand;
-    if (condition) where.condition = condition;
-    if (typeof negotiable === "boolean") where.negotiable = negotiable;
-    if (verifiedOnly === true) where.featured = true; // simple "verified" proxy
+    if (category) and.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (brand) and.push({ brand: { equals: brand, mode: "insensitive" } });
+    if (condition) and.push({ condition: { equals: condition, mode: "insensitive" } });
+    if (typeof negotiable === "boolean") and.push({ negotiable });
+    if (verifiedOnly === true) and.push({ featured: true });
 
-    if (typeof minPrice === "number") {
-      where.OR ??= [];
-      where.OR.push({ price: null }, { price: { gte: Math.max(0, minPrice) } });
-    }
-    if (typeof maxPrice === "number") {
-      where.OR ??= [];
-      where.OR.push({ price: null }, { price: { lte: Math.max(0, maxPrice) } });
+    // Price range: AND the bounds; optionally include nulls
+    if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+      const price: any = {};
+      if (Number.isFinite(minPrice)) price.gte = Math.max(0, minPrice!);
+      if (Number.isFinite(maxPrice)) price.lte = Math.max(0, maxPrice!);
+      and.push(
+        includeNoPrice ? { OR: [{ price: null }, { price }] } : { price }
+      );
     }
 
-    let orderBy: any = {};
+    if (and.length) where.AND = and;
+
+    // ORDER BY (with id tiebreaker for stable pagination)
+    let orderBy: any[] = [];
     switch (sort) {
       case "new":
         orderBy = [{ createdAt: "desc" }];
@@ -170,31 +188,62 @@ export async function GET(req: NextRequest) {
         break;
       case "top":
       default:
-        orderBy = [{ featured: "desc" }, { createdAt: "desc" }, { id: "asc" }];
+        orderBy = [{ featured: "desc" }, { createdAt: "desc" }];
         break;
     }
+    orderBy.push({ id: "desc" });
 
+    // Count for pagination UI
     const total = await prisma.product.count({ where });
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const safePage = Math.min(page, totalPages);
 
-    const items = await prisma.product.findMany({
+    // Guard result window if using skip
+    if (!cursor) {
+      const skipEst = (safePage - 1) * pageSize;
+      if (skipEst > MAX_RESULT_WINDOW) {
+        const res = resp({
+          page: safePage,
+          pageSize,
+          total,
+          totalPages,
+          items: [] as any[],
+          nextCursor: null,
+          hasMore: false,
+        });
+        return setNoStore(res);
+      }
+    }
+
+    // Build list query (cursor wins)
+    const listArgs: any = {
       where,
       orderBy,
-      skip: (safePage - 1) * pageSize,
-      take: pageSize,
       select: baseSelect,
-    });
+      take: pageSize + 1, // +1 to detect next page
+    };
+    if (cursor) {
+      listArgs.cursor = { id: cursor };
+      listArgs.skip = 1;
+    } else {
+      listArgs.skip = (safePage - 1) * pageSize;
+    }
+
+    const rows = await prisma.product.findMany(listArgs);
+    const hasMore = rows.length > pageSize;
+    const data = hasMore ? rows.slice(0, pageSize) : rows;
+    const nextCursor = hasMore ? data[data.length - 1]?.id ?? null : null;
 
     const json = {
       page: safePage,
       pageSize,
       total,
       totalPages,
-      items: items.map(shape),
+      items: data.map(shape),
+      nextCursor,
+      hasMore,
     };
 
-    // Cache policy
     const res = resp(json);
     return isSafeToCache(req, safePage, pageSize) ? setEdgeCache(res, 45) : setNoStore(res);
   } catch (e) {
