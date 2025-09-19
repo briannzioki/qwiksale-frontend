@@ -53,7 +53,6 @@ const TAKE_CHOICES = [50, 100, 200, 500, 1000] as const;
 export default async function AdminRevealsPage({
   searchParams,
 }: {
-  // Next 15: when present, searchParams is a Promise
   searchParams?: Promise<SafeSearchParams>;
 }) {
   const session = await auth().catch(() => null);
@@ -74,8 +73,7 @@ export default async function AdminRevealsPage({
     );
   }
 
-  // Resolve promised search params (awaiting a non-promise is fine in JS)
-  const sp: SafeSearchParams = (await searchParams) ?? {};
+  const sp = (await searchParams) ?? {};
   const qRaw = (getStr(sp, "q") || "").trim();
   const q = qRaw.length > 120 ? qRaw.slice(0, 120) : qRaw;
 
