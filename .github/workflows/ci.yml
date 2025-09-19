@@ -2,15 +2,17 @@
 
 on:
   push:
-    branches:
-      - main
-      - deploy/weekly-digest-fixes
+    branches: [main, deploy/weekly-digest-fixes]
   pull_request:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # Global env for the job
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
       - name: Checkout
@@ -29,17 +31,29 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Tool versions
+      - name: Tool versions (sanity check)
         run: |
           node -v
           pnpm -v
+          echo "NEXT_TELEMETRY_DISABLED=$NEXT_TELEMETRY_DISABLED"
+          echo "CLOUDINARY (public) = $NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"
+        env:
+          # safe to echo (public var), secrets are NOT echoed
+          NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: ${{ secrets.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME }}
 
       - name: Install
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # OPTIONAL: only needed if you run prisma migrate or require direct URL during build
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: pnpm build
+        env:
+          # DB
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+          # Redis (since you chose Option B)
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+
+          # Public build-time var
+          NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: ${{ secrets.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME }}
