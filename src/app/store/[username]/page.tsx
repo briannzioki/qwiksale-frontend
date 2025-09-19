@@ -31,9 +31,10 @@ function cleanUsername(raw?: string) {
 export async function generateMetadata({
   params,
 }: {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }): Promise<Metadata> {
-  const username = cleanUsername(params?.username);
+  const { username: raw } = await params;
+  const username = cleanUsername(raw);
   if (!username) return { title: "Store | QwikSale" };
 
   try {
@@ -50,7 +51,7 @@ export async function generateMetadata({
       };
     }
   } catch {
-    // ignore metadata errors; return generic
+    /* ignore metadata errors; return generic below */
   }
 
   return {
@@ -74,9 +75,10 @@ type StoreProduct = {
 export default async function StorePage({
   params,
 }: {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }) {
-  const username = cleanUsername(params?.username);
+  const { username: raw } = await params;
+  const username = cleanUsername(raw);
   if (!username) notFound();
 
   // 1) Resolve the owner
@@ -120,8 +122,7 @@ export default async function StorePage({
     ...p,
     category: p.category ?? null,
     subcategory: p.subcategory ?? null,
-    createdAt:
-      p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt ?? ""),
+    createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt ?? ""),
   }));
 
   return (
@@ -141,15 +142,11 @@ export default async function StorePage({
             <p className="text-white/90 text-sm">
               {user.name ? `${user.name} • ` : ""}
               Member since {new Date(user.createdAt).getFullYear()}
-              {user.city || user.country
-                ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}`
-                : ""}
+              {user.city || user.country ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}` : ""}
             </p>
           </div>
           <div className="ml-auto">
-            <Link href="/" className="btn-outline">
-              Back to Home
-            </Link>
+            <Link href="/" className="btn-outline">Back to Home</Link>
           </div>
         </div>
       </div>
@@ -163,45 +160,39 @@ export default async function StorePage({
         </div>
 
         {products.length === 0 ? (
-          <div className="text-gray-600 dark:text-slate-300">
-            This store hasn’t posted any items yet.
-          </div>
+          <div className="text-gray-600 dark:text-slate-300">This store hasn’t posted any items yet.</div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((p) => {
               const rawImg = p.image || "/placeholder/default.jpg";
-              const thumb =
-                imgUrl(rawImg, { w: 600, h: 320, fit: "fill", gravity: "auto" }) || rawImg;
+              const thumb = imgUrl(rawImg, { w: 600, h: 320, fit: "fill", gravity: "auto" }) || rawImg;
 
               return (
                 <Link key={p.id} href={`/product/${p.id}`} className="group">
                   <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
                     {p.featured && (
-                      <span className="absolute top-2 left-2 z-10 rounded-md bg-[#161748] text-white text-xs px-2 py-1 shadow">
+                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
                         Verified
                       </span>
                     )}
-                    <div className="w-full h-40 relative">
+                    <div className="relative h-40 w-full">
                       <Image
                         src={thumb}
                         alt={p.name || "Product image"}
                         fill
                         className="object-cover"
                         sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                        priority={false}
                       />
                     </div>
                     <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 dark:text-white line-clamp-1">
+                      <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
                         {p.name || "Unnamed item"}
                       </h3>
-                      <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-1">
+                      <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
                         {[p.category, p.subcategory].filter(Boolean).join(" • ") || "—"}
                       </p>
-                      <p className="text-[#161748] dark:text-brandBlue font-bold mt-1">
-                        {fmtKES(p.price)}
-                      </p>
-                      <p className="text-[11px] text-gray-400 mt-1">
+                      <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">{fmtKES(p.price)}</p>
+                      <p className="mt-1 text-[11px] text-gray-400">
                         {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : ""}
                       </p>
                     </div>
