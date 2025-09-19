@@ -7,13 +7,14 @@ import { normalizeMsisdn } from "@/app/data/products"; // reuse the same normali
 import { toast } from "react-hot-toast";
 
 type Props = {
-  onCreated?: (id: string) => void | Promise<void>;
+  /** Called after a service is successfully created with the new service ID */
+  onCreatedAction?: (id: string) => void | Promise<void>;
   className?: string;
 };
 
 type RateType = "hour" | "day" | "fixed";
 
-export default function ServiceForm({ onCreated, className = "" }: Props) {
+export default function ServiceForm({ onCreatedAction, className = "" }: Props) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState(categoryOptions()[0]?.value || "");
   const subOptions = useMemo(() => subcategoryOptions(category), [category]);
@@ -49,7 +50,7 @@ export default function ServiceForm({ onCreated, className = "" }: Props) {
   };
 
   const submit = useCallback(
-    async (e: React.FormEvent) => {
+    async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (busy) return;
 
@@ -71,10 +72,7 @@ export default function ServiceForm({ onCreated, className = "" }: Props) {
           rateType,
           serviceArea: serviceArea.trim() || null,
           availability: availability.trim() || null,
-          // For now we’re not uploading images from this lightweight form.
-          // Backend accepts image/gallery as optional, so omit here.
-          // image: null,
-          // gallery: [],
+          // image/gallery omitted in this lightweight form
           sellerPhone: msisdn ?? null,
           location: (location || serviceArea).trim() || null,
         };
@@ -85,16 +83,16 @@ export default function ServiceForm({ onCreated, className = "" }: Props) {
           body: JSON.stringify(payload),
         });
 
-        const j = await r.json().catch(() => ({} as any));
-        if (!r.ok || (j as any)?.error) {
-          throw new Error((j as any)?.error || `Failed (${r.status})`);
+        const j = (await r.json().catch(() => ({}))) as any;
+        if (!r.ok || j?.error) {
+          throw new Error(j?.error || `Failed (${r.status})`);
         }
 
-        const id = String((j as any).serviceId || "");
+        const id = String(j.serviceId || "");
         toast.success("Service posted");
-        await onCreated?.(id);
-      } catch (e: any) {
-        toast.error(e?.message || "Failed to create service");
+        await onCreatedAction?.(id);
+      } catch (err: any) {
+        toast.error(err?.message || "Failed to create service");
       } finally {
         setBusy(false);
       }
@@ -106,7 +104,7 @@ export default function ServiceForm({ onCreated, className = "" }: Props) {
       description,
       location,
       name,
-      onCreated,
+      onCreatedAction,
       phone,
       price,
       rateType,
@@ -233,32 +231,6 @@ export default function ServiceForm({ onCreated, className = "" }: Props) {
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="e.g. Mon–Sat, 8am–6pm"
           />
-        </div>
-
-        <div className="md:col-span-2">
-          <label className="text-sm font-medium">Description</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            placeholder="Describe your service, experience, what’s included, etc."
-            required
-            minLength={10}
-          />
-        </div>
-
-        <div>
-          <label className="text-sm font-medium">Provider phone (optional)</label>
-          <input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            placeholder="2547XXXXXXXX"
-          />
-          <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-            We’ll normalize to Safaricom format if provided.
-          </div>
         </div>
 
         {/* Lightweight placeholder for future image upload (kept for UI parity) */}
