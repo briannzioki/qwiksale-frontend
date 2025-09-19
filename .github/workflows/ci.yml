@@ -6,6 +6,7 @@ on:
       - main
       - deploy/weekly-digest-fixes
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,15 +16,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      # Install pnpm first so it's on PATH for later steps
+      - name: Setup pnpm 10.16.0
+        uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.16.0
+          run_install: false
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js 20 + pnpm cache
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm build
+      - name: Tool versions
+        run: |
+          node -v
+          pnpm -v
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
