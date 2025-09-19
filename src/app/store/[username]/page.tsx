@@ -23,6 +23,7 @@ function fmtKES(n?: number | null) {
 
 function cleanUsername(raw?: string) {
   const v = decodeURIComponent(String(raw ?? "")).trim();
+  // Basic sanity: allow letters, numbers, underscore, dot, dash (adjust to your rules)
   return /^[a-z0-9._-]{2,32}$/i.test(v) ? v : "";
 }
 
@@ -30,9 +31,10 @@ function cleanUsername(raw?: string) {
 export async function generateMetadata({
   params,
 }: {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }): Promise<Metadata> {
-  const username = cleanUsername(params?.username);
+  const { username: raw } = await params;
+  const username = cleanUsername(raw);
   if (!username) return { title: "Store | QwikSale" };
 
   try {
@@ -49,7 +51,7 @@ export async function generateMetadata({
       };
     }
   } catch {
-    /* ignore */
+    /* ignore metadata errors; return generic below */
   }
 
   return {
@@ -73,11 +75,13 @@ type StoreProduct = {
 export default async function StorePage({
   params,
 }: {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }) {
-  const username = cleanUsername(params?.username);
+  const { username: raw } = await params;
+  const username = cleanUsername(raw);
   if (!username) notFound();
 
+  // 1) Resolve the owner
   const user = await prisma.user
     .findFirst({
       where: { username: { equals: username, mode: "insensitive" } },
@@ -95,6 +99,7 @@ export default async function StorePage({
 
   if (!user) notFound();
 
+  // 2) Fetch up to 48 ACTIVE products for this seller
   const productsRaw = await prisma.product
     .findMany({
       where: { sellerId: user.id, status: "ACTIVE" },
