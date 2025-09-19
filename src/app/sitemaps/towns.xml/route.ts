@@ -1,4 +1,3 @@
-// src/app/sitemaps/towns.xml/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 3600; // cache 1h
@@ -34,7 +33,6 @@ ${body}
 </urlset>`;
 }
 
-/** Minimal fallback when DB isn’t available. */
 function buildMinimal(): string {
   const base = getBaseUrl();
   return buildSitemapXml([`${base}/`, `${base}/search`]);
@@ -45,31 +43,31 @@ function hasValidDbUrl(): boolean {
   return /^postgres(ql)?:\/\//i.test(u);
 }
 
-const CACHE_HEADERS = {
-  "Content-Type": "application/xml; charset=utf-8",
-  "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
-  Vary: "Accept-Encoding",
-} as const;
+function shouldSkipDb(): boolean {
+  return process.env["SKIP_SITEMAP_DB"] === "1";
+}
 
 export async function GET() {
-  if (!hasValidDbUrl()) {
-    // No DB during build/preview/local → safe, small sitemap
-    return new NextResponse(buildMinimal(), { headers: CACHE_HEADERS });
+  if (!hasValidDbUrl() || shouldSkipDb()) {
+    return new NextResponse(buildMinimal(), {
+      headers: {
+        "Content-Type": "application/xml; charset=utf-8",
+        "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
+      },
+    });
   }
 
   try {
-    // Import prisma only when DB looks valid
     const { prisma } = await import("@/app/lib/prisma");
 
-    // Distinct locations (towns) for ACTIVE products only.
+    // Distinct towns (locations) of ACTIVE products only (cap to keep memory low)
     const rows = await prisma.product.findMany({
       where: { status: "ACTIVE", location: { not: null } },
       select: { location: true },
       distinct: ["location"],
-      take: 5000, // safety cap
+      take: 2000, // lower cap
     });
 
-    // Normalize & filter
     const towns = (rows as Array<{ location: string | null }>)
       .map((r) => (r.location ?? "").trim())
       .filter((loc) => loc.length > 0);
@@ -78,11 +76,17 @@ export async function GET() {
     const urls = towns.map((loc) => `${base}/town/${encodeURIComponent(loc)}`);
     const xml = buildSitemapXml(urls);
 
-    return new NextResponse(xml, { headers: CACHE_HEADERS });
+    return new NextResponse(xml, {
+      headers: {
+        "Content-Type": "application/xml; charset=utf-8",
+        "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
+      },
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[sitemaps/towns] error:", e);
-    // Fail closed with a valid, small sitemap
-    return new NextResponse(buildMinimal(), { headers: CACHE_HEADERS });
+    return new NextResponse(buildMinimal(), {
+      headers: { "Content-Type": "application/xml; charset=utf-8" },
+    });
   }
 }
