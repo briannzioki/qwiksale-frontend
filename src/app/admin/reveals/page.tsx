@@ -23,9 +23,7 @@ function allow(em?: string | null) {
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
-
 type SafeSearchParams = Record<string, string | string[] | undefined>;
-
 function getStr(sp: SafeSearchParams, key: string): string | undefined {
   const v = sp[key];
   if (typeof v === "string") return v;
@@ -37,7 +35,7 @@ function getStr(sp: SafeSearchParams, key: string): string | undefined {
 function toCsv(rows: string[][]): string {
   const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
   const body = rows.map((r) => r.map(quote).join(",")).join("\n");
-  return "\uFEFF" + body; // BOM
+  return "\uFEFF" + body;
 }
 
 const fmtUTC = new Intl.DateTimeFormat("en-GB", {
@@ -46,18 +44,16 @@ const fmtUTC = new Intl.DateTimeFormat("en-GB", {
   timeStyle: "medium",
 });
 
-/* Pre-typed row shape for convenience (has included product selection) */
 type RevealWithProduct = Prisma.ContactRevealGetPayload<{
   include: { product: { select: { id: true; name: true } } };
 }>;
-
 const TAKE_CHOICES = [50, 100, 200, 500, 1000] as const;
 
 /* ---------- page ---------- */
 export default async function AdminRevealsPage({
   searchParams,
 }: {
-  searchParams?: Promise<SafeSearchParams>;
+  searchParams?: SafeSearchParams;
 }) {
   const session = await auth().catch(() => null);
   if (!allow(session?.user?.email ?? null)) {
@@ -69,7 +65,7 @@ export default async function AdminRevealsPage({
           <code>ADMIN_EMAILS</code> (comma-separated) and redeploy.
         </p>
         <div className="mt-4">
-          <Link href="/" className="underline text-[#39a0ca]">
+          <Link href="/" className="text-[#39a0ca] underline">
             ← Back to site
           </Link>
         </div>
@@ -77,16 +73,12 @@ export default async function AdminRevealsPage({
     );
   }
 
-  const sp = (await searchParams) ?? {};
+  const sp = searchParams ?? {};
   const qRaw = (getStr(sp, "q") || "").trim();
   const q = qRaw.length > 120 ? qRaw.slice(0, 120) : qRaw;
 
   const takeStr = getStr(sp, "take");
-  const takeNum = clamp(
-    Number.isFinite(Number(takeStr)) ? Number(takeStr) : 200,
-    20,
-    1000
-  );
+  const takeNum = clamp(Number.isFinite(Number(takeStr)) ? Number(takeStr) : 200, 20, 1000);
 
   let where: Prisma.ContactRevealWhereInput | undefined;
   if (q.length > 0) {
@@ -117,16 +109,7 @@ export default async function AdminRevealsPage({
     loadError = "Failed to load reveal logs. Please try again.";
   }
 
-  /* ---------- CSV ---------- */
-  const header = [
-    "createdAt(UTC)",
-    "productId",
-    "productName",
-    "viewerUserId",
-    "ip",
-    "userAgent",
-  ] as const;
-
+  const header = ["createdAt(UTC)", "productId", "productName", "viewerUserId", "ip", "userAgent"] as const;
   const csvRows: string[][] = [
     header as unknown as string[],
     ...logs.map((r) => [
@@ -138,11 +121,9 @@ export default async function AdminRevealsPage({
       r.userAgent ?? "",
     ]),
   ];
-
   const csv = toCsv(csvRows);
   const csvHref = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
 
-  /* ---------- UI ---------- */
   return (
     <div className="mx-auto max-w-6xl p-6">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -164,7 +145,6 @@ export default async function AdminRevealsPage({
         </div>
       </div>
 
-      {/* Search / controls */}
       <form className="mb-4 flex flex-col gap-2 sm:flex-row" role="search">
         <input
           name="q"
@@ -221,22 +201,11 @@ export default async function AdminRevealsPage({
                     </time>
                   </Td>
                   <Td>
-                    <a
-                      className="underline"
-                      href={`/product/${r.productId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
+                    <a className="underline" href={`/product/${r.productId}`} target="_blank" rel="noopener noreferrer">
                       {r.product?.name ?? r.productId}
                     </a>
                   </Td>
-                  <Td>
-                    {r.viewerUserId ? (
-                      r.viewerUserId
-                    ) : (
-                      <span className="text-gray-500">guest</span>
-                    )}
-                  </Td>
+                  <Td>{r.viewerUserId ? r.viewerUserId : <span className="text-gray-500">guest</span>}</Td>
                   <Td>{r.ip || <span className="text-gray-400">—</span>}</Td>
                   <Td className="max-w-[420px]">
                     <span className="line-clamp-2 break-all text-gray-700 dark:text-slate-200">
@@ -251,8 +220,7 @@ export default async function AdminRevealsPage({
       )}
 
       <p className="mt-3 text-xs text-gray-500 dark:text-slate-400">
-        Showing {logs.length} of latest reveals
-        {q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on the
+        Showing {logs.length} of latest reveals{q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on the
         server.
       </p>
     </div>
@@ -263,12 +231,6 @@ export default async function AdminRevealsPage({
 function Th({ children }: { children: React.ReactNode }) {
   return <th className="py-2 px-3">{children}</th>;
 }
-function Td({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return <td className={`py-2 px-3 ${className ?? ""}`}>{children}</td>;
 }
