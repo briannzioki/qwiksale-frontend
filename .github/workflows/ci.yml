@@ -1,29 +1,63 @@
-﻿name: CI
+name: CI
 
 on:
   push:
-    branches:
-      - main
-      - deploy/weekly-digest-fixes
+    branches: [main, deploy/weekly-digest-fixes]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - name: Setup pnpm 10.16.0
+        uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.16.0
+          run_install: false
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js 20 + pnpm cache
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm build
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-cache-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            next-cache-${{ runner.os }}-
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      # - name: Test
+      #   run: pnpm test -- --run
+
+      - name: Build
+        run: pnpm build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: ${{ secrets.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME }}

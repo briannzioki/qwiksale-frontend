@@ -8,7 +8,7 @@ type DoneStatus = "SUCCESS" | "FAILED" | "TIMEOUT";
 
 export default function UpgradeWatcher({
   paymentId,
-  onDone,
+  onDoneAction,
   className = "",
   poll = {
     intervalMs: 2000,
@@ -17,7 +17,7 @@ export default function UpgradeWatcher({
   },
 }: {
   paymentId: string;
-  onDone?: (status: DoneStatus) => void;
+  onDoneAction?: (status: DoneStatus) => void;
   /** Optional container className */
   className?: string;
   /** Optional polling config overrides */
@@ -46,9 +46,9 @@ export default function UpgradeWatcher({
     (final: DoneStatus) => {
       if (doneRef.current) return;
       doneRef.current = true;
-      onDone?.(final);
+      onDoneAction?.(final);
     },
-    [onDone]
+    [onDoneAction]
   );
 
   const { status, isPolling, attempts, error } = usePaymentStatusPoll(paymentId, {

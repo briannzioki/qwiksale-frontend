@@ -1,5 +1,4 @@
 "use client";
-
 import { Suspense, useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -53,7 +52,7 @@ function strengthLabel(pw: string) {
 
 const ERR_COPY: Record<string, string> = {
   CredentialsSignin:
-    "This email may already exist or the credentials are invalid. If you signed up with Google, use “Continue with Google”.",
+    "This email may already exist or the credentials are invalid. If you signed up with Google, use â€œContinue with Googleâ€.",
   OAuthAccountNotLinked:
     "This email is already linked to another login method. Use your original sign-in method.",
 };
@@ -110,11 +109,11 @@ function SignUpPageInner() {
       if (!res || res.error) {
         toast.error(
           res?.error ||
-            "Sign-up failed. Try a different email or use “Continue with Google”."
+            "Sign-up failed. Try a different email or use â€œContinue with Googleâ€."
         );
         return;
       }
-      toast.success("Welcome to QwikSale! 🎉");
+      toast.success("Welcome to QwikSale! ðŸŽ‰");
       router.replace(returnTo);
     } finally {
       setWorking(null);
@@ -158,10 +157,10 @@ function SignUpPageInner() {
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/85">
-            <Badge icon="🔒">Secure & private</Badge>
-            <Badge icon="⚡">Fast posting</Badge>
-            <Badge icon="✅">Verified listings</Badge>
-            <Badge icon="💬">Direct chat</Badge>
+            <Badge icon="ðŸ”’">Secure & private</Badge>
+            <Badge icon="âš¡">Fast posting</Badge>
+            <Badge icon="âœ…">Verified listings</Badge>
+            <Badge icon="ðŸ’¬">Direct chat</Badge>
           </div>
         </div>
 
@@ -181,10 +180,10 @@ function SignUpPageInner() {
               type="button"
             >
               <GoogleIcon className="h-5 w-5" />
-              {working === "google" ? "Opening Google…" : "Continue with Google"}
+              {working === "google" ? "Opening Googleâ€¦" : "Continue with Google"}
             </button>
             <p className="mt-2 text-center text-xs text-gray-500 dark:text-slate-400">
-              We’ll never post without your permission.
+              Weâ€™ll never post without your permission.
             </p>
           </div>
 
@@ -212,7 +211,7 @@ function SignUpPageInner() {
                   required
                 />
                 <span className="mt-1 block text-xs text-gray-500 dark:text-slate-400">
-                  We’ll send important notifications here.
+                  Weâ€™ll send important notifications here.
                 </span>
               </label>
 
@@ -277,11 +276,11 @@ function SignUpPageInner() {
                 disabled={!!working}
                 className="mt-1 w-full rounded-xl bg-[#161748] px-4 py-3 font-semibold text-white shadow-sm transition hover:opacity-95 active:scale-[.99] disabled:opacity-60"
               >
-                {working === "creds" ? "Creating account…" : "Create account"}
+                {working === "creds" ? "Creating accountâ€¦" : "Create account"}
               </button>
 
               <p className="text-xs text-gray-600 dark:text-slate-400">
-                By creating an account, you agree to QwikSale’s{" "}
+                By creating an account, you agree to QwikSaleâ€™s{" "}
                 <Link className="underline underline-offset-2" href="/terms">
                   Terms
                 </Link>{" "}
