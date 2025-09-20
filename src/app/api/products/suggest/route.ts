@@ -92,3 +92,5 @@ export async function GET(request: Request) {
   res.headers.set("Cache-Control", "public, max-age=30, stale-while-revalidate=300");
   return res;
 }
+
+

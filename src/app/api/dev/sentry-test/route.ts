@@ -30,3 +30,5 @@ export async function GET() {
   // Allow GET too if you want to click from the address bar (optional)
   return POST();
 }
+
+
