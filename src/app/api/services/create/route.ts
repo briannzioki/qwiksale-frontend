@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -162,3 +162,5 @@ export function OPTIONS() {
   res.headers.set("Cache-Control", "no-store");
   return res;
 }
+
+

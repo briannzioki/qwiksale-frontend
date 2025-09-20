@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/favorites/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -254,3 +254,5 @@ export async function OPTIONS() {
   });
   return noStore(res);
 }
+
+

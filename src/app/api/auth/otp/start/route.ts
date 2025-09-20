@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/auth/otp/start/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -262,3 +262,5 @@ export async function OPTIONS() {
   // Friendly to preflight/CORS; nothing sensitive here.
   return noStore({ ok: true });
 }
+
+

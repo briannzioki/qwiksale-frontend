@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/cron/weekly-digest/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -236,3 +236,5 @@ export async function GET(req: NextRequest) {
     return noStore({ ok: false, error: "Server error" }, { status: 500 });
   }
 }
+
+

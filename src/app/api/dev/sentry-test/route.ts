@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/dev/sentry-test/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,3 +30,5 @@ export async function GET() {
   // Allow GET too if you want to click from the address bar (optional)
   return POST();
 }
+
+

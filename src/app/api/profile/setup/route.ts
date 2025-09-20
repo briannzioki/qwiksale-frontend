@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/profile/setup/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -219,3 +219,5 @@ export async function POST(req: Request) {
     return noStore({ error: "Failed to save profile" }, { status: 500 });
   }
 }
+
+

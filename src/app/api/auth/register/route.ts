@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/auth/register/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -150,3 +150,5 @@ export async function GET() {
 export async function OPTIONS() {
   return noStore({ ok: true }, { status: 200 });
 }
+
+

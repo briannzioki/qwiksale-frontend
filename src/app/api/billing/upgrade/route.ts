@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/billing/upgrade/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -299,3 +299,5 @@ export async function POST(req: Request) {
     return noStore({ error: e?.message || "Server error" }, { status: 500 });
   }
 }
+
+

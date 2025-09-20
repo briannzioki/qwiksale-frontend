@@ -1,6 +1,6 @@
 // src/app/api/health/db/route.ts
 export const runtime = "nodejs";
-export const preferredRegion = ["fra1"] as const;
+export const preferredRegion = 'fra1';
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
@@ -66,3 +66,5 @@ export async function HEAD() {
     headers: noStoreHeaders(),
   });
 }
+
+

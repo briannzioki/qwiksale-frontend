@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/mpesa/stk/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -223,3 +223,5 @@ export async function HEAD() {
     headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
   });
 }
+
+

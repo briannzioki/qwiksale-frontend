@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/otp/email/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,3 +88,5 @@ export async function POST(req: Request) {
     return err(500, "server error");
   }
 }
+
+

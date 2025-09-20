@@ -1,4 +1,4 @@
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/auth/request-otp/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -277,3 +277,5 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return noStore({ error: "Method not allowed" }, { status: 405 });
 }
+
+
