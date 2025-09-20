@@ -1,3 +1,4 @@
+export const preferredRegion = ['fra1'];
 // src/app/api/billing/upgrade/callback/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -1,6 +1,6 @@
 {
+  "version": 2,
   "functions": {
-    "app/**": { "regions": ["fra1"] },
     "api/**": { "regions": ["fra1"] }
   }
 }
