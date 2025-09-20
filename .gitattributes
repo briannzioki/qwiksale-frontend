@@ -1,3 +1,4 @@
 * text=auto
 *.prisma text eol=lf
 
+.github/workflows/ci.yml text eol=lf merge=ours
