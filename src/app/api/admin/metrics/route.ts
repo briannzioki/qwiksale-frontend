@@ -1,5 +1,5 @@
 export const runtime = 'nodejs';
-export const preferredRegion = ['fra1'];
+export const preferredRegion = 'fra1';
 // src/app/api/admin/metrics/route.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
