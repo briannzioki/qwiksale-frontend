@@ -3,7 +3,6 @@ export const runtime = "nodejs";
 
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
-import { headers } from "next/headers";
 import Script from "next/script";
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
 import Providers from "./providers";
@@ -20,55 +19,6 @@ const siteUrl = envAppUrl.replace(/\/+$/, "");
 
 const isPreview =
   process.env["VERCEL_ENV"] === "preview" || process.env["NEXT_PUBLIC_NOINDEX"] === "1";
-
-/* ----------------------------- Nonce utilities ----------------------------- */
-const BASE64_ABC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const b64 = (n: number) => BASE64_ABC.charAt(n & 63);
-
-function bytesToBase64(bytes: Uint8Array): string {
-  // Prefer Node's Buffer if available (Node runtime)
-  const g = globalThis as any;
-  if (g?.Buffer?.from) {
-    return g.Buffer.from(bytes).toString("base64");
-  }
-
-  let out = "";
-  let i = 0;
-  const len = bytes.length;
-
-  while (i + 2 < len) {
-    const b0 = bytes[i] as number;
-    const b1 = bytes[i + 1] as number;
-    const b2 = bytes[i + 2] as number;
-    const u = (b0 << 16) | (b1 << 8) | b2;
-    out += b64(u >> 18) + b64((u >> 12) & 63) + b64((u >> 6) & 63) + b64(u & 63);
-    i += 3;
-  }
-
-  const rem = len - i;
-  if (rem === 1) {
-    const b0 = bytes[i] as number;
-    const u = b0 << 16;
-    out += b64(u >> 18) + b64((u >> 12) & 63) + "==";
-  } else if (rem === 2) {
-    const b0 = bytes[i] as number;
-    const b1 = bytes[i + 1] as number;
-    const u = (b0 << 16) | (b1 << 8);
-    out += b64(u >> 18) + b64((u >> 12) & 63) + b64((u >> 6) & 63) + "=";
-  }
-
-  return out;
-}
-
-function generateNonce(): string {
-  const arr = new Uint8Array(16);
-  if (typeof globalThis.crypto?.getRandomValues === "function") {
-    globalThis.crypto.getRandomValues(arr);
-  } else {
-    for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
-  }
-  return bytesToBase64(arr);
-}
 
 /* -------------------------------- Viewport -------------------------------- */
 export const viewport: Viewport = {
@@ -148,16 +98,7 @@ export const metadata: Metadata = {
   category: "marketplace",
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Get CSP nonce from middleware if present; otherwise generate one
-  let nonce = "";
-  try {
-    const h = await headers(); // Promise<ReadonlyHeaders> in Next 15
-    nonce = h.get("x-nonce") ?? generateNonce();
-  } catch {
-    nonce = generateNonce();
-  }
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   // JSON-LD (site-wide)
   const orgJsonLd = {
     "@context": "https://schema.org",
@@ -196,20 +137,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="dns-prefetch" href="//images.unsplash.com" />
 
         {/* Set initial theme BEFORE paint to avoid flicker */}
-        <Script id="theme-script" strategy="beforeInteractive" nonce={nonce}>
+        <Script id="theme-script" strategy="beforeInteractive">
           {`try {
   const ls = localStorage.getItem('theme');
   const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
   const shouldDark = ls ? (ls === 'dark') : !!mq?.matches;
   document.documentElement.classList.toggle('dark', shouldDark);
-} catch {}`}
+} catch {}`
+          }
         </Script>
 
         {/* JSON-LD */}
-        <Script id="ld-org" type="application/ld+json" nonce={nonce}>
+        <Script id="ld-org" type="application/ld+json">
           {JSON.stringify(orgJsonLd)}
         </Script>
-        <Script id="ld-site" type="application/ld+json" nonce={nonce}>
+        <Script id="ld-site" type="application/ld+json">
           {JSON.stringify(siteJsonLd)}
         </Script>
 
@@ -235,7 +177,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {PLAUSIBLE_DOMAIN ? (
             <Script
               id="plausible"
-              nonce={nonce}
               strategy="afterInteractive"
               src="https://plausible.io/js/script.js"
               data-domain={PLAUSIBLE_DOMAIN}
@@ -247,11 +188,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <>
               <Script
                 id="ga-loader"
-                nonce={nonce}
                 strategy="afterInteractive"
                 src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
               />
-              <Script id="ga-init" nonce={nonce} strategy="afterInteractive">
+              <Script id="ga-init" strategy="afterInteractive">
                 {`
 window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}

@@ -1,7 +1,13 @@
+﻿// src/app/page.tsx
+export const dynamic = "force-static";
 export const revalidate = 600;
 export const runtime = "nodejs";
+
 import { Suspense } from "react";
-import HomeClient from "./_components/HomeClient";
+import nextDynamic from "next/dynamic";
+
+// render client code only on the client
+const HomeClient = nextDynamic(() => import("./_components/HomeClient"), { ssr: false });
 
 export default function HomePage() {
   return (
