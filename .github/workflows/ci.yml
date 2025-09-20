@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main, deploy/weekly-digest-fixes]
-  pull_request:
-  workflow_dispatch:
+    branches:
+      - main
+      - deploy/weekly-digest-fixes
+  pull_request: {}
+  workflow_dispatch: {}
 
 concurrency:
   group: ci-${{ github.ref }}
