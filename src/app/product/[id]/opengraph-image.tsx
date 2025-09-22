@@ -2,6 +2,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
+export const preferredRegion = ["lhr1"]; // London
 export const contentType = "image/png";
 export const size = { width: 1200, height: 630 };
 
@@ -9,14 +10,15 @@ type Product = {
   id: string;
   name?: string | null;
   price?: number | null;
-  currency?: string | null; // optional if your API returns it
+  currency?: string | null;
   town?: string | null;
-  coverImageUrl?: string | null; // if your API returns one
+  coverImageUrl?: string | null;
 };
 
 function appBaseUrl() {
   const envAppUrl =
     process.env["NEXT_PUBLIC_APP_URL"] ||
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
     (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "") ||
     "http://localhost:3000";
   return envAppUrl.replace(/\/+$/, "");
@@ -25,18 +27,16 @@ function appBaseUrl() {
 async function getProduct(id: string): Promise<Product | null> {
   const base = appBaseUrl();
   const res = await fetch(`${base}/api/products/${encodeURIComponent(id)}`, {
-    // Cache a bit to avoid hammering your API
     next: { revalidate: 300 },
   }).catch(() => null);
   if (!res || !res.ok) return null;
 
   const json = await res.json().catch(() => ({}));
-  // Adjust to your API shape if needed:
   return (json?.product as Product) ?? null;
 }
 
-export default async function Image({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function Image({ params }: { params: { id: string } }) {
+  const { id } = params;
   const p = await getProduct(id);
 
   const title = (p?.name || "QwikSale").slice(0, 90);
@@ -45,7 +45,6 @@ export default async function Image({ params }: { params: Promise<{ id: string }
     typeof p?.price === "number" ? `${currency} ${Math.round(p.price).toLocaleString("en-KE")}` : "";
   const location = p?.town || "";
 
-  // We intentionally avoid loading fonts or external images to keep bundle tiny
   return new ImageResponse(
     (
       <div
