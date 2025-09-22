@@ -1,5 +1,5 @@
 // src/app/placeholder/default.jpg/route.ts
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 /**
  * 1×1 opaque light-gray PNG (#e5e7eb) served at /placeholder/default.jpg
