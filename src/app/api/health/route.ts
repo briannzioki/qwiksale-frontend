@@ -1,4 +1,4 @@
-﻿// src/app/api/health/route.ts (example)
+// src/app/api/health/route.ts (example)
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
