@@ -33,10 +33,12 @@ function emit<T = unknown>(name: string, detail?: T) {
   }
 }
 
-function slug(s: string) {
-  return (s || "")
-    .toLowerCase()
-    .normalize?.("NFKD")
+/** Robust slug: don't call .replace on the result of optional .normalize() */
+function slug(input: string) {
+  const base = (input || "").toLowerCase();
+  const normalized =
+    typeof (base as any).normalize === "function" ? base.normalize("NFKD") : base;
+  return normalized
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
@@ -78,14 +80,18 @@ export default function FacetBar({
         dedupMap.set(key, it);
       }
     }
-    const top = Array.from(dedupMap.values()).slice(0, limit);
+
+    // Sort by count desc so "Top" really means top
+    const top = Array.from(dedupMap.values())
+      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+      .slice(0, limit);
 
     async function pick(value: string) {
       emit("qs:facet:pick", { kind, value });
       try {
         await onPickAction?.(kind, value);
-      } catch (e) {
-        // optional: swallow
+      } catch {
+        /* swallow optional handler errors */
       }
     }
 

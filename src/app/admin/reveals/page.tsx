@@ -5,18 +5,33 @@ export const revalidate = 0;
 
 import Link from "next/link";
 import { prisma } from "@/app/lib/prisma";
-import { auth } from "@/auth";
-import { env } from "@/app/lib/env";
 import type { Prisma } from "@prisma/client";
+import { notFound } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import type { Metadata } from "next";
 
-/* ---------- auth ---------- */
-function allow(em?: string | null) {
-  const list = (env.ADMIN_EMAILS || "")
+export const metadata: Metadata = {
+  title: "Contact Reveals · QwikSale",
+  robots: {
+    index: false,
+    follow: false,
+    noarchive: true,
+    googleBot: { index: false, follow: false, noimageindex: true },
+  },
+};
+
+/* ---------- RBAC (server-only) ---------- */
+async function requireAdmin() {
+  const session = await getServerSession(authOptions).catch(() => null);
+  const email = session?.user?.email ?? null;
+  const list = (process.env["ADMIN_EMAILS"] || "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  if (!list.length) return false;
-  return !!em && list.includes(em.toLowerCase());
+  if (!email || !list.includes(email.toLowerCase())) {
+    notFound();
+  }
 }
 
 /* ---------- helpers ---------- */
@@ -53,25 +68,10 @@ const TAKE_CHOICES = [50, 100, 200, 500, 1000] as const;
 export default async function AdminRevealsPage({
   searchParams,
 }: {
-  searchParams?: Promise<SafeSearchParams>;
+  // Next 15 passes a Promise here
+  searchParams: Promise<SafeSearchParams>;
 }) {
-  const session = await auth().catch(() => null);
-  if (!allow(session?.user?.email ?? null)) {
-    return (
-      <div className="mx-auto max-w-3xl p-6 text-sm text-gray-700">
-        <h1 className="mb-2 text-lg font-semibold">Not authorized</h1>
-        <p>
-          Your account isn’t on the admin list. Add your email to{" "}
-          <code>ADMIN_EMAILS</code> (comma-separated) and redeploy.
-        </p>
-        <div className="mt-4">
-          <Link href="/" className="text-[#39a0ca] underline">
-            ← Back to site
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  await requireAdmin();
 
   const sp = (await searchParams) ?? {};
   const qRaw = (getStr(sp, "q") || "").trim();
@@ -108,7 +108,14 @@ export default async function AdminRevealsPage({
     loadError = "Failed to load reveal logs. Please try again.";
   }
 
-  const header = ["createdAt(UTC)", "productId", "productName", "viewerUserId", "ip", "userAgent"] as const;
+  const header = [
+    "createdAt(UTC)",
+    "productId",
+    "productName",
+    "viewerUserId",
+    "ip",
+    "userAgent",
+  ] as const;
   const csvRows: string[][] = [
     header as unknown as string[],
     ...logs.map((r) => [
@@ -200,11 +207,22 @@ export default async function AdminRevealsPage({
                     </time>
                   </Td>
                   <Td>
-                    <a className="underline" href={`/product/${r.productId}`} target="_blank" rel="noopener noreferrer">
+                    <a
+                      className="underline"
+                      href={`/product/${r.productId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       {r.product?.name ?? r.productId}
                     </a>
                   </Td>
-                  <Td>{r.viewerUserId ? r.viewerUserId : <span className="text-gray-500">guest</span>}</Td>
+                  <Td>
+                    {r.viewerUserId ? (
+                      r.viewerUserId
+                    ) : (
+                      <span className="text-gray-500">guest</span>
+                    )}
+                  </Td>
                   <Td>{r.ip || <span className="text-gray-400">—</span>}</Td>
                   <Td className="max-w-[420px]">
                     <span className="line-clamp-2 break-all text-gray-700 dark:text-slate-200">
@@ -219,8 +237,8 @@ export default async function AdminRevealsPage({
       )}
 
       <p className="mt-3 text-xs text-gray-500 dark:text-slate-400">
-        Showing {logs.length} of latest reveals{q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on the
-        server.
+        Showing {logs.length} of latest reveals{q ? ` filtered by “${q}”` : ""}. Data is uncached
+        and rendered on the server.
       </p>
     </div>
   );

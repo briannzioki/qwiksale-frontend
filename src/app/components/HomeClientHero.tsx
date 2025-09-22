@@ -1,183 +1,226 @@
-// src/app/_components/HomeClient.tsx
+// src/app/components/HomeClientHero.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import HomeClientHero from "@/app/components/HomeClientHero";
+import { useSession } from "next-auth/react";
+import type { Session } from "next-auth";
+import { useMemo } from "react";
+import { categories } from "../data/categories";
 
-type Product = {
-  id: string;
-  name: string;
-  image?: string | null;
-  price?: number | null;
-  createdAt?: string | Date | null;
-  category?: string | null;
-  subcategory?: string | null;
-  status?: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
-};
-
-function fmtKES(n?: number | null) {
-  if (!n || n <= 0) return "Contact for price";
-  try {
-    return `KES ${new Intl.NumberFormat("en-KE").format(n)}`;
-  } catch {
-    return `KES ${n}`;
+/* ------------------------ tiny event/analytics ------------------------ */
+function emit(name: string, detail?: unknown) {
+  // eslint-disable-next-line no-console
+  console.log(`[qs:event] ${name}`, detail);
+  if (typeof window !== "undefined" && "CustomEvent" in window) {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
   }
 }
+function track(event: string, payload?: Record<string, unknown>) {
+  // eslint-disable-next-line no-console
+  console.log("[qs:track]", event, payload);
+  emit("qs:track", { event, payload });
+}
 
-const PLACEHOLDER = "/placeholder/default.jpg";
+/* ----------------------------- types ---------------------------------- */
+type LeafName = string;
+type Subcategory = { name: string; subsubcategories?: ReadonlyArray<LeafName> };
+type Category = { name: string; subcategories?: ReadonlyArray<Subcategory> };
 
-export default function HomeClient() {
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [items, setItems] = useState<Product[]>([]);
+function isCategory(x: unknown): x is Category {
+  return !!x && typeof (x as any).name === "string";
+}
 
-  // One place to tweak the feed endpoint if needed later.
-  // We ask for ACTIVE only, sort by createdAt desc, and keep it fresh with cache: "no-store".
-  const feedUrl = useMemo(() => {
-    const p = new URLSearchParams({
-      status: "ACTIVE",
-      sort: "createdAt",
-      order: "desc",
-      limit: "24",
-    });
-    // If your API is different, change this path only:
-    return `/api/products?${p.toString()}`;
-  }, []);
+/* --------------------------- helpers ---------------------------------- */
+function categoryHref(value: string) {
+  return `/?category=${encodeURIComponent(value)}`;
+}
 
-  useEffect(() => {
-    let cancel = false;
+function pickTopCategoryNames(max = 8) {
+  // categories is an array from ../data/categories; keep it defensive
+  const names: string[] = [];
+  for (const c of categories as unknown as Category[]) {
+    if (isCategory(c)) names.push(c.name);
+    if (names.length >= max) break;
+  }
+  return names.slice(0, max);
+}
 
-    (async () => {
-      try {
-        setLoading(true);
-        setErr(null);
+/* --------------------------- component -------------------------------- */
+export default function HomeClientHero({ className = "" }: { className?: string }) {
+  const { data: session, status } = useSession();
 
-        const r = await fetch(feedUrl, { cache: "no-store" });
-        let j: any = null;
-        try {
-          j = await r.json();
-        } catch {
-          /* ignore parse error; handled below */
-        }
-        if (!r.ok) {
-          throw new Error(j?.error || `Failed (${r.status})`);
-        }
+  // ✅ Null-safe user shape with optional username, matching your auth callbacks
+  const user = (session?.user ?? null) as (Session["user"] & {
+    username?: string | null;
+  }) | null;
 
-        // Accept several response shapes:
-        const arr: any[] = Array.isArray(j)
-          ? j
-          : Array.isArray(j?.items)
-          ? j.items
-          : Array.isArray(j?.products)
-          ? j.products
-          : [];
+  const greeting = useMemo(() => {
+    if (status === "loading") return "Welcome";
+    const name = user?.name || user?.email || user?.username || "";
+    if (!name) return "Welcome";
+    const first = String(name).split(/\s+/)[0] || "there";
+    return `Hi, ${first}`;
+  }, [status, user?.email, user?.name, user?.username]);
 
-        // Filter ACTIVE defensively and sort desc by createdAt
-        const normalized: Product[] = arr
-          .filter((p) => (p?.status ?? "ACTIVE") === "ACTIVE")
-          .map((p) => ({
-            id: String(p.id),
-            name: String(p.name ?? "Untitled"),
-            image: p.image ?? null,
-            price: typeof p.price === "number" ? p.price : null,
-            createdAt: p.createdAt ?? null,
-            category: p.category ?? null,
-            subcategory: p.subcategory ?? null,
-            status: p.status ?? "ACTIVE",
-          }))
-          .sort((a, b) => {
-            const ta = a.createdAt ? new Date(a.createdAt as any).getTime() : 0;
-            const tb = b.createdAt ? new Date(b.createdAt as any).getTime() : 0;
-            return tb - ta; // newest first
-          });
-
-        if (!cancel) setItems(normalized);
-      } catch (e: any) {
-        if (!cancel) setErr(e?.message || "Could not load latest listings");
-      } finally {
-        if (!cancel) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancel = true;
-    };
-  }, [feedUrl]);
+  const topCats = useMemo(() => pickTopCategoryNames(10), []);
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Signed-in hello + quick actions */}
-      <HomeClientHero />
+    <section
+      aria-label="Welcome"
+      className={[
+        "relative overflow-hidden rounded-2xl border border-black/5 dark:border-white/10",
+        "bg-gradient-to-br from-[#e6f6fd] via-[#eaf7f0] to-[#f0effa] dark:from-slate-900 dark:via-slate-900 dark:to-slate-950",
+        "p-5 md:p-6",
+        className,
+      ].join(" ")}
+    >
+      {/* Decorative gradient stripe */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full blur-3xl opacity-40"
+        style={{
+          background:
+            "radial-gradient(closest-side, #39a0ca 0%, transparent 60%), radial-gradient(closest-side, #478559 0%, transparent 60%)",
+        }}
+      />
 
-      {/* Newest / header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Newest Listings</h2>
-        <div className="flex items-center gap-2">
-          <Link href="/search" className="text-sm text-[#39a0ca] underline">
-            Explore all →
-          </Link>
-        </div>
-      </div>
+      <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+        {/* Copy + actions */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#478559] dark:text-emerald-300/80">
+            QwikSale Kenya
+          </p>
+          <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white">
+            {greeting} — buy &amp; sell, faster.
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-gray-700 dark:text-slate-300">
+            Browse fresh deals across Kenya. Post your own listing in seconds and reach local buyers.
+          </p>
 
-      {/* States */}
-      {err && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
-          {err}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="rounded-xl border bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-              <div className="skeleton h-40 w-full rounded-lg" />
-              <div className="mt-3 space-y-2">
-                <div className="skeleton h-4 w-3/4 rounded" />
-                <div className="skeleton h-4 w-1/3 rounded" />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : items.length === 0 ? (
-        <div className="rounded-xl border bg-white p-6 text-sm text-gray-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-          No active listings yet.{" "}
-          <Link href="/sell" className="text-[#39a0ca] underline">
-            Post your first →
-          </Link>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {items.map((p) => (
-            <article
-              key={p.id}
-              className="group overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+          {/* CTAs */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Link
+              href="/sell"
+              onClick={() => track("hero_sell_click")}
+              className="inline-flex items-center rounded-lg bg-[#161748] px-3 py-2 text-sm font-semibold text-white shadow hover:opacity-90"
             >
-              <Link href={`/product/${p.id}`} className="block">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={p.image || PLACEHOLDER}
-                  alt={p.name}
-                  className="h-40 w-full object-cover"
-                  loading="lazy"
-                />
-                <div className="p-3">
-                  <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
-                    {p.name}
-                  </h3>
-                  <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
-                    {p.category || "General"}
-                    {p.subcategory ? ` • ${p.subcategory}` : ""}
-                  </p>
-                  <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
-                    {fmtKES(p.price)}
-                  </p>
-                </div>
-              </Link>
-            </article>
-          ))}
+              + Post a listing
+            </Link>
+
+            <Link
+              href="/search"
+              onClick={() => track("hero_browse_click")}
+              className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+            >
+              Browse all
+            </Link>
+
+            {status === "authenticated" ? (
+              <>
+                <Link
+                  href="/saved"
+                  onClick={() => track("hero_saved_click")}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  Saved
+                </Link>
+                <Link
+                  href="/dashboard"
+                  onClick={() => track("hero_dashboard_click")}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  Dashboard
+                </Link>
+                {!user?.username && (
+                  <Link
+                    href="/account/complete-profile"
+                    onClick={() => track("hero_complete_profile_click")}
+                    className="inline-flex items-center rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+                    title="Set your username & profile details"
+                  >
+                    Complete profile
+                  </Link>
+                )}
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/signin"
+                  onClick={() => track("hero_signin_click")}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={() => track("hero_join_click")}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  Join
+                </Link>
+              </>
+            )}
+          </div>
+
+          {/* Trust mini-row */}
+          <ul className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-slate-400">
+            <li className="inline-flex items-center gap-1">
+              <ShieldIcon /> Buyer safety
+            </li>
+            <li className="inline-flex items-center gap-1">
+              <StarIcon /> Community rated
+            </li>
+            <li className="inline-flex items-center gap-1">
+              <BoltIcon /> Fast messaging
+            </li>
+          </ul>
         </div>
-      )}
-    </div>
+
+        {/* Quick category chips */}
+        <nav aria-label="Popular categories" className="md:justify-self-end">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+            Popular now
+          </div>
+          <ul className="mt-2 flex max-w-[36rem] flex-wrap gap-2">
+            {topCats.map((name) => (
+              <li key={name}>
+                <Link
+                  href={categoryHref(name)}
+                  onClick={() => track("hero_category_click", { category: name })}
+                  className="inline-flex items-center rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-sm text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  {name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------- tiny inline icons ---------------- */
+
+function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...props}>
+      <path d="M12 3l7 3v6a9 9 0 0 1-7 8 9 9 0 0 1-7-8V6l7-3z" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+function StarIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 17.27l5.18 3.05-1.4-6.03 4.64-4.02-6.12-.53L12 4 9.7 9.74l-6.12.53 4.64 4.02-1.4 6.03L12 17.27z" />
+    </svg>
+  );
+}
+function BoltIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M13 2 3 14h7l-1 8 11-14h-7V2z" />
+    </svg>
   );
 }

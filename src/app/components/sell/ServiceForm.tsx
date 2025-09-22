@@ -15,29 +15,31 @@ type Props = {
 type RateType = "hour" | "day" | "fixed";
 
 export default function ServiceForm({ onCreatedAction, className = "" }: Props) {
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState(categoryOptions()[0]?.value || "");
-  const subOptions = useMemo(() => subcategoryOptions(category), [category]);
-  const [subcategory, setSubcategory] = useState<string>(subOptions[0]?.value || "");
+  // Precompute top-level options once
+  const catOpts = useMemo(() => categoryOptions(), []);
+  const [category, setCategory] = useState<string>(catOpts[0]?.value || "");
 
+  // Subcategory depends on category
+  const subOpts = useMemo(() => subcategoryOptions(category), [category]);
+  const [subcategory, setSubcategory] = useState<string>(subOpts[0]?.value || "");
+
+  const [name, setName] = useState("");
   const [price, setPrice] = useState<number | "">("");
   const [rateType, setRateType] = useState<RateType>("fixed");
-
   const [serviceArea, setServiceArea] = useState("");
   const [availability, setAvailability] = useState("");
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
-
   const [phone, setPhone] = useState("");
   const [files, setFiles] = useState<File[]>([]); // placeholder for future image upload
   const [busy, setBusy] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Strict boolean (was truthy string earlier)
   const can =
-    name.trim() &&
-    category &&
-    (subcategory || true) && // subcategory optional for some service cats
+    name.trim().length > 0 &&
+    category.length > 0 &&
     description.trim().length >= 10 &&
     (price === "" || Number(price) >= 0);
 
@@ -46,8 +48,15 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
   const onFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = Array.from(e.target.files || []);
     setFiles(next.slice(0, 10));
+    // reset to allow picking the same files again
     e.currentTarget.value = "";
   };
+
+  const onChangeCategory = useCallback((value: string) => {
+    setCategory(value);
+    const first = subcategoryOptions(value)[0]?.value || "";
+    setSubcategory(first);
+  }, []);
 
   const submit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -60,9 +69,16 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         return;
       }
 
+      // Nudge: this lightweight form doesn’t upload images yet
+      if (files.length > 0) {
+        toast("Heads up: image upload isn’t wired yet — service will be created without photos.", {
+          icon: "📷",
+        });
+      }
+
       setBusy(true);
       try {
-        // Basic payload that matches /api/services/create
+        // Keep shape aligned with our API & later readers
         const payload = {
           name: name.trim(),
           description: description.trim(),
@@ -72,8 +88,8 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
           rateType,
           serviceArea: serviceArea.trim() || null,
           availability: availability.trim() || null,
-          // image/gallery omitted in this lightweight form
           sellerPhone: msisdn ?? null,
+          // prefer explicit 'location'; otherwise use serviceArea as a fallback for display
           location: (location || serviceArea).trim() || null,
         };
 
@@ -88,8 +104,12 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
           throw new Error(j?.error || `Failed (${r.status})`);
         }
 
-        const id = String(j.serviceId || "");
+        // Be robust about where the ID might be
+        const id: string =
+          String(j?.serviceId || j?.id || j?.service?.id || j?.data?.id || "").trim();
+
         toast.success("Service posted");
+        (window as any).plausible?.("Service Created", { props: { category, subcategory } });
         await onCreatedAction?.(id);
       } catch (err: any) {
         toast.error(err?.message || "Failed to create service");
@@ -102,6 +122,7 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
       busy,
       category,
       description,
+      files.length,
       location,
       name,
       onCreatedAction,
@@ -120,14 +141,20 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         "rounded-2xl border bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900",
         className,
       ].join(" ")}
+      aria-labelledby="service-form-title"
       noValidate
     >
-      <h2 className="text-lg font-bold">Post a Service</h2>
+      <h2 id="service-form-title" className="text-lg font-bold">
+        Post a Service
+      </h2>
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
-          <label className="text-sm font-medium">Service name</label>
+          <label className="text-sm font-medium" htmlFor="sf-name">
+            Service name
+          </label>
           <input
+            id="sf-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -138,18 +165,16 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Category</label>
+          <label className="text-sm font-medium" htmlFor="sf-category">
+            Category
+          </label>
           <select
+            id="sf-category"
             value={category}
-            onChange={(e) => {
-              const nv = e.target.value;
-              setCategory(nv);
-              const first = subcategoryOptions(nv)[0]?.value || "";
-              setSubcategory(first);
-            }}
+            onChange={(e) => onChangeCategory(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
-            {categoryOptions().map((o) => (
+            {catOpts.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -158,14 +183,17 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Subcategory (optional)</label>
+          <label className="text-sm font-medium" htmlFor="sf-subcategory">
+            Subcategory (optional)
+          </label>
           <select
+            id="sf-subcategory"
             value={subcategory}
             onChange={(e) => setSubcategory(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
-            {subOptions.length > 0 ? (
-              subOptions.map((o) => (
+            {subOpts.length > 0 ? (
+              subOpts.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -177,8 +205,11 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Rate type</label>
+          <label className="text-sm font-medium" htmlFor="sf-rateType">
+            Rate type
+          </label>
           <select
+            id="sf-rateType"
             value={rateType}
             onChange={(e) => setRateType(e.target.value as RateType)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -190,8 +221,11 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Price (KES)</label>
+          <label className="text-sm font-medium" htmlFor="sf-price">
+            Price (KES)
+          </label>
           <input
+            id="sf-price"
             type="number"
             min={0}
             value={price === "" ? "" : price}
@@ -204,8 +238,11 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Base location</label>
+          <label className="text-sm font-medium" htmlFor="sf-location">
+            Base location
+          </label>
           <input
+            id="sf-location"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -214,8 +251,11 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Service area (optional)</label>
+          <label className="text-sm font-medium" htmlFor="sf-area">
+          Service area (optional)
+          </label>
           <input
+            id="sf-area"
             value={serviceArea}
             onChange={(e) => setServiceArea(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -224,8 +264,11 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Availability (optional)</label>
+          <label className="text-sm font-medium" htmlFor="sf-avail">
+            Availability (optional)
+          </label>
           <input
+            id="sf-avail"
             value={availability}
             onChange={(e) => setAvailability(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -233,9 +276,11 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
           />
         </div>
 
-        {/* Lightweight placeholder for future image upload (kept for UI parity) */}
+        {/* Lightweight placeholder for future image upload */}
         <div className="md:col-span-2">
-          <label className="text-sm font-medium">Photos (optional, up to 10)</label>
+          <label className="text-sm font-medium" htmlFor="sf-files">
+            Photos (optional, up to 10)
+          </label>
           <div className="mt-1 flex gap-2">
             <button
               type="button"
@@ -245,6 +290,7 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
               Choose files
             </button>
             <input
+              id="sf-files"
               ref={fileInputRef}
               type="file"
               multiple
@@ -252,7 +298,7 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
               className="hidden"
               onChange={onFiles}
             />
-            <div className="text-xs text-gray-600 dark:text-gray-400">
+            <div className="text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
               {files.length ? `${files.length} selected` : "No files selected"}
             </div>
           </div>
@@ -266,6 +312,7 @@ export default function ServiceForm({ onCreatedAction, className = "" }: Props) 
           className={`rounded-xl px-4 py-2 text-white ${
             !can || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"
           }`}
+          aria-busy={busy ? "true" : "false"}
         >
           {busy ? "Posting…" : "Post service"}
         </button>

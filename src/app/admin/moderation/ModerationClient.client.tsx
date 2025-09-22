@@ -1,3 +1,4 @@
+// src/app/admin/moderation/ModerationClient.client.tsx
 "use client";
 
 import Link from "next/link";
@@ -13,6 +14,18 @@ export type ReportRow = {
   userId: string | null;
   createdAt: string | Date;
   resolved: boolean;
+};
+
+const fmtDateTimeKE = (d: string | Date) => {
+  try {
+    return new Intl.DateTimeFormat("en-KE", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Africa/Nairobi",
+    }).format(new Date(d as any));
+  } catch {
+    return new Date(d as any).toLocaleString();
+  }
 };
 
 export default function ModerationClient({
@@ -41,7 +54,7 @@ export default function ModerationClient({
           <thead className="text-left bg-gray-50 dark:bg-slate-800">
             <tr>
               <th className="px-3 py-2 w-8">
-                <input type="checkbox" data-check="all" />
+                <input type="checkbox" data-check="all" aria-label="Select all reports" />
               </th>
               <th className="px-3 py-2">When</th>
               <th className="px-3 py-2">Listing</th>
@@ -58,27 +71,27 @@ export default function ModerationClient({
             {items.map((r) => (
               <tr key={r.id} className="border-t dark:border-slate-800 align-top">
                 <td className="px-3 py-2">
-                  <input type="checkbox" name="select" value={r.id} />
+                  <input type="checkbox" name="select" value={r.id} aria-label={`Select ${r.id}`} />
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {new Date(r.createdAt).toLocaleString()}
-                </td>
+                <td className="px-3 py-2 whitespace-nowrap">{fmtDateTimeKE(r.createdAt)}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
                     <code className="text-xs">{r.listingId}</code>
                     {r.listingType === "product" ? (
                       <Link
-                        className="text-[#39a0ca]"
+                        className="text-[#39a0ca] hover:underline"
                         href={`/product/${r.listingId}`}
                         target="_blank"
+                        rel="noreferrer"
                       >
                         open
                       </Link>
                     ) : (
                       <Link
-                        className="text-[#39a0ca]"
+                        className="text-[#39a0ca] hover:underline"
                         href={`/service/${r.listingId}`}
                         target="_blank"
+                        rel="noreferrer"
                       >
                         open
                       </Link>
@@ -92,12 +105,8 @@ export default function ModerationClient({
                     {r.details || <span className="opacity-60">—</span>}
                   </div>
                 </td>
-                <td className="px-3 py-2">
-                  {r.userId || <span className="opacity-60">guest</span>}
-                </td>
-                <td className="px-3 py-2">
-                  {r.ip || <span className="opacity-60">—</span>}
-                </td>
+                <td className="px-3 py-2">{r.userId || <span className="opacity-60">guest</span>}</td>
+                <td className="px-3 py-2">{r.ip || <span className="opacity-60">—</span>}</td>
                 <td className="px-3 py-2">{r.resolved ? "Yes" : "No"}</td>
                 <td className="px-3 py-2">
                   <RowActions
@@ -148,6 +157,7 @@ function RowActions({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
+          credentials: "same-origin",
           body: JSON.stringify({ status }),
         });
         if (!r.ok) {
@@ -171,6 +181,8 @@ function RowActions({
         await fetch("/admin/moderation/actions/resolve", {
           method: "POST",
           body: form,
+          cache: "no-store",
+          credentials: "same-origin",
         });
         location.reload();
       } catch {
@@ -185,6 +197,7 @@ function RowActions({
         onClick={() => patchStatus("HIDDEN")}
         className="rounded bg-red-600/90 text-white px-2 py-1 text-xs hover:bg-red-600 disabled:opacity-60"
         disabled={pending}
+        aria-busy={pending}
       >
         Hide
       </button>
@@ -192,6 +205,7 @@ function RowActions({
         onClick={() => patchStatus("ACTIVE")}
         className="rounded bg-emerald-600/90 text-white px-2 py-1 text-xs hover:bg-emerald-600 disabled:opacity-60"
         disabled={pending}
+        aria-busy={pending}
       >
         Unhide
       </button>
@@ -199,6 +213,7 @@ function RowActions({
         onClick={toggleResolved}
         className="rounded border px-2 py-1 text-xs disabled:opacity-60"
         disabled={pending}
+        aria-busy={pending}
       >
         {resolved ? "Unresolve" : "Resolve"}
       </button>
@@ -219,21 +234,39 @@ function BulkActions({
     const master = document.querySelector<HTMLInputElement>('input[data-check="all"]');
     const boxes = () =>
       Array.from(document.querySelectorAll<HTMLInputElement>('input[name="select"]'));
-    const sync = () => {
-      const bs = boxes();
-      if (master) master.checked = bs.length > 0 && bs.every((b) => b.checked);
-    };
-    master?.addEventListener("change", () => {
+
+    const onMasterChange = () => {
       const bs = boxes();
       bs.forEach((b) => (b.checked = !!master?.checked));
-    });
-    document.addEventListener("change", sync);
-    return () => document.removeEventListener("change", sync);
+      // reflect partial selection
+      if (master) {
+        master.indeterminate = false;
+      }
+    };
+
+    const onDocChange = () => {
+      const bs = boxes();
+      const checked = bs.filter((b) => b.checked).length;
+      if (master) {
+        master.checked = bs.length > 0 && checked === bs.length;
+        master.indeterminate = checked > 0 && checked < bs.length;
+      }
+    };
+
+    master?.addEventListener("change", onMasterChange);
+    document.addEventListener("change", onDocChange);
+    // initialize state once
+    onDocChange();
+
+    return () => {
+      master?.removeEventListener("change", onMasterChange);
+      document.removeEventListener("change", onDocChange);
+    };
   }, []);
 
   const getSelected = () =>
     Array.from(document.querySelectorAll<HTMLInputElement>('input[name="select"]:checked')).map(
-      (i) => i.value
+      (i) => i.value,
     );
 
   const doResolve = (flag: "1" | "0") =>
@@ -243,7 +276,12 @@ function BulkActions({
       const form = new FormData();
       ids.forEach((id) => form.append("ids", id));
       form.set("resolved", flag);
-      await fetch("/admin/moderation/actions/resolve", { method: "POST", body: form });
+      await fetch("/admin/moderation/actions/resolve", {
+        method: "POST",
+        body: form,
+        cache: "no-store",
+        credentials: "same-origin",
+      });
       location.reload();
     });
 
@@ -265,9 +303,10 @@ function BulkActions({
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             cache: "no-store",
+            credentials: "same-origin",
             body: JSON.stringify({ status }),
           }).catch(() => {});
-        })
+        }),
       );
       location.reload();
     });
@@ -278,6 +317,7 @@ function BulkActions({
         onClick={() => doResolve("1")}
         className="rounded bg-emerald-600/90 text-white px-3 py-1 text-sm hover:bg-emerald-600 disabled:opacity-60"
         disabled={pending}
+        aria-busy={pending}
       >
         Resolve selected
       </button>
@@ -285,6 +325,7 @@ function BulkActions({
         onClick={() => doResolve("0")}
         className="rounded border px-3 py-1 text-sm disabled:opacity-60"
         disabled={pending}
+        aria-busy={pending}
       >
         Unresolve selected
       </button>
@@ -293,6 +334,7 @@ function BulkActions({
         onClick={() => doVisibility("HIDDEN")}
         className="rounded bg-red-600/90 text-white px-3 py-1 text-sm hover:bg-red-600 disabled:opacity-60"
         disabled={pending}
+        aria-busy={pending}
       >
         Hide listings
       </button>
@@ -300,6 +342,7 @@ function BulkActions({
         onClick={() => doVisibility("ACTIVE")}
         className="rounded bg-[#161748] text-white px-3 py-1 text-sm hover:opacity-90 disabled:opacity-60"
         disabled={pending}
+        aria-busy={pending}
       >
         Unhide listings
       </button>

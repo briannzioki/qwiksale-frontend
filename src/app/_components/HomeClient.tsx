@@ -93,11 +93,10 @@ function shimmer(width: number, height: number) {
     <rect id="r" width="${width}" height="${height}" fill="url(#g)" />
     <animate xlink:href="#r" attributeName="x" from="-${width}" to="${width}" dur="1.2s" repeatCount="indefinite"  />
   </svg>`;
-  const encode =
-    typeof window === "undefined"
-      ? (str: string) => Buffer.from(str).toString("base64")
-      : (str: string) =>
-          (globalThis.btoa ? globalThis.btoa(str) : Buffer.from(str).toString("base64"));
+
+  const encode = (str: string) =>
+    typeof window === "undefined" ? Buffer.from(str, "utf8").toString("base64") : btoa(str);
+
   return `data:image/svg+xml;base64,${encode(svg)}`;
 }
 
@@ -230,6 +229,39 @@ export default function HomeClient() {
     const n = Number(sp.get("page") || 1);
     return Number.isFinite(n) && n > 0 ? n : 1;
   });
+
+  // Keep local state in-sync if URL changes externally (back/forward, links, etc.)
+  React.useEffect(() => {
+    const nextMode = (sp.get("t") || "").toLowerCase() === "services" ? "services" : "products";
+    if (nextMode !== mode) setMode(nextMode);
+
+    const get = (k: string) => sp.get(k) || "";
+    if (get("q") !== q) setQ(get("q"));
+    if (get("category") !== category) setCategory(get("category"));
+    if (get("subcategory") !== subcategory) setSubcategory(get("subcategory"));
+    if (get("brand") !== brand) setBrand(get("brand"));
+    if (get("condition") !== condition) setCondition(get("condition"));
+    if (get("minPrice") !== minPrice) setMinPrice(get("minPrice"));
+    if (get("maxPrice") !== maxPrice) setMaxPrice(get("maxPrice"));
+
+    const f = sp.get("featured") === "true";
+    if (f !== featuredOnly) setFeaturedOnly(f);
+
+    const s = sp.get("sort") || "newest";
+    if (s !== sort) setSort(s);
+
+    const p = Number(sp.get("page") || 1);
+    if (Number.isFinite(p) && p > 0 && p !== page) setPage(p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp]);
+
+  // When switching to services, clear product-only fields (brand/condition)
+  React.useEffect(() => {
+    if (mode === "services") {
+      if (brand) setBrand("");
+      if (condition) setCondition("");
+    }
+  }, [mode, brand, condition]);
 
   // Debounced inputs
   const dmode = useDebounced(mode, DEBOUNCE_MS);

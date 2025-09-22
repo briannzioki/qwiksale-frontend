@@ -53,6 +53,7 @@ export default function ProfilePhotoUploader({
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
   const [image, setImage] = useState<string | null>(initialImage ?? null); // server-truthy value
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null); // server generated variant
   const [localPreview, setLocalPreview] = useState<string | null>(null); // object URL while uploading
@@ -72,6 +73,12 @@ export default function ProfilePhotoUploader({
   );
 
   const previewSrc = localPreview || avatarUrl || image || null;
+
+  // Use unoptimized rendering for any non-site-local image (blob:, data:, http(s):)
+  const unoptimized = useMemo(() => {
+    if (!previewSrc) return false;
+    return !previewSrc.startsWith("/"); // covers blob:, data:, http(s):
+  }, [previewSrc]);
 
   // Clean up object URL when component unmounts or when localPreview changes
   useEffect(() => {
@@ -133,12 +140,17 @@ export default function ProfilePhotoUploader({
       abortRef.current = ac;
 
       try {
-        const { user, variants } = await upload(f);
-        setImage(user.image || null);
+        // Pass an AbortSignal if the hook supports it (safe via `any`)
+        const res = await (upload as unknown as (file: File, signal?: AbortSignal) => Promise<any>)(
+          f,
+          ac.signal
+        );
+        const { user, variants } = res ?? {};
+        setImage(user?.image || null);
         setAvatarUrl(variants?.avatarUrl ?? null);
         announce("Profile photo updated");
         track("profile_photo_upload", { size: f.size, type: f.type });
-        emit("qs:profile:photo:updated", { url: user.image, avatar: variants?.avatarUrl });
+        emit("qs:profile:photo:updated", { url: user?.image, avatar: variants?.avatarUrl });
       } catch {
         announce("Upload failed");
       } finally {
@@ -166,8 +178,9 @@ export default function ProfilePhotoUploader({
       abortRef.current = null;
     }
     try {
-      const { user } = await remove();
-      setImage(user.image ?? null); // likely null
+      const res = await (remove as unknown as (signal?: AbortSignal) => Promise<any>)();
+      const { user } = res ?? {};
+      setImage(user?.image ?? null); // likely null
       setAvatarUrl(null);
       if (localPreview) {
         URL.revokeObjectURL(localPreview);
@@ -224,7 +237,6 @@ export default function ProfilePhotoUploader({
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         role="button"
-        aria-haspopup="dialog"
         aria-label={previewSrc ? "Profile photo" : "No profile photo"}
         tabIndex={0}
         onKeyDown={(e) => {
@@ -243,6 +255,7 @@ export default function ProfilePhotoUploader({
             sizes={`${sizePx}px`}
             className="object-cover"
             priority
+            unoptimized={unoptimized}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
@@ -252,7 +265,7 @@ export default function ProfilePhotoUploader({
 
         {/* subtle overlay hint on drag */}
         {dragOver && (
-          <div className="absolute inset-0 bg-[#39a0ca]/10 border-2 border-dashed border-[#39a0ca]" />
+          <div className="absolute inset-0 border-2 border-dashed border-[#39a0ca] bg-[#39a0ca]/10" />
         )}
       </div>
 
@@ -313,7 +326,7 @@ export default function ProfilePhotoUploader({
         {/* Progress */}
         {isUploading && (
           <div className="text-xs text-gray-700 dark:text-gray-300">
-            Uploading… {progress}%
+            Uploading… {progress ?? 0}%
             <div
               className="mt-1 h-2 w-56 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"
               role="progressbar"
@@ -321,7 +334,7 @@ export default function ProfilePhotoUploader({
               aria-valuemin={0}
               aria-valuemax={100}
               aria-label="Upload progress"
-              title={`${progress}%`}
+              title={`${progress ?? 0}%`}
             >
               <div
                 className="h-full bg-gray-600 dark:bg-gray-300 transition-[width] duration-300 ease-linear"

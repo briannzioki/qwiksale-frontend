@@ -3,17 +3,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
+import { normalizeKenyanPhone } from "@/app/lib/phone";
 
 /* --------------------------- Helpers & Types --------------------------- */
-
-/** Normalize various phone formats to 2547XXXXXXXX */
-function normalizeMsisdn(input: string): string {
-  let s = (input || "").replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
-  if (/^\+2547\d{8}$/.test("+" + s)) s = s.replace(/^\+/, "");
-  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
-  return s;
-}
 
 /** KES formatter (no decimals) */
 const fmtKES = (n: number) =>
@@ -63,10 +55,10 @@ export default function DonatePage() {
 
   // Derived “can submit”
   const canSubmit = useMemo(() => {
-    const msisdn = normalizeMsisdn(phone);
+    const msisdn = normalizeKenyanPhone(phone) || "";
     const n = typeof amount === "number" ? amount : Number.NaN;
     return (
-      /^2547\d{8}$/.test(msisdn) &&
+      /^254(7|1)\d{8}$/.test(msisdn) &&
       Number.isFinite(n) &&
       n >= 1 &&
       n <= MAX_DONATION &&
@@ -94,14 +86,14 @@ export default function DonatePage() {
     setError("");
     setStatus("");
 
-    const msisdn = normalizeMsisdn(phone);
-    if (!/^2547\d{8}$/.test(msisdn)) {
-      setError("Please enter a valid Safaricom number like 2547XXXXXXXX.");
+    const msisdn = normalizeKenyanPhone(phone) || "";
+    if (!/^254(7|1)\d{8}$/.test(msisdn)) {
+      setError("Enter a valid Safaricom number like 2547XXXXXXXX or 2541XXXXXXXX.");
       return;
     }
     const amt = typeof amount === "number" ? Math.round(amount) : 0;
     if (!Number.isFinite(amt) || amt < 1) {
-      setError("Please enter a valid amount (minimum 1 KES).");
+      setError("Enter a valid amount (minimum 1 KES).");
       return;
     }
 
@@ -148,9 +140,7 @@ export default function DonatePage() {
             /* ignore */
           }
         } else {
-          setStatus(
-            "Request sent. If you didn’t receive a prompt, please try again."
-          );
+          setStatus("Request sent. If you didn’t receive a prompt, please try again.");
         }
       } else {
         const msg =
@@ -177,9 +167,7 @@ export default function DonatePage() {
       {/* Header */}
       <section className="rounded-2xl p-6 text-white shadow-sm bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
         <h1 className="text-2xl md:text-3xl font-extrabold">Support QwikSale</h1>
-        <p className="mt-1 text-white/90">
-          Your donation keeps the marketplace fast, safe, and ad-free.
-        </p>
+        <p className="mt-1 text-white/90">Your donation keeps the marketplace fast, safe, and ad-free.</p>
       </section>
 
       {/* Form */}
@@ -188,9 +176,8 @@ export default function DonatePage() {
         className="mt-6 rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
       >
         <p className="text-gray-700 dark:text-slate-300">
-          We’re a neutral mediator — sellers handle their own sales. Donations
-          help us tackle spam, improve trust & safety, and build new features
-          for everyone.
+          We’re a neutral mediator — sellers handle their own sales. Donations help us tackle spam,
+          improve trust & safety, and build new features for everyone.
         </p>
 
         {/* Amount presets */}
@@ -256,11 +243,8 @@ export default function DonatePage() {
               )}
             </div>
           )}
-          <p
-            id="amountHelp"
-            className="mt-1 text-xs text-gray-500 dark:text-slate-400"
-          >
-            Minimum 1 KES. Max {fmtKES(MAX_DONATION)} (to prevent mistakes).
+          <p id="amountHelp" className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+            Minimum 1 KES. Max {fmtKES(MAX_DONATION)}.
           </p>
         </div>
 
@@ -270,23 +254,19 @@ export default function DonatePage() {
             htmlFor="donation-phone"
             className="block text-sm font-semibold text-gray-800 dark:text-slate-100"
           >
-            Phone (Safaricom) — format{" "}
-            <span className="font-mono">2547XXXXXXXX</span>
+            Phone (Safaricom) — format <span className="font-mono">2547/2541XXXXXXXX</span>
           </label>
           <input
             id="donation-phone"
             inputMode="numeric"
             className="mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-            placeholder="2547XXXXXXXX"
+            placeholder="2547XXXXXXXX or 2541XXXXXXXX"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             required
             aria-describedby="phoneHelp"
           />
-          <p
-            id="phoneHelp"
-            className="mt-1 text-xs text-gray-500 dark:text-slate-400"
-          >
+          <p id="phoneHelp" className="mt-1 text-xs text-gray-500 dark:text-slate-400">
             We’ll send a one-time STK push to this number.
           </p>
         </div>
@@ -335,28 +315,19 @@ export default function DonatePage() {
         {/* Status & errors */}
         <div className="mt-4 space-y-2">
           {status && (
-            <div
-              className="text-sm text-gray-700 dark:text-slate-300"
-              role="status"
-              aria-live="polite"
-            >
+            <div className="text-sm text-gray-700 dark:text-slate-300" role="status" aria-live="polite">
               {status}
             </div>
           )}
           {error && (
-            <div
-              className="text-sm text-red-600 dark:text-red-400"
-              role="alert"
-              aria-live="assertive"
-            >
+            <div className="text-sm text-red-600 dark:text-red-400" role="alert" aria-live="assertive">
               {error}
             </div>
           )}
         </div>
 
         <div className="mt-4 text-[12px] text-gray-500 dark:text-slate-400">
-          After you approve on your phone, we’ll receive a confirmation. If
-          anything looks stuck, try again — callbacks can take a moment.
+          After you approve on your phone, we’ll receive a confirmation. If anything looks stuck, try again.
           Questions? <a className="underline" href="/support">Contact support</a>.
         </div>
       </form>

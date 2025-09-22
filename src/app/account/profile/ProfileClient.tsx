@@ -1,18 +1,11 @@
 // src/app/account/profile/ProfileClient.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { normalizeKenyanPhone } from "@/app/lib/phone";
-
-/**
- * Client-side profile editor used by /account/profile
- *
- * This component fetches the current user's profile, lets them edit a few fields,
- * and PATCHes back to /api/me/profile. It intentionally does not assume any props,
- * so it's safe to import as <ProfileClient /> from the page file.
- */
 
 type Profile = {
   id: string;
@@ -26,39 +19,42 @@ type Profile = {
 };
 
 type MeProfileResponse =
-  | {
-      user: Profile;
-    }
-  | {
-      error: string;
-    };
+  | { user: Profile }
+  | { error: string };
 
 export default function ProfileClient() {
+  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [email, setEmail] = useState<string>("");
-  const [username, setUsername] = useState<string>("");
-  const [whatsapp, setWhatsapp] = useState<string>("");
-  const [city, setCity] = useState<string>("");
-  const [country, setCountry] = useState<string>("");
-  const [postalCode, setPostalCode] = useState<string>("");
-  const [address, setAddress] = useState<string>("");
-
-  const abortRef = useRef<AbortController | null>(null);
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [address, setAddress] = useState("");
 
   useEffect(() => {
     let alive = true;
+    const ctrl = new AbortController();
 
     (async () => {
       try {
-        const r = await fetch("/api/me/profile", { cache: "no-store" });
+        const r = await fetch("/api/me/profile", {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: ctrl.signal,
+          headers: { accept: "application/json" },
+        });
+        if (r.status === 401) {
+          toast.error("Please sign in to view your profile.");
+          router.replace("/signin?callbackUrl=%2Faccount%2Fprofile");
+          return;
+        }
         if (!r.ok) {
-          if (r.status === 401) {
-            toast.error("Please sign in to view your profile.");
-          } else {
-            toast.error("Failed to load profile.");
-          }
+          toast.error("Failed to load profile.");
           return;
         }
         const j = (await r.json().catch(() => ({}))) as MeProfileResponse;
@@ -81,9 +77,9 @@ export default function ProfileClient() {
 
     return () => {
       alive = false;
-      abortRef.current?.abort();
+      ctrl.abort();
     };
-  }, []);
+  }, [router]);
 
   const normalizedWa = useMemo(() => {
     const raw = (whatsapp || "").trim();
@@ -95,16 +91,13 @@ export default function ProfileClient() {
     if (!whatsapp) return;
     if (!normalizedWa) return;
     const pretty = `+${normalizedWa}`;
-    if (whatsapp !== pretty) {
-      setWhatsapp(pretty);
-    }
+    if (whatsapp !== pretty) setWhatsapp(pretty);
   }
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     if (saving) return;
 
-    // Normalize WhatsApp (optional)
     const waRaw = whatsapp.trim();
     const wa = waRaw ? normalizeKenyanPhone(waRaw) : null;
     if (waRaw && !wa) {
@@ -113,8 +106,7 @@ export default function ProfileClient() {
     }
 
     const payload = {
-      // username editing can be done elsewhere (onboarding). Keep read-only here by default.
-      whatsapp: wa ? wa : (waRaw ? "" : null),
+      whatsapp: wa ?? null,
       city: city.trim(),
       country: country.trim(),
       postalCode: postalCode.trim(),
@@ -125,15 +117,18 @@ export default function ProfileClient() {
       setSaving(true);
       const r = await fetch("/api/me/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
         body: JSON.stringify(payload),
       });
-      const j = await r.json().catch(() => ({} as any));
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) {
-        toast.error(j?.error || "Failed to save profile.");
+        toast.error((j as any)?.error || "Failed to save profile.");
         return;
       }
       toast.success("Profile updated!");
+      router.refresh();
     } catch {
       toast.error("Network error while saving profile.");
     } finally {
@@ -144,35 +139,27 @@ export default function ProfileClient() {
   if (loading) {
     return (
       <div className="card p-5">
-        <p className="text-sm text-gray-600 dark:text-slate-400">Loading your profile…</p>
+        <p className="text-sm text-gray-600 dark:text-slate-400">Loading…</p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={onSave} className="space-y-5">
-      {/* Basic info */}
+    <form onSubmit={onSave} className="space-y-5" aria-busy={saving}>
       <div className="card p-5">
         <h2 className="text-base font-semibold mb-3">Account</h2>
         <div className="grid sm:grid-cols-2 gap-3">
           <div>
             <label className="label">Email</label>
             <input className="input" value={email} disabled readOnly />
-            <p className="mt-1 text-xs text-gray-500">
-              Email changes are not supported here.
-            </p>
           </div>
           <div>
             <label className="label">Username</label>
             <input className="input" value={username} disabled readOnly />
-            <p className="mt-1 text-xs text-gray-500">
-              To change your username, use the onboarding/profile setup flow.
-            </p>
           </div>
         </div>
       </div>
 
-      {/* Contact */}
       <div className="card p-5">
         <h2 className="text-base font-semibold mb-3">Contact</h2>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -188,6 +175,7 @@ export default function ProfileClient() {
               onChange={(e) => setWhatsapp(e.target.value)}
               onBlur={snapNormalizeWhatsapp}
               inputMode="tel"
+              aria-invalid={!!whatsapp && !normalizedWa}
             />
             {whatsapp ? (
               <p className="mt-1 text-xs">
@@ -198,16 +186,11 @@ export default function ProfileClient() {
                   <span className="text-red-600">Invalid</span>
                 )}
               </p>
-            ) : (
-              <p className="mt-1 text-xs text-gray-500">
-                Buyers can reach you faster if you add WhatsApp.
-              </p>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
 
-      {/* Address */}
       <div className="card p-5">
         <h2 className="text-base font-semibold mb-3">Location</h2>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -263,16 +246,11 @@ export default function ProfileClient() {
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={saving}
-          className="btn-gradient-primary disabled:opacity-60"
-        >
+        <button type="submit" disabled={saving} className="btn-gradient-primary disabled:opacity-60">
           {saving ? "Saving…" : "Save changes"}
         </button>
-        <Link href="/" className="btn-outline">
+        <Link href="/dashboard" className="btn-outline">
           Cancel
         </Link>
       </div>

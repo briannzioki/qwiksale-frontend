@@ -1,7 +1,7 @@
 // src/app/account/billing/UpgradePanel.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import UpgradeWatcher from "@/components/billing/UpgradeWatcher";
 
 type Tier = "GOLD" | "PLATINUM";
@@ -24,20 +24,27 @@ function isValidKePhone(input: string) {
 export default function UpgradePanel({ userEmail }: { userEmail: string }) {
   const [tier, setTier] = useState<Tier>("GOLD");
   const [mode, setMode] = useState<"paybill" | "till">("paybill");
-  const [phone, setPhone] = useState<string>(""); // user types anything; we normalize on submit
+  const [phone, setPhone] = useState<string>("");
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [statusDone, setStatusDone] = useState<"SUCCESS" | "FAILED" | "TIMEOUT" | null>(null);
 
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+
   const normalized = useMemo(() => (phone ? normalizeKePhone(phone) : ""), [phone]);
   const phoneValid = useMemo(() => (phone ? isValidKePhone(phone) : false), [phone]);
 
   async function startUpgrade() {
     if (busy) return;
+    if (!userEmail) {
+      setError("You must be signed in to upgrade.");
+      return;
+    }
     if (!phoneValid) {
       setError("Enter a valid Kenyan M-Pesa number (e.g. 07XXXXXXXX or 2547XXXXXXXX).");
+      phoneInputRef.current?.focus();
       return;
     }
 
@@ -52,13 +59,24 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "same-origin",
         // IMPORTANT: send normalized 2547XXXXXXXX
         body: JSON.stringify({ tier, phone: normalized, mode, email: userEmail }),
       });
-      const json = await res.json().catch(() => ({}));
+
+      let json: any = null;
+      try {
+        json = await res.json();
+      } catch {
+        // fall back to text if server didn't return JSON
+        const txt = await res.text().catch(() => "");
+        if (!res.ok) throw new Error(txt || `Failed (${res.status})`);
+      }
+
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || `Failed (${res.status})`);
       }
+
       setPaymentId(json.paymentId ?? null);
       setMessage(json.message ?? "STK push sent. Confirm on your phone.");
     } catch (e: any) {
@@ -69,7 +87,11 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
   }
 
   return (
-    <section className="mt-6 rounded-2xl border border-gray-200 p-5 shadow-sm">
+    <section
+      className="mt-6 rounded-2xl border border-gray-200 p-5 shadow-sm"
+      aria-busy={busy || undefined}
+      aria-describedby="upgrade-status"
+    >
       {/* Tiers */}
       <div className="grid gap-4 sm:grid-cols-2" role="group" aria-label="Choose plan">
         {(["GOLD", "PLATINUM"] as Tier[]).map((t) => (
@@ -82,9 +104,7 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
               tier === t ? "border-gray-900 shadow-sm" : "border-gray-300 hover:border-gray-400"
             }`}
           >
-            <div className="text-lg font-semibold">
-              {t === "GOLD" ? "Gold" : "Platinum"}
-            </div>
+            <div className="text-lg font-semibold">{t === "GOLD" ? "Gold" : "Platinum"}</div>
             <div className="text-sm text-gray-600">KES {TIER_PRICE[t].toLocaleString("en-KE")}</div>
             <ul className="mt-2 list-disc pl-4 text-sm text-gray-700">
               {t === "GOLD" ? (
@@ -108,6 +128,7 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
         <label className="text-sm">
           <span className="block text-gray-600">M-Pesa Number (2547XXXXXXXX)</span>
           <input
+            ref={phoneInputRef}
             type="tel"
             inputMode="numeric"
             placeholder="07XXXXXXXX or 2547XXXXXXXX"
@@ -121,6 +142,7 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
             onBlur={(e) => setPhone(e.target.value.trim())}
             aria-invalid={!!phone && !phoneValid}
             aria-describedby="phone-help"
+            autoComplete="tel"
           />
           <div id="phone-help" className="mt-1 text-xs text-gray-500">
             Will be used as <code className="font-mono">{normalized || "—"}</code>
@@ -158,7 +180,10 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
         </button>
       </div>
 
-      {/* Messages */}
+      {/* Messages (ARIA live region) */}
+      <p id="upgrade-status" className="sr-only" aria-live="polite">
+        {busy ? "Starting upgrade…" : message || error || ""}
+      </p>
       {message && <p className="mt-3 text-sm text-green-700">{message}</p>}
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 

@@ -4,9 +4,11 @@
 import Image, { type ImageProps } from "next/image";
 import { useMemo, useState, useEffect } from "react";
 
-type Props = Omit<ImageProps, "src"> & {
-  /** Cloudinary public ID, absolute URL, or site-relative path. */
+type Props = Omit<ImageProps, "src" | "alt"> & {
+  /** Cloudinary public ID, absolute URL, data/blob URL, or site-relative path. */
   src?: string | null | undefined; // allow undefined to satisfy exactOptionalPropertyTypes
+  /** Optional alt; defaults to a safe string if omitted/empty. */
+  alt?: string | null | undefined;
 };
 
 /** Local placeholder (ensure this file exists). */
@@ -18,17 +20,20 @@ function resolveSrc(input?: string | null): string {
   const raw = (input || "").trim();
   if (!raw) return PLACEHOLDER;
 
-  // Absolute URL or site-relative file (e.g. /placeholder/default.jpg)
-  if (/^https?:\/\//i.test(raw) || raw.startsWith("/")) return raw;
+  // Absolute / special schemes or site-relative file (e.g. /placeholder/default.jpg)
+  if (/^(https?:|data:|blob:)/i.test(raw) || raw.startsWith("/")) return raw;
 
   // Treat anything else as a Cloudinary public_id if cloud name is configured
   if (CLOUD_NAME) {
     // remove accidental leading slash to avoid double slashes
     const pid = raw.replace(/^\/+/, "");
-    // f_auto,q_auto gives us good defaults; tweak as you like
-    return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/f_auto,q_auto/${encodeURIComponent(
-      pid
-    )}`;
+    // encode each segment but preserve folder slashes
+    const encoded = pid
+      .split("/")
+      .map((seg) => encodeURIComponent(seg))
+      .join("/");
+    // f_auto,q_auto gives good defaults; tweak as needed
+    return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/f_auto,q_auto/${encoded}`;
   }
 
   // No Cloudinary config and not an absolute path — fall back
@@ -57,7 +62,11 @@ export default function SmartImage({ src: srcProp, alt, onError, ...rest }: Prop
   };
 
   // Guarantee a non-empty alt (accessibility)
-  const safeAlt = alt && alt.trim().length > 0 ? alt : "image";
+  const safeAlt = (alt && alt.trim().length > 0 ? alt : "image") as string;
+
+  // Skip Next optimization for local placeholder and SVGs (common perf+compat choice)
+  const isSvg = useMemo(() => actualSrc.toLowerCase().endsWith(".svg"), [actualSrc]);
+  const unoptimized = actualSrc === PLACEHOLDER || isSvg;
 
   return (
     <Image
@@ -65,8 +74,8 @@ export default function SmartImage({ src: srcProp, alt, onError, ...rest }: Prop
       alt={safeAlt}
       src={actualSrc}
       onError={handleError}
-      // If we're using the local placeholder, skip optimization to avoid remotePatterns restrictions.
-      unoptimized={actualSrc === PLACEHOLDER}
+      unoptimized={unoptimized}
+      loading={(rest as ImageProps).loading ?? "lazy"}
     />
   );
 }

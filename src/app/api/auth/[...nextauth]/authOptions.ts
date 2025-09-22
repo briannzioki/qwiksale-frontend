@@ -1,25 +1,23 @@
-// src/app/api/auth/[...nextauth]/authOptions.ts
 import { createTransport } from "nodemailer";
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
-import EmailProvider from "next-auth/providers/email"; // ✅ add this
+import EmailProvider from "next-auth/providers/email";
 
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/db"; // ⬅️ use the new central prisma client
 import { verifyPassword, hashPassword } from "@/server/auth";
 
 const isProd = process.env.NODE_ENV === "production";
 
 // Optional: allow auto-signup for new credentials users
-const ALLOW_CREDS_AUTO_SIGNUP =
-  (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
+const ALLOW_CREDS_AUTO_SIGNUP = (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
 
 // Where users are allowed to land after auth (within same origin)
 const ALLOWED_CALLBACK_PATHS = new Set<string>([
   "/",
   "/sell",
-  "/saved",                // ✅ allow your Saved page
+  "/saved",
   "/account/profile",
   "/account/complete-profile",
 ]);
@@ -41,14 +39,14 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: "/signin" },
 
   providers: [
-    // ✅ Email magic-link provider (uses EMAIL_SERVER / EMAIL_FROM)
+    // Email magic-link provider
     ...(process.env["EMAIL_SERVER"] && process.env["EMAIL_FROM"]
       ? [
           EmailProvider({
-            server: process.env["EMAIL_SERVER"], // e.g. smtp://user:pass@send.smtp.mailtrap.io:587
-            from: process.env["EMAIL_FROM"],     // e.g. "QwikSale <no-reply@qwiksale.sale>"
-            maxAge: 10 * 60,                     // 10 minutes
-            async sendVerificationRequest({ identifier, url, provider, theme }) {
+            server: process.env["EMAIL_SERVER"],
+            from: process.env["EMAIL_FROM"],
+            maxAge: 10 * 60, // 10 minutes
+            async sendVerificationRequest({ identifier, url, provider }) {
               const transport = createTransport(provider.server as any);
               const { host } = new URL(url);
 
@@ -65,7 +63,7 @@ export const authOptions: NextAuthOptions = {
               await transport.sendMail({
                 to: identifier,
                 from: provider.from,
-                replyTo: process.env["EMAIL_REPLY_TO"] || undefined, // 👈 uses your env
+                replyTo: process.env["EMAIL_REPLY_TO"] || undefined,
                 subject,
                 text,
                 html,
@@ -150,11 +148,11 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async redirect({ url, baseUrl }) {
-      // Enforce same-origin + safe paths
       try {
         const u = new URL(url, baseUrl);
         if (u.origin !== baseUrl) return baseUrl;
         if (u.pathname === "/signup") return baseUrl;
+
         if (ALLOWED_CALLBACK_PATHS.has(u.pathname) || u.pathname === "/") {
           return u.toString();
         }

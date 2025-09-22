@@ -1,4 +1,6 @@
 // src/app/components/Footer.tsx
+"use client";
+
 import Link from "next/link";
 
 export default function Footer() {
@@ -161,27 +163,27 @@ export default function Footer() {
             <div className="font-semibold text-gray-900 dark:text-slate-100">Popular</div>
             <ul className="space-y-2 text-gray-700 dark:text-slate-400">
               <li>
-                <Link className={linkClass} href="/search?category=Phones">
+                <Link className={linkClass} href="/?category=Phones">
                   Phones
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/search?category=Electronics">
+                <Link className={linkClass} href="/?category=Electronics">
                   Electronics
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/search?category=Home%20%26%20Living">
+                <Link className={linkClass} href="/?category=Home%20%26%20Living">
                   Home &amp; Living
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/search?category=Fashion">
+                <Link className={linkClass} href="/?category=Fashion">
                   Fashion
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/search?category=Vehicles">
+                <Link className={linkClass} href="/?category=Vehicles">
                   Vehicles
                 </Link>
               </li>
@@ -195,7 +197,7 @@ export default function Footer() {
               <li>
                 <a
                   className={linkClass}
-                  href="https://qwiksale.sale/"
+                  href="https://qwiksale.sale/blog"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -326,10 +328,10 @@ function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
 }
 function MpesaIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" {...props}>
-        <rect x="3" y="5" width="18" height="14" rx="2" />
-        <path d="M8 9h8v2H8zM8 13h6v2H8z" fill="white" />
-      </svg>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M8 9h8v2H8zM8 13h6v2H8z" fill="white" />
+    </svg>
   );
 }
 function CardIcon(props: React.SVGProps<SVGSVGElement>) {

@@ -29,7 +29,8 @@ export default function Gallery({
     Math.min(Math.max(0, initialIndex), Math.max(0, safeImages.length - 1))
   );
   const [open, setOpen] = useState<boolean>(false);
-  const dialogId = `gallery-${useId()}`;
+  const uid = useId();
+  const dialogId = `gallery-${uid}`;
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -58,17 +59,21 @@ export default function Gallery({
     setIdx((i) => Math.min(safeImages.length - 1, i + 1));
   }, [hasNext, safeImages.length]);
 
-  // ✅ Clamp idx if images/initialIndex change (prevents out-of-bounds)
+  // Clamp idx if images/initialIndex change (prevents out-of-bounds)
   useEffect(() => {
     const len = safeImages.length;
     if (len === 0) return;
     const desired = Math.min(Math.max(0, initialIndex), len - 1);
     setIdx((cur) => {
       const clampedCur = Math.min(Math.max(0, cur), len - 1);
-      // If cur was invalid (NaN/undefined), fall back to desired
       return Number.isFinite(cur as number) ? clampedCur : desired;
     });
-  }, [safeImages, initialIndex]); // ← removed redundant safeImages.length
+  }, [safeImages, initialIndex]);
+
+  // Reset thumb refs when images change
+  useEffect(() => {
+    thumbsRef.current = [];
+  }, [safeImages]);
 
   // Keyboard support (←/→/Esc) when modal is open
   useEffect(() => {
@@ -113,7 +118,7 @@ export default function Gallery({
     return () => clearTimeout(t);
   }, [open]);
 
-  // ✅ Prevent background scroll when lightbox is open
+  // Prevent background scroll when lightbox is open
   useEffect(() => {
     if (!lightbox) return;
     if (open) {
@@ -159,11 +164,11 @@ export default function Gallery({
           <button
             key={`${src}:${i}`}
             ref={(el) => {
-              thumbsRef.current[i] = el; // return void, fixes TS2322
+              thumbsRef.current[i] = el;
             }}
             type="button"
             className={`relative aspect-square overflow-hidden rounded-lg border ${
-              i === idx ? "ring-2 ring-brandBlue" : "border-slate-200 dark:border-slate-700"
+              i === idx ? "ring-2 ring-[#39a0ca]" : "border-slate-200 dark:border-slate-700"
             }`}
             aria-label={`Show image ${i + 1}`}
             aria-current={i === idx ? "true" : undefined}
@@ -201,7 +206,7 @@ export default function Gallery({
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${dialogId}-title`}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
           >
             <div
               ref={panelRef}
@@ -259,7 +264,7 @@ export default function Gallery({
                     key={`lb:${src}:${i}`}
                     type="button"
                     className={`relative aspect-square overflow-hidden rounded-lg border ${
-                      i === idx ? "ring-2 ring-brandBlue" : "border-slate-200 dark:border-slate-700"
+                      i === idx ? "ring-2 ring-[#39a0ca]" : "border-slate-200 dark:border-slate-700"
                     }`}
                     aria-label={`Show image ${i + 1}`}
                     aria-current={i === idx ? "true" : undefined}
