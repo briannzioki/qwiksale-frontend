@@ -1,4 +1,4 @@
-// src/app/account/complete-profile/CompleteProfileClient.tsx
+// src/app/account/billing/CompleteProfileClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -68,7 +68,7 @@ export default function CompleteProfileClient() {
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("");
 
-  // NEW: profile photo (URL) + tiny live check
+  // Profile photo (URL) + tiny live check
   const [imageUrl, setImageUrl] = useState("");
   const [imgOk, setImgOk] = useState<boolean | null>(null);
   const imgTestRef = useRef<HTMLImageElement | null>(null);
@@ -89,7 +89,12 @@ export default function CompleteProfileClient() {
 
     (async () => {
       try {
-        const r = await fetch("/api/me", { cache: "no-store", signal: ctrl.signal });
+        const r = await fetch("/api/me", {
+          cache: "no-store",
+          signal: ctrl.signal,
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        });
         if (r.status === 401) {
           if (!redirectedRef.current) {
             redirectedRef.current = true;
@@ -161,6 +166,8 @@ export default function CompleteProfileClient() {
         const res = await fetch(`/api/username/check?u=${encodeURIComponent(u)}`, {
           signal: ctrl.signal,
           cache: "no-store",
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
         });
         if (!res.ok) {
           setNameStatus("error");
@@ -228,7 +235,9 @@ export default function CompleteProfileClient() {
     try {
       const r = await fetch("/api/me/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
         body: JSON.stringify({
           username: u,
           image: imageUrl || null, // <-- send profile photo URL
@@ -239,7 +248,12 @@ export default function CompleteProfileClient() {
           country: country.trim() || null,
         }),
       });
-      const j = await r.json().catch(() => ({}));
+      let j: any = null;
+      try {
+        j = await r.json();
+      } catch {
+        /* non-JSON error */
+      }
       if (!r.ok || j?.error) throw new Error(j?.error || `Failed to save (${r.status})`);
 
       toast.success("Profile saved!");
@@ -289,7 +303,7 @@ export default function CompleteProfileClient() {
           </p>
         </div>
 
-        <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4" noValidate>
+        <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4" noValidate aria-busy={saving}>
           {/* Username */}
           <div>
             <label htmlFor="username" className="label">
@@ -303,6 +317,8 @@ export default function CompleteProfileClient() {
               onChange={(e) => setUsername(e.target.value)}
               onBlur={(e) => setUsername(e.target.value.trim())}
               required
+              minLength={3}
+              maxLength={24}
               aria-invalid={
                 nameStatus === "taken" || nameStatus === "invalid" ? true : undefined
               }
@@ -310,6 +326,9 @@ export default function CompleteProfileClient() {
               disabled={saving}
               inputMode="text"
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
             />
             <p id="username-help" className="text-xs text-gray-500 mt-1">
               Shown on your listings. 3–24 chars, letters/numbers/dot/underscore.
@@ -335,9 +354,13 @@ export default function CompleteProfileClient() {
               className="input"
               placeholder="https://…/your-photo.jpg"
               value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value.trim())}
+              onChange={(e) => setImageUrl(e.target.value)}
+              onBlur={(e) => setImageUrl(e.target.value.trim())}
               disabled={saving}
               inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
             />
             <div className="mt-3 flex items-center gap-3">
               <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-200 dark:bg-slate-700 border">
@@ -372,6 +395,9 @@ export default function CompleteProfileClient() {
               onChange={(e) => setWhatsapp(e.target.value)}
               aria-invalid={!!whatsapp && !looksLikeValidKePhone(whatsapp)}
               disabled={saving}
+              inputMode="tel"
+              autoCorrect="off"
+              spellCheck={false}
             />
             <p className="text-xs text-gray-500 mt-1">
               Will be stored as <code className="font-mono">{whatsappNormalized || "—"}</code>
@@ -427,7 +453,7 @@ export default function CompleteProfileClient() {
           <div className="flex gap-2 pt-2">
             <button
               type="submit"
-              disabled={saving || nameStatus === "checking"}
+              disabled={saving || nameStatus === "checking" || nameStatus === "invalid"}
               className="btn-gradient-primary"
             >
               {saving ? "Saving…" : "Save & continue"}
@@ -441,6 +467,11 @@ export default function CompleteProfileClient() {
               Skip for now
             </button>
           </div>
+
+          {/* SR status line for screen readers */}
+          <p className="sr-only" aria-live="polite">
+            {saving ? "Saving profile…" : ""}
+          </p>
         </form>
       </div>
     </div>

@@ -22,7 +22,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
     "https://region1.google-analytics.com",
-    ...(isProd ? [] : ["ws:", "wss:"])
+    ...(isProd ? [] : ["ws:", "wss:"]),
   ].join(" ");
 
   const img = [
@@ -34,7 +34,8 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://images.unsplash.com",
     "https://plus.unsplash.com",
     "https://images.pexels.com",
-    "https://picsum.photos"
+    "https://picsum.photos",
+    "https://avatars.githubusercontent.com",
   ].join(" ");
 
   const script = [
@@ -44,7 +45,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
     "https://accounts.google.com",
-    ...(isProd ? [] : ["'unsafe-eval'"])
+    ...(isProd ? [] : ["'unsafe-eval'"]),
   ].join(" ");
 
   const style = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"].join(" ");
@@ -62,7 +63,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     `font-src ${font}`,
     `frame-src ${frameSrc}`,
     `form-action 'self' https://accounts.google.com`,
-    isProd ? `upgrade-insecure-requests` : ``
+    isProd ? `upgrade-insecure-requests` : ``,
   ]
     .filter(Boolean)
     .join("; ");
@@ -76,7 +77,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
     { key: "X-Download-Options", value: "noopen" },
     { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
-    { key: "X-XSS-Protection", value: "0" }
+    { key: "X-XSS-Protection", value: "0" },
   ];
 
   return isProd
@@ -98,6 +99,7 @@ const baseConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
 
+  // Only ship browser source maps when we have Sentry token (so they get uploaded)
   productionBrowserSourceMaps: !!process.env.SENTRY_AUTH_TOKEN,
 
   images: {
@@ -108,10 +110,10 @@ const baseConfig: NextConfig = {
       { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
       { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },
       { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
-      { protocol: "https", hostname: "avatars.githubusercontent.com", pathname: "/**" }
+      { protocol: "https", hostname: "avatars.githubusercontent.com", pathname: "/**" },
     ],
     formats: ["image/avif", "image/webp"],
-    dangerouslyAllowSVG: true
+    dangerouslyAllowSVG: true,
   },
 
   eslint: { ignoreDuringBuilds: true },
@@ -122,7 +124,7 @@ const baseConfig: NextConfig = {
     if (isPreview) {
       rules.push({
         source: "/:path*",
-        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noimageindex, noarchive" }]
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noimageindex, noarchive" }],
       });
     }
     return rules;
@@ -137,20 +139,22 @@ const baseConfig: NextConfig = {
       missing?: Array<{ type: "header" | "cookie" | "query"; key: string; value?: string }>;
     }> = [];
 
+    // Force apex (non-www)
     if (APEX_DOMAIN) {
       rules.push({
         source: "/:path*",
         destination: `https://${APEX_DOMAIN}/:path*`,
         permanent: true,
-        has: [{ type: "host", value: `www.${APEX_DOMAIN}` }]
+        has: [{ type: "host", value: `www.${APEX_DOMAIN}` }],
       });
     }
 
+    // Force HTTPS
     rules.push({
       source: "/:path*",
       destination: `https://${APEX_DOMAIN}/:path*`,
       permanent: true,
-      has: [{ type: "header", key: "x-forwarded-proto", value: "http" }]
+      has: [{ type: "header", key: "x-forwarded-proto", value: "http" }],
     });
 
     return rules;
@@ -164,8 +168,8 @@ const baseConfig: NextConfig = {
   },
 
   experimental: {
-    optimizePackageImports: ["lodash", "date-fns"]
-  }
+    optimizePackageImports: ["lodash", "date-fns"],
+  },
 };
 
 // Compose: analyzer first, then Sentry wrapper
@@ -173,5 +177,7 @@ export default withSentryConfig(withAnalyzer(baseConfig), {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   silent: true,
-  widenClientFileUpload: true
+  widenClientFileUpload: true,
+  // Match our /monitoring rewrite so browsers never hit sentry.io directly
+  tunnelRoute: "/monitoring",
 });

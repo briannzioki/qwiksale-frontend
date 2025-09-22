@@ -1,11 +1,27 @@
 // src/app/admin/dashboard/page.tsx
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+import { headers } from "next/headers";
+import { notFound } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 type DayPoint = { date: string; users: number; products: number; services: number };
 type Metrics = {
   totals: { users: number; products: number; services: number; reveals?: number | null };
   last7d: DayPoint[];
 };
+
+function isAdmin(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const raw = process.env["ADMIN_EMAILS"] ?? "";
+  const admins = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return admins.includes(email.toLowerCase());
+}
 
 function Sparkline({
   data,
@@ -18,7 +34,7 @@ function Sparkline({
   width?: number;
   height?: number;
 }) {
-  const vals = data.map((d) => Number(d[field] ?? 0));
+  const vals = data.map((d) => Number((d as any)[field] ?? 0));
   const max = Math.max(1, ...vals);
   const stepX = data.length > 1 ? width / (data.length - 1) : width;
   const pts = vals
@@ -36,18 +52,43 @@ function Sparkline({
 }
 
 export default async function Page() {
-  const res = await fetch("/api/admin/metrics", { cache: "no-store" });
-  if (!res.ok) {
+  // Server-side admin guard (no client hooks)
+  const session = await getServerSession(authOptions);
+  const email = session?.user?.email ?? null;
+  if (!isAdmin(email)) {
+    return notFound();
+  }
+
+  // Build absolute URL from incoming request (Next 15: headers() is async)
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  const host =
+    h.get("host") ?? new URL(process.env["NEXTAUTH_URL"] ?? "http://localhost:3000").host;
+  const base = `${proto}://${host}`;
+  const url = `${base}/api/admin/metrics`;
+
+  let metrics: Metrics | null = null;
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    metrics = (await res.json()) as Metrics;
+  } catch {
+    metrics = null;
+  }
+
+  const card =
+    "rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900";
+
+  if (!metrics) {
     return (
       <div className="rounded-xl border bg-white p-4 text-sm text-red-600 dark:border-slate-800 dark:bg-slate-900 dark:text-red-400">
         Failed to load metrics.
       </div>
     );
   }
-  const metrics = (await res.json()) as Metrics;
-
-  const card =
-    "rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
   return (
     <div className="space-y-6">

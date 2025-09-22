@@ -1,3 +1,4 @@
+// src/app/onboarding/page.tsx
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -15,21 +16,18 @@ type Profile = {
   postalCode: string;
   address: string;
 };
-type UsernameCheck = { ok: boolean; available: boolean; reason?: string };
+type UsernameCheck = { valid?: boolean; available?: boolean };
 
 function isSafePath(p?: string | null): p is string {
   return !!p && /^\/(?!\/)/.test(p);
 }
 
-const USERNAME_RE = /^[a-z0-9_\.]{3,20}$/i;
+// 3–24; letters/digits/._; no leading/trailing sep; no doubles
+const USERNAME_RE =
+  /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 
 function canonicalUsername(raw: string) {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_\.]/g, "")
-    .slice(0, 20);
+  return raw.trim();
 }
 
 function useDebounced<T>(value: T, delay = 400) {
@@ -46,8 +44,8 @@ function OnboardingPageInner() {
   const sp = useSearchParams();
   const router = useRouter();
 
-  const retRaw = sp.get("return") || sp.get("callbackUrl") || "/";
-  const returnTo = isSafePath(retRaw) ? retRaw : "/";
+  const retRaw = sp.get("return") || sp.get("callbackUrl") || "/dashboard";
+  const returnTo = isSafePath(retRaw) ? retRaw : "/dashboard";
 
   const [form, setForm] = useState<Profile>({
     username: "",
@@ -88,13 +86,13 @@ function OnboardingPageInner() {
         } else if (r.status === 401) {
           router.replace(
             `/signin?callbackUrl=${encodeURIComponent(
-              "/onboarding?return=" + encodeURIComponent(returnTo),
-            )}`,
+              "/onboarding?return=" + encodeURIComponent(returnTo)
+            )}`
           );
           return;
         }
       } catch {
-        /* ignore network */
+        /* ignore */
       } finally {
         if (alive) setLoading(false);
       }
@@ -115,7 +113,7 @@ function OnboardingPageInner() {
     const u = canonicalUsername(raw);
     if (!USERNAME_RE.test(u)) {
       setUnameStatus("invalid");
-      setUnameMsg("3–20 chars: letters, numbers, underscore, dot.");
+      setUnameMsg("3–24 chars; letters, numbers, . or _ (no .., no leading/trailing . or _).");
       return;
     }
 
@@ -129,23 +127,30 @@ function OnboardingPageInner() {
     (async () => {
       try {
         const r = await fetch(
-          `/api/me/username-available?u=${encodeURIComponent(u)}`,
-          { signal: ac.signal, cache: "no-store" },
+          `/api/username/check?u=${encodeURIComponent(u)}`,
+          { signal: ac.signal, cache: "no-store" }
         );
         const j = (await r.json().catch(() => ({}))) as UsernameCheck;
-        if (!r.ok || !j?.ok) throw new Error(j?.reason || `check failed (${r.status})`);
-
-        if (j.available) {
+        if (!r.ok) {
+          setUnameStatus("idle");
+          setUnameMsg("");
+          return;
+        }
+        if (j?.valid === false) {
+          setUnameStatus("invalid");
+          setUnameMsg("Invalid username.");
+        } else if (j?.available === true) {
           setUnameStatus("ok");
           setUnameMsg("Available ✓");
         } else {
           setUnameStatus("taken");
-          setUnameMsg(j.reason || "Already taken");
+          setUnameMsg("Already taken.");
         }
       } catch (e: any) {
-        if (e?.name === "AbortError") return;
-        setUnameStatus("idle");
-        setUnameMsg("");
+        if (e?.name !== "AbortError") {
+          setUnameStatus("idle");
+          setUnameMsg("");
+        }
       }
     })();
 
@@ -173,18 +178,18 @@ function OnboardingPageInner() {
 
     const username = canonicalUsername(form.username);
     if (!USERNAME_RE.test(username)) {
-      toast.error("Choose a valid username (3–20 chars: a–z, 0–9, _ or .)");
+      toast.error("Choose a valid username.");
       return;
     }
     if (unameStatus === "taken") {
-      toast.error("That username is taken. Please choose another.");
+      toast.error("That username is taken.");
       return;
     }
 
     const waRaw = form.whatsapp.trim();
     const wa = waRaw ? normalizeKenyanPhone(waRaw) : null;
     if (waRaw && !wa) {
-      toast.error("Enter a valid Kenyan WhatsApp number (e.g. 07XXXXXXXX or +2547XXXXXXX).");
+      toast.error("Enter a valid Kenyan WhatsApp number (07XXXXXXXX or +2547XXXXXXX).");
       return;
     }
 
@@ -209,7 +214,7 @@ function OnboardingPageInner() {
         toast.error(j?.error || "Failed to save profile.");
         return;
       }
-      toast.success("Profile saved! 🎉");
+      toast.success("Profile saved!");
       router.replace(returnTo);
     } catch {
       toast.error("Network error. Please try again.");
@@ -222,7 +227,7 @@ function OnboardingPageInner() {
     return (
       <div className="container-page py-8">
         <div className="mx-auto max-w-xl">
-          <div className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-[#161748] via-[#1d2b64] to-[#0b1220]">
+          <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
             <h1 className="text-2xl md:text-3xl font-extrabold">Finish your profile</h1>
             <p className="mt-1 text-white/85">Loading…</p>
           </div>
@@ -241,11 +246,11 @@ function OnboardingPageInner() {
   return (
     <div className="container-page py-8">
       <div className="mx-auto max-w-xl">
-        <div className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+        <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
           <h1 className="text-2xl md:text-3xl font-extrabold">Finish your profile</h1>
           <p className="mt-1 text-white/90">
-            Only <b>username</b> is required right now. You can fill the rest later in{" "}
-            <Link href="/settings" className="underline">Settings</Link>.
+            Only <b>username</b> is required now. You can add the rest later in{" "}
+            <Link href="/account/profile" className="underline">Profile</Link>.
           </p>
         </div>
 
@@ -261,7 +266,7 @@ function OnboardingPageInner() {
             <div className="relative">
               <input
                 id="username"
-                className="w-full rounded-lg border px-3 py-2 pr-24 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-lg border px-3 py-2 pr-24 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="e.g. brian254"
                 value={form.username}
                 onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
@@ -276,11 +281,11 @@ function OnboardingPageInner() {
             </div>
             <p className={`mt-1 text-xs ${unameHintColor}`}>
               {unameStatus === "invalid"
-                ? "3–20 characters: letters, numbers, underscore, dot."
+                ? "3–24 letters/numbers, . or _ (no .., no leading/trailing . or _)."
                 : unameStatus === "taken"
-                ? unameMsg || "Username already taken."
+                ? (unameMsg || "Username already taken.")
                 : unameStatus === "ok"
-                ? unameMsg || "Available ✓"
+                ? (unameMsg || "Available ✓")
                 : "This will be visible on your listings and profile."}
             </p>
           </div>
@@ -288,21 +293,18 @@ function OnboardingPageInner() {
           {/* WhatsApp */}
           <div>
             <label htmlFor="whatsapp" className="block text-sm font-semibold mb-1">
-              WhatsApp number (optional)
+              WhatsApp (optional)
             </label>
             <input
               id="whatsapp"
-              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
               placeholder="07XXXXXXXX or +2547XXXXXXX"
               value={form.whatsapp}
               onChange={(e) => setForm((f) => ({ ...f, whatsapp: e.target.value }))}
               onBlur={snapNormalizeWhatsapp}
               inputMode="tel"
             />
-            <p className="mt-1 text-xs text-gray-500">
-              We’ll only use this to help buyers reach you — it’s optional.
-            </p>
-            {form.whatsapp && (
+            {form.whatsapp ? (
               <p className="mt-1 text-xs">
                 Normalized:{" "}
                 {normalizedWa ? (
@@ -310,6 +312,10 @@ function OnboardingPageInner() {
                 ) : (
                   <span className="text-red-600">Invalid</span>
                 )}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                Buyers can reach you faster if you add WhatsApp.
               </p>
             )}
           </div>
@@ -322,7 +328,7 @@ function OnboardingPageInner() {
               </label>
               <input
                 id="city"
-                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="Nairobi"
                 value={form.city}
                 onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
@@ -334,7 +340,7 @@ function OnboardingPageInner() {
               </label>
               <input
                 id="country"
-                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="Kenya"
                 value={form.country}
                 onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
@@ -350,7 +356,7 @@ function OnboardingPageInner() {
               </label>
               <input
                 id="postal"
-                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="00100"
                 value={form.postalCode}
                 onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))}
@@ -363,7 +369,7 @@ function OnboardingPageInner() {
               </label>
               <input
                 id="address"
-                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="Street, building, etc."
                 value={form.address}
                 onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}

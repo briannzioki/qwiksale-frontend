@@ -1,3 +1,4 @@
+// src/app/lib/productsStore.ts
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -136,15 +137,36 @@ type FetchListArgs = {
 
 const FETCH_TIMEOUT_MS = 12_000;
 
-async function fetchJson(input: RequestInfo, init?: RequestInit) {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+/**
+ * Fetch JSON with:
+ *  - credentials: include (for auth cookies)
+ *  - caller-provided AbortSignal support
+ *  - internal timeout that ALSO cancels the request
+ */
+async function fetchJson(input: RequestInfo, init?: RequestInit & { timeoutMs?: number }) {
+  const timeoutMs = init?.timeoutMs ?? FETCH_TIMEOUT_MS;
+
+  // Merge the caller's signal with our timeout controller
+  const ctrl = new AbortController();
+  const extSignal = init?.signal ?? null;
+
+  if (extSignal) {
+    if (extSignal.aborted) {
+      ctrl.abort();
+    } else {
+      // Abort our controller when the external one aborts
+      extSignal.addEventListener("abort", () => ctrl.abort(), { once: true });
+    }
+  }
+
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+
   try {
     const res = await fetch(input, {
       credentials: "include",
       cache: "no-store",
       ...init,
-      signal: init?.signal ?? ac.signal,
+      signal: ctrl.signal,
       headers: { Accept: "application/json", ...(init?.headers || {}) },
     });
     const text = await res.text();
@@ -163,7 +185,10 @@ async function fetchJson(input: RequestInfo, init?: RequestInit) {
 async function fetchList(args: FetchListArgs): Promise<Product[]> {
   const { pageSize, signal } = args;
   const qs = new URLSearchParams({ page: "1", pageSize: String(pageSize) });
-  const init = signal ? { signal } : undefined;
+
+  // ✅ only include `signal` when present (avoid passing undefined)
+  const init: RequestInit | undefined = signal ? { signal } : undefined;
+
   const { res, json } = await fetchJson(`/api/products?${qs.toString()}`, init);
   if (!res.ok) {
     const msg = (json as any)?.error || `Request failed (${res.status})`;
@@ -173,7 +198,9 @@ async function fetchList(args: FetchListArgs): Promise<Product[]> {
 }
 
 async function fetchItem(id: string, signal?: AbortSignal | null): Promise<Product> {
-  const init = signal ? { signal } : undefined;
+  // ✅ only include `signal` when present (avoid passing undefined)
+  const init: RequestInit | undefined = signal ? { signal } : undefined;
+
   const { res, json } = await fetchJson(`/api/products/${encodeURIComponent(id)}`, init);
   if (!res.ok || (json as any)?.error) {
     throw new Error((json as any)?.error || `Not found (${res.status})`);

@@ -4,10 +4,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { requireAdmin } from "@/app/lib/authz";
 
 /* =========================
    Selects -> Types from Prisma
@@ -58,15 +57,8 @@ const fmtDate = (d: Date) =>
    Page
    ========================= */
 export default async function AdminPage() {
-  // Require auth + admin role
-  const session = await auth().catch(() => null);
-  const uid = (session as any)?.user?.id as string | undefined;
-  if (!uid) notFound();
-
-  const me = await prisma.user
-    .findUnique({ where: { id: uid }, select: { role: true } })
-    .catch(() => null);
-  if (!me || me.role !== "ADMIN") notFound(); // hide page for non-admins
+  // Server-only admin gate (redirects to /signin or home via your helper)
+  await requireAdmin("/admin");
 
   // Parallel fetches with graceful fallbacks
   const [
@@ -227,7 +219,7 @@ export default async function AdminPage() {
                       </Link>
                     </Td>
                     <Td>
-                      {p.category} • {p.subcategory}
+                      {p.category} {p.subcategory ? <>• {p.subcategory}</> : null}
                     </Td>
                     <Td>{fmtKES(p.price)}</Td>
                     <Td>{p.status}</Td>

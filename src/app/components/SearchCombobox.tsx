@@ -1,3 +1,4 @@
+// src/app/components/SearchCombobox.tsx
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -56,12 +57,17 @@ export default function SearchCombobox<TMeta = unknown>({
   const inputId = useId();
   const listId = `${inputId}-listbox`;
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<number | null>(null);
   const [q, setQ] = useState(value);
   const [items, setItems] = useState<ComboItem<TMeta>[]>(controlledItems || []);
-  const abortRef = useRef<AbortController | null>(null);
+
+  // debounce + request race guard
   const timerRef = useRef<number | null>(null);
+  const reqTokenRef = useRef(0);
 
   const activeId = useMemo(
     () => (active != null ? `${listId}-opt-${active}` : undefined),
@@ -73,50 +79,92 @@ export default function SearchCombobox<TMeta = unknown>({
     setQ(value);
   }, [value]);
 
+  // Close on outside click
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!rootRef.current) return;
+      if (!rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
   // Load suggestions (debounced) only if items not controlled
   useEffect(() => {
     if (controlledItems) {
       setItems(controlledItems);
+      // show dropdown only if you have something to show
+      setOpen(Boolean(controlledItems.length));
+      setActive(null);
       return;
     }
     if (!fetchSuggestionsAction) return;
 
+    // clear previous debounce
     if (timerRef.current != null) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+
+    // if query empty, clear items and close list
+    if (!q?.trim()) {
+      setItems([]);
+      setOpen(false);
+      setActive(null);
+      return;
+    }
+
+    const localToken = ++reqTokenRef.current;
     timerRef.current = window.setTimeout(async () => {
-      abortRef.current?.abort();
-      const ac = new AbortController();
-      abortRef.current = ac;
       try {
         const res = await fetchSuggestionsAction(q);
-        setItems(Array.isArray(res) ? res : []);
-        setOpen(true);
-        setActive(null);
+        // ignore late responses
+        if (localToken !== reqTokenRef.current) return;
+
+        const next = Array.isArray(res) ? res : [];
+        setItems(next);
+        setOpen(next.length > 0);
+        setActive(next.length ? 0 : null);
       } catch {
-        // ignore
+        // ignore errors but keep list closed
+        if (localToken === reqTokenRef.current) {
+          setItems([]);
+          setOpen(false);
+          setActive(null);
+        }
       }
-    }, debounceMs) as unknown as number;
+    }, Math.max(0, debounceMs)) as unknown as number;
 
     return () => {
       if (timerRef.current != null) {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      abortRef.current?.abort();
     };
   }, [q, fetchSuggestionsAction, controlledItems, debounceMs]);
 
+  const commit = (item: ComboItem<TMeta>) => {
+    onChangeAction?.(item.label);
+    onSelectAction?.(item);
+    setOpen(false);
+    // restore focus to input for quick follow-up typing
+    inputRef.current?.focus();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-      setOpen(true);
+      setOpen(items.length > 0);
       return;
     }
-    if (!items.length) {
-      if (e.key === "Escape") setOpen(false);
+
+    if (e.key === "Escape") {
+      setOpen(false);
+      setActive(null);
       return;
     }
+
+    if (!items.length) return;
+
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((i) => (i == null ? 0 : Math.min(items.length - 1, i + 1)));
@@ -126,22 +174,17 @@ export default function SearchCombobox<TMeta = unknown>({
     } else if (e.key === "Enter") {
       if (active != null && items[active]) {
         e.preventDefault();
-        const chosen = items[active];
-        onChangeAction?.(chosen.label);
-        onSelectAction?.(chosen);
-        setOpen(false);
+        commit(items[active]);
       }
-    } else if (e.key === "Escape") {
-      setOpen(false);
     }
   };
 
   return (
     <div
+      ref={rootRef}
       role="combobox"
       aria-expanded={open}
       aria-controls={listId}
-      aria-owns={listId}
       aria-haspopup="listbox"
       aria-activedescendant={activeId}
       className={["relative w-full", className].join(" ")}
@@ -150,15 +193,20 @@ export default function SearchCombobox<TMeta = unknown>({
         {ariaLabel}
       </label>
       <input
+        ref={inputRef}
         id={inputId}
         value={q}
         onChange={(e) => {
           setQ(e.target.value);
           onChangeAction?.(e.target.value);
-          setOpen(true);
+          // only open if we have something non-empty; actual items will open after fetch
+          if (e.target.value.trim()) setOpen(true);
+          else setOpen(false);
         }}
         onKeyDown={handleKeyDown}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          if (items.length) setOpen(true);
+        }}
         aria-autocomplete="list"
         autoComplete="off"
         placeholder={placeholder}
@@ -184,12 +232,8 @@ export default function SearchCombobox<TMeta = unknown>({
                 i === active ? "bg-gray-100 dark:bg-slate-800" : ""
               }`}
               onMouseEnter={() => setActive(i)}
-              onMouseDown={(e) => e.preventDefault()} // prevent blur before click
-              onClick={() => {
-                onChangeAction?.(it.label);
-                onSelectAction?.(it);
-                setOpen(false);
-              }}
+              onMouseDown={(e) => e.preventDefault()} // prevent input blur before click
+              onClick={() => commit(it)}
             >
               {renderItemAction ? renderItemAction(it, i === active) : it.label}
             </li>
@@ -198,7 +242,7 @@ export default function SearchCombobox<TMeta = unknown>({
       )}
 
       <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-        Use up/down to navigate, enter to select, escape to dismiss.
+        Use up/down to navigate, Enter to select, Esc to dismiss.
       </p>
     </div>
   );

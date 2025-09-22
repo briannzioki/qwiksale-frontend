@@ -23,18 +23,20 @@ function isDarkFor(mode: ThemeMode, mql: MediaQueryList | null): boolean {
   return !!mql?.matches;
 }
 
-function applyTheme(mode: ThemeMode, mql: MediaQueryList | null) {
+/** Apply mode to <html>, and optionally persist */
+function applyTheme(mode: ThemeMode, mql: MediaQueryList | null, shouldPersist: boolean) {
   const root = document.documentElement;
   const dark = isDarkFor(mode, mql);
 
   root.classList.toggle("dark", dark);
   root.style.colorScheme = dark ? "dark" : "light";
-  // TS-safe explicit attribute instead of dataset
   root.setAttribute("data-theme-mode", mode);
 
-  try {
-    localStorage.setItem(LS_KEY, mode);
-  } catch {}
+  if (shouldPersist) {
+    try {
+      localStorage.setItem(LS_KEY, mode);
+    } catch {}
+  }
 }
 
 export default function ThemeToggle({
@@ -52,7 +54,9 @@ export default function ThemeToggle({
 }) {
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<ThemeMode>(defaultMode);
+
   const mqlRef = useRef<MediaQueryList | null>(null);
+  const modeRef = useRef<ThemeMode>(defaultMode); // <- keep the authoritative current mode
 
   const nextMode = useMemo<ThemeMode>(() => {
     if (mode === "light") return "dark";
@@ -81,21 +85,21 @@ export default function ThemeToggle({
         : null;
     mqlRef.current = mql;
 
-    // Bootstrap from localStorage (or prop default)
+    // Bootstrap from storage (if allowed) or prop default
     let initial = defaultMode;
     if (persist) {
       const stored = readStoredMode();
       if (stored) initial = stored;
     }
 
+    modeRef.current = initial;
     setMode(initial);
-    applyTheme(initial, mql);
+    applyTheme(initial, mql, persist);
 
-    // Respond to OS changes in "system" mode
-    const modeRef = { current: initial } as { current: ThemeMode };
+    // React to OS changes only while in "system"
     const onSystemChange = () => {
       if (modeRef.current === "system") {
-        applyTheme("system", mqlRef.current);
+        applyTheme("system", mqlRef.current, persist);
         emitChange("system");
       }
     };
@@ -105,18 +109,18 @@ export default function ThemeToggle({
         ? (mql.addEventListener("change", onSystemChange), () =>
             mql.removeEventListener("change", onSystemChange))
         : mql && "addListener" in mql
-        ? // @ts-expect-error: legacy API exists on some browsers
+        ? // @ts-expect-error legacy API on older browsers
           (mql.addListener(onSystemChange), () => mql.removeListener(onSystemChange))
         : () => {};
 
-    // Cross-tab sync
+    // Cross-tab sync (when persisting)
     const onStorage = (e: StorageEvent) => {
       if (!persist || e.key !== LS_KEY || !e.newValue) return;
       const v = e.newValue as ThemeMode;
       if (v === "light" || v === "dark" || v === "system") {
         modeRef.current = v;
         setMode(v);
-        applyTheme(v, mqlRef.current);
+        applyTheme(v, mqlRef.current, persist);
         emitChange(v);
       }
     };
@@ -131,8 +135,9 @@ export default function ThemeToggle({
 
   const handleSetMode = useCallback(
     (m: ThemeMode) => {
+      modeRef.current = m; // <- keep in sync so OS changes don't override manual choice
       setMode(m);
-      applyTheme(m, mqlRef.current);
+      applyTheme(m, mqlRef.current, persist);
       emitChange(m);
       if (!persist) {
         try {
@@ -152,7 +157,7 @@ export default function ThemeToggle({
         className={`rounded-xl p-2 transition hover:bg-white/20 ${className}`}
         title="Toggle theme"
       >
-        <span className="inline-block w-2 h-2 rounded-full bg-white/70" />
+        <span className="inline-block h-2 w-2 rounded-full bg-white/70" />
       </button>
     );
   }
@@ -167,15 +172,18 @@ export default function ThemeToggle({
       title={`Theme: ${label} — click to switch to ${nextMode}`}
     >
       {mode === "dark" ? (
+        // Sun icon (dark mode active)
         <svg width="20" height="20" viewBox="0 0 24 24" className="text-yellow-300" fill="none" aria-hidden>
           <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.64 5.64L4.22 4.22M19.78 19.78l-1.42-1.42M5.64 18.36l-1.42 1.42M19.78 4.22l-1.42 1.42" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
           <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2"/>
         </svg>
       ) : mode === "light" ? (
+        // Moon icon (light mode active)
         <svg width="20" height="20" viewBox="0 0 24 24" className="text-slate-700 dark:text-slate-200" fill="none" aria-hidden>
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" strokeWidth="2" fill="currentColor"/>
         </svg>
       ) : (
+        // Monitor icon (system mode)
         <svg width="20" height="20" viewBox="0 0 24 24" className="text-gray-900 dark:text-gray-100" fill="none" aria-hidden>
           <rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="2"/>
           <path d="M2 20h20" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>

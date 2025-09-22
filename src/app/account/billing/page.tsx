@@ -1,4 +1,5 @@
 // src/app/account/billing/page.tsx
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -13,16 +14,17 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-type SubTier = "BASIC" | "GOLD" | "PLATINUM";
+type SubTier = "FREE" | "BASIC" | "GOLD" | "PLATINUM";
 
 function fmtDate(d?: Date | null) {
   if (!d) return null;
   try {
-    return new Date(d).toLocaleDateString(undefined, {
+    return new Intl.DateTimeFormat("en-KE", {
       year: "numeric",
       month: "short",
       day: "numeric",
-    });
+      timeZone: "Africa/Nairobi",
+    }).format(new Date(d));
   } catch {
     return new Date(d).toISOString().slice(0, 10);
   }
@@ -36,9 +38,7 @@ export default async function BillingPage() {
     return (
       <main className="mx-auto max-w-xl p-6">
         <h1 className="text-2xl font-semibold">Billing</h1>
-        <p className="mt-3 text-gray-700">
-          You need to be signed in to manage your plan.
-        </p>
+        <p className="mt-3 text-gray-700">You need to be signed in to manage your plan.</p>
         <Link
           href="/signin?callbackUrl=%2Faccount%2Fbilling"
           className="mt-4 inline-block rounded-2xl bg-gray-900 px-4 py-2 text-white hover:bg-gray-800"
@@ -54,13 +54,16 @@ export default async function BillingPage() {
     where: { email },
     select: {
       id: true,
-      subscription: true,          // "BASIC" | "GOLD" | "PLATINUM" (or "FREE" in some schemas)
-      subscriptionUntil: true,     // Date | null
+      subscription: true,       // "FREE" | "BASIC" | "GOLD" | "PLATINUM"
+      subscriptionUntil: true,  // Date | null
     },
   });
 
-  const tier = (me?.subscription ?? "BASIC") as SubTier;
+  const tier = ((me?.subscription as SubTier | undefined) ?? "FREE") as SubTier;
   const until = me?.subscriptionUntil ? fmtDate(me.subscriptionUntil) : null;
+
+  const tierLabel =
+    tier === "PLATINUM" ? "Platinum" : tier === "GOLD" ? "Gold" : tier === "BASIC" ? "Basic" : "Free";
 
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-6">
@@ -74,10 +77,7 @@ export default async function BillingPage() {
       {/* Current plan summary */}
       <section className="rounded-2xl border border-gray-200 p-4">
         <div className="text-sm text-gray-700">
-          Current plan:&nbsp;
-          <strong>
-            {tier === "BASIC" ? "Basic" : tier === "GOLD" ? "Gold" : "Platinum"}
-          </strong>
+          Current plan:&nbsp;<strong>{tierLabel}</strong>
           {until && (
             <>
               &nbsp;•&nbsp;valid until <strong>{until}</strong>

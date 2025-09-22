@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { categories } from "../data/categories";
 
 /* ------------------------ tiny event/analytics ------------------------ */
 function emit(name: string, detail?: unknown) {
@@ -43,6 +42,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const [signingOut, setSigningOut] = useState(false);
+
+  // 🔹 Lazy categories: only load when drawer opens (smaller initial bundle)
+  const [cats, setCats] = useState<ReadonlyArray<Category> | null>(null);
+  useEffect(() => {
+    if (open && !cats) {
+      import("../data/categories")
+        .then((m) => setCats((m as any).categories as ReadonlyArray<Category>))
+        .catch(() => setCats([]));
+    }
+  }, [open, cats]);
 
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -83,7 +92,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const focusable: HTMLElement[] = Array.from(nodeList);
       if (focusable.length === 0) return;
 
-      // Safe due to length check above
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;
       const active = document.activeElement as HTMLElement | null;
@@ -334,7 +342,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Drawer content */}
-        <div className="px-4 py-4 space-y-4 overflow-y-auto h-[calc(100%-56px-4px)]">
+        <div
+          className="px-4 py-4 space-y-4 overflow-y-auto h-[calc(100%-56px-4px)]"
+          aria-busy={open && !cats}
+        >
           <Link
             href="/"
             onClick={() => setOpen(false)}
@@ -344,82 +355,89 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             All Products
           </Link>
 
-          <ul className="space-y-2" aria-label="Browse categories">
-            {categories.map((cat) => {
-              const c = cat as unknown as Category;
-              return (
-                <li
-                  key={c.name}
-                  className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-white/10 shadow-sm"
-                >
-                  <details className="group">
-                    <summary className="flex items-center justify-between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
-                      <span className="font-medium">{c.name}</span>
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        className="transition-transform duration-200 group-open:rotate-180 text-gray-500 dark:text-slate-400"
-                        fill="currentColor"
-                        aria-hidden="true"
-                      >
-                        <path d="M12 15.5l-7-7 1.4-1.4L12 12.7l5.6-5.6L19 8.5z" />
-                      </svg>
-                    </summary>
+          {!cats ? (
+            <div className="text-sm text-gray-500 dark:text-slate-400 px-1">
+              Loading categories…
+            </div>
+          ) : (
+            <ul className="space-y-2" aria-label="Browse categories">
+              {cats.map((cat) => {
+                const c = cat as unknown as Category;
+                return (
+                  <li
+                    key={c.name}
+                    className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-white/10 shadow-sm"
+                  >
+                    <details className="group">
+                      <summary className="flex items-center justify-between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
+                        <span className="font-medium">{c.name}</span>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          className="transition-transform duration-200 group-open:rotate-180 text-gray-500 dark:text-slate-400"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path d="M12 15.5l-7-7 1.4-1.4L12 12.7l5.6-5.6L19 8.5z" />
+                        </svg>
+                      </summary>
 
-                    {hasSubcategories(c) && c.subcategories.length > 0 && (
-                      <ul className="mt-1 border-t border-gray-100 dark:border-white/5">
-                        {c.subcategories.map((sub) => {
-                          const s = sub as Subcategory;
-                          return (
-                            <li key={s.name} className="pl-2">
-                              <details>
-                                <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
-                                  <Link
-                                    href={categoryHref(s.name)}
-                                    onClick={() => setOpen(false)}
-                                    className="flex-1"
-                                  >
-                                    {s.name}
-                                  </Link>
-                                  <svg
-                                    width="14"
-                                    height="14"
-                                    viewBox="0 0 24 24"
-                                    className="text-gray-400"
-                                    fill="currentColor"
-                                    aria-hidden="true"
-                                  >
-                                    <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
-                                  </svg>
-                                </summary>
+                      {hasSubcategories(c) && c.subcategories.length > 0 && (
+                        <ul className="mt-1 border-t border-gray-100 dark:border-white/5">
+                          {c.subcategories.map((sub) => {
+                            const s = sub as Subcategory;
+                            return (
+                              <li key={s.name} className="pl-2">
+                                <details>
+                                  <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
+                                    <Link
+                                      href={categoryHref(s.name)}
+                                      onClick={() => setOpen(false)}
+                                      className="flex-1"
+                                    >
+                                      {s.name}
+                                    </Link>
+                                    <svg
+                                      width="14"
+                                      height="14"
+                                      viewBox="0 0 24 24"
+                                      className="text-gray-400"
+                                      fill="currentColor"
+                                      aria-hidden="true"
+                                    >
+                                      <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
+                                    </svg>
+                                  </summary>
 
-                                {hasSubsubcategories(s) && s.subsubcategories.length > 0 && (
-                                  <ul className="ml-3 mb-2">
-                                    {s.subsubcategories.map((leaf: LeafName) => (
-                                      <li key={leaf}>
-                                        <Link
-                                          href={categoryHref(leaf)}
-                                          onClick={() => setOpen(false)}
-                                          className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-[#39a0ca] transition"
-                                        >
-                                          {leaf}
-                                        </Link>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </details>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </details>
-                </li>
-              );
-            })}
-          </ul>
+                                  {hasSubsubcategories(s) &&
+                                    s.subsubcategories.length > 0 && (
+                                      <ul className="ml-3 mb-2">
+                                        {s.subsubcategories.map((leaf: LeafName) => (
+                                          <li key={leaf}>
+                                            <Link
+                                              href={categoryHref(leaf)}
+                                              onClick={() => setOpen(false)}
+                                              className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-[#39a0ca] transition"
+                                            >
+                                              {leaf}
+                                            </Link>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                </details>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </details>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           <Link
             href="/saved"

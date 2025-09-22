@@ -43,7 +43,7 @@ type Props = {
   debounceMs?: number;
 };
 
-/* ---------- lightweight client analytics / events (no function props required) ---------- */
+/* ---------- lightweight client analytics / events ---------- */
 
 function emit<T = unknown>(name: string, detail?: T) {
   // eslint-disable-next-line no-console
@@ -67,6 +67,13 @@ export default function FiltersBar({
   // Local state for query (debounced)
   const [qLocal, setQLocal] = useState<string>(value.query ?? "");
   const debTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearDebounce = useCallback(() => {
+    if (debTimer.current) {
+      clearTimeout(debTimer.current);
+      debTimer.current = null;
+    }
+  }, []);
 
   // Focus management: "/" focuses the search box
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -94,14 +101,11 @@ export default function FiltersBar({
   // Debounced search typing → notify parent (if provided) + emit client event
   useEffect(() => {
     if (disabled) {
-      if (debTimer.current) {
-        clearTimeout(debTimer.current);
-        debTimer.current = null;
-      }
+      clearDebounce();
       return;
     }
 
-    if (debTimer.current) clearTimeout(debTimer.current);
+    clearDebounce();
     const t = setTimeout(async () => {
       if (qLocal !== (value.query ?? "")) {
         const next = { ...value, query: qLocal };
@@ -138,14 +142,16 @@ export default function FiltersBar({
   const update = useCallback(
     (patch: Partial<Filters>, trackLabel?: keyof Filters | string) => {
       if (disabled) return;
+      clearDebounce(); // avoid a double-call after immediate update
       const next = { ...value, ...patch };
       void notifyChange(next, trackLabel ? { field: trackLabel } : undefined);
     },
-    [disabled, notifyChange, value]
+    [disabled, notifyChange, value, clearDebounce]
   );
 
   const applyNow = useCallback(async () => {
     if (disabled) return;
+    clearDebounce(); // ensure immediate submit isn't followed by a stale debounced call
     const next = qLocal !== (value.query ?? "") ? { ...value, query: qLocal } : value;
     emit("qs:filters:submit", { filters: next });
     try {
@@ -153,10 +159,11 @@ export default function FiltersBar({
     } catch (e) {
       console.error("[FiltersBar] onSubmitAction error:", e);
     }
-  }, [disabled, onSubmitAction, qLocal, value]);
+  }, [disabled, onSubmitAction, qLocal, value, clearDebounce]);
 
   const reset = useCallback(async () => {
     if (disabled) return;
+    clearDebounce();
     const base: Filters = {
       query: "",
       condition: "all",
@@ -173,7 +180,7 @@ export default function FiltersBar({
     } catch (e) {
       console.error("[FiltersBar] reset actions error:", e);
     }
-  }, [disabled, onFiltersChangeAction, onSubmitAction, value.verifiedOnly]);
+  }, [disabled, onFiltersChangeAction, onSubmitAction, value.verifiedOnly, clearDebounce]);
 
   const hasBoth = typeof minPrice === "number" && typeof maxPrice === "number";
   const rangeInvalid = hasBoth && (minPrice as number) > (maxPrice as number);

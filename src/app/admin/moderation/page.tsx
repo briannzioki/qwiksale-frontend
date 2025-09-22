@@ -1,9 +1,24 @@
 // src/app/admin/moderation/page.tsx
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { prisma } from "@/app/lib/prisma";
-import { auth } from "@/auth";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import ModerationClient from "@/app/admin/moderation/ModerationClient.client";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Moderation · QwikSale",
+  robots: {
+    index: false,
+    follow: false,
+    noarchive: true,
+    googleBot: { index: false, follow: false, noimageindex: true },
+  },
+};
 
 /* ---------------------- prisma alias for new models ---------------------- */
 const db = prisma as unknown as typeof prisma & {
@@ -13,11 +28,9 @@ const db = prisma as unknown as typeof prisma & {
   };
 };
 
-export const dynamic = "force-dynamic";
-
 /* --------------------------------- RBAC --------------------------------- */
 async function requireAdmin() {
-  const session = await auth().catch(() => null);
+  const session = await getServerSession(authOptions).catch(() => null);
   const email = (session?.user as any)?.email as string | undefined;
   const allow = (process.env["ADMIN_EMAILS"] || "")
     .split(",")
@@ -45,13 +58,17 @@ function parseParams(sp: SearchParams) {
   const q = (sp.q || "").trim();
   const type = sp.type === "product" || sp.type === "service" ? sp.type : undefined;
   const reason = (sp.reason || "").trim();
-  const resolved =
-    sp.resolved === "1" ? true : sp.resolved === "0" ? false : undefined;
-
+  const resolved = sp.resolved === "1" ? true : sp.resolved === "0" ? false : undefined;
   return { page, q, type, reason, resolved };
 }
 
-async function loadReports({ page, q, type, reason, resolved }: ReturnType<typeof parseParams>) {
+async function loadReports({
+  page,
+  q,
+  type,
+  reason,
+  resolved,
+}: ReturnType<typeof parseParams>) {
   const where: any = {};
   if (type) where.listingType = type;
   if (reason) where.reason = reason;
@@ -84,12 +101,11 @@ async function loadReports({ page, q, type, reason, resolved }: ReturnType<typeo
 export default async function ModerationPage({
   searchParams,
 }: {
-  // 👇 Next 15 expects Promise here
+  // Next 15 passes a Promise here
   searchParams: Promise<SearchParams>;
 }) {
   await requireAdmin();
 
-  // 👇 resolve the promise
   const raw = await searchParams;
   const parsed = parseParams(raw);
 
@@ -104,7 +120,9 @@ export default async function ModerationPage({
             Review and act on user reports.
           </p>
         </div>
-        <Link href="/dashboard" className="btn-outline">Back</Link>
+        <Link href="/dashboard" className="btn-outline">
+          Back
+        </Link>
       </header>
 
       {/* Filters */}
@@ -149,9 +167,7 @@ export default async function ModerationPage({
           <option value="0">Unresolved</option>
           <option value="1">Resolved</option>
         </select>
-        <button className="rounded bg-[#161748] text-white px-3 py-1 text-sm">
-          Apply
-        </button>
+        <button className="rounded bg-[#161748] text-white px-3 py-1 text-sm">Apply</button>
         <Link href="/admin/moderation" className="btn-outline text-sm px-2 py-1">
           Clear
         </Link>

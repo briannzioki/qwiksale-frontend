@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { categoryOptions, subcategoryOptions } from "@/app/data/categories";
 import { normalizeMsisdn } from "@/app/data/products";
 import { toast } from "react-hot-toast";
+import { useProducts } from "@/app/lib/productsStore";
 
 type Props = {
   /** Called after a listing is successfully created with the new product ID */
@@ -13,10 +14,15 @@ type Props = {
 };
 
 export default function ProductForm({ onCreatedAction, className = "" }: Props) {
+  // Precompute options once
+  const catOpts = useMemo(() => categoryOptions(), []);
+  const [category, setCategory] = useState<string>(catOpts[0]?.value || "");
+
+  // Sub-options depend on category
+  const subOpts = useMemo(() => subcategoryOptions(category), [category]);
+
+  const [subcategory, setSubcategory] = useState<string>(subOpts[0]?.value || "");
   const [name, setName] = useState("");
-  const [category, setCategory] = useState(categoryOptions()[0]?.value || "");
-  const subOptions = useMemo(() => subcategoryOptions(category), [category]);
-  const [subcategory, setSubcategory] = useState<string>(subOptions[0]?.value || "");
   const [brand, setBrand] = useState("");
   const [condition, setCondition] = useState<"brand new" | "pre-owned">("pre-owned");
   const [price, setPrice] = useState<number | "">("");
@@ -27,15 +33,22 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
   const [busy, setBusy] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { addProduct } = useProducts(); // ✅ use cache-aware creation
 
+  // Form readiness
   const can =
-    name.trim() && category && subcategory && location.trim() && (price === "" || Number(price) >= 0);
+    name.trim().length > 0 &&
+    category &&
+    subcategory &&
+    location.trim().length > 0 &&
+    (price === "" || Number(price) >= 0);
 
   const pickFiles = () => fileInputRef.current?.click();
 
   const onFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = Array.from(e.target.files || []);
     setFiles(next.slice(0, 10));
+    // reset so re-picking the same files fires change again
     e.currentTarget.value = "";
   };
 
@@ -50,42 +63,63 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         return;
       }
 
+      // Gentle nudge if files chosen (this form posts JSON only)
+      if (files.length > 0) {
+        toast("Heads up: image upload isn’t wired yet — listing will be created without photos.", {
+          icon: "📷",
+        });
+      }
+
       setBusy(true);
       try {
-        // NOTE: swap to your Server Action or API route for real upload
-        const payload = {
+        // Align with productsStore/addProduct shape
+        const payload: Record<string, unknown> = {
           name,
           category,
           subcategory,
           brand: brand || null,
           condition,
-          price: price === "" ? 0 : Number(price),
+          price: price === "" ? null : Number(price),
           location,
           description,
           phone: msisdn ?? null,
+          // You can add a 'gallery' later after wiring uploads
         };
 
-        // placeholder fetch — replace with /api/products (multipart if needed)
-        const r = await fetch("/api/products", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (!r.ok) throw new Error(`Failed (${r.status})`);
-        const { id } = (await r.json().catch(() => ({ id: "" }))) as { id?: string };
+        const { id } = await addProduct(payload); // posts to /api/products/create, updates caches
 
         toast.success("Listing created");
         (window as any).plausible?.("Listing Created", { props: { category, subcategory } });
-        await onCreatedAction?.(id || "");
+        await onCreatedAction?.(id);
       } catch (err: any) {
         toast.error(err?.message || "Failed to create listing");
       } finally {
         setBusy(false);
       }
     },
-    [busy, brand, category, condition, description, location, name, onCreatedAction, phone, price, subcategory]
+    [
+      addProduct,
+      brand,
+      busy,
+      category,
+      condition,
+      description,
+      files.length,
+      location,
+      name,
+      onCreatedAction,
+      phone,
+      price,
+      subcategory,
+    ]
   );
+
+  // Keep subcategory coherent if category changes
+  const onChangeCategory = useCallback((value: string) => {
+    setCategory(value);
+    const first = subcategoryOptions(value)[0]?.value || "";
+    setSubcategory(first);
+  }, []);
 
   return (
     <form
@@ -94,13 +128,19 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         "rounded-2xl border bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900",
         className,
       ].join(" ")}
+      aria-labelledby="sell-form-title"
     >
-      <h2 className="text-lg font-bold">Post a Product</h2>
+      <h2 id="sell-form-title" className="text-lg font-bold">
+        Post a Product
+      </h2>
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
-          <label className="text-sm font-medium">Title</label>
+          <label className="text-sm font-medium" htmlFor="pf-title">
+            Title
+          </label>
           <input
+            id="pf-title"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -109,8 +149,11 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Brand (optional)</label>
+          <label className="text-sm font-medium" htmlFor="pf-brand">
+            Brand (optional)
+          </label>
           <input
+            id="pf-brand"
             value={brand}
             onChange={(e) => setBrand(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -118,16 +161,16 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Category</label>
+          <label className="text-sm font-medium" htmlFor="pf-category">
+            Category
+          </label>
           <select
+            id="pf-category"
             value={category}
-            onChange={(e) => {
-              setCategory(e.target.value);
-              setSubcategory(subcategoryOptions(e.target.value)[0]?.value || "");
-            }}
+            onChange={(e) => onChangeCategory(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
-            {categoryOptions().map((o) => (
+            {catOpts.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -136,13 +179,16 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Subcategory</label>
+          <label className="text-sm font-medium" htmlFor="pf-subcategory">
+            Subcategory
+          </label>
           <select
+            id="pf-subcategory"
             value={subcategory}
             onChange={(e) => setSubcategory(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
-            {subOptions.map((o) => (
+            {subOpts.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -151,8 +197,11 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Condition</label>
+          <label className="text-sm font-medium" htmlFor="pf-condition">
+            Condition
+          </label>
           <select
+            id="pf-condition"
             value={condition}
             onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -163,22 +212,29 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Price (KES)</label>
+          <label className="text-sm font-medium" htmlFor="pf-price">
+            Price (KES)
+          </label>
           <input
+            id="pf-price"
             type="number"
             min={0}
             value={price === "" ? "" : price}
-            onChange={(e) =>
-              setPrice(e.target.value === "" ? "" : Math.max(0, Math.floor(Number(e.target.value) || 0)))
-            }
+            onChange={(e) => {
+              const v = e.target.value;
+              setPrice(v === "" ? "" : Math.max(0, Math.floor(Number(v) || 0)));
+            }}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            placeholder="0 = Contact for price"
+            placeholder="Leave empty for “Contact for price”"
           />
         </div>
 
         <div>
-          <label className="text-sm font-medium">Location</label>
+          <label className="text-sm font-medium" htmlFor="pf-location">
+            Location
+          </label>
           <input
+            id="pf-location"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -187,18 +243,25 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div>
-          <label className="text-sm font-medium">Seller phone (optional)</label>
+          <label className="text-sm font-medium" htmlFor="pf-phone">
+            Seller phone (optional)
+          </label>
           <input
+            id="pf-phone"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="2547XXXXXXXX"
+            inputMode="tel"
           />
         </div>
 
         <div className="md:col-span-2">
-          <label className="text-sm font-medium">Description</label>
+          <label className="text-sm font-medium" htmlFor="pf-description">
+            Description
+          </label>
           <textarea
+            id="pf-description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
@@ -207,8 +270,10 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         </div>
 
         <div className="md:col-span-2">
-          <label className="text-sm font-medium">Photos (up to 10)</label>
-          <div className="mt-1 flex gap-2">
+          <label className="text-sm font-medium" htmlFor="pf-files">
+            Photos (up to 10)
+          </label>
+          <div className="mt-1 flex items-center gap-2">
             <button
               type="button"
               onClick={pickFiles}
@@ -217,6 +282,7 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
               Choose files
             </button>
             <input
+              id="pf-files"
               ref={fileInputRef}
               type="file"
               multiple
@@ -224,7 +290,7 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
               className="hidden"
               onChange={onFiles}
             />
-            <div className="text-xs text-gray-600 dark:text-gray-400">
+            <div className="text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
               {files.length ? `${files.length} selected` : "No files selected"}
             </div>
           </div>
@@ -235,7 +301,10 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         <button
           type="submit"
           disabled={!can || busy}
-          className={`rounded-xl px-4 py-2 text-white ${!can || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"}`}
+          className={`rounded-xl px-4 py-2 text-white ${
+            !can || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"
+          }`}
+          aria-busy={busy ? "true" : "false"}
         >
           {busy ? "Posting…" : "Post product"}
         </button>

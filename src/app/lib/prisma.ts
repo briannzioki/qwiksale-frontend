@@ -1,5 +1,6 @@
 // src/app/lib/prisma.ts
-// Compatibility shim: forward to the central Prisma client and keep helper APIs.
+// Node-only shim: forwards to the central Prisma client in src/lib/db.ts.
+// Avoid importing this file in Edge/Workers code.
 
 import { prisma } from "@/lib/db";
 
@@ -8,7 +9,8 @@ export { prisma };
 /* ------------------------------ Health helpers --------------------------- */
 export async function prismaHealthcheck(): Promise<boolean> {
   try {
-    await prisma.$queryRawUnsafe("SELECT 1");
+    // Use the safe tagged template; no need for ...Unsafe here.
+    await prisma.$queryRaw`SELECT 1`;
     return true;
   } catch {
     return false;

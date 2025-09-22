@@ -1,7 +1,7 @@
 // src/app/components/account/DeleteAccountButton.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function DeleteAccountButton({
@@ -18,6 +18,9 @@ export default function DeleteAccountButton({
   confirmLabel?: string;
 }) {
   const router = useRouter();
+  const uid = useId();
+  const titleId = `delacc-title-${uid}`;
+  const descId = `delacc-desc-${uid}`;
 
   const [open, setOpen] = useState(false);
   const [ack, setAck] = useState(false);
@@ -51,9 +54,7 @@ export default function DeleteAccountButton({
   }, []);
 
   // abort any in-flight request on unmount
-  useEffect(() => {
-    return () => abortRef.current?.abort();
-  }, []);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   /* --------------------------- open/close effects --------------------------- */
   useEffect(() => {
@@ -129,7 +130,7 @@ export default function DeleteAccountButton({
         signal: ac.signal,
         body: JSON.stringify({ confirm: true, email: userEmail }),
       });
-      const json = await res.json().catch(() => ({}));
+      const json = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
         throw new Error((json as any)?.error || `Delete failed (${res.status})`);
@@ -161,8 +162,6 @@ export default function DeleteAccountButton({
   }, [announce, canDelete, loading, onDeletedAction, router, userEmail, emit]);
 
   /* --------------------------------- render -------------------------------- */
-  const descId = "delacc-desc";
-
   return (
     <>
       <span aria-live="polite" className="sr-only" ref={liveRef} />
@@ -183,6 +182,7 @@ export default function DeleteAccountButton({
       {open && (
         <>
           <button
+            type="button"
             className="fixed inset-0 z-50 bg-black/40"
             aria-label="Close delete account dialog"
             onClick={() => {
@@ -194,15 +194,16 @@ export default function DeleteAccountButton({
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="delacc-title"
+            aria-labelledby={titleId}
             aria-describedby={descId}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
             <div
               ref={dialogRef}
               className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-950 p-5 shadow-lg border border-gray-200 dark:border-gray-800"
+              aria-busy={loading ? "true" : "false"}
             >
-              <h2 id="delacc-title" className="text-lg font-semibold text-red-700 dark:text-red-400">
+              <h2 id={titleId} className="text-lg font-semibold text-red-700 dark:text-red-400">
                 Delete your account?
               </h2>
               <p id={descId} className="mt-2 text-sm text-gray-700 dark:text-gray-300">
@@ -243,7 +244,7 @@ export default function DeleteAccountButton({
               </div>
 
               {err && (
-                <div className="mt-3 text-sm text-red-600 dark:text-red-400">
+                <div className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert" aria-live="polite">
                   {err}
                 </div>
               )}
@@ -273,6 +274,7 @@ export default function DeleteAccountButton({
                     "rounded-xl px-4 py-2 text-sm text-white",
                     canDelete ? "bg-red-600 hover:bg-red-700" : "bg-red-300 dark:bg-red-800/40",
                   ].join(" ")}
+                  aria-busy={loading ? "true" : "false"}
                 >
                   {loading ? "Deleting…" : confirmLabel}
                 </button>

@@ -1,13 +1,13 @@
+// src/app/components/SearchBox.tsx
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import SearchCombobox from "@/app/components/SearchCombobox"; // no generic in JSX
+import SearchCombobox from "@/app/components/SearchCombobox";
 
 type SuggestionType = "name" | "brand" | "category" | "subcategory" | "service";
 type SuggestionMeta = { type: SuggestionType };
 
-// local shape (keeps us decoupled from the combobox file)
 type ComboItem<TMeta = unknown> = {
   id: string;
   label: string;
@@ -15,6 +15,8 @@ type ComboItem<TMeta = unknown> = {
 };
 
 const DEBOUNCE_MS = 160;
+const SUGGEST_LIMIT = 12;
+const CACHE_MAX = 30;
 
 function classNames(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
@@ -36,25 +38,65 @@ export default function SearchBox({
   const [q, setQ] = useState(initial);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // Prefetch the search route so the transition feels instant
+  useEffect(() => {
+    try {
+      r.prefetch?.("/search");
+    } catch {
+      /* noop */
+    }
+  }, [r]);
+
+  // Small in-memory suggest cache (term -> items)
+  const cacheRef = useRef<Map<string, ComboItem<SuggestionMeta>[]>>(new Map());
+  const abortRef = useRef<AbortController | null>(null);
+
   const fetchSuggest = useCallback(
     async (term: string): Promise<ComboItem<SuggestionMeta>[]> => {
       const t = term.trim();
       if (!t) return [];
-      const res = await fetch(`/api/products/suggest?q=${encodeURIComponent(t)}&limit=12`, {
-        cache: "no-store",
-      }).catch(() => null);
+
+      // Serve from cache if present
+      const cached = cacheRef.current.get(t);
+      if (cached) return cached;
+
+      // Abort any in-flight request
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
+
+      const url = `/api/products/suggest?q=${encodeURIComponent(t)}&limit=${SUGGEST_LIMIT}`;
+      const res = await fetch(url, { cache: "no-store", signal: abortRef.current.signal }).catch(
+        () => null
+      );
       const json = (await res?.json().catch(() => null)) as
         | { items?: Array<{ label: string; value: string; type: SuggestionType }> }
         | null;
 
       if (!json?.items || !Array.isArray(json.items)) return [];
-      return json.items.map(
-        (s: { label: string; value: string; type: SuggestionType }, idx: number) => ({
-          id: `${s.type}:${s.value}:${idx}`,
+
+      // Dedupe by (type+value) to avoid repeats, keep first
+      const seen = new Set<string>();
+      const items: ComboItem<SuggestionMeta>[] = [];
+      for (let i = 0; i < json.items.length; i++) {
+        const s = json.items[i]!;
+        const key = `${s.type}:${s.value}`.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          id: `${s.type}:${s.value}:${i}`,
           label: s.label,
           meta: { type: s.type },
-        })
-      );
+        });
+      }
+
+      // Cache (simple LRU-ish: trim oldest when > CACHE_MAX)
+      cacheRef.current.set(t, items);
+      if (cacheRef.current.size > CACHE_MAX) {
+        const firstKey = cacheRef.current.keys().next().value as string | undefined;
+        if (firstKey) cacheRef.current.delete(firstKey);
+      }
+
+      return items;
     },
     []
   );
@@ -78,7 +120,8 @@ export default function SearchBox({
           if (cat) params.set("category", cat);
           if (sub) params.set("subcategory", sub);
         } else if (t === "service") {
-          params.set("type", "service");
+          // Align with app-wide mode flag (`t=services`)
+          params.set("t", "services");
           params.set("q", label);
         } else if (t === "name") {
           params.set("q", label);

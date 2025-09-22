@@ -1,15 +1,27 @@
 // src/app/admin/layout.tsx
-import Link from "next/link";
-import { requireAdmin } from "@/app/lib/authz"; // assumes you have this; see note below
-
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+import Link from "next/link";
+import { requireAdmin } from "@/app/lib/authz";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Admin · QwikSale",
+  robots: {
+    index: false,
+    follow: false,
+    noarchive: true,
+    googleBot: { index: false, follow: false, noimageindex: true },
+  },
+};
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // Redirect or throw if not admin
+  // Server-only admin check
   await requireAdmin("/admin");
 
   return (
@@ -58,16 +70,24 @@ export default async function AdminLayout({
               >
                 Listings
               </Link>
+              <Link
+                href="/admin/moderation"
+                className="rounded-xl bg-white/15 px-3 py-1 hover:bg-white/25 transition"
+              >
+                Moderation
+              </Link>
+              <Link
+                href="/admin/reveals"
+                className="rounded-xl bg-white/15 px-3 py-1 hover:bg-white/25 transition"
+              >
+                Reveals
+              </Link>
             </nav>
           </div>
         </div>
       </header>
 
-      <main
-        id="admin-main"
-        role="main"
-        className="mx-auto max-w-7xl px-6 py-6 space-y-6"
-      >
+      <main id="admin-main" role="main" className="mx-auto max-w-7xl px-6 py-6 space-y-6">
         {children}
       </main>
     </div>
