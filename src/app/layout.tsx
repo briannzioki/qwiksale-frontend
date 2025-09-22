@@ -1,6 +1,6 @@
 // src/app/layout.tsx
 export const runtime = "nodejs";
-
+export const revalidate = 600; 
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
@@ -99,7 +99,6 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // JSON-LD (site-wide)
   const orgJsonLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -128,26 +127,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" dir="ltr" className="h-full" suppressHydrationWarning>
       <head>
         <meta name="color-scheme" content="light dark" />
-
-        {/* Performance hints */}
         <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="//res.cloudinary.com" />
         <link rel="dns-prefetch" href="//images.unsplash.com" />
 
-        {/* Set initial theme BEFORE paint to avoid flicker */}
-        <Script id="theme-script" strategy="beforeInteractive">
-          {`try {
+        <Script id="theme-script" strategy="beforeInteractive">{`try {
   const ls = localStorage.getItem('theme');
   const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
   const shouldDark = ls ? (ls === 'dark') : !!mq?.matches;
   document.documentElement.classList.toggle('dark', shouldDark);
-} catch {}`
-          }
-        </Script>
+} catch {}`}</Script>
 
-        {/* JSON-LD */}
         <Script id="ld-org" type="application/ld+json">
           {JSON.stringify(orgJsonLd)}
         </Script>
@@ -155,7 +147,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {JSON.stringify(siteJsonLd)}
         </Script>
 
-        {/* Optional hard meta for preview safety, complements metadata.robots */}
         {isPreview ? <meta name="robots" content="noindex,nofollow,noimageindex" /> : null}
       </head>
 
@@ -165,15 +156,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         data-env={isPreview ? "preview" : "prod"}
       >
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
-          {/* Providers wrap AppShell so it can read auth etc. */}
           <Providers>
             <AppShell>{children}</AppShell>
           </Providers>
 
-          {/* Vercel Analytics */}
           <VercelAnalytics />
 
-          {/* Plausible (optional) */}
           {PLAUSIBLE_DOMAIN ? (
             <Script
               id="plausible"
@@ -183,26 +171,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             />
           ) : null}
 
-          {/* Google Analytics 4 (optional) */}
           {GA_ID ? (
             <>
-              <Script
-                id="ga-loader"
-                strategy="afterInteractive"
-                src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
-              />
-              <Script id="ga-init" strategy="afterInteractive">
-                {`
+              <Script id="ga-loader" strategy="afterInteractive" src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} />
+              <Script id="ga-init" strategy="afterInteractive">{`
 window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
 gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: true });
-                `}
-              </Script>
+              `}</Script>
             </>
           ) : null}
 
-          {/* Client-only dev widget mount */}
           <DevToolsMount />
         </div>
       </body>

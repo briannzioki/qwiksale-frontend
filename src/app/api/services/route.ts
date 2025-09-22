@@ -1,25 +1,14 @@
 export const preferredRegion = 'fra1';
-// src/app/api/services/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
-import { auth } from "@/auth";
+import { prisma } from "@/server/prisma";
+import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- tiny helpers ----------------------------- */
-function noStore(jsonOrRes: unknown, init?: ResponseInit) {
-  const res =
-    jsonOrRes instanceof NextResponse
-      ? jsonOrRes
-      : NextResponse.json(jsonOrRes as any, init);
-  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.headers.set("Pragma", "no-cache");
-  res.headers.set("Expires", "0");
-  return res;
-}
 function toInt(v: string | null, def: number, min: number, max: number) {
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
@@ -82,8 +71,7 @@ export async function GET(req: NextRequest) {
   try {
     const Service = getServiceModel();
     if (!Service) {
-      // No Service model in this schema — return an empty list gracefully.
-      return noStore({
+      return jsonPublic({
         page: 1,
         pageSize: 0,
         total: 0,
@@ -91,7 +79,7 @@ export async function GET(req: NextRequest) {
         sort: "newest" as const,
         items: [] as any[],
         facets: undefined,
-      });
+      }, 60);
     }
 
     const url = new URL(req.url);
@@ -104,7 +92,6 @@ export async function GET(req: NextRequest) {
     const sellerUsername =
       optStr(url.searchParams.get("seller")) || optStr(url.searchParams.get("user"));
     const featured = toBool(url.searchParams.get("featured"));
-    // Treat "verified" same as "featured" for now
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
 
     const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
@@ -162,9 +149,6 @@ export async function GET(req: NextRequest) {
         ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "asc" as const }]
         : [{ createdAt: "desc" as const }, { id: "asc" as const }];
 
-    // Session not currently used to personalize results; call remains safe.
-    void (await auth().catch(() => null));
-
     const [total, servicesRaw, facets] = await Promise.all([
       Service.count({ where }),
       Service.findMany({
@@ -192,7 +176,7 @@ export async function GET(req: NextRequest) {
       seller: s.seller ?? null,
     }));
 
-    return noStore({
+    const res = jsonPublic({
       page,
       pageSize,
       total,
@@ -200,11 +184,13 @@ export async function GET(req: NextRequest) {
       sort,
       items,
       facets,
-    });
+    }, 60);
+    res.headers.set("X-Total-Count", String(total));
+    return res;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/services GET] error:", e);
-    return noStore({ error: "Server error" }, { status: 500 });
+    return jsonPrivate({ error: "Server error" }, { status: 500 });
   }
 }
 
@@ -212,8 +198,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const Service = getServiceModel();
   if (!Service) {
-    // Creating services is not supported without a Service model
-    return noStore({ error: "Service model not available in this schema." }, { status: 501 });
+    return jsonPrivate({ error: "Service model not available in this schema." }, { status: 501 });
   }
   const { POST: createService } = await import("./create/route");
   return createService(req);
@@ -250,11 +235,9 @@ async function computeFacets(where: any, Service: any) {
 
 /* ----------------------------- misc verbs ----------------------------- */
 export async function HEAD() {
-  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  return jsonPublic(null, 60, { status: 204 });
 }
 
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  return jsonPublic({ ok: true }, 60, { status: 204 });
 }
-
-

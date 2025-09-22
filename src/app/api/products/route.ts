@@ -1,28 +1,15 @@
 export const preferredRegion = 'fra1';
-// src/app/api/products/route.ts
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic"; // CDN can still cache via s-maxage below.
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/server/prisma";
 import { auth } from "@/auth";
+import { jsonPublic, jsonPrivate, noStore } from "@/app/api/_lib/responses";
 
 /* ----------------------------- tiny helpers ----------------------------- */
-function noStore(jsonOrRes: unknown, init?: ResponseInit): NextResponse {
-  const res =
-    jsonOrRes instanceof NextResponse
-      ? jsonOrRes
-      : NextResponse.json(jsonOrRes as any, init);
-  // never cache: this can personalize based on auth/cookies
-  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.headers.set("Pragma", "no-cache");
-  res.headers.set("Expires", "0");
-  res.headers.set("Vary", "Cookie, Authorization, Accept-Encoding");
-  return res;
-}
-
 function toInt(v: string | null, def: number, min: number, max: number) {
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
@@ -42,7 +29,6 @@ function optStr(v: string | null): string | undefined {
   if (l === "any" || l === "all" || l === "*") return undefined;
   return t;
 }
-
 type SortKey = "newest" | "price_asc" | "price_desc" | "featured";
 function toSort(v: string | null): SortKey {
   const t = (v || "").trim().toLowerCase();
@@ -82,9 +68,9 @@ const productListSelect = {
 } as const;
 
 /* ----------------------------- safety caps ------------------------------ */
-const MAX_PAGE_SIZE = 48;          // never allow more than this per request
+const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
-const MAX_RESULT_WINDOW = 10_000;  // max records we’ll allow skipping with page/skip
+const MAX_RESULT_WINDOW = 10_000;
 
 /* ------------------------- GET /api/products ------------------------- */
 export async function GET(req: NextRequest) {
@@ -107,8 +93,9 @@ export async function GET(req: NextRequest) {
 
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
+    const includeFav = toBool(url.searchParams.get("includeFav")) === true;
 
-    // pagination (supports cursor OR page/skip; cursor wins if provided)
+    // pagination
     const cursor = optStr(url.searchParams.get("cursor"));
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
@@ -127,7 +114,6 @@ export async function GET(req: NextRequest) {
         ],
       });
     }
-    // NOTE: if you truly need case-insensitive equals, Prisma allows `mode` on string filters.
     if (category) and.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (brand) and.push({ brand: { contains: brand, mode: "insensitive" } });
@@ -159,25 +145,27 @@ export async function GET(req: NextRequest) {
         ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
         : [{ createdAt: "desc" as const }, { id: "desc" as const }];
 
-    // Resolve current user id (optional, for isFavoritedByMe)
+    // Resolve user only if caller explicitly wants personal favorite flag
     let userId: string | null = null;
-    try {
-      const session = await auth();
-      const sId = (session?.user as any)?.id as string | undefined;
-      userId = sId ?? null;
-      if (!userId && session?.user?.email) {
-        const u = await prisma.user.findUnique({
-          where: { email: session.user.email },
-          select: { id: true },
-        });
-        userId = u?.id ?? null;
+    if (includeFav) {
+      try {
+        const session = await auth();
+        const sId = (session?.user as any)?.id as string | undefined;
+        userId = sId ?? null;
+        if (!userId && session?.user?.email) {
+          const u = await prisma.user.findUnique({
+            where: { email: session.user.email },
+            select: { id: true },
+          });
+          userId = u?.id ?? null;
+        }
+      } catch {
+        /* ignore auth errors */
       }
-    } catch {
-      /* ignore auth errors */
     }
 
     const select: any = { ...productListSelect };
-    // counts and per-user favorite flag (lightweight: take 1)
+    // counts always useful and cheap
     select._count = { select: { favorites: true } };
     if (userId) {
       select.favorites = { where: { userId }, select: { productId: true }, take: 1 };
@@ -187,7 +175,7 @@ export async function GET(req: NextRequest) {
     if (!cursor) {
       const skipEst = (page - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
-        return noStore({
+        const res = jsonPublic({
           page,
           pageSize,
           total: 0,
@@ -197,16 +185,17 @@ export async function GET(req: NextRequest) {
           facets: wantFacets ? { categories: [], brands: [], conditions: [] } : undefined,
           nextCursor: null,
           hasMore: false,
-        });
+        }, 60);
+        res.headers.set("X-Total-Count", "0");
+        return res;
       }
     }
 
-    // Build the findMany() args (cursor wins; otherwise skip/page)
     const listArgs: any = {
       where,
       select,
       orderBy,
-      take: pageSize + 1, // fetch +1 to know if there’s a next page
+      take: pageSize + 1,
     };
     if (cursor) {
       listArgs.cursor = { id: cursor };
@@ -218,7 +207,6 @@ export async function GET(req: NextRequest) {
     const [total, productsRaw, facets] = await Promise.all([
       prisma.product.count({ where }),
       prisma.product.findMany(listArgs),
-      // only compute facets when explicitly requested AND first page (keeps DB/heap light)
       wantFacets && !cursor && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
     ]);
 
@@ -227,7 +215,6 @@ export async function GET(req: NextRequest) {
     const last = data[data.length - 1] as any | undefined;
     const nextCursor = hasMore ? (last?.id ?? null) : null;
 
-    // map to response shape + small numbers/strings only
     const items = (data as Array<any>).map((p) => {
       const favoritesCount: number = p?._count?.favorites ?? 0;
       const rel = (p as any)?.favorites;
@@ -235,10 +222,10 @@ export async function GET(req: NextRequest) {
       const createdAt =
         p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
       const { _count, favorites, ...rest } = p;
-      return { ...rest, createdAt, favoritesCount, isFavoritedByMe };
+      return { ...rest, createdAt, favoritesCount, isFavoritedByMe: !!userId && isFavoritedByMe };
     });
 
-    const res = noStore({
+    const payload = {
       page,
       pageSize,
       total,
@@ -248,13 +235,18 @@ export async function GET(req: NextRequest) {
       facets,
       nextCursor,
       hasMore,
-    });
+    };
+
+    const res = userId
+      ? jsonPrivate(payload)         // personalized -> no-store
+      : jsonPublic(payload, 60);     // public -> cache for 60s
+
     res.headers.set("X-Total-Count", String(total));
     return res;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/products GET] error:", e);
-    return noStore({ error: "Server error" }, { status: 500 });
+    return jsonPrivate({ error: "Server error" }, { status: 500 });
   }
 }
 
@@ -306,11 +298,9 @@ async function computeFacets(where: any) {
 
 /* ----------------------------- misc verbs ----------------------------- */
 export async function HEAD() {
-  return noStore(new NextResponse(null, { status: 204 }));
+  return jsonPublic(null, 60, { status: 204 });
 }
 
 export async function OPTIONS() {
-  return noStore({ ok: true }, { status: 200 });
+  return jsonPublic({ ok: true }, 60, { status: 200 });
 }
-
-

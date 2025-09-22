@@ -1,8 +1,8 @@
-// src/app/service/[id]/opengraph-image.tsx
 /* eslint-disable @next/next/no-img-element */
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
+export const preferredRegion = ["lhr1"]; // London
 export const contentType = "image/png";
 export const size = { width: 1200, height: 630 };
 export const alt = "Service preview";
@@ -58,8 +58,8 @@ async function loadService(id: string): Promise<ServiceOG | null> {
   }
 }
 
-export default async function Image({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function Image({ params }: { params: { id: string } }) {
+  const { id } = params;
   const s = (id && (await loadService(id))) || null;
 
   const title = safeTxt(s?.name) || "QwikSale Service";
