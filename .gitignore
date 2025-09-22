@@ -46,3 +46,4 @@ next-env.d.ts
 *.bak
 scripts/*.ps1
 nvm-windows/
+bypass.txt
