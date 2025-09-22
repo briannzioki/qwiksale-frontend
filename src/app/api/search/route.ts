@@ -1,4 +1,3 @@
-export const preferredRegion = 'fra1';
 // src/app/api/search/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/server/db";

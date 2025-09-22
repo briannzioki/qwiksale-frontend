@@ -1,6 +1,9 @@
 // next.config.ts
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import bundleAnalyzer from "@next/bundle-analyzer";
+
+const withAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === "true" });
 
 const isProd = process.env.NODE_ENV === "production";
 const isPreview = process.env.VERCEL_ENV === "preview";
@@ -111,8 +114,6 @@ const baseConfig: NextConfig = {
     dangerouslyAllowSVG: true
   },
 
-  // Removed legacy i18n block for App Router.
-
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: isPreview },
 
@@ -167,7 +168,8 @@ const baseConfig: NextConfig = {
   }
 };
 
-export default withSentryConfig(baseConfig, {
+// Compose: analyzer first, then Sentry wrapper
+export default withSentryConfig(withAnalyzer(baseConfig), {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   silent: true,

@@ -1,4 +1,3 @@
-export const preferredRegion = 'fra1';
 // src/app/api/me/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
