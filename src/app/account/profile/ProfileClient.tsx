@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { normalizeKenyanPhone } from "@/app/lib/phone";
+import ProfilePhotoUploader from "@/app/components/account/ProfilePhotoUploader";
 
 type Profile = {
   id: string;
@@ -16,11 +17,10 @@ type Profile = {
   country: string | null;
   postalCode: string | null;
   address: string | null;
+  image?: string | null; // 👈 include current avatar
 };
 
-type MeProfileResponse =
-  | { user: Profile }
-  | { error: string };
+type MeProfileResponse = { user: Profile } | { error: string };
 
 export default function ProfileClient() {
   const router = useRouter();
@@ -35,6 +35,7 @@ export default function ProfileClient() {
   const [country, setCountry] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [address, setAddress] = useState("");
+  const [image, setImage] = useState<string | null>(null); // 👈 pass to uploader as initial
 
   useEffect(() => {
     let alive = true;
@@ -67,6 +68,7 @@ export default function ProfileClient() {
           setCountry(u.country ?? "");
           setPostalCode(u.postalCode ?? "");
           setAddress(u.address ?? "");
+          setImage(u.image ?? null); // 👈
         }
       } catch {
         toast.error("Network error while loading profile.");
@@ -111,6 +113,7 @@ export default function ProfileClient() {
       country: country.trim(),
       postalCode: postalCode.trim(),
       address: address.trim(),
+      // Note: profile photo is now managed via /api/account/profile/photo
     };
 
     try {
@@ -158,6 +161,12 @@ export default function ProfileClient() {
             <input className="input" value={username} disabled readOnly />
           </div>
         </div>
+      </div>
+
+      {/* 👇 New: native file uploader for profile photo */}
+      <div className="card p-5">
+        <h2 className="text-base font-semibold mb-3">Profile photo</h2>
+        <ProfilePhotoUploader initialImage={image} />
       </div>
 
       <div className="card p-5">

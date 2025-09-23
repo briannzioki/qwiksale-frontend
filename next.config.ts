@@ -22,6 +22,9 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
     "https://region1.google-analytics.com",
+    // analytics you have in deps
+    "https://vitals.vercel-insights.com",
+    "https://app.posthog.com",
     ...(isProd ? [] : ["ws:", "wss:"]),
   ].join(" ");
 
@@ -36,6 +39,8 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://images.pexels.com",
     "https://picsum.photos",
     "https://avatars.githubusercontent.com",
+    // if /api/upload stores on Vercel Blob
+    "https://public.blob.vercel-storage.com",
   ].join(" ");
 
   const script = [
@@ -45,6 +50,9 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
     "https://accounts.google.com",
+    // analytics you have in deps
+    "https://vitals.vercel-insights.com",
+    "https://app.posthog.com",
     ...(isProd ? [] : ["'unsafe-eval'"]),
   ].join(" ");
 
@@ -87,7 +95,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
 
 function getSentryTunnelRewrite() {
   const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN || "";
-  const m = dsn.match(/^https?:\/\/[^@]+@([^/]+)\/(\d+)$/i);
+  const m = dsn?.match?.(/^https?:\/\/[^@]+@([^/]+)\/(\d+)$/i);
   if (!m) return null;
   const host = m[1];
   const projectId = m[2];
@@ -111,6 +119,8 @@ const baseConfig: NextConfig = {
       { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },
       { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
       { protocol: "https", hostname: "avatars.githubusercontent.com", pathname: "/**" },
+      // if your /api/upload returns Vercel Blob URLs
+      { protocol: "https", hostname: "public.blob.vercel-storage.com", pathname: "/**" },
     ],
     formats: ["image/avif", "image/webp"],
     dangerouslyAllowSVG: true,

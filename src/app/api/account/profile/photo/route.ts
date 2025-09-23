@@ -22,8 +22,13 @@ function noStore(json: unknown, init?: ResponseInit) {
 const BRAND = "QwikSale";
 
 function cloudName(): string {
-  const name = process.env["CLOUDINARY_CLOUD_NAME"];
-  if (!name) throw new Error("Missing CLOUDINARY_CLOUD_NAME");
+  // Use server var if present, otherwise fall back to the public one (keeps config consistent)
+  const name =
+    (process.env["CLOUDINARY_CLOUD_NAME"] ??
+      process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ??
+      ""
+    ).trim();
+  if (!name) throw new Error("Missing CLOUDINARY_CLOUD_NAME/NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
   return name;
 }
 
@@ -64,9 +69,13 @@ function looksLikeCloudinaryUrl(url: string) {
 
 /** Extract and validate the current user id. */
 async function requireUserId() {
-  const session = await auth();
-  const uid = (session as any)?.user?.id as string | undefined;
-  return uid ?? null;
+  try {
+    const session = await auth();
+    const uid = (session as any)?.user?.id as string | undefined;
+    return typeof uid === "string" ? uid : null;
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -207,5 +216,3 @@ export async function HEAD() {
     headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
   });
 }
-
-

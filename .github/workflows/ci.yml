@@ -1,12 +1,25 @@
-﻿jobs:
+﻿name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - deploy/weekly-digest-fixes
+  pull_request: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
-      metadata: read
 
-    # Make secrets available to every step (avoids VS Code "Context access might be invalid")
+    # Make secrets available to all steps and silence VS Code context warnings
     env:
       NEXT_TELEMETRY_DISABLED: "1"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -54,4 +67,3 @@
 
       - name: Build
         run: pnpm build
-        # (no per-step env needed anymore)

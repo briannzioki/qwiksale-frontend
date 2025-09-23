@@ -87,9 +87,8 @@ export default function HomeClientHero({ className = "" }: { className?: string 
       <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
         {/* Copy + actions */}
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#478559] dark:text-emerald-300/80">
-            QwikSale Kenya
-          </p>
+          {/* Removed the small green title line to avoid duplication with header */}
+
           <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white">
             {greeting} — buy &amp; sell, faster.
           </h1>

@@ -5,9 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import UserAvatar from "@/app/components/UserAvatar";
 import SearchBox from "@/app/components/SearchBox";
+import useOutsideClick from "@/app/hooks/useOutsideClick";
 
 /** Simple helper for active link classes */
 function NavLink({
@@ -41,23 +42,39 @@ function NavLink({
 }
 
 export default function Header() {
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
 
   type ExtendedUser = Session["user"] & { username?: string | null };
   const user: ExtendedUser | null = (session?.user as ExtendedUser) ?? null;
   const username = user?.username ?? undefined;
 
+  // Optimistic avatar (updates instantly after upload)
+  const [avatarOverride, setAvatarOverride] = useState<string | null>(null);
+
   // Mobile menu
   const [open, setOpen] = useState(false);
 
-  // Close drawer whenever route changes
+  // Pinned inline search
+  const [inlineOpen, setInlineOpen] = useState(false);
+  const inlineWrapRef = useRef<HTMLDivElement>(null); // ← changed generic (no | null)
+  const inlineBtnId = useId();
+  useOutsideClick(inlineWrapRef, () => setInlineOpen(false));
+
+  const toggleInline = useCallback(() => setInlineOpen((v) => !v), []);
+  const closeInline = useCallback(() => setInlineOpen(false), []);
+
+  // Close overlays when route changes
   const pathname = usePathname();
   useEffect(() => {
     setOpen(false);
+    setInlineOpen(false);
   }, [pathname]);
 
   useEffect(() => {
-    const onHash = () => setOpen(false);
+    const onHash = () => {
+      setOpen(false);
+      setInlineOpen(false);
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -69,6 +86,35 @@ export default function Header() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+
+  // Listen for profile photo changes from the uploader
+  useEffect(() => {
+    const onUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { avatar?: string; url?: string } | undefined;
+      const next = detail?.avatar || detail?.url || null;
+      setAvatarOverride(next ?? null);
+      try {
+        // ts-expect-error: update is available in next-auth/react
+        update?.();
+      } catch {}
+    };
+    const onRemoved = () => {
+      setAvatarOverride(null);
+      try {
+        // ts-expect-error: update is available in next-auth/react
+        update?.();
+      } catch {}
+    };
+
+    window.addEventListener("qs:profile:photo:updated", onUpdated as EventListener);
+    window.addEventListener("qs:profile:photo:removed", onRemoved as EventListener);
+    return () => {
+      window.removeEventListener("qs:profile:photo:updated", onUpdated as EventListener);
+      window.removeEventListener("qs:profile:photo:removed", onRemoved as EventListener);
+    };
+  }, [update]);
+
+  const avatarSrc = avatarOverride ?? (user?.image ?? null);
 
   return (
     <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur dark:bg-slate-900/80">
@@ -82,18 +128,55 @@ export default function Header() {
           QwikSale
         </Link>
 
-        {/* Desktop search (now uses SearchBox with button) */}
+        {/* Desktop search row */}
         <div className="hidden md:flex flex-1">
           <SearchBox className="w-full" placeholder="Search phones, cars, services…" />
         </div>
 
         {/* Primary nav (desktop) */}
-        <nav className="ml-4 hidden gap-1 text-sm sm:flex" aria-label="Primary">
+        <nav className="ml-4 hidden items-center gap-1 text-sm sm:flex" aria-label="Primary">
           <NavLink href="/" exact>
             Home
           </NavLink>
           <NavLink href="/sell">Sell</NavLink>
           <NavLink href="/search">Search</NavLink>
+
+          {/* Pinned search icon + inline box */}
+          <div
+            ref={inlineWrapRef}
+            className="relative ml-1 hidden sm:flex items-center"
+            aria-label="Pinned search"
+          >
+            <button
+              id={`inline-btn-${inlineBtnId}`}
+              type="button"
+              aria-label="Open quick search"
+              aria-haspopup="true"
+              aria-expanded={inlineOpen ? "true" : "false"}
+              onClick={toggleInline}
+              className={[
+                "rounded-md p-2 transition",
+                inlineOpen
+                  ? "bg-black/5 text-[#161748] dark:bg-white/10 dark:text-white"
+                  : "text-gray-700 hover:bg-black/5 dark:text-slate-200 dark:hover:bg-white/10",
+              ].join(" ")}
+              title="Quick search"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M21 20l-5.2-5.2a7 7 0 10-1.4 1.4L20 21l1-1zM5 11a6 6 0 1112 0A6 6 0 015 11z" />
+              </svg>
+            </button>
+
+            <SearchBox
+              variant="inline"
+              open={inlineOpen}
+              onCloseAction={closeInline}
+              autoFocus
+              placeholder="Search quickly…"
+              className="ml-2"
+            />
+          </div>
+
           <NavLink href="/saved">Saved</NavLink>
         </nav>
 
@@ -136,7 +219,7 @@ export default function Header() {
                 title={username ? `@${username}` : "Profile"}
               >
                 <UserAvatar
-                  src={user?.image ?? null}
+                  src={avatarSrc}
                   alt={user?.name || user?.email || "Me"}
                   size={32}
                 />
@@ -158,7 +241,7 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Mobile search row (use the same SearchBox so it includes the button) */}
+      {/* Mobile search row (kept as before) */}
       <div className="border-t bg-white/90 px-4 py-2 dark:border-slate-800 dark:bg-slate-900/90 md:hidden">
         <SearchBox placeholder="Search phones, cars, services…" />
       </div>

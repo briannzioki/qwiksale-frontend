@@ -1,9 +1,10 @@
-// src/app/account/billing/CompleteProfileClient.tsx
+// src/app/account/complete-profile/CompleteProfileClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
+import ProfilePhotoUploader from "@/app/components/account/ProfilePhotoUploader";
 
 /* ----------------------------- Types & helpers ----------------------------- */
 
@@ -17,7 +18,7 @@ type Me = {
   postalCode: string | null;
   city: string | null;
   country: string | null;
-  image?: string | null; // <-- allow existing avatar from server
+  image?: string | null; // existing avatar, if any
 };
 
 function normalizeKePhone(raw: string): string {
@@ -67,11 +68,6 @@ export default function CompleteProfileClient() {
   const [postalCode, setPostal] = useState("");
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("");
-
-  // Profile photo (URL) + tiny live check
-  const [imageUrl, setImageUrl] = useState("");
-  const [imgOk, setImgOk] = useState<boolean | null>(null);
-  const imgTestRef = useRef<HTMLImageElement | null>(null);
 
   const [nameStatus, setNameStatus] = useState<NameStatus>("idle");
   const usernameAbort = useRef<AbortController | null>(null);
@@ -128,7 +124,6 @@ export default function CompleteProfileClient() {
         setPostal(u.postalCode ?? "");
         setCity(u.city ?? "");
         setCountry(u.country ?? "");
-        setImageUrl((u.image ?? "").trim()); // <-- initial avatar if any
       } catch (e: any) {
         if (e?.name !== "AbortError") toast.error("Could not load your account. Try again.");
       } finally {
@@ -189,24 +184,6 @@ export default function CompleteProfileClient() {
     return () => clearTimeout(t);
   }, [username]);
 
-  /* ------------------- Tiny live probe for profile photo URL ------------------- */
-  useEffect(() => {
-    setImgOk(null);
-    if (!imageUrl) return;
-    const img = new Image();
-    imgTestRef.current = img;
-    img.onload = () => {
-      if (imgTestRef.current === img) setImgOk(true);
-    };
-    img.onerror = () => {
-      if (imgTestRef.current === img) setImgOk(false);
-    };
-    img.src = imageUrl;
-    return () => {
-      if (imgTestRef.current === img) imgTestRef.current = null;
-    };
-  }, [imageUrl]);
-
   /* ----------------------------------- Save ----------------------------------- */
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
@@ -240,7 +217,7 @@ export default function CompleteProfileClient() {
         cache: "no-store",
         body: JSON.stringify({
           username: u,
-          image: imageUrl || null, // <-- send profile photo URL
+          // image is handled via /api/account/profile/photo by the uploader
           whatsapp: whatsappNormalized || null,
           address: address.trim() || null,
           postalCode: postalCode.trim() || null,
@@ -257,7 +234,7 @@ export default function CompleteProfileClient() {
       if (!r.ok || j?.error) throw new Error(j?.error || `Failed to save (${r.status})`);
 
       toast.success("Profile saved!");
-      router.replace(ret); // goes to /dashboard by default now
+      router.replace(ret); // default /dashboard
     } catch (e: any) {
       toast.error(e?.message || "Could not save profile");
     } finally {
@@ -265,7 +242,7 @@ export default function CompleteProfileClient() {
     }
   }
 
-  /* --------------------------------- UI bits --------------------------------- */
+  /* ---------------------------------- Render --------------------------------- */
   const nameHint =
     nameStatus === "available"
       ? "Looks good — available."
@@ -284,7 +261,6 @@ export default function CompleteProfileClient() {
       ? "text-red-600"
       : "text-gray-500";
 
-  /* ---------------------------------- Render --------------------------------- */
   if (loading) {
     return (
       <div className="container-page py-8">
@@ -319,9 +295,7 @@ export default function CompleteProfileClient() {
               required
               minLength={3}
               maxLength={24}
-              aria-invalid={
-                nameStatus === "taken" || nameStatus === "invalid" ? true : undefined
-              }
+              aria-invalid={nameStatus === "taken" || nameStatus === "invalid" ? true : undefined}
               aria-describedby="username-help username-status"
               disabled={saving}
               inputMode="text"
@@ -334,55 +308,16 @@ export default function CompleteProfileClient() {
               Shown on your listings. 3–24 chars, letters/numbers/dot/underscore.
             </p>
             {nameHint && (
-              <p
-                id="username-status"
-                className={`text-xs mt-1 ${nameHintClass}`}
-                aria-live="polite"
-              >
+              <p id="username-status" className={`text-xs mt-1 ${nameHintClass}`} aria-live="polite">
                 {nameHint}
               </p>
             )}
           </div>
 
-          {/* Profile photo (URL) */}
+          {/* Native photo uploader (Cloudinary-backed) */}
           <div>
-            <label htmlFor="image" className="label">
-              Profile photo (URL)
-            </label>
-            <input
-              id="image"
-              className="input"
-              placeholder="https://…/your-photo.jpg"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              onBlur={(e) => setImageUrl(e.target.value.trim())}
-              disabled={saving}
-              inputMode="url"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-            <div className="mt-3 flex items-center gap-3">
-              <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-200 dark:bg-slate-700 border">
-                {imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={imageUrl} alt="Preview" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="h-full w-full grid place-items-center text-xs text-gray-500">
-                    No photo
-                  </div>
-                )}
-              </div>
-              <p className="text-xs">
-                {imageUrl
-                  ? imgOk === false
-                    ? "🔴 Can’t load image (check the URL)."
-                    : imgOk === true
-                    ? "🟢 Looks good."
-                    : "Loading preview…"
-                  : "Paste a direct link to your photo."}
-              </p>
-            </div>
+            <label className="label">Profile photo</label>
+            <ProfilePhotoUploader initialImage={me?.image ?? null} />
           </div>
 
           {/* WhatsApp */}

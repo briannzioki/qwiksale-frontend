@@ -1,5 +1,5 @@
-export const dynamic = "force-static";
-export const revalidate = 600;
+﻿export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export const runtime = "nodejs";
 
 import { Suspense } from "react";

@@ -52,6 +52,8 @@ export type UseProductsReturn = {
   refreshIfStale: () => Promise<void>;
   /** Cheap selector against in-memory cache. */
   getById: (id: string) => Product | undefined;
+  /** PATCH an existing product and update caches. Returns the merged Product. */
+  updateProduct: (id: string, patch: Record<string, unknown>) => Promise<Product>;
 };
 
 /* Optional config for useProducts (non-breaking) */
@@ -82,6 +84,19 @@ const memory = {
 function cacheListToMemory(list: Product[]) {
   memory.list = list;
   memory.map = new Map(list.map((p) => [String(p.id), p]));
+  memory.lastAt = Date.now();
+}
+
+function updateOneInMemory(next: Product) {
+  const id = String(next.id);
+  memory.map.set(id, next);
+  // splice into list (keep order stable if already present)
+  const idx = memory.list.findIndex((p) => String(p.id) === id);
+  if (idx >= 0) {
+    memory.list[idx] = next;
+  } else {
+    memory.list = [next, ...memory.list];
+  }
   memory.lastAt = Date.now();
 }
 
@@ -154,7 +169,6 @@ async function fetchJson(input: RequestInfo, init?: RequestInit & { timeoutMs?: 
     if (extSignal.aborted) {
       ctrl.abort();
     } else {
-      // Abort our controller when the external one aborts
       extSignal.addEventListener("abort", () => ctrl.abort(), { once: true });
     }
   }
@@ -186,7 +200,6 @@ async function fetchList(args: FetchListArgs): Promise<Product[]> {
   const { pageSize, signal } = args;
   const qs = new URLSearchParams({ page: "1", pageSize: String(pageSize) });
 
-  // ✅ only include `signal` when present (avoid passing undefined)
   const init: RequestInit | undefined = signal ? { signal } : undefined;
 
   const { res, json } = await fetchJson(`/api/products?${qs.toString()}`, init);
@@ -198,7 +211,6 @@ async function fetchList(args: FetchListArgs): Promise<Product[]> {
 }
 
 async function fetchItem(id: string, signal?: AbortSignal | null): Promise<Product> {
-  // ✅ only include `signal` when present (avoid passing undefined)
   const init: RequestInit | undefined = signal ? { signal } : undefined;
 
   const { res, json } = await fetchJson(`/api/products/${encodeURIComponent(id)}`, init);
@@ -340,7 +352,6 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
   /** Create product, update caches, return { id } */
   const addProduct = useCallback(
     async (payload: any): Promise<{ id: string }> => {
-      // NOTE: server snapshots seller’s WhatsApp from profile if not provided.
       const r = await fetch("/api/products/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -377,17 +388,18 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         negotiable: !!payload.negotiable,
         createdAt: nowIso,
         featured: false,
-        sellerId: null, // filled by server on subsequent fetch
+        sellerId: null,
       };
 
       // Update caches and state optimistically
-      const merged = dedupeById([newItem, ...memory.list]);
-      cacheListToMemory(merged);
-      safeSessionSet(LIST_KEY, merged);
-      setProducts(merged);
+      updateOneInMemory(newItem);
+      const deduped = dedupeById([...memory.list]);
+      cacheListToMemory(deduped);
+      safeSessionSet(LIST_KEY, deduped);
+      setProducts(deduped);
       setReady(true);
 
-      // Pick up server-enriched fields (seller snapshot, counts, etc.)
+      // Pick up server-enriched fields
       void revalidateSilently();
 
       return { id: newId };
@@ -397,7 +409,65 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
 
   const getById = useCallback((id: string) => memory.map.get(String(id)), []);
 
-  return { products, ready, error, reload, addProduct, refreshIfStale, getById };
+  /** PATCH product and update caches */
+  const updateProduct = useCallback(
+    async (id: string, patch: Record<string, unknown>): Promise<Product> => {
+      const pid = String(id);
+      // Optimistic candidate
+      const prev = memory.map.get(pid) || null;
+      const optimistic: Product | null = prev
+        ? { ...prev, ...patch, id: prev.id } as Product
+        : null;
+
+      if (optimistic) {
+        updateOneInMemory(optimistic);
+        const deduped = dedupeById([...memory.list]);
+        cacheListToMemory(deduped);
+        safeSessionSet(LIST_KEY, deduped);
+        setProducts(deduped);
+      }
+
+      const r = await fetch(`/api/products/${encodeURIComponent(pid)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        credentials: "include",
+        body: JSON.stringify(patch),
+      });
+      const j = await r.json().catch(() => ({} as any));
+      if (!r.ok || j?.error) {
+        // rollback if needed
+        if (prev) {
+          updateOneInMemory(prev);
+          const deduped = dedupeById([...memory.list]);
+          cacheListToMemory(deduped);
+          safeSessionSet(LIST_KEY, deduped);
+          setProducts(deduped);
+        }
+        throw new Error(j?.error || `Failed to update product (${r.status})`);
+      }
+
+      const fresh = (j && typeof j === "object" ? j : null) as Product | null;
+      if (fresh && fresh.id) {
+        updateOneInMemory(fresh);
+        const deduped = dedupeById([...memory.list]);
+        cacheListToMemory(deduped);
+        safeSessionSet(LIST_KEY, deduped);
+        setProducts(deduped);
+      } else if (optimistic) {
+        // If API returns no body, keep optimistic
+        updateOneInMemory(optimistic);
+      }
+
+      // background refresh
+      void refreshIfStale();
+
+      return memory.map.get(pid)!;
+    },
+    [refreshIfStale]
+  );
+
+  return { products, ready, error, reload, addProduct, refreshIfStale, getById, updateProduct };
 }
 
 /**
@@ -430,10 +500,10 @@ export function useProduct(id: string) {
 
       try {
         const p = await fetchItem(id, acRef.current.signal);
-        memory.map.set(String(p.id), p);
-        const merged = dedupeById([p, ...memory.list]);
-        cacheListToMemory(merged);
-        safeSessionSet(LIST_KEY, merged);
+        updateOneInMemory(p);
+        const deduped = dedupeById([...memory.list]);
+        cacheListToMemory(deduped);
+        safeSessionSet(LIST_KEY, deduped);
         setProduct(p);
         setLoading(false);
       } catch (e: any) {

@@ -52,7 +52,6 @@ export default function ProfilePhotoUploader({
   className = "",
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   const [image, setImage] = useState<string | null>(initialImage ?? null); // server-truthy value
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null); // server generated variant
@@ -61,10 +60,16 @@ export default function ProfilePhotoUploader({
   const [validationError, setValidationError] = useState<string | null>(null);
   const liveRef = useRef<HTMLSpanElement | null>(null);
 
-  const { upload, remove, isUploading, progress, error, reset } = useProfilePhotoUpload();
+  const { upload, remove, isUploading, progress, error, reset, cancel } = useProfilePhotoUpload();
 
-  // Abort any in-flight upload on unmount
-  useEffect(() => () => abortRef.current?.abort(), []);
+  // Abort any in-flight upload on unmount + cleanup object URL
+  useEffect(() => {
+    return () => {
+      cancel();
+      if (localPreview) URL.revokeObjectURL(localPreview);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Shape → Tailwind class
   const roundClass = useMemo(
@@ -80,7 +85,7 @@ export default function ProfilePhotoUploader({
     return !previewSrc.startsWith("/"); // covers blob:, data:, http(s):
   }, [previewSrc]);
 
-  // Clean up object URL when component unmounts or when localPreview changes
+  // Clean up object URL whenever it changes away
   useEffect(() => {
     return () => {
       if (localPreview) URL.revokeObjectURL(localPreview);
@@ -115,11 +120,8 @@ export default function ProfilePhotoUploader({
 
   const beginUpload = useCallback(
     async (f: File) => {
-      // Abort any in-flight upload
-      if (abortRef.current) {
-        abortRef.current.abort();
-        abortRef.current = null;
-      }
+      // Abort any in-flight upload via hook
+      cancel();
 
       setValidationError(null);
 
@@ -135,16 +137,9 @@ export default function ProfilePhotoUploader({
       const objUrl = URL.createObjectURL(f);
       setLocalPreview(objUrl);
 
-      // Fresh controller for the new upload
-      const ac = new AbortController();
-      abortRef.current = ac;
-
       try {
-        // Pass an AbortSignal if the hook supports it (safe via `any`)
-        const res = await (upload as unknown as (file: File, signal?: AbortSignal) => Promise<any>)(
-          f,
-          ac.signal
-        );
+        // Hook internally handles retries/abort and persisting to API
+        const res = await upload(f);
         const { user, variants } = res ?? {};
         setImage(user?.image || null);
         setAvatarUrl(variants?.avatarUrl ?? null);
@@ -153,11 +148,9 @@ export default function ProfilePhotoUploader({
         emit("qs:profile:photo:updated", { url: user?.image, avatar: variants?.avatarUrl });
       } catch {
         announce("Upload failed");
-      } finally {
-        abortRef.current = null;
       }
     },
-    [announce, localPreview, upload]
+    [announce, cancel, localPreview, upload]
   );
 
   const onPickFile = useCallback(
@@ -173,12 +166,9 @@ export default function ProfilePhotoUploader({
 
   const onRemove = useCallback(async () => {
     // Abort any ongoing upload first
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
+    cancel();
     try {
-      const res = await (remove as unknown as (signal?: AbortSignal) => Promise<any>)();
+      const res = await remove();
       const { user } = res ?? {};
       setImage(user?.image ?? null); // likely null
       setAvatarUrl(null);
@@ -193,7 +183,7 @@ export default function ProfilePhotoUploader({
       announce("Remove failed");
       // hook error already exposed
     }
-  }, [announce, localPreview, remove]);
+  }, [announce, cancel, localPreview, remove]);
 
   // Drag & drop handlers
   const onDrop = useCallback(

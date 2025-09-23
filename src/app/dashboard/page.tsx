@@ -235,7 +235,14 @@ export default async function DashboardPage() {
                     </p>
                     <div className="mt-3 flex gap-2">
                       <Link href={`/product/${p.id}`} className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">View</Link>
-                      <Link href={`/sell/product?id=${p.id}`} className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800" title="Edit listing">Edit</Link>
+                      {/* EDIT link -> new edit route */}
+                      <Link
+                        href={`/product/${p.id}/edit`}
+                        className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                        title="Edit listing"
+                      >
+                        Edit
+                      </Link>
                       <DeleteListingButton productId={p.id} productName={p.name} />
                     </div>
                   </div>
