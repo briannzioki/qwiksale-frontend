@@ -20,7 +20,7 @@ function noStore(json: unknown, init?: ResponseInit) {
  * { id, email, username, image, phone, whatsapp, address, postalCode, city, country }
  *
  * NOTE:
- * - If you're not storing `phone`, remove it below (and from the client).
+ * - If your schema doesn't have `phone`, this won't crash — it will return `phone: null`.
  * - Cache is explicitly disabled (clients expect fresh data).
  */
 export async function GET() {
@@ -32,39 +32,27 @@ export async function GET() {
       return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Fetch full user to avoid Prisma runtime errors if optional fields don't exist.
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        image: true,           // <-- add profile photo
-        // If your schema doesn't have `phone`, remove the next line.
-        phone: true as any,    // keep as any if the field might not exist in Prisma types
-        whatsapp: true,
-        address: true,
-        postalCode: true,
-        city: true,
-        country: true,
-      },
     });
 
     if (!user) {
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    // Return nulls (not undefined) for stability in clients
+    // `phone` might not exist in your schema — read it safely via `as any`.
     const safe = {
       id: user.id,
       email: user.email ?? null,
-      username: user.username ?? null,
-      image: user.image ?? null,
+      username: (user as any).username ?? null,
+      image: (user as any).image ?? null,
       phone: (user as any).phone ?? null,
-      whatsapp: user.whatsapp ?? null,
-      address: user.address ?? null,
-      postalCode: user.postalCode ?? null,
-      city: user.city ?? null,
-      country: user.country ?? null,
+      whatsapp: (user as any).whatsapp ?? null,
+      address: (user as any).address ?? null,
+      postalCode: (user as any).postalCode ?? null,
+      city: (user as any).city ?? null,
+      country: (user as any).country ?? null,
     };
 
     return noStore({ user: safe }, { status: 200 });
@@ -74,5 +62,3 @@ export async function GET() {
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
-
-

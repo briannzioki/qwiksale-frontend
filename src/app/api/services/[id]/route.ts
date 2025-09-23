@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 /* ------------------------- helpers ------------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
@@ -137,6 +138,12 @@ export async function PATCH(req: NextRequest) {
     const id = getId(req);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
+    // Content-Type check (parity with products)
+    const ctype = req.headers.get("content-type") || "";
+    if (!ctype.toLowerCase().includes("application/json")) {
+      return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
+    }
+
     const session = await auth().catch(() => null);
     const uid = (session?.user as any)?.id as string | undefined;
     if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
@@ -186,6 +193,18 @@ export async function PATCH(req: NextRequest) {
       select: selectBase,
     });
 
+    // ---- revalidate caches after update (parity with products) ----
+    try {
+      revalidateTag("home:active");
+      revalidateTag("services:latest");
+      revalidateTag(`service:${id}`);
+      revalidateTag(`user:${uid}:services`);
+      revalidatePath("/");
+      revalidatePath(`/service/${id}`);
+    } catch {
+      /* best-effort */
+    }
+
     return noStore(shape(updated));
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -205,7 +224,10 @@ export async function DELETE(req: NextRequest) {
     const uid = (session?.user as any)?.id as string | undefined;
     if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    const svc = await db.service.findUnique({ where: { id }, select: { sellerId: true, status: true } });
+    const svc = await db.service.findUnique({
+      where: { id },
+      select: { sellerId: true, status: true },
+    });
     if (!svc || svc.sellerId !== uid) {
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
@@ -215,6 +237,18 @@ export async function DELETE(req: NextRequest) {
       where: { id },
       data: { status: "HIDDEN", featured: false },
     });
+
+    // ---- revalidate caches after delete ----
+    try {
+      revalidateTag("home:active");
+      revalidateTag("services:latest");
+      revalidateTag(`service:${id}`);
+      revalidateTag(`user:${uid}:services`);
+      revalidatePath("/");
+      revalidatePath(`/service/${id}`);
+    } catch {
+      /* best-effort */
+    }
 
     return noStore({ ok: true });
   } catch (e) {

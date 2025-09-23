@@ -1,4 +1,3 @@
-// src/app/hooks/useProfilePhotoUpload.ts
 "use client";
 
 import { useCallback, useRef, useState } from "react";
@@ -44,23 +43,13 @@ export type UploadOptions = {
   tags?: string[];
   /** Abort existing upload first (default true). */
   interruptPrevious?: boolean;
-  /** Retries for Cloudinary network hiccups (default 2). */
+  /** Retries for network hiccups (default 2). */
   retries?: number;
 };
 
-/* ----------------------------- Env & constants ---------------------------- */
-/** Use bracket access to satisfy index-signature rule and coalesce to strings. */
-const CLOUD_NAME: string = (process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "").trim();
-const UPLOAD_PRESET: string = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? "qwiksale_unsigned";
+/* ------------------------------- Utilities -------------------------------- */
 
 const DEFAULT_ALLOWED: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
-
-if (!CLOUD_NAME) {
-  // eslint-disable-next-line no-console
-  console.warn("[useProfilePhotoUpload] Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
-}
-
-/* ------------------------------- Utilities -------------------------------- */
 
 function bytesToMB(n: number) {
   return n / (1024 * 1024);
@@ -96,6 +85,29 @@ function withJitter(ms: number) {
   return Math.floor(low + Math.random() * (high - low));
 }
 
+/** Extract Cloudinary public_id from a secure URL (best-effort). */
+function publicIdFromUrl(url: string): string | "" {
+  try {
+    // Pattern: https://res.cloudinary.com/<cloud>/image/upload/<transforms?>/v123/<public_id>.<ext>
+    const u = new URL(url);
+    const parts = u.pathname.split("/");
+    const uploadIdx = parts.findIndex((p) => p === "upload");
+    if (uploadIdx === -1) return "";
+    // remove everything before …/upload/
+    const tail = parts.slice(uploadIdx + 1).filter(Boolean);
+    // drop version segment if present (v12345)
+    const tailNoVersion = tail[0]?.startsWith("v") ? tail.slice(1) : tail;
+    const last = tailNoVersion[tailNoVersion.length - 1] || "";
+    if (!last) return "";
+    const dot = last.lastIndexOf(".");
+    const filename = dot > 0 ? last.slice(0, dot) : last;
+    const folders = tailNoVersion.slice(0, -1);
+    return [...folders, filename].join("/");
+  } catch {
+    return "";
+  }
+}
+
 /** Cloudinary transformation helpers for avatars */
 export function cldAvatar(urlOrPublicId: string, size = 256): string {
   // Accept secure_url or public_id
@@ -106,7 +118,8 @@ export function cldAvatar(urlOrPublicId: string, size = 256): string {
       `/upload/c_fill,g_face,r_max,w_${size},h_${size},f_auto,q_auto/`
     );
   }
-  return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/c_fill,g_face,r_max,w_${size},h_${size},f_auto,q_auto/${urlOrPublicId}.jpg`;
+  // If only public_id provided, fall back to generic form (caller should prefer URLs)
+  return urlOrPublicId;
 }
 export function cldBlurPlaceholder(urlOrPublicId: string): string {
   if (/^https?:\/\//i.test(urlOrPublicId)) {
@@ -115,35 +128,28 @@ export function cldBlurPlaceholder(urlOrPublicId: string): string {
       "/upload/e_blur:1000,q_20,w_40/"
     );
   }
-  return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/e_blur:1000,q_20,w_40/${urlOrPublicId}.jpg`;
+  return urlOrPublicId;
 }
 
 /* ------------------------------- Uploader --------------------------------- */
 
-function uploadToCloudinaryUnsigned(
+function uploadViaApi(
   file: File,
   {
     onProgress,
-    folder,
-    tags,
     signal,
   }: {
     onProgress?: (pct: number) => void;
-    folder?: string;
-    tags?: string[];
     signal?: AbortSignal;
   }
 ): Promise<CloudinaryUploadOk> {
+  // Use XHR to get upload progress into the hook state
   return new Promise((resolve, reject) => {
-    const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`;
     const form = new FormData();
     form.append("file", file);
-    form.append("upload_preset", UPLOAD_PRESET);
-    if (folder) form.append("folder", folder);
-    if (tags?.length) form.append("tags", tags.join(","));
 
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", endpoint);
+    xhr.open("POST", "/api/upload");
 
     const onAbort = () => {
       try {
@@ -159,31 +165,28 @@ function uploadToCloudinaryUnsigned(
     xhr.onload = () => {
       try {
         const json = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && json.secure_url) {
+        if (xhr.status >= 200 && xhr.status < 300 && (json.url || json.secure_url)) {
+          const secureUrl: string = String(json.url || json.secure_url);
           resolve({
-            secure_url: json.secure_url,
-            public_id: json.public_id,
+            secure_url: secureUrl,
+            public_id: json.public_id || publicIdFromUrl(secureUrl) || "",
             width: json.width,
             height: json.height,
             format: json.format,
             bytes: json.bytes,
           });
         } else {
-          reject(
-            new Error(
-              json?.error?.message || `Cloudinary upload failed (${xhr.status})`
-            )
-          );
+          reject(new Error(json?.error || `Upload failed (${xhr.status})`));
         }
       } catch (e: any) {
-        reject(new Error(e?.message || "Cloudinary response parse error"));
+        reject(new Error(e?.message || "Upload response parse error"));
       } finally {
         signal?.removeEventListener("abort", onAbort);
       }
     };
     xhr.onerror = () => {
       signal?.removeEventListener("abort", onAbort);
-      reject(new Error("Network error during Cloudinary upload"));
+      reject(new Error("Network error during upload"));
     };
 
     xhr.send(form);
@@ -244,37 +247,26 @@ export function useProfilePhotoUpload() {
       setProgress(0);
 
       const {
-        folder = "qwiksale/avatars",
-        tags = ["qwiksale", "avatar"],
         interruptPrevious = true,
         retries = 2,
       } = opts || {};
 
       try {
-        if (!CLOUD_NAME) {
-          throw new Error("Cloudinary cloud name is not configured.");
-        }
-        if (!UPLOAD_PRESET) {
-          throw new Error("Cloudinary upload preset is not configured.");
-        }
-
         await validateFile(file, opts);
 
         if (interruptPrevious) abortRef.current?.abort();
         const controller = new AbortController();
         abortRef.current = controller;
 
-        // Cloudinary upload with small retry loop
+        // Upload with small retry loop
         let lastErr: unknown = null;
         let attempt = 0;
         let uploadRes: CloudinaryUploadOk | null = null;
 
         while (attempt <= retries) {
           try {
-            uploadRes = await uploadToCloudinaryUnsigned(file, {
+            uploadRes = await uploadViaApi(file, {
               onProgress: setProgress,
-              folder,
-              tags,
               signal: controller.signal,
             });
             break;
@@ -304,10 +296,10 @@ export function useProfilePhotoUpload() {
 
         // If backend didn’t compute variants, give client-side fallbacks
         if ((data as ApiOk)?.ok && !(data as ApiOk).variants) {
-          const source = uploadRes.public_id ?? uploadRes.secure_url;
-          const avatarUrl = cldAvatar(source, 256);
-          const previewUrl = cldAvatar(source, 512);
-          const placeholderUrl = cldBlurPlaceholder(source);
+          const source = uploadRes.public_id || uploadRes.secure_url;
+          const avatarUrl = cldAvatar(uploadRes.secure_url || source, 256);
+          const previewUrl = cldAvatar(uploadRes.secure_url || source, 512);
+          const placeholderUrl = cldBlurPlaceholder(uploadRes.secure_url || source);
           (data as ApiOk).variants = { avatarUrl, previewUrl, placeholderUrl };
         }
 

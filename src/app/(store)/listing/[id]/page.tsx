@@ -1,9 +1,20 @@
-export const revalidate = 300;
 // src/app/(store)/listing/[id]/page.tsx
+export const revalidate = 300;
+export const runtime = "nodejs";
+
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/lib/prisma";
+import UserAvatar from "@/app/components/UserAvatar";
+
+type Seller = {
+  id: string;
+  username: string | null;
+  name: string | null;
+  image: string | null;
+};
 
 type Listing = {
   id: string;
@@ -17,6 +28,7 @@ type Listing = {
   location: string | null;
   condition: string | null;
   featured?: boolean | null;
+  seller: Seller | null;
 };
 
 const PLACEHOLDER = "/placeholder/default.jpg";
@@ -50,6 +62,14 @@ async function getListing(id: string): Promise<Listing | null> {
       location: true,
       condition: true,
       featured: true,
+      seller: {
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          image: true, // ← include seller avatar
+        },
+      },
     },
   });
   if (!p) return null;
@@ -65,19 +85,27 @@ async function getListing(id: string): Promise<Listing | null> {
     location: p.location ?? null,
     condition: p.condition ?? null,
     featured: p.featured ?? null,
+    seller: p.seller
+      ? {
+        id: p.seller.id,
+        username: p.seller.username ?? null,
+        name: p.seller.name ?? null,
+        image: p.seller.image ?? null,
+      }
+      : null,
   };
 }
 
-/** Next 15 expects params as a Promise â€” await it */
+/** Next 15 expects params as a Promise — await it */
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Metadata> {
   const { id } = await params;
   const listing = await getListing(id);
-  if (!listing) return { title: "Listing not found â€¢ QwikSale" };
+  if (!listing) return { title: "Listing not found • QwikSale" };
 
   const priceTxt = fmtKES(listing.price);
-  const town = listing.location ? ` â€” ${listing.location}` : "";
+  const town = listing.location ? ` — ${listing.location}` : "";
 
   // unique, truthy images for OG/Twitter
   const images = Array.from(
@@ -85,7 +113,7 @@ export async function generateMetadata(
   );
 
   return {
-    title: `${listing.name} â€¢ ${priceTxt}${town}`,
+    title: `${listing.name} • ${priceTxt}${town}`,
     description: listing.description ?? undefined,
     alternates: { canonical: `/listing/${listing.id}` },
     openGraph: {
@@ -136,6 +164,10 @@ export default async function ListingPage(
       ? "https://schema.org/NewCondition"
       : "https://schema.org/UsedCondition",
   };
+
+  const sellerName =
+    product.seller?.name ||
+    (product.seller?.username ? `@${product.seller.username}` : "Seller");
 
   return (
     <>
@@ -217,6 +249,32 @@ export default async function ListingPage(
                 </a>
               </div>
             </div>
+
+            {/* Seller card with avatar */}
+            {product.seller && (
+              <div className="rounded-2xl border p-4 flex items-center gap-3">
+                <UserAvatar
+                  src={product.seller.image}
+                  alt={`${sellerName} avatar`}
+                  size={44}
+                  ring
+                  fallbackText={(sellerName || "S").slice(0, 1).toUpperCase()}
+                />
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{sellerName}</div>
+                  {product.seller.username ? (
+                    <Link
+                      href={`/store/${encodeURIComponent(product.seller.username)}`}
+                      className="text-sm text-[#161748] underline underline-offset-2"
+                    >
+                      Visit store
+                    </Link>
+                  ) : (
+                    <span className="text-sm text-gray-500">Store</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {product.description && (
               <div className="rounded-2xl border p-4">

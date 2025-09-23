@@ -1,28 +1,57 @@
 // src/app/components/sell/ProductForm.tsx
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "react-hot-toast";
 import { categoryOptions, subcategoryOptions } from "@/app/data/categories";
 import { normalizeMsisdn } from "@/app/data/products";
 import { toast } from "react-hot-toast";
-import { useProducts } from "@/app/lib/productsStore";
 
-type Props = {
-  /** Called after a listing is successfully created with the new product ID */
-  onCreatedAction?: (id: string) => void | Promise<void>;
-  className?: string;
+type InitialProduct = {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  subcategory: string | null;
+  price: number | null;
+  image: string | null;
+  gallery: string[];
+  location: string | null;
+  condition: string | null;
+  negotiable: boolean | null;
+  status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
 };
 
+type BaseProps = {
+  className?: string;
+  onCreatedAction?: (id: string) => void | Promise<void>;
+  onUpdatedAction?: (id: string) => void | Promise<void>;
+};
+
+type CreateProps = BaseProps & {
+  mode?: "create";
+  productId?: undefined;
+  initialValues?: Partial<InitialProduct>;
+};
+
+type EditProps = BaseProps & {
+  mode: "edit";
+  productId: string;
+  initialValues: InitialProduct;
+};
+
+type Props = CreateProps | EditProps;
+
+const s = (val: unknown, fallback = ""): string =>
+  val === null || val === undefined ? fallback : String(val);
+
+type Opt = { value: string; label: string };
+
 export default function ProductForm({ onCreatedAction, className = "" }: Props) {
-  // Precompute options once
-  const catOpts = useMemo(() => categoryOptions(), []);
-  const [category, setCategory] = useState<string>(catOpts[0]?.value || "");
-
-  // Sub-options depend on category
-  const subOpts = useMemo(() => subcategoryOptions(category), [category]);
-
-  const [subcategory, setSubcategory] = useState<string>(subOpts[0]?.value || "");
   const [name, setName] = useState("");
+  const [category, setCategory] = useState(categoryOptions()[0]?.value || "");
+  const subOptions = useMemo(() => subcategoryOptions(category), [category]);
+  const [subcategory, setSubcategory] = useState<string>(subOptions[0]?.value || "");
   const [brand, setBrand] = useState("");
   const [condition, setCondition] = useState<"brand new" | "pre-owned">("pre-owned");
   const [price, setPrice] = useState<number | "">("");
@@ -33,22 +62,15 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
   const [busy, setBusy] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const { addProduct } = useProducts(); // ✅ use cache-aware creation
 
-  // Form readiness
   const can =
-    name.trim().length > 0 &&
-    category &&
-    subcategory &&
-    location.trim().length > 0 &&
-    (price === "" || Number(price) >= 0);
+    name.trim() && category && subcategory && location.trim() && (price === "" || Number(price) >= 0);
 
   const pickFiles = () => fileInputRef.current?.click();
 
   const onFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = Array.from(e.target.files || []);
     setFiles(next.slice(0, 10));
-    // reset so re-picking the same files fires change again
     e.currentTarget.value = "";
   };
 
@@ -72,46 +94,39 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
 
       setBusy(true);
       try {
-        // Align with productsStore/addProduct shape
-        const payload: Record<string, unknown> = {
+        // NOTE: swap to your Server Action or API route for real upload
+        const payload = {
           name,
           category,
           subcategory,
           brand: brand || null,
           condition,
-          price: price === "" ? null : Number(price),
+          price: price === "" ? 0 : Number(price),
           location,
           description,
           phone: msisdn ?? null,
-          // You can add a 'gallery' later after wiring uploads
         };
 
-        const { id } = await addProduct(payload); // posts to /api/products/create, updates caches
+        // placeholder fetch — replace with /api/products (multipart if needed)
+        const r = await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!r.ok) throw new Error(`Failed (${r.status})`);
+        const { id } = (await r.json().catch(() => ({ id: "" }))) as { id?: string };
 
         toast.success("Listing created");
         (window as any).plausible?.("Listing Created", { props: { category, subcategory } });
-        await onCreatedAction?.(id);
+        await onCreatedAction?.(id || "");
       } catch (err: any) {
-        toast.error(err?.message || "Failed to create listing");
+        toast.error(err?.message || (isEdit ? "Failed to save changes" : "Failed to create listing"));
       } finally {
         setBusy(false);
       }
     },
-    [
-      addProduct,
-      brand,
-      busy,
-      category,
-      condition,
-      description,
-      files.length,
-      location,
-      name,
-      onCreatedAction,
-      phone,
-      price,
-      subcategory,
-    ]
+    [busy, brand, category, condition, description, location, name, onCreatedAction, phone, price, subcategory]
   );
 
   // Keep subcategory coherent if category changes
@@ -128,17 +143,13 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
         "rounded-2xl border bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900",
         className,
       ].join(" ")}
-      aria-labelledby="sell-form-title"
     >
-      <h2 id="sell-form-title" className="text-lg font-bold">
-        Post a Product
-      </h2>
+      <h2 className="text-lg font-bold">Post a Product</h2>
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* Title */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-title">
-            Title
-          </label>
+          <label className="text-sm font-medium">Title</label>
           <input
             id="pf-title"
             value={name}
@@ -148,10 +159,9 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           />
         </div>
 
+        {/* Brand (optional) */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-brand">
-            Brand (optional)
-          </label>
+          <label className="text-sm font-medium">Brand (optional)</label>
           <input
             id="pf-brand"
             value={brand}
@@ -160,17 +170,16 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           />
         </div>
 
+        {/* Category */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-category">
-            Category
-          </label>
+          <label className="text-sm font-medium">Category</label>
           <select
             id="pf-category"
             value={category}
             onChange={(e) => onChangeCategory(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
-            {catOpts.map((o) => (
+            {categoryOptions().map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -178,17 +187,16 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           </select>
         </div>
 
+        {/* Subcategory */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-subcategory">
-            Subcategory
-          </label>
+          <label className="text-sm font-medium">Subcategory</label>
           <select
             id="pf-subcategory"
             value={subcategory}
             onChange={(e) => setSubcategory(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
-            {subOpts.map((o) => (
+            {subOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -196,12 +204,10 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           </select>
         </div>
 
+        {/* Condition */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-condition">
-            Condition
-          </label>
+          <label className="text-sm font-medium">Condition</label>
           <select
-            id="pf-condition"
             value={condition}
             onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
@@ -211,10 +217,9 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           </select>
         </div>
 
+        {/* Price */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-price">
-            Price (KES)
-          </label>
+          <label className="text-sm font-medium">Price (KES)</label>
           <input
             id="pf-price"
             type="number"
@@ -229,10 +234,9 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           />
         </div>
 
+        {/* Location */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-location">
-            Location
-          </label>
+          <label className="text-sm font-medium">Location</label>
           <input
             id="pf-location"
             value={location}
@@ -242,10 +246,9 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           />
         </div>
 
+        {/* Phone (optional) */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-phone">
-            Seller phone (optional)
-          </label>
+          <label className="text-sm font-medium">Seller phone (optional)</label>
           <input
             id="pf-phone"
             value={phone}
@@ -256,10 +259,9 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           />
         </div>
 
+        {/* Description */}
         <div className="md:col-span-2">
-          <label className="text-sm font-medium" htmlFor="pf-description">
-            Description
-          </label>
+          <label className="text-sm font-medium">Description</label>
           <textarea
             id="pf-description"
             value={description}
@@ -269,11 +271,10 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
           />
         </div>
 
+        {/* Photos (reusable uploader) */}
         <div className="md:col-span-2">
-          <label className="text-sm font-medium" htmlFor="pf-files">
-            Photos (up to 10)
-          </label>
-          <div className="mt-1 flex items-center gap-2">
+          <label className="text-sm font-medium">Photos (up to 10)</label>
+          <div className="mt-1 flex gap-2">
             <button
               type="button"
               onClick={pickFiles}
@@ -282,7 +283,6 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
               Choose files
             </button>
             <input
-              id="pf-files"
               ref={fileInputRef}
               type="file"
               multiple
@@ -290,23 +290,21 @@ export default function ProductForm({ onCreatedAction, className = "" }: Props) 
               className="hidden"
               onChange={onFiles}
             />
-            <div className="text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
+            <div className="text-xs text-gray-600 dark:text-gray-400">
               {files.length ? `${files.length} selected` : "No files selected"}
             </div>
           </div>
         </div>
       </div>
 
+      {/* Actions */}
       <div className="mt-5 flex justify-end gap-2">
         <button
           type="submit"
           disabled={!can || busy}
-          className={`rounded-xl px-4 py-2 text-white ${
-            !can || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"
-          }`}
-          aria-busy={busy ? "true" : "false"}
+          className={`rounded-xl px-4 py-2 text-white ${!can || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"}`}
         >
-          {busy ? "Posting…" : "Post product"}
+          {busy ? (isEdit ? "Saving…" : "Posting…") : isEdit ? "Save changes" : "Post product"}
         </button>
       </div>
     </form>

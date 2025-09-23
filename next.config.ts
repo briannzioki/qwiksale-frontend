@@ -22,7 +22,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
     "https://region1.google-analytics.com",
-    ...(isProd ? [] : ["ws:", "wss:"]),
+    ...(isProd ? [] : ["ws:", "wss:"])
   ].join(" ");
 
   const img = [
@@ -34,8 +34,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://images.unsplash.com",
     "https://plus.unsplash.com",
     "https://images.pexels.com",
-    "https://picsum.photos",
-    "https://avatars.githubusercontent.com",
+    "https://picsum.photos"
   ].join(" ");
 
   const script = [
@@ -45,7 +44,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
     "https://accounts.google.com",
-    ...(isProd ? [] : ["'unsafe-eval'"]),
+    ...(isProd ? [] : ["'unsafe-eval'"])
   ].join(" ");
 
   const style = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"].join(" ");
@@ -87,7 +86,7 @@ const securityHeaders = (): { key: string; value: string }[] => {
 
 function getSentryTunnelRewrite() {
   const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN || "";
-  const m = dsn.match(/^https?:\/\/[^@]+@([^/]+)\/(\d+)$/i);
+  const m = dsn?.match?.(/^https?:\/\/[^@]+@([^/]+)\/(\d+)$/i);
   if (!m) return null;
   const host = m[1];
   const projectId = m[2];
@@ -110,7 +109,7 @@ const baseConfig: NextConfig = {
       { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
       { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },
       { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
-      { protocol: "https", hostname: "avatars.githubusercontent.com", pathname: "/**" },
+      { protocol: "https", hostname: "avatars.githubusercontent.com", pathname: "/**" }
     ],
     formats: ["image/avif", "image/webp"],
     dangerouslyAllowSVG: true,
