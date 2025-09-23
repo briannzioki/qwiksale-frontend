@@ -52,7 +52,7 @@ export default function ProfilePhotoUploader({
   className = "",
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+
   const [image, setImage] = useState<string | null>(initialImage ?? null); // server-truthy value
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null); // server generated variant
   const [localPreview, setLocalPreview] = useState<string | null>(null); // object URL while uploading
@@ -78,12 +78,6 @@ export default function ProfilePhotoUploader({
   );
 
   const previewSrc = localPreview || avatarUrl || image || null;
-
-  // Use unoptimized rendering for any non-site-local image (blob:, data:, http(s):)
-  const unoptimized = useMemo(() => {
-    if (!previewSrc) return false;
-    return !previewSrc.startsWith("/"); // covers blob:, data:, http(s):
-  }, [previewSrc]);
 
   // Use unoptimized rendering for any non-site-local image (blob:, data:, http(s):)
   const unoptimized = useMemo(() => {
@@ -143,13 +137,11 @@ export default function ProfilePhotoUploader({
       const objUrl = URL.createObjectURL(f);
       setLocalPreview(objUrl);
 
-      // Fresh controller for the new upload
-      const ac = new AbortController();
-      abortRef.current = ac;
-
       try {
-        const { user, variants } = await upload(f);
-        setImage(user.image || null);
+        // Hook internally handles retries/abort and persisting to API
+        const res = await upload(f);
+        const { user, variants } = res ?? {};
+        setImage(user?.image || null);
         setAvatarUrl(variants?.avatarUrl ?? null);
         announce("Profile photo updated");
         track("profile_photo_upload", { size: f.size, type: f.type });
@@ -176,8 +168,9 @@ export default function ProfilePhotoUploader({
     // Abort any ongoing upload first
     cancel();
     try {
-      const { user } = await remove();
-      setImage(user.image ?? null); // likely null
+      const res = await remove();
+      const { user } = res ?? {};
+      setImage(user?.image ?? null); // likely null
       setAvatarUrl(null);
       if (localPreview) {
         URL.revokeObjectURL(localPreview);

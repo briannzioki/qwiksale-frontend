@@ -65,19 +65,101 @@ export default function HomeClientHero({ className = "" }: { className?: string 
   const topCats = useMemo(() => pickTopCategoryNames(10), []);
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Signed-in hello + quick actions */}
-      <HomeClientHero />
+    <section
+      aria-label="Welcome"
+      className={[
+        "relative overflow-hidden rounded-2xl border border-black/5 dark:border-white/10",
+        "bg-gradient-to-br from-[#e6f6fd] via-[#eaf7f0] to-[#f0effa] dark:from-slate-900 dark:via-slate-900 dark:to-slate-950",
+        "p-5 md:p-6",
+        className,
+      ].join(" ")}
+    >
+      {/* Decorative gradient stripe */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full blur-3xl opacity-40"
+        style={{
+          background:
+            "radial-gradient(closest-side, #39a0ca 0%, transparent 60%), radial-gradient(closest-side, #478559 0%, transparent 60%)",
+        }}
+      />
 
-      {/* Newest / header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Newest Listings</h2>
-        <div className="flex items-center gap-2">
-          <Link href="/search" className="text-sm text-[#39a0ca] underline">
-            Explore all →
-          </Link>
-        </div>
-      </div>
+      <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+        {/* Copy + actions */}
+        <div>
+          {/* Removed the small green title line to avoid duplication with header */}
+
+          <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white">
+            {greeting} — buy &amp; sell, faster.
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-gray-700 dark:text-slate-300">
+            Browse fresh deals across Kenya. Post your own listing in seconds and reach local buyers.
+          </p>
+
+          {/* CTAs */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Link
+              href="/sell"
+              onClick={() => track("hero_sell_click")}
+              className="inline-flex items-center rounded-lg bg-[#161748] px-3 py-2 text-sm font-semibold text-white shadow hover:opacity-90"
+            >
+              + Post a listing
+            </Link>
+
+            <Link
+              href="/search"
+              onClick={() => track("hero_browse_click")}
+              className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+            >
+              Browse all
+            </Link>
+
+            {status === "authenticated" ? (
+              <>
+                <Link
+                  href="/saved"
+                  onClick={() => track("hero_saved_click")}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  Saved
+                </Link>
+                <Link
+                  href="/dashboard"
+                  onClick={() => track("hero_dashboard_click")}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  Dashboard
+                </Link>
+                {!user?.username && (
+                  <Link
+                    href="/account/complete-profile"
+                    onClick={() => track("hero_complete_profile_click")}
+                    className="inline-flex items-center rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+                    title="Set your username & profile details"
+                  >
+                    Complete profile
+                  </Link>
+                )}
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/signin"
+                  onClick={() => track("hero_signin_click")}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={() => track("hero_join_click")}
+                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                >
+                  Join
+                </Link>
+              </>
+            )}
+          </div>
 
           {/* Trust mini-row */}
           <ul className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-slate-400">
