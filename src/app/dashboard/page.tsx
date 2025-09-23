@@ -234,15 +234,22 @@ export default async function DashboardPage() {
                       {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-KE") : ""}
                     </p>
                     <div className="mt-3 flex gap-2">
-                      <Link href={`/product/${p.id}`} className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">View</Link>
-                      {/* EDIT link -> new edit route */}
                       <Link
-                        href={`/product/${p.id}/edit`}
+                        href={`/product/${p.id}`}
+                        className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                      >
+                        View
+                      </Link>
+                      {/* Product editor path (matches your new route) */}
+                      <Link
+                        href={`/sell/product?id=${p.id}`}
                         className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
                         title="Edit listing"
                       >
                         Edit
                       </Link>
+
+                      {/* Client-only delete with long-press confirm */}
                       <DeleteListingButton productId={p.id} productName={p.name} />
                     </div>
                   </div>

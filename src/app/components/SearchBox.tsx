@@ -56,22 +56,7 @@ export default function SearchBox(props: Props) {
   const r = useRouter();
 
   const [q, setQ] = useState(initial);
-
-  // container ref so we can focus the inner <input> when inline opens
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-
-  // Prefetch the search route so the transition feels instant
-  useEffect(() => {
-    try {
-      r.prefetch?.("/search");
-    } catch {
-      /* noop */
-    }
-  }, [r]);
-
-  // Small in-memory suggest cache (term -> items)
-  const cacheRef = useRef<Map<string, ComboItem<SuggestionMeta>[]>>(new Map());
-  const abortRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchSuggest = useCallback(
     async (term: string): Promise<ComboItem<SuggestionMeta>[]> => {
@@ -142,7 +127,7 @@ export default function SearchBox(props: Props) {
           if (cat) params.set("category", cat);
           if (sub) params.set("subcategory", sub);
         } else if (t === "service") {
-          params.set("t", "services");
+          params.set("type", "service");
           params.set("q", label);
         } else if (t === "name") {
           params.set("q", label);

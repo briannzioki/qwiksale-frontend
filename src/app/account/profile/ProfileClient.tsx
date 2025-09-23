@@ -6,7 +6,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { normalizeKenyanPhone } from "@/app/lib/phone";
-import ProfilePhotoUploader from "@/app/components/account/ProfilePhotoUploader";
+
+/**
+ * Client-side profile editor used by /account/profile
+ *
+ * This component fetches the current user's profile, lets them edit a few fields,
+ * and PATCHes back to /api/me/profile. It intentionally does not assume any props,
+ * so it's safe to import as <ProfileClient /> from the page file.
+ */
 
 type Profile = {
   id: string;
@@ -20,7 +27,13 @@ type Profile = {
   image?: string | null; // 👈 include current avatar
 };
 
-type MeProfileResponse = { user: Profile } | { error: string };
+type MeProfileResponse =
+  | {
+      user: Profile;
+    }
+  | {
+      error: string;
+    };
 
 export default function ProfileClient() {
   const router = useRouter();
@@ -28,14 +41,15 @@ export default function ProfileClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [email, setEmail] = useState("");
-  const [username, setUsername] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
-  const [city, setCity] = useState("");
-  const [country, setCountry] = useState("");
-  const [postalCode, setPostalCode] = useState("");
-  const [address, setAddress] = useState("");
-  const [image, setImage] = useState<string | null>(null); // 👈 pass to uploader as initial
+  const [email, setEmail] = useState<string>("");
+  const [username, setUsername] = useState<string>("");
+  const [whatsapp, setWhatsapp] = useState<string>("");
+  const [city, setCity] = useState<string>("");
+  const [country, setCountry] = useState<string>("");
+  const [postalCode, setPostalCode] = useState<string>("");
+  const [address, setAddress] = useState<string>("");
+
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -163,12 +177,7 @@ export default function ProfileClient() {
         </div>
       </div>
 
-      {/* 👇 New: native file uploader for profile photo */}
-      <div className="card p-5">
-        <h2 className="text-base font-semibold mb-3">Profile photo</h2>
-        <ProfilePhotoUploader initialImage={image} />
-      </div>
-
+      {/* Contact */}
       <div className="card p-5">
         <h2 className="text-base font-semibold mb-3">Contact</h2>
         <div className="grid sm:grid-cols-2 gap-3">

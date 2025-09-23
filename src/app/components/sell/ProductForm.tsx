@@ -5,8 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { categoryOptions, subcategoryOptions } from "@/app/data/categories";
 import { normalizeMsisdn } from "@/app/data/products";
-import { useProducts } from "@/app/lib/productsStore";
-import GalleryUploader from "@/app/components/media/GalleryUploader";
+import { toast } from "react-hot-toast";
 
 type InitialProduct = {
   id: string;
@@ -48,102 +47,32 @@ const s = (val: unknown, fallback = ""): string =>
 
 type Opt = { value: string; label: string };
 
-export default function ProductForm(props: Props) {
-  const { className = "" } = props;
-  const isEdit = props.mode === "edit";
-  const initial =
-    (isEdit
-      ? (props as EditProps).initialValues
-      : (props as CreateProps).initialValues) ?? undefined;
-
-  const catOpts: Opt[] = useMemo(
-    () =>
-      (categoryOptions() ?? []).map((o: any) => ({
-        value: s(o?.value),
-        label: s(o?.label ?? o?.value),
-      })),
-    []
-  );
-
-  const defaultCategory = catOpts[0]?.value ?? "";
-  const startCategory = s(initial?.category, defaultCategory);
-
-  const subOptsFor = useCallback(
-    (cat: string): Opt[] =>
-      (subcategoryOptions(cat) ?? []).map((o: any) => ({
-        value: s(o?.value),
-        label: s(o?.label ?? o?.value),
-      })),
-    []
-  );
-
-  const firstSubOf = (cat: string) => subOptsFor(cat)[0]?.value ?? "";
-  const startSubcategory = s(initial?.subcategory, firstSubOf(startCategory));
-
-  // fields
-  const [category, setCategory] = useState<string>(startCategory);
-  const [subcategory, setSubcategory] = useState<string>(startSubcategory);
-  const [name, setName] = useState<string>(s(initial?.name));
-  const [brand, setBrand] = useState<string>("");
-  const normalizedCondition =
-    initial?.condition === "brand new" || initial?.condition === "pre-owned"
-      ? (initial.condition as "brand new" | "pre-owned")
-      : ("pre-owned" as const);
-  const [condition, setCondition] = useState<"brand new" | "pre-owned">(normalizedCondition);
-  const [price, setPrice] = useState<number | "">(
-    typeof initial?.price === "number" ? initial.price : ""
-  );
-  const [location, setLocation] = useState<string>(s(initial?.location));
-  const [description, setDescription] = useState<string>(s(initial?.description));
-  const [phone, setPhone] = useState<string>("");
-
-  // gallery state + pending local files (to be uploaded on submit)
-  const initialGallery = Array.isArray(initial?.gallery)
-    ? initial!.gallery.filter(Boolean).map(String)
-    : [];
-  const [gallery, setGallery] = useState<string[]>(initialGallery);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-
+export default function ProductForm({ onCreatedAction, className = "" }: Props) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState(categoryOptions()[0]?.value || "");
+  const subOptions = useMemo(() => subcategoryOptions(category), [category]);
+  const [subcategory, setSubcategory] = useState<string>(subOptions[0]?.value || "");
+  const [brand, setBrand] = useState("");
+  const [condition, setCondition] = useState<"brand new" | "pre-owned">("pre-owned");
+  const [price, setPrice] = useState<number | "">("");
+  const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
+  const [phone, setPhone] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
 
-  // pull cache-aware actions
-  const { addProduct, updateProduct } = useProducts();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Keep subcategory valid when category changes
-  useEffect(() => {
-    if (!category) return;
-    const subs = subOptsFor(category);
-    const has = subs.some((o) => o.value === subcategory);
-    if (!has) setSubcategory(subs[0]?.value ?? "");
-  }, [category, subcategory, subOptsFor]);
+  const can =
+    name.trim() && category && subcategory && location.trim() && (price === "" || Number(price) >= 0);
 
-  const subOpts = useMemo(() => subOptsFor(category), [category, subOptsFor]);
+  const pickFiles = () => fileInputRef.current?.click();
 
-  const canSubmit =
-    name.trim().length > 0 &&
-    !!category &&
-    !!subcategory &&
-    location.trim().length > 0 &&
-    (price === "" || Number(price) >= 0);
-
-  async function uploadPending(): Promise<string[]> {
-    if (pendingFiles.length === 0) return [];
-    const uploads = pendingFiles.slice(0, 10).map(async (f) => {
-      const fd = new FormData();
-      fd.append("file", f);
-      const up = await fetch("/api/upload", { method: "POST", body: fd });
-      const uj = (await up.json().catch(() => ({}))) as any;
-      if (!up.ok || !(uj?.url || uj?.secure_url)) throw new Error(uj?.error || "Upload failed");
-      return String(uj.url || uj.secure_url);
-    });
-    return Promise.all(uploads);
-  }
-
-  const onChangeCategory = useCallback((value: string) => {
-    const nextCat = s(value);
-    setCategory(nextCat);
-    setSubcategory(firstSubOf(nextCat));
-  }, []);
+  const onFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = Array.from(e.target.files || []);
+    setFiles(next.slice(0, 10));
+    e.currentTarget.value = "";
+  };
 
   const submit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -156,66 +85,56 @@ export default function ProductForm(props: Props) {
         return;
       }
 
+      // Gentle nudge if files chosen (this form posts JSON only)
+      if (files.length > 0) {
+        toast("Heads up: image upload isn’t wired yet — listing will be created without photos.", {
+          icon: "📷",
+        });
+      }
+
       setBusy(true);
       try {
-        const uploaded = await uploadPending();
-        const mergedGallery = [...gallery, ...uploaded].slice(0, 10).map(String);
-        const cover = mergedGallery[0] || null;
-
-        const payload: Record<string, unknown> = {
-          name: name.trim(),
+        // NOTE: swap to your Server Action or API route for real upload
+        const payload = {
+          name,
           category,
           subcategory,
           brand: brand || null,
           condition,
-          price: price === "" ? null : Number(price),
-          location: location.trim(),
-          description: description.trim(),
+          price: price === "" ? 0 : Number(price),
+          location,
+          description,
           phone: msisdn ?? null,
-          sellerPhone: msisdn ?? null,
-          image: cover,
-          gallery: mergedGallery,
-          images: mergedGallery,
         };
 
-        if (!isEdit) {
-          const { id } = await addProduct(payload);
-          toast.success("Listing created");
-          (window as any).plausible?.("Listing Created", { props: { category, subcategory } });
-          await props.onCreatedAction?.(id);
-          setPendingFiles([]);
-          return;
-        }
+        // placeholder fetch — replace with /api/products (multipart if needed)
+        const r = await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-        // EDIT: use cache-aware update
-        const productId = (props as EditProps).productId;
-        await updateProduct(productId, payload);
-        toast.success("Changes saved");
-        await props.onUpdatedAction?.(productId);
-        setPendingFiles([]);
+        if (!r.ok) throw new Error(`Failed (${r.status})`);
+        const { id } = (await r.json().catch(() => ({ id: "" }))) as { id?: string };
+
+        toast.success("Listing created");
+        (window as any).plausible?.("Listing Created", { props: { category, subcategory } });
+        await onCreatedAction?.(id || "");
       } catch (err: any) {
         toast.error(err?.message || (isEdit ? "Failed to save changes" : "Failed to create listing"));
       } finally {
         setBusy(false);
       }
     },
-    [
-      addProduct,
-      brand,
-      busy,
-      category,
-      description,
-      gallery,
-      isEdit,
-      location,
-      name,
-      phone,
-      price,
-      props,
-      subcategory,
-      updateProduct,
-    ]
+    [busy, brand, category, condition, description, location, name, onCreatedAction, phone, price, subcategory]
   );
+
+  // Keep subcategory coherent if category changes
+  const onChangeCategory = useCallback((value: string) => {
+    setCategory(value);
+    const first = subcategoryOptions(value)[0]?.value || "";
+    setSubcategory(first);
+  }, []);
 
   return (
     <form
@@ -224,17 +143,13 @@ export default function ProductForm(props: Props) {
         "rounded-2xl border bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900",
         className,
       ].join(" ")}
-      aria-labelledby="sell-form-title"
-      noValidate
     >
-      <h2 id="sell-form-title" className="text-lg font-bold">
-        {isEdit ? "Edit Product" : "Post a Product"}
-      </h2>
+      <h2 className="text-lg font-bold">Post a Product</h2>
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* Title */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-title">Title</label>
+          <label className="text-sm font-medium">Title</label>
           <input
             id="pf-title"
             value={name}
@@ -246,7 +161,7 @@ export default function ProductForm(props: Props) {
 
         {/* Brand (optional) */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-brand">Brand (optional)</label>
+          <label className="text-sm font-medium">Brand (optional)</label>
           <input
             id="pf-brand"
             value={brand}
@@ -257,15 +172,15 @@ export default function ProductForm(props: Props) {
 
         {/* Category */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-category">Category</label>
+          <label className="text-sm font-medium">Category</label>
           <select
             id="pf-category"
             value={category}
             onChange={(e) => onChangeCategory(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
-            {catOpts.map((o) => (
-              <option key={`${o.value}::${o.label}`} value={o.value}>
+            {categoryOptions().map((o) => (
+              <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
@@ -274,15 +189,15 @@ export default function ProductForm(props: Props) {
 
         {/* Subcategory */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-subcategory">Subcategory</label>
+          <label className="text-sm font-medium">Subcategory</label>
           <select
             id="pf-subcategory"
             value={subcategory}
             onChange={(e) => setSubcategory(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
-            {subOpts.map((o) => (
-              <option key={`${o.value}::${o.label}`} value={o.value}>
+            {subOptions.map((o) => (
+              <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
@@ -291,10 +206,9 @@ export default function ProductForm(props: Props) {
 
         {/* Condition */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-condition">Condition</label>
+          <label className="text-sm font-medium">Condition</label>
           <select
-            id="pf-condition"
-            value={normalizedCondition}
+            value={condition}
             onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
@@ -305,7 +219,7 @@ export default function ProductForm(props: Props) {
 
         {/* Price */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-price">Price (KES)</label>
+          <label className="text-sm font-medium">Price (KES)</label>
           <input
             id="pf-price"
             type="number"
@@ -322,7 +236,7 @@ export default function ProductForm(props: Props) {
 
         {/* Location */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-location">Location</label>
+          <label className="text-sm font-medium">Location</label>
           <input
             id="pf-location"
             value={location}
@@ -334,7 +248,7 @@ export default function ProductForm(props: Props) {
 
         {/* Phone (optional) */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-phone">Seller phone (optional)</label>
+          <label className="text-sm font-medium">Seller phone (optional)</label>
           <input
             id="pf-phone"
             value={phone}
@@ -347,7 +261,7 @@ export default function ProductForm(props: Props) {
 
         {/* Description */}
         <div className="md:col-span-2">
-          <label className="text-sm font-medium" htmlFor="pf-description">Description</label>
+          <label className="text-sm font-medium">Description</label>
           <textarea
             id="pf-description"
             value={description}
@@ -359,16 +273,26 @@ export default function ProductForm(props: Props) {
 
         {/* Photos (reusable uploader) */}
         <div className="md:col-span-2">
-          <GalleryUploader
-            value={gallery}
-            onChangeAction={(next) => setGallery(next)}
-            onFilesSelectedAction={(files) =>
-              setPendingFiles((cur) => [...cur, ...files].slice(0, 10))
-            }
-            max={10}
-          />
-          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
-            {pendingFiles.length ? `${pendingFiles.length} new selected (to upload on save)` : "No new files selected"}
+          <label className="text-sm font-medium">Photos (up to 10)</label>
+          <div className="mt-1 flex gap-2">
+            <button
+              type="button"
+              onClick={pickFiles}
+              className="rounded-xl px-3 py-2 ring-1 ring-gray-300 dark:ring-gray-700"
+            >
+              Choose files
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={onFiles}
+            />
+            <div className="text-xs text-gray-600 dark:text-gray-400">
+              {files.length ? `${files.length} selected` : "No files selected"}
+            </div>
           </div>
         </div>
       </div>
@@ -377,9 +301,8 @@ export default function ProductForm(props: Props) {
       <div className="mt-5 flex justify-end gap-2">
         <button
           type="submit"
-          disabled={!canSubmit || busy}
-          className={`rounded-xl px-4 py-2 text-white ${!canSubmit || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"}`}
-          aria-busy={busy ? "true" : "false"}
+          disabled={!can || busy}
+          className={`rounded-xl px-4 py-2 text-white ${!can || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"}`}
         >
           {busy ? (isEdit ? "Saving…" : "Posting…") : isEdit ? "Save changes" : "Post product"}
         </button>
