@@ -15,14 +15,6 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-/**
- * Return the signed-in user's minimal profile used by clients:
- * { id, email, username, image, phone, whatsapp, address, postalCode, city, country }
- *
- * NOTE:
- * - If your schema doesn't have `phone`, this won't crash — it will return `phone: null`.
- * - Cache is explicitly disabled (clients expect fresh data).
- */
 export async function GET() {
   try {
     const session = await auth().catch(() => null);
@@ -32,7 +24,7 @@ export async function GET() {
       return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Fetch full user to avoid Prisma runtime errors if optional fields don't exist.
+    // Grab everything to avoid prisma select mismatches across schemas
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
@@ -41,21 +33,34 @@ export async function GET() {
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    // `phone` might not exist in your schema — read it safely via `as any`.
-    const safe = {
-      id: user.id,
-      email: user.email ?? null,
-      username: (user as any).username ?? null,
-      image: (user as any).image ?? null,
-      phone: (user as any).phone ?? null,
-      whatsapp: (user as any).whatsapp ?? null,
-      address: (user as any).address ?? null,
-      postalCode: (user as any).postalCode ?? null,
-      city: (user as any).city ?? null,
-      country: (user as any).country ?? null,
-    };
+    // Some fields may not exist in your schema; read with `as any`
+    const username   = (user as any).username ?? null;
+    const image      = (user as any).image ?? null;
+    const phone      = (user as any).phone ?? null;
+    const whatsapp   = (user as any).whatsapp ?? phone ?? null; // prefer whatsapp, fall back to phone
+    const address    = (user as any).address ?? null;
+    const postalCode = (user as any).postalCode ?? null;
+    const city       = (user as any).city ?? null;
+    const country    = (user as any).country ?? null;
 
-    return noStore({ user: safe }, { status: 200 });
+    // Minimal rule: consider profile “complete” if we have an email and a phone/whatsapp.
+    const profileComplete = Boolean(user.email) && Boolean(whatsapp);
+
+    return noStore({
+      user: {
+        id: user.id,
+        email: user.email ?? null,
+        username,
+        image,
+        phone,
+        whatsapp,
+        address,
+        postalCode,
+        city,
+        country,
+        profileComplete,
+      },
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/me GET] error:", e);

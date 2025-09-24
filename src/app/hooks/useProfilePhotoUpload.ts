@@ -1,3 +1,4 @@
+// src/app/hooks/useProfilePhotoUpload.ts
 "use client";
 
 import { useCallback, useRef, useState } from "react";
@@ -33,7 +34,7 @@ type ApiErr = { error: string };
 export type UploadOptions = {
   /** Max file size in MB (default 5). */
   maxSizeMB?: number;
-  /** Allowed MIME types (default jpeg/png/webp). */
+  /** Allowed MIME types. Supports wildcards like "image/*". (default allows jpeg/png/webp/avif/gif) */
   allowedTypes?: readonly string[];
   /** Minimum width/height in pixels (default 200). */
   minDimensions?: number;
@@ -49,21 +50,25 @@ export type UploadOptions = {
 
 /* ------------------------------- Utilities -------------------------------- */
 
-const DEFAULT_ALLOWED: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
+const DEFAULT_ALLOWED: readonly string[] = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+  "image/gif",
+];
 
 function bytesToMB(n: number) {
   return n / (1024 * 1024);
 }
 
 async function readImageDims(file: File): Promise<{ w: number; h: number }> {
-  // Try createImageBitmap first (faster, avoids DOM image decode in modern browsers)
   if ("createImageBitmap" in window) {
     const bmp = await createImageBitmap(file);
     const out = { w: bmp.width, h: bmp.height };
     bmp.close?.();
     return out;
   }
-  // Fallback to <img>
   const url = URL.createObjectURL(file);
   try {
     const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
@@ -93,9 +98,7 @@ function publicIdFromUrl(url: string): string | "" {
     const parts = u.pathname.split("/");
     const uploadIdx = parts.findIndex((p) => p === "upload");
     if (uploadIdx === -1) return "";
-    // remove everything before …/upload/
     const tail = parts.slice(uploadIdx + 1).filter(Boolean);
-    // drop version segment if present (v12345)
     const tailNoVersion = tail[0]?.startsWith("v") ? tail.slice(1) : tail;
     const last = tailNoVersion[tailNoVersion.length - 1] || "";
     if (!last) return "";
@@ -108,25 +111,34 @@ function publicIdFromUrl(url: string): string | "" {
   }
 }
 
+/** Insert a Cloudinary transform string immediately after `/upload/` in a secure URL. */
+function insertCldTransform(url: string, transform: string): string {
+  try {
+    const idx = url.indexOf("/upload/");
+    if (idx === -1) return url;
+    const before = url.slice(0, idx + "/upload/".length);
+    const after = url.slice(idx + "/upload/".length);
+    return `${before}${transform.replace(/^\/+|\/+$/g, "")}/${after}`;
+  } catch {
+    return url;
+  }
+}
+
 /** Cloudinary transformation helpers for avatars */
 export function cldAvatar(urlOrPublicId: string, size = 256): string {
   // Accept secure_url or public_id
   if (/^https?:\/\//i.test(urlOrPublicId)) {
-    // Insert transform segment after `/upload/`
-    return urlOrPublicId.replace(
-      /\/upload\/(?!.*\/)/,
-      `/upload/c_fill,g_face,r_max,w_${size},h_${size},f_auto,q_auto/`
+    return insertCldTransform(
+      urlOrPublicId,
+      `c_fill,g_face,r_max,w_${size},h_${size},f_auto,q_auto`
     );
   }
-  // If only public_id provided, fall back to generic form (caller should prefer URLs)
+  // If only public_id provided, just return as-is (server should render)
   return urlOrPublicId;
 }
 export function cldBlurPlaceholder(urlOrPublicId: string): string {
   if (/^https?:\/\//i.test(urlOrPublicId)) {
-    return urlOrPublicId.replace(
-      /\/upload\/(?!.*\/)/,
-      "/upload/e_blur:1000,q_20,w_40/"
-    );
+    return insertCldTransform(urlOrPublicId, "e_blur:1000,q_20,w_40");
   }
   return urlOrPublicId;
 }
@@ -143,7 +155,6 @@ function uploadViaApi(
     signal?: AbortSignal;
   }
 ): Promise<CloudinaryUploadOk> {
-  // Use XHR to get upload progress into the hook state
   return new Promise((resolve, reject) => {
     const form = new FormData();
     form.append("file", file);
@@ -221,6 +232,9 @@ export function useProfilePhotoUpload() {
     });
   }, []);
 
+  const typeAllowed = (mime: string, allowed: readonly string[]) =>
+    allowed.some((t) => (t.endsWith("/*") ? mime.startsWith(t.slice(0, -1)) : mime === t));
+
   const validateFile = useCallback(
     async (file: File, opts?: UploadOptions) => {
       const maxSize = opts?.maxSizeMB ?? 5;
@@ -228,7 +242,7 @@ export function useProfilePhotoUpload() {
         throw new Error(`Image is too large. Max ${maxSize} MB.`);
       }
       const allowed = opts?.allowedTypes ?? DEFAULT_ALLOWED;
-      if (!allowed.includes(file.type)) {
+      if (!typeAllowed(file.type, allowed)) {
         throw new Error(`Unsupported file type. Allowed: ${allowed.join(", ")}`);
       }
       const minDim = opts?.minDimensions ?? 200;
@@ -246,10 +260,7 @@ export function useProfilePhotoUpload() {
       setError(null);
       setProgress(0);
 
-      const {
-        interruptPrevious = true,
-        retries = 2,
-      } = opts || {};
+      const { interruptPrevious = true, retries = 2 } = opts || {};
 
       try {
         await validateFile(file, opts);

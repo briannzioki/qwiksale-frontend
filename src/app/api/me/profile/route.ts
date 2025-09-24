@@ -20,7 +20,6 @@ function looksLikeValidUsername(u: string) {
   return USERNAME_RE.test(u);
 }
 
-// Optional reserved usernames via env: "admin, support, qwiksale"
 const RESERVED = new Set(
   (process.env["RESERVED_USERNAMES"] || "")
     .split(",")
@@ -31,17 +30,15 @@ const RESERVED = new Set(
 function normalizeName(input: unknown): string | undefined {
   if (typeof input !== "string") return undefined;
   const s = input.trim().replace(/\s+/g, " ");
-  if (!s) return ""; // allow clearing with empty
+  if (!s) return ""; // allow clearing
   return s.length > 80 ? s.slice(0, 80) : s;
 }
 
 function normalizeImageUrl(input: unknown): string | null | undefined {
-  // undefined => ignore, null/"" => clear, string => trimmed url-ish (clamped)
   if (input === null) return null;
   if (typeof input !== "string") return undefined;
   const s = input.trim();
   if (!s) return null;
-  // soft guard; we don't hard-validate CDNs here
   if (!/^https?:\/\//i.test(s)) return null; // treat non-url-ish as clear
   return s.length > 2048 ? s.slice(0, 2048) : s;
 }
@@ -65,7 +62,7 @@ function looksLikeValidKePhone(s?: string) {
 /* ---------------------------------- GET ---------------------------------- */
 export async function GET() {
   try {
-    const session = await auth();
+    const session = await auth().catch(() => null);
     const userId = (session as any)?.user?.id as string | undefined;
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
@@ -78,6 +75,8 @@ export async function GET() {
         name: true,
         image: true,
         whatsapp: true,
+        // (Optional) include phone if you want to fall back to it:
+        // phone: true,
         address: true,
         postalCode: true,
         city: true,
@@ -85,7 +84,20 @@ export async function GET() {
       },
     });
     if (!user) return noStore({ error: "Not found" }, { status: 404 });
-    return noStore({ user });
+
+    // Normalize whatsapp for output
+    const normalizedWhatsapp =
+      normalizeKePhone(user.whatsapp ?? "") || null;
+
+    const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
+
+    return noStore({
+      user: {
+        ...user,
+        whatsapp: normalizedWhatsapp,
+        profileComplete,
+      },
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/me/profile GET] error:", e);
@@ -96,14 +108,14 @@ export async function GET() {
 /* --------------------------------- PATCH --------------------------------- */
 export async function PATCH(req: Request) {
   try {
-    const session = await auth();
+    const session = await auth().catch(() => null);
     const userId = (session as any)?.user?.id as string | undefined;
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const body = (await req.json().catch(() => ({}))) as {
       name?: string | null;
       username?: string | null;
-      image?: string | null;        // <-- accept profile photo URL
+      image?: string | null;
       whatsapp?: string | null;
       address?: string | null;
       postalCode?: string | null;
@@ -111,14 +123,13 @@ export async function PATCH(req: Request) {
       country?: string | null;
     };
 
-    // Build Prisma data patch
     const data: Record<string, unknown> = {};
 
-    // name (optional; allow clear with "")
+    // name (optional; allow clear)
     const normName = normalizeName(body?.name ?? undefined);
     if (normName !== undefined) data["name"] = normName || null;
 
-    // username (optional)
+    // username (optional; disallow clear)
     if (typeof body?.username === "string") {
       const username = body.username.trim();
       if (!looksLikeValidUsername(username)) {
@@ -145,12 +156,9 @@ export async function PATCH(req: Request) {
 
     // image (optional; allow clear)
     const normImage = normalizeImageUrl(body?.image);
-    if (normImage !== undefined) {
-      // normImage may be null (clear) or a trimmed url
-      data["image"] = normImage;
-    }
+    if (normImage !== undefined) data["image"] = normImage;
 
-    // whatsapp (optional; normalize, validate if provided; allow clear)
+    // whatsapp (optional; normalize/validate; allow clear)
     if (body?.whatsapp !== undefined) {
       const norm = normalizeKePhone(body.whatsapp);
       if (norm && !looksLikeValidKePhone(norm)) {
@@ -193,12 +201,17 @@ export async function PATCH(req: Request) {
       },
     });
 
-    return noStore({ ok: true, user });
+    const normalizedWhatsapp =
+      normalizeKePhone(user.whatsapp ?? "") || null;
+    const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
+
+    return noStore({
+      ok: true,
+      user: { ...user, whatsapp: normalizedWhatsapp, profileComplete },
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/me/profile PATCH] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
-
-
