@@ -1,10 +1,11 @@
+// src/app/api/services/route.ts
+export const preferredRegion = "fra1";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
-import { prisma } from "@/server/prisma";
+import { prisma } from "@/app/lib/prisma";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- tiny helpers ----------------------------- */
@@ -70,15 +71,18 @@ export async function GET(req: NextRequest) {
   try {
     const Service = getServiceModel();
     if (!Service) {
-      return jsonPublic({
-        page: 1,
-        pageSize: 0,
-        total: 0,
-        totalPages: 1,
-        sort: "newest" as const,
-        items: [] as any[],
-        facets: undefined,
-      }, 60);
+      return jsonPublic(
+        {
+          page: 1,
+          pageSize: 0,
+          total: 0,
+          totalPages: 1,
+          sort: "newest" as const,
+          items: [] as any[],
+          facets: undefined,
+        },
+        60
+      );
     }
 
     const url = new URL(req.url);
@@ -175,15 +179,18 @@ export async function GET(req: NextRequest) {
       seller: s.seller ?? null,
     }));
 
-    const res = jsonPublic({
-      page,
-      pageSize,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
-      sort,
-      items,
-      facets,
-    }, 60);
+    const res = jsonPublic(
+      {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        sort,
+        items,
+        facets,
+      },
+      60
+    );
     res.headers.set("X-Total-Count", String(total));
     return res;
   } catch (e) {
