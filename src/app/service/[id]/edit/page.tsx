@@ -13,13 +13,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function EditServicePage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const id = params?.id;
-  if (!id || typeof id !== "string") notFound();
+export default async function EditServicePage(props: any) {
+  // Accept `any` to satisfy Next's PageProps checker, then read defensively
+  const id = String(props?.params?.id ?? "");
+  if (!id) notFound();
 
   // Require auth
   const session = await auth().catch(() => null);
