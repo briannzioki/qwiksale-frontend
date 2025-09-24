@@ -3,17 +3,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-// Make the import resilient to either `useFavourites` or `useFavorites`.
-import * as favStore from "../lib/favoritesStore";
+import { useFavourites } from "../lib/favoritesStore";
 
 type Kind = "product" | "service";
 
 type BaseProps = {
-  /** Small overlay style used on cards */
   compact?: boolean;
-  /** Accessible label prefix (e.g., "Listing", "Item", "Service"). */
   labelPrefix?: string;
-  /** Optional extra classes for the button. */
   className?: string;
 };
 
@@ -34,7 +30,7 @@ function trackClient(event: string, payload?: Record<string, unknown>) {
 }
 
 export default function FavoriteButton(props: Props) {
-  // Resolve id + type while staying backward-compatible
+  // Resolve id + type
   const targetId = useMemo(() => {
     if ("productId" in props && props.productId != null) return String(props.productId);
     if ("serviceId" in props && props.serviceId != null) return String(props.serviceId);
@@ -55,24 +51,12 @@ export default function FavoriteButton(props: Props) {
     className = "",
   } = props as BaseProps;
 
-  // Resolve store hook regardless of naming convention
-  const useStoreMaybe: () => any =
-    ((favStore as any).useFavourites as any) ??
-    ((favStore as any).useFavorites as any) ??
-    (() => ({}));
+  // ✅ Use the exported hook directly
+  const store = useFavourites();
 
-  const store = useStoreMaybe();
-
-  // Helpers that try (id, type) arity first, then (id)
   const callIsFav = useCallback(
-    (id: string, type: Kind): boolean => {
-      const f = store?.isFavourite || store?.isFavorited;
-      if (typeof f === "function") {
-        try {
-          if (f.length >= 2) return !!f(id, type);
-          return !!f(id);
-        } catch {}
-      }
+    (id: string): boolean => {
+      if (typeof store?.isFavourite === "function") return !!store.isFavourite(id);
       const ids: string[] = Array.isArray(store?.ids) ? store.ids.map(String) : [];
       return ids.includes(id);
     },
@@ -80,24 +64,16 @@ export default function FavoriteButton(props: Props) {
   );
 
   const callToggle = useCallback(
-    async (id: string, type: Kind): Promise<boolean> => {
-      const t = store?.toggle;
-      if (typeof t === "function") {
+    async (id: string): Promise<boolean> => {
+      if (typeof store?.toggle === "function") {
         try {
-          if (t.length >= 2) {
-            const res = await t(id, type);
-            if (typeof res === "boolean") return res;
-            return callIsFav(id, type);
-          } else {
-            const res = await t(id);
-            if (typeof res === "boolean") return res;
-            return callIsFav(id, type);
-          }
+          const res = await store.toggle(id); // store handles add/remove + API
+          if (typeof res === "boolean") return res;
+          return callIsFav(id);
         } catch {
-          return callIsFav(id, type); // fallback check
+          return callIsFav(id);
         }
       }
-      // No toggle in store – pretend it failed
       throw new Error("Favorites not available");
     },
     [store, callIsFav]
@@ -110,10 +86,9 @@ export default function FavoriteButton(props: Props) {
   const mountedRef = useRef(false);
   const [live, setLive] = useState("");
 
-  // Hydration-safe sync from store
   useEffect(() => {
-    setFav(callIsFav(targetId, targetType));
-  }, [callIsFav, targetId, targetType]);
+    setFav(callIsFav(targetId));
+  }, [callIsFav, targetId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -144,7 +119,7 @@ export default function FavoriteButton(props: Props) {
       setFav(next);
 
       try {
-        const confirmed = await callToggle(targetId, targetType);
+        const confirmed = await callToggle(targetId);
         setFav(confirmed);
 
         toast.dismiss();
