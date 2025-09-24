@@ -3,8 +3,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-// If your store exports useFavorites instead, switch the import line.
-import { useFavourites as useStoreMaybe } from "../lib/favoritesStore";
+// Make the import resilient to either `useFavourites` or `useFavorites`.
+import * as favStore from "../lib/favoritesStore";
 
 type Kind = "product" | "service";
 
@@ -55,11 +55,13 @@ export default function FavoriteButton(props: Props) {
     className = "",
   } = props as BaseProps;
 
-  // Store is intentionally `any` so this component can tolerate:
-  // - isFavourite(id) or isFavorited(id)
-  // - isFavorited(id, type) (future)
-  // - toggle(id) or toggle(id, type)
-  const store = (useStoreMaybe as unknown as () => any)();
+  // Resolve store hook regardless of naming convention
+  const useStoreMaybe: () => any =
+    ((favStore as any).useFavourites as any) ??
+    ((favStore as any).useFavorites as any) ??
+    (() => ({}));
+
+  const store = useStoreMaybe();
 
   // Helpers that try (id, type) arity first, then (id)
   const callIsFav = useCallback(
@@ -171,11 +173,25 @@ export default function FavoriteButton(props: Props) {
   const title = `${aria} ${labelPrefix}`;
 
   const heart = (
-    <svg width={compact ? 18 : 20} height={compact ? 18 : 20} viewBox="0 0 24 24" aria-hidden="true" className={pending ? "opacity-70" : ""}>
+    <svg
+      width={compact ? 18 : 20}
+      height={compact ? 18 : 20}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={pending ? "opacity-70" : ""}
+    >
       {fav ? (
-        <path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6.02 3.99 4 6.5 4c1.73 0 3.4.82 4.5 2.1C12.1 4.82 13.77 4 15.5 4 18.01 4 20 6.02 20 8.5c0 3.78-3.4 6.86-8.55 11.53L12 21.35z" />
+        <path
+          fill="currentColor"
+          d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6.02 3.99 4 6.5 4c1.73 0 3.4.82 4.5 2.1C12.1 4.82 13.77 4 15.5 4 18.01 4 20 6.02 20 8.5c0 3.78-3.4 6.86-8.55 11.53L12 21.35z"
+        />
       ) : (
-        <path fill="none" stroke="currentColor" strokeWidth="2" d="M12.1 20.55l-.1.1-.1-.1C7.14 16.24 4 13.39 4 9.9 4 7.6 5.6 6 7.9 6c1.54 0 3.04.99 3.6 2.36h1c.56-1.37 2.06-2.36 3.6-2.36 2.3 0 3.9 1.6 3.9 3.9 0 3.49-3.14 6.34-8.8 10.65z" />
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          d="M12.1 20.55l-.1.1-.1-.1C7.14 16.24 4 13.39 4 9.9 4 7.6 5.6 6 7.9 6c1.54 0 3.04.99 3.6 2.36h1c.56-1.37 2.06-2.36 3.6-2.36 2.3 0 3.9 1.6 3.9 3.9 0 3.49-3.14 6.34-8.8 10.65z"
+        />
       )}
     </svg>
   );
@@ -183,7 +199,9 @@ export default function FavoriteButton(props: Props) {
   if (compact) {
     return (
       <>
-        <span className="sr-only" aria-live="polite">{live}</span>
+        <span className="sr-only" aria-live="polite">
+          {live}
+        </span>
         <button
           type="button"
           onClick={onClick}
@@ -193,8 +211,9 @@ export default function FavoriteButton(props: Props) {
           title={title}
           className={[
             "absolute top-2 right-2 rounded-full p-2 shadow-md border transition",
-            fav ? "text-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
-                : "text-gray-700 bg-white/95 hover:bg-white dark:bg-gray-900 dark:text-slate-200",
+            fav
+              ? "text-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
+              : "text-gray-700 bg-white/95 hover:bg-white dark:bg-gray-900 dark:text-slate-200",
             "border-gray-200 dark:border-gray-700",
             pending ? "cursor-wait opacity-75" : "",
             className,
@@ -208,7 +227,9 @@ export default function FavoriteButton(props: Props) {
 
   return (
     <>
-      <span className="sr-only" aria-live="polite">{live}</span>
+      <span className="sr-only" aria-live="polite">
+        {live}
+      </span>
       <button
         type="button"
         onClick={onClick}
@@ -218,8 +239,9 @@ export default function FavoriteButton(props: Props) {
         title={title}
         className={[
           "rounded-lg border px-5 py-3 font-semibold flex items-center gap-2 transition",
-          fav ? "text-[#f95d9b] border-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
-              : "hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700",
+          fav
+            ? "text-[#f95d9b] border-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
+            : "hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700",
           "border-gray-300 text-gray-900 dark:text-slate-100",
           pending ? "opacity-75 cursor-wait" : "",
           className,
