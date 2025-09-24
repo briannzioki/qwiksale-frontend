@@ -1,7 +1,7 @@
 // src/app/components/sell/ServiceForm.tsx
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import { categoryOptions, subcategoryOptions } from "@/app/data/categories";
 import { normalizeMsisdn } from "@/app/data/products";
@@ -19,7 +19,9 @@ type InitialService = {
   serviceArea: string | null;
   availability: string | null;
   image: string | null;
-  gallery: string[];
+  gallery: string[] | null;
+  /** Some older data/APIs use `images` instead of `gallery` */
+  images?: string[] | null;
   location: string | null;
   status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
 };
@@ -81,9 +83,13 @@ export default function ServiceForm(props: Props) {
   const [location, setLocation] = useState<string>(sv(initial?.location));
   const [description, setDescription] = useState<string>(sv(initial?.description));
 
-  const initialGallery = Array.isArray(initial?.gallery)
-    ? initial!.gallery.filter(Boolean).map(String)
-    : [];
+  // gallery: prefer `gallery`, fall back to `images`
+  const initialGallery: string[] =
+    Array.isArray(initial?.gallery) && initial?.gallery?.length
+      ? (initial!.gallery as string[]).filter(Boolean).map(String)
+      : Array.isArray((initial as any)?.images)
+      ? ((initial as any).images as string[]).filter(Boolean).map(String)
+      : [];
   const [gallery, setGallery] = useState<string[]>(initialGallery);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
@@ -91,6 +97,14 @@ export default function ServiceForm(props: Props) {
   const [phone, setPhone] = useState("");
 
   const subOpts = useMemo(() => subcategoryOptions(category) ?? [], [category]);
+
+  // Keep subcategory valid when category changes (if changed externally)
+  useEffect(() => {
+    const subs = subcategoryOptions(category) ?? [];
+    if (subs.length && !subs.some((o: any) => o?.value === subcategory)) {
+      setSubcategory(sv(subs[0]?.value));
+    }
+  }, [category]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canSubmit =
     name.trim().length > 0 &&
@@ -150,6 +164,7 @@ export default function ServiceForm(props: Props) {
           sellerPhone: msisdn ?? null,
           image: cover,
           gallery: mergedGallery,
+          // keep backwards compat with APIs expecting `images`
           images: mergedGallery,
         };
 

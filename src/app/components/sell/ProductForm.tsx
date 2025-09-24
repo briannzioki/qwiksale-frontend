@@ -16,7 +16,11 @@ type InitialProduct = {
   subcategory: string | null;
   price: number | null;
   image: string | null;
-  gallery: string[];
+  gallery: string[] | null;
+  /** Fallback some APIs/old data use `images` instead of `gallery` */
+  images?: string[] | null;
+  /** Optional brand from existing listing */
+  brand?: string | null;
   location: string | null;
   condition: string | null;
   negotiable: boolean | null;
@@ -84,7 +88,7 @@ export default function ProductForm(props: Props) {
   const [category, setCategory] = useState<string>(startCategory);
   const [subcategory, setSubcategory] = useState<string>(startSubcategory);
   const [name, setName] = useState<string>(s(initial?.name));
-  const [brand, setBrand] = useState<string>("");
+  const [brand, setBrand] = useState<string>(s((initial as any)?.brand));
   const normalizedCondition =
     initial?.condition === "brand new" || initial?.condition === "pre-owned"
       ? (initial.condition as "brand new" | "pre-owned")
@@ -98,8 +102,10 @@ export default function ProductForm(props: Props) {
   const [phone, setPhone] = useState<string>("");
 
   // gallery state + pending local files (to be uploaded on submit)
-  const initialGallery = Array.isArray(initial?.gallery)
-    ? initial!.gallery.filter(Boolean).map(String)
+  const initialGallery: string[] = Array.isArray(initial?.gallery) && initial?.gallery?.length
+    ? (initial!.gallery as string[]).filter(Boolean).map(String)
+    : Array.isArray((initial as any)?.images)
+    ? ((initial as any).images as string[]).filter(Boolean).map(String)
     : [];
   const [gallery, setGallery] = useState<string[]>(initialGallery);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -175,6 +181,7 @@ export default function ProductForm(props: Props) {
           sellerPhone: msisdn ?? null,
           image: cover,
           gallery: mergedGallery,
+          // keep backwards compat with APIs expecting `images`
           images: mergedGallery,
         };
 
@@ -294,7 +301,7 @@ export default function ProductForm(props: Props) {
           <label className="text-sm font-medium" htmlFor="pf-condition">Condition</label>
           <select
             id="pf-condition"
-            value={normalizedCondition}
+            value={condition}
             onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
