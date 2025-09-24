@@ -6,7 +6,7 @@ export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/server/prisma";
 import { auth } from "@/auth";
 import { revalidatePath, revalidateTag } from "next/cache";
 
