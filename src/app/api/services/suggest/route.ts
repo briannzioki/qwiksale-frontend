@@ -1,16 +1,29 @@
-// src/app/api/products/suggest/route.ts
+// src/app/api/services/suggest/route.ts
+// Runtime config
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { products, distinctBrands } from "@/app/data/products";
+import { prisma } from "@/server/prisma";
 import { categories, suggestCategories as suggestCats, slugify } from "@/app/data/categories";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
-type SuggestionType = "name" | "brand" | "category" | "subcategory" | "service";
+type SuggestionType = "name" | "category" | "subcategory";
 type Suggestion = { label: string; value: string; type: SuggestionType };
+
+/** Access a Service-model compat layer that may not exist in this schema */
+function getServiceModel() {
+  const anyPrisma = prisma as any;
+  const svc =
+    anyPrisma.service ??
+    anyPrisma.services ??
+    anyPrisma.Service ??
+    anyPrisma.Services ??
+    null;
+  return typeof svc?.findMany === "function" ? svc : null;
+}
 
 const toAscii = (s: string) => s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
 function tokens(s: string): string[] {
@@ -42,7 +55,7 @@ export async function GET(request: Request) {
 
   // Global per-IP throttle with 429s
   const rl = await checkRateLimit(request.headers as unknown as Headers, {
-    name: "products_suggest",
+    name: "services_suggest",
     limit: 30,
     windowMs: 60_000,
   });
@@ -52,21 +65,36 @@ export async function GET(request: Request) {
 
   const corpus: Suggestion[] = [];
 
-  for (const p of products) if (p?.name) corpus.push({ label: p.name, value: p.name, type: "name" });
-  for (const b of distinctBrands()) corpus.push({ label: b, value: b, type: "brand" });
-  for (const c of categories) {
-    corpus.push({ label: c.name, value: c.name, type: "category" });
-    for (const s of c.subcategories ?? []) {
-      const combo = `${c.name} • ${s.name}`;
+  // 1) Pull recent ACTIVE service names if the model exists
+  try {
+    const Service = getServiceModel();
+    if (Service) {
+      const rows = await Service.findMany({
+        where: { status: "ACTIVE" },
+        select: { name: true },
+        orderBy: { createdAt: "desc" },
+        take: 250,
+      });
+      for (const r of rows) {
+        const name = (r?.name ?? "").trim();
+        if (name) corpus.push({ label: name, value: name, type: "name" });
+      }
+    }
+  } catch {
+    /* best-effort DB fetch; ignore failures and fall back to taxonomy-only */
+  }
+
+  // 2) Always include Services category + subcategories
+  const servicesCat = categories.find((x) => slugify(x.name) === "services");
+  if (servicesCat) {
+    corpus.push({ label: servicesCat.name, value: servicesCat.name, type: "category" });
+    for (const s of servicesCat.subcategories ?? []) {
+      const combo = `${servicesCat.name} • ${s.name}`;
       corpus.push({ label: combo, value: combo, type: "subcategory" });
     }
   }
-  const services =
-    (categories.find((x) => slugify(x.name) === "services")?.subcategories ?? []).map((s) => s.name);
-  for (const svc of services) {
-    corpus.push({ label: svc, value: svc, type: "service" });
-  }
 
+  // Rank + trim
   const ranked = corpus
     .map((item) => ({ item, score: scoreLabel(q, item.label) }))
     .filter((x) => x.score >= 0)
@@ -74,8 +102,16 @@ export async function GET(request: Request) {
     .slice(0, limit)
     .map((x) => x.item);
 
+  // Backfill with taxonomy suggestions if needed
   const catBoost = suggestCats(q, Math.max(0, limit - ranked.length));
   for (const label of catBoost) {
+    // keep only Services-related suggestions if we already have rankers from this endpoint
+    const keep =
+      !servicesCat ||
+      label === servicesCat.name ||
+      label.startsWith(`${servicesCat.name} •`);
+    if (!keep) continue;
+
     if (!ranked.some((r) => r.label === label)) {
       const isCombo = label.includes("•");
       ranked.push({ label, value: label, type: isCombo ? "subcategory" : "category" });
