@@ -1,6 +1,7 @@
-// src/app/layout.tsx
+﻿// src/app/layout.tsx
 export const runtime = "nodejs";
-export const revalidate = 600; 
+export const revalidate = 600;
+
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
@@ -9,6 +10,7 @@ import Providers from "./providers";
 import AppShell from "./components/AppShell";
 import DevToolsMount from "./components/DevToolsMount";
 import { fontVars } from "./fonts";
+import ToasterClient from "./components/ToasterClient"; // ← add this
 
 /* ----------------------------- Site URL helpers ---------------------------- */
 const envAppUrl =
@@ -158,6 +160,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
           <Providers>
             <AppShell>{children}</AppShell>
+            {/* Mount the toaster once for the whole app */}
+            <ToasterClient />
           </Providers>
 
           <VercelAnalytics />

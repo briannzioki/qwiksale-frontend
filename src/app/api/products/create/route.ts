@@ -1,5 +1,5 @@
-export const preferredRegion = 'fra1';
 // src/app/api/products/create/route.ts
+export const preferredRegion = "fra1";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,7 +10,8 @@ import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
-import { revalidatePath, revalidateTag } from "next/cache"; // ← ADD
+import { revalidatePath, revalidateTag } from "next/cache";
+import { createHash } from "crypto";
 
 /* ----------------------------- tiny utils ----------------------------- */
 
@@ -19,6 +20,8 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  // avoid cache mixups across sessions/proxies
+  res.headers.set("Vary", "Authorization, Cookie");
   return res;
 }
 
@@ -26,12 +29,31 @@ function clampLen(s: string | undefined, max: number) {
   if (!s) return s;
   return s.length > max ? s.slice(0, max) : s;
 }
-function s(v: unknown, max?: number): string | undefined {
-  if (typeof v !== "string") return undefined;
-  const t = v.trim();
+
+const STRIP_HTML_RE = /<[^>]*>/g;
+const CTRL_RE = /[\u0000-\u0008\u000B-\u001F\u007F]+/g;
+
+function sanitizeInline(text: unknown, max?: number): string | undefined {
+  if (typeof text !== "string") return undefined;
+  let t = text.replace(STRIP_HTML_RE, "").replace(CTRL_RE, "").trim();
+  t = t.replace(/\s+/g, " ");
   if (!t) return undefined;
   return typeof max === "number" ? clampLen(t, max) : t;
 }
+
+function sanitizeMultiline(text: unknown, max: number): string | undefined {
+  if (typeof text !== "string") return undefined;
+  let t = text.replace(STRIP_HTML_RE, "").replace(CTRL_RE, "").trim();
+  // collapse >2 consecutive newlines
+  t = t.replace(/\n{3,}/g, "\n\n");
+  if (!t) return undefined;
+  return clampLen(t, max);
+}
+
+function s(v: unknown, max?: number): string | undefined {
+  return sanitizeInline(v, max);
+}
+
 function nPrice(v: unknown): number | null | undefined {
   if (v === null) return null; // explicit “contact for price”
   if (typeof v === "number" && Number.isFinite(v)) {
@@ -46,6 +68,7 @@ function nPrice(v: unknown): number | null | undefined {
   }
   return undefined;
 }
+
 function nBool(v: unknown): boolean | undefined {
   if (typeof v === "boolean") return v;
   if (typeof v === "string") {
@@ -55,6 +78,7 @@ function nBool(v: unknown): boolean | undefined {
   }
   return undefined;
 }
+
 function nCond(v: unknown): "brand new" | "pre-owned" | undefined {
   if (typeof v !== "string") return undefined;
   const t = v.trim().toLowerCase();
@@ -62,16 +86,33 @@ function nCond(v: unknown): "brand new" | "pre-owned" | undefined {
   if (["pre-owned", "pre owned", "pre_owned", "used"].includes(t)) return "pre-owned";
   return undefined;
 }
+
+const ALLOWED_IMAGE_HOSTS = [
+  "res.cloudinary.com",
+  "images.unsplash.com",
+] as const;
+
+function isAllowedUrl(u: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(u);
+    if (!/^https?:$/i.test(protocol)) return false;
+    return ALLOWED_IMAGE_HOSTS.some((h) => hostname.endsWith(h));
+  } catch {
+    return false;
+  }
+}
+
 function nGallery(v: unknown, maxUrl: number, maxCount: number): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const cleaned = v
     .map((x) => (typeof x === "string" ? x.trim() : ""))
     .filter(Boolean)
     .map((x) => clampLen(x, maxUrl)!)
-    .filter((x) => /^https?:\/\//i.test(x));
+    .filter((x) => /^https?:\/\//i.test(x) && isAllowedUrl(x));
   const unique = Array.from(new Set(cleaned)).slice(0, maxCount);
   return unique;
 }
+
 /** Normalize Kenyan MSISDN to `2547XXXXXXXX` or `2541XXXXXXXX`. */
 function normalizeMsisdn(input: unknown): string | undefined {
   if (typeof input !== "string") return undefined;
@@ -131,7 +172,7 @@ function toTier(sub?: string | null): Tier {
 }
 
 async function getMe() {
-  const session = await auth();
+  const session = await auth().catch(() => null);
   const userId = (session as any)?.user?.id as string | undefined;
   if (!userId) return null;
   return prisma.user.findUnique({
@@ -172,7 +213,9 @@ export async function POST(req: NextRequest) {
     const me = await getMe();
     if (!me) {
       track("product_create_validation_error", { reqId, reason: "unauthorized" });
-      return noStore({ error: "Unauthorized" }, { status: 401 });
+      const r = noStore({ error: "Unauthorized" }, { status: 401 });
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
 
     // Rate limit per IP + user
@@ -180,16 +223,20 @@ export async function POST(req: NextRequest) {
       name: "products_create",
       limit: 6,
       windowMs: 10 * 60_000,
-      extraKey: me.id, // <-- use authenticated user id
+      extraKey: me.id,
     });
     if (!rl.ok) {
-      return tooMany("Too many create attempts. Try again later.", rl.retryAfterSec);
+      const r = tooMany("Too many create attempts. Try again later.", rl.retryAfterSec);
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
 
     // Reject non-JSON early
     const ctype = req.headers.get("content-type") || "";
     if (!ctype.toLowerCase().includes("application/json")) {
-      return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
+      const r = noStore({ error: "Content-Type must be application/json" }, { status: 415 });
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
 
     track("product_create_attempt", { reqId, userId: me.id, tier: toTier(me.subscription) });
@@ -203,13 +250,14 @@ export async function POST(req: NextRequest) {
 
     // Optional
     const brand = s(body["brand"], MAX.brand);
-    const description = clampLen(
-      typeof body["description"] === "string" ? body["description"].trim() : undefined,
-      MAX.description
-    );
+    const description = sanitizeMultiline(body["description"], MAX.description);
     const condition = nCond(body["condition"]) ?? "pre-owned";
     const price = nPrice(body["price"]); // null => contact for price
-    const image = s(body["image"], MAX.imageUrl);
+
+    // Image + gallery (allowlist hosts)
+    const rawImage = s(body["image"], MAX.imageUrl);
+    const image = rawImage && isAllowedUrl(rawImage) ? rawImage : undefined;
+
     const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
     const location = s(body["location"], MAX.location);
     const negotiable = nBool(body["negotiable"]);
@@ -227,10 +275,12 @@ export async function POST(req: NextRequest) {
         field: "sellerPhone",
         reason: "invalid_format",
       });
-      return noStore(
+      const r = noStore(
         { error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." },
         { status: 400 }
       );
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
 
     const sellerName = s(body["sellerName"], 120) ?? me.name ?? undefined;
@@ -242,15 +292,21 @@ export async function POST(req: NextRequest) {
     // Validate required
     if (!name) {
       track("product_create_validation_error", { reqId, userId: me.id, field: "name" });
-      return noStore({ error: "name is required" }, { status: 400 });
+      const r = noStore({ error: "name is required" }, { status: 400 });
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
     if (!category) {
       track("product_create_validation_error", { reqId, userId: me.id, field: "category" });
-      return noStore({ error: "category is required" }, { status: 400 });
+      const r = noStore({ error: "category is required" }, { status: 400 });
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
     if (!subcategory) {
       track("product_create_validation_error", { reqId, userId: me.id, field: "subcategory" });
-      return noStore({ error: "subcategory is required" }, { status: 400 });
+      const r = noStore({ error: "subcategory is required" }, { status: 400 });
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
 
     // Tier enforcement (count only ACTIVE listings)
@@ -266,13 +322,56 @@ export async function POST(req: NextRequest) {
         tier,
         limit: limits.listingLimit,
       });
-      return noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 });
+      const r = noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 });
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
 
     // Enforce featured permission
     if (!limits.canFeature && featured) featured = false;
 
-    const finalGallery = gallery ?? (image ? [image] : []);
+    // Final gallery with allowlist & dedup (& include image if not already)
+    const galleryAllowed = (gallery ?? []).filter(isAllowedUrl);
+    const finalGallery = Array.from(
+      new Set([...(image ? [image] : []), ...galleryAllowed])
+    );
+
+    // Duplicate-post guard (same user, recent, same key fields)
+    const dedupeKey = createHash("sha256")
+      .update(
+        [
+          name.toLowerCase(),
+          category.toLowerCase(),
+          subcategory.toLowerCase(),
+          String(price ?? ""),
+          (brand || "").toLowerCase(),
+          condition,
+        ].join("|")
+      )
+      .digest("hex");
+
+    const recentDuplicate = await prisma.product.findFirst({
+      where: {
+        sellerId: me.id,
+        status: "ACTIVE",
+        createdAt: { gt: new Date(Date.now() - 5 * 60_000) }, // last 5 minutes
+        name,
+        category,
+        subcategory,
+        ...(brand ? { brand } : {}),
+        ...(price !== undefined ? { price } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (recentDuplicate) {
+      const r = noStore(
+        { error: "Looks like you already posted this recently.", productId: recentDuplicate.id },
+        { status: 409 }
+      );
+      r.headers.set("x-request-id", reqId);
+      return r;
+    }
 
     const created = await prisma.product.create({
       data: {
@@ -284,6 +383,7 @@ export async function POST(req: NextRequest) {
         sellerId: me.id,
         status: "ACTIVE",
         createdAt: new Date(),
+        dedupeKey, // if your schema has it; otherwise remove this line
 
         ...(brand ? { brand } : {}),
         ...(description ? { description } : {}),
@@ -299,16 +399,14 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
 
-    // ----- NEW: revalidate feed/search caches so listing appears immediately -----
+    // invalidate caches so the listing appears immediately
     try {
-      // Adjust these to match your fetch tags in Home/Search
       revalidateTag("home:active");
       revalidateTag("products:latest");
       revalidateTag(`user:${me.id}:listings`);
-      // Also nuke the homepage path for good measure (cheap in Next 15)
       revalidatePath("/");
     } catch {
-      /* best-effort; ignore */
+      /* best-effort */
     }
 
     track("product_create_success", {
@@ -321,17 +419,21 @@ export async function POST(req: NextRequest) {
       gallerySize: finalGallery.length,
     });
 
-    return noStore({ ok: true, productId: created.id }, { status: 201 });
+    const r = noStore({ ok: true, productId: created.id }, { status: 201 });
+    r.headers.set("x-request-id", reqId);
+    return r;
   } catch (e: any) {
     console.error("POST /api/products/create error", e);
     track("product_create_error", { reqId, message: e?.message ?? String(e) });
 
     if (e?.code === "P2002") {
-      return noStore({ error: "Duplicate value not allowed" }, { status: 409 });
+      const r = noStore({ error: "Duplicate value not allowed" }, { status: 409 });
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
 
-    return noStore({ error: e?.message || "Server error" }, { status: 500 });
+    const r = noStore({ error: e?.message || "Server error" }, { status: 500 });
+    r.headers.set("x-request-id", reqId);
+    return r;
   }
 }
-
-

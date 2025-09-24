@@ -3,11 +3,11 @@ export const revalidate = 300;
 export const runtime = "nodejs";
 
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/lib/prisma";
 import UserAvatar from "@/app/components/UserAvatar";
+import SmartImage from "@/app/components/SmartImage";
 
 type Seller = {
   id: string;
@@ -87,11 +87,11 @@ async function getListing(id: string): Promise<Listing | null> {
     featured: p.featured ?? null,
     seller: p.seller
       ? {
-        id: p.seller.id,
-        username: p.seller.username ?? null,
-        name: p.seller.name ?? null,
-        image: p.seller.image ?? null,
-      }
+          id: p.seller.id,
+          username: p.seller.username ?? null,
+          name: p.seller.name ?? null,
+          image: p.seller.image ?? null,
+        }
       : null,
   };
 }
@@ -183,7 +183,7 @@ export default async function ListingPage(
           {/* Gallery */}
           <section className="lg:col-span-3 space-y-3">
             <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gray-100">
-              <Image
+              <SmartImage
                 src={hero}
                 alt={product.name}
                 fill
@@ -200,7 +200,7 @@ export default async function ListingPage(
                     key={src + i}
                     className="relative aspect-square overflow-hidden rounded-lg bg-gray-100"
                   >
-                    <Image
+                    <SmartImage
                       src={src}
                       alt={`${product.name} ${i + 2}`}
                       fill

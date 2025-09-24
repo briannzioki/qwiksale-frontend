@@ -4,10 +4,9 @@ export const dynamic = "force-dynamic"; // CDN can still cache via s-maxage belo
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
 import { prisma } from "@/server/prisma";
 import { auth } from "@/auth";
-import { jsonPublic, jsonPrivate, noStore } from "@/app/api/_lib/responses";
+import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- tiny helpers ----------------------------- */
 function toInt(v: string | null, def: number, min: number, max: number) {
@@ -77,7 +76,10 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
 
-    const q = (url.searchParams.get("q") || "").trim();
+    // Clamp q to avoid expensive scans on huge strings
+    const rawQ = (url.searchParams.get("q") || "").trim();
+    const q = rawQ.slice(0, 64);
+
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
     const brand = optStr(url.searchParams.get("brand"));
@@ -130,6 +132,12 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(maxPrice)) price.lte = maxPrice;
       and.push({ price });
     }
+
+    // When sorting by price, exclude null prices for deterministic ordering
+    if (sort === "price_asc" || sort === "price_desc") {
+      and.push({ price: { not: null } });
+    }
+
     if (and.length) where["AND"] = and;
 
     const isSearchLike = q.length > 0 || !!category || !!subcategory || !!brand;
@@ -175,17 +183,20 @@ export async function GET(req: NextRequest) {
     if (!cursor) {
       const skipEst = (page - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
-        const res = jsonPublic({
-          page,
-          pageSize,
-          total: 0,
-          totalPages: 0,
-          sort,
-          items: [],
-          facets: wantFacets ? { categories: [], brands: [], conditions: [] } : undefined,
-          nextCursor: null,
-          hasMore: false,
-        }, 60);
+        const res = jsonPublic(
+          {
+            page,
+            pageSize,
+            total: 0,
+            totalPages: 0,
+            sort,
+            items: [],
+            facets: wantFacets ? { categories: [], brands: [], conditions: [] } : undefined,
+            nextCursor: null,
+            hasMore: false,
+          },
+          60
+        );
         res.headers.set("X-Total-Count", "0");
         return res;
       }
@@ -212,8 +223,7 @@ export async function GET(req: NextRequest) {
 
     const hasMore = (productsRaw as unknown[]).length > pageSize;
     const data = hasMore ? (productsRaw as unknown[]).slice(0, pageSize) : (productsRaw as unknown[]);
-    const last = data[data.length - 1] as any | undefined;
-    const nextCursor = hasMore ? (last?.id ?? null) : null;
+    const nextCursor = hasMore && data.length ? (data[data.length - 1] as any).id : null;
 
     const items = (data as Array<any>).map((p) => {
       const favoritesCount: number = p?._count?.favorites ?? 0;
@@ -238,8 +248,8 @@ export async function GET(req: NextRequest) {
     };
 
     const res = userId
-      ? jsonPrivate(payload)         // personalized -> no-store
-      : jsonPublic(payload, 60);     // public -> cache for 60s
+      ? jsonPrivate(payload) // personalized -> no-store
+      : jsonPublic(payload, 60); // public -> cache for 60s
 
     res.headers.set("X-Total-Count", String(total));
     return res;
@@ -261,6 +271,24 @@ type CatRow = { category: string | null; _count: { _all: number } };
 type BrandRow = { brand: string | null; _count: { _all: number } };
 type CondRow = { condition: string | null; _count: { _all: number } };
 
+function coalesceCaseInsensitive<T>(
+  rows: T[],
+  pick: (r: T) => string | null
+): Array<{ value: string; count: number }> {
+  const map = new Map<string, { value: string; count: number }>(); // key = lowercased
+  for (const r of rows) {
+    const raw = pick(r);
+    if (!raw) continue;
+    const display = String(raw).trim();
+    if (!display) continue;
+    const key = display.toLowerCase();
+    const prev = map.get(key);
+    if (prev) prev.count += (r as any)._count._all || 0;
+    else map.set(key, { value: display, count: (r as any)._count._all || 0 });
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 10);
+}
+
 async function computeFacets(where: any) {
   try {
     const [catsRaw, brandsRaw, condsRaw] = await Promise.all([
@@ -269,26 +297,9 @@ async function computeFacets(where: any) {
       prisma.product.groupBy({ by: ["condition"], where, _count: { _all: true } }),
     ]);
 
-    const byCountDesc = (a: { _count: { _all: number } }, b: { _count: { _all: number } }) =>
-      b._count._all - a._count._all;
-
-    const categories = (catsRaw as CatRow[])
-      .filter((x) => !!x.category)
-      .sort(byCountDesc)
-      .slice(0, 10)
-      .map((x) => ({ value: String(x.category), count: x._count._all }));
-
-    const brands = (brandsRaw as BrandRow[])
-      .filter((x) => !!x.brand)
-      .sort(byCountDesc)
-      .slice(0, 10)
-      .map((x) => ({ value: String(x.brand), count: x._count._all }));
-
-    const conditions = (condsRaw as CondRow[])
-      .filter((x) => !!x.condition)
-      .sort(byCountDesc)
-      .slice(0, 10)
-      .map((x) => ({ value: String(x.condition), count: x._count._all }));
+    const categories = coalesceCaseInsensitive<CatRow>(catsRaw as CatRow[], (x) => x.category);
+    const brands = coalesceCaseInsensitive<BrandRow>(brandsRaw as BrandRow[], (x) => x.brand);
+    const conditions = coalesceCaseInsensitive<CondRow>(condsRaw as CondRow[], (x) => x.condition);
 
     return { categories, brands, conditions };
   } catch {

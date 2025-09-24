@@ -1,84 +1,120 @@
 // src/app/api/search/route.ts
-import { NextResponse } from "next/server";
-import { prisma } from "@/server/db";
-
-/**
- * Full-text-ish listing search backed by pg_trgm (similarity) + filters.
- *
- * Supports:
- * - q: query string (trigram similarity + ILIKE fallback)
- * - town, category
- * - minPrice, maxPrice
- * - condition: "all" | "brand new" | "pre-owned"
- * - verifiedOnly: "1" | "true"
- * - sort: "newest" | "price_asc" | "price_desc" | "featured"
- *
- * Pagination:
- * - page (1-based), pageSize (max 50)
- *
- * Facets (respect base filters: town/category/price/condition/verified):
- * - towns, categories, brands, conditions
- *
- * Notes:
- * - Requires pg_trgm extension for `similarity()` to be available.
- * - Uses safe, parameterized SQL (no string interpolation of user inputs).
- */
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-// ---------- tiny helpers ----------
-const toBool = (v: string | null) =>
-  v === "1" || v?.toLowerCase() === "true";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { prisma } from "@/app/lib/prisma";
+import { checkRateLimit } from "@/app/lib/ratelimit";
+import { tooMany } from "@/app/lib/ratelimit-response";
 
+/**
+ * Full-text-ish listing search (pg_trgm similarity + ILIKE fallback) with filters & facets.
+ */
+
+const MAX_PAGE_SIZE = 50;
+
+const toBool = (v: string | null) => v === "1" || v?.toLowerCase() === "true";
 const toNum = (v: string | null, d = 0) => {
   const n = Number(v ?? "");
   return Number.isFinite(n) ? n : d;
 };
+const normQuery = (q: string) => q.trim().toLowerCase();
 
-function normQuery(q: string) {
-  return q.trim().toLowerCase();
-}
-
-// Push param and return its $N placeholder
+/** build-and-push placeholder helper */
 function ph(params: any[], val: any) {
   params.push(val);
   return `$${params.length}`;
 }
 
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
+function isAnonSafe(req: NextRequest, page: number, pageSize: number) {
+  const auth = req.headers.get("authorization");
+  const cookie = req.headers.get("cookie");
+  if (auth || (cookie && cookie.includes("session"))) return false;
+  if (page > 10 || pageSize > 48) return false;
+  return true;
+}
 
-    const qRaw = searchParams.get("q") ?? "";
+function setNoStore(res: NextResponse) {
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  return res;
+}
+function setEdgeCache(res: NextResponse, seconds = 60) {
+  const v = `public, s-maxage=${seconds}, stale-while-revalidate=${seconds}`;
+  res.headers.set("Cache-Control", v);
+  res.headers.set("CDN-Cache-Control", v);
+  res.headers.set("Vary", "Accept-Encoding");
+  return res;
+}
+
+/* ---------- result types so callbacks aren’t implicit any ---------- */
+interface Row {
+  id: string;
+  title: string;
+  price: number | null;
+  image: string | null;
+  town: string | null;
+  category: string | null;
+  brand: string | null;
+  condition: string | null;
+  featured: boolean;
+  createdAt: Date | string;
+  _total?: number;
+}
+
+interface TownFacet { town: string; count: number }
+interface CategoryFacet { category: string; count: number }
+interface BrandFacet { brand: string; count: number }
+interface ConditionFacet { condition: string; count: number }
+
+export async function GET(req: NextRequest) {
+  try {
+    // Per-IP throttle
+    const rl = await checkRateLimit(req.headers, {
+      name: "unified_search",
+      limit: 60,
+      windowMs: 60_000,
+    });
+    if (!rl.ok) return tooMany("You’re searching too fast. Please slow down.", rl.retryAfterSec);
+
+    const url = new URL(req.url);
+    const qRaw = url.searchParams.get("q") ?? "";
     const q = normQuery(qRaw);
-    const town = searchParams.get("town") ?? "";
-    const category = searchParams.get("category") ?? "";
-    const minPrice = searchParams.get("minPrice");
-    const maxPrice = searchParams.get("maxPrice");
-    const condition = (searchParams.get("condition") ?? "all").toLowerCase(); // "all" | "brand new" | "pre-owned"
-    const sort = (searchParams.get("sort") ?? "newest") as
+
+    const town = url.searchParams.get("town") ?? "";
+    const category = url.searchParams.get("category") ?? "";
+    const minPrice = url.searchParams.get("minPrice");
+    const maxPrice = url.searchParams.get("maxPrice");
+    const condition = (url.searchParams.get("condition") ?? "all").toLowerCase(); // all | brand new | pre-owned
+    const sort = (url.searchParams.get("sort") ?? "newest") as
       | "newest"
       | "price_asc"
       | "price_desc"
       | "featured";
-    const verifiedOnly = toBool(searchParams.get("verifiedOnly"));
+    const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
 
-    const page = Math.max(1, toNum(searchParams.get("page"), 1));
-    const pageSize = Math.min(50, Math.max(1, toNum(searchParams.get("pageSize"), 20)));
+    const page = Math.max(1, toNum(url.searchParams.get("page"), 1));
+    const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, toNum(url.searchParams.get("pageSize"), 20)));
     const offset = (page - 1) * pageSize;
 
-    // Optional synonyms expansion (small set)
-    const synonyms: { word: string }[] =
+    // Pull synonyms (optional)
+    const synonymsRows =
       q.length > 0
-        ? await prisma.$queryRaw<{ word: string }[]>`
+        ? ((await prisma.$queryRaw`
             SELECT unnest(expands_to) as word
             FROM "Synonym"
             WHERE term = ${q}
-          `
+          `) as { word: string }[])
         : [];
+    const synonyms = synonymsRows
+      .map((r: { word: string }) => (r?.word ?? "").toLowerCase())
+      .filter((w: string) => Boolean(w));
 
-    // Build base filters (these affect both search + facets)
+    // ---------------- base filters (shared by hits + facets) ----------------
     const baseParams: any[] = [];
     const baseFilters: string[] = [];
 
@@ -93,54 +129,48 @@ export async function GET(req: Request) {
 
     if (condition === "brand new") baseFilters.push(`LOWER("condition") = ${ph(baseParams, "brand new")}`);
     else if (condition === "pre-owned") baseFilters.push(`LOWER("condition") = ${ph(baseParams, "pre-owned")}`);
-    // "all" → no condition filter
 
     const baseWhere = baseFilters.length ? `WHERE ${baseFilters.join(" AND ")}` : "";
 
-    // Sorting
+    // ------------------- build the main SQL with placeholders -------------------
+    const params: any[] = [];
+
+    // expanded CTE (q + synonyms)
+    const qPhs: string[] = [];
+    qPhs.push(ph(params, q)); // first is the main q
+    for (const syn of synonyms) qPhs.push(ph(params, syn));
+    const expandedCTE =
+      qPhs.length > 0
+        ? `expanded AS (\n  ${qPhs.map((p, i) => (i === 0 ? `SELECT ${p} AS q` : `UNION ALL SELECT ${p}`)).join("\n  ")}\n)`
+        : `expanded AS (SELECT ''::text AS q)`; // empty q
+
+    // like pattern (only if q present)
+    const likePh = q ? ph(params, `%${q}%`) : null;
+
+    // sort fragment (stable with id tiebreak)
     const sortSQL =
       sort === "price_asc"
-        ? `"price" ASC NULLS LAST, "createdAt" DESC`
+        ? `"price" ASC NULLS LAST, "createdAt" DESC, "id" DESC`
         : sort === "price_desc"
-        ? `"price" DESC NULLS LAST, "createdAt" DESC`
+        ? `"price" DESC NULLS LAST, "createdAt" DESC, "id" DESC`
         : sort === "featured"
-        ? `"featured" DESC, "createdAt" DESC`
-        : `"createdAt" DESC`;
+        ? `"featured" DESC, "createdAt" DESC, "id" DESC`
+        : `"createdAt" DESC, "id" DESC`;
 
-    // Compose expanded terms VALUES list placeholders for CTE
-    const expanded = [q, ...synonyms.map((s: { word: string }) => s.word)];
-    const valuesPlaceholders =
-      expanded.length > 1
-        ? expanded.slice(1).map((_w, i) => `($${i + 2})`).join(",")
-        : ""; // no synonyms
+    // LIMIT/OFFSET
+    const limitPh = ph(params, pageSize);
+    const offsetPh = ph(params, offset);
 
-    // ILIKE fallback on either title/description if q present
-    const likeParams: any[] = [];
-    const likePh = q ? ph(likeParams, `%${q}%`) : null;
+    // Append base filters’ params and shift their $ indexes in the WHERE string
+    const baseStartIndex = params.length + 1;
+    params.push(...baseParams);
+    const shift = baseStartIndex - 1;
+    const baseWhereShifted = baseWhere.replace(/\$(\d+)/g, (_: string, n: string) => `$${Number(n) + shift}`);
 
-    // Final param list start with [q, ...synonymsWords, ...likeParams, pageSize, offset, ...baseParams]
-    const searchParamsAll: any[] = [];
-    // $1 = q
-    searchParamsAll.push(q);
-    // $2..$N (synonyms)
-    for (let i = 1; i < expanded.length; i++) searchParamsAll.push(expanded[i]);
-    // next -> like pattern (if any)
-    if (likePh) searchParamsAll.push(`%${q}%`);
-    // page size + offset
-    searchParamsAll.push(pageSize, offset);
-    // finally base filters' params
-    searchParamsAll.push(...baseParams);
-
-    // Build WHERE fragment index-aware:
-    // After WITH/CTE we'll use ... FROM "Listing" l [baseWhere using the **last** params].
-    // For the similarity/like filters, we reference the early parameters:
-    const likeRef = likePh ? `$${1 + (expanded.length - 0)} /* qLike */` : null; // position of qLike in searchParamsAll
-
-    const query = `
-      WITH expanded AS (
-        SELECT $1::text AS q
-        ${valuesPlaceholders ? `UNION ALL SELECT word FROM (VALUES ${valuesPlaceholders}) AS t(word)` : ""}
-      ),
+    // Main SQL. Uses window COUNT(*) OVER() to return total alongside rows.
+    const sql = `
+      WITH
+      ${expandedCTE},
       scored AS (
         SELECT
           l.*,
@@ -149,87 +179,126 @@ export async function GET(req: Request) {
             similarity(LOWER(l.description), (SELECT q FROM expanded LIMIT 1))
           ) AS sim
         FROM "Listing" l
-        ${baseWhere || ""}
+        ${baseWhereShifted}
+      ),
+      filtered AS (
+        SELECT *
+        FROM scored
+        WHERE (
+          ${q ? "($1 <> '' AND (sim > 0.2" : "($1 = ''"}  -- if q is empty, skip similarity/like
+          ${likePh ? ` OR LOWER(title) ILIKE ${likePh} OR LOWER(description) ILIKE ${likePh}` : ""}
+          ${q ? "))" : ")"}
+        )
       )
-      SELECT *
-      FROM scored
-      WHERE (
-        $1 = ''  -- empty q -> no query filter
-        OR sim > 0.2
-        ${likeRef ? `OR LOWER(title) ILIKE ${likeRef} OR LOWER(description) ILIKE ${likeRef}` : ""}
-      )
+      SELECT
+        id, title, price, image, town, category, brand, "condition", featured, "createdAt",
+        COUNT(*) OVER()::int AS _total
+      FROM filtered
       ORDER BY
-        ${sort === "featured" ? `"featured" DESC,` : ""}  -- small assist when featured sort chosen
+        ${sort === "featured" ? `featured DESC,` : ""}
         sim DESC NULLS LAST,
         ${sortSQL}
-      LIMIT $${expanded.length + (likePh ? 1 : 0) + 1}  -- pageSize
-      OFFSET $${expanded.length + (likePh ? 1 : 0) + 2}; -- offset
+      LIMIT ${limitPh}
+      OFFSET ${offsetPh};
     `;
 
-    const items = await prisma.$queryRawUnsafe<any[]>(query, ...searchParamsAll);
-
-    // Facets (respect base filters; intentionally do not include trigram q to keep them stable)
-    // NOTE: We reuse baseWhere and baseParams safely using $queryRawUnsafe
-    const facetTown = await prisma.$queryRawUnsafe<{ town: string; count: number }[]>(
-      `SELECT "town", COUNT(*)::int AS count FROM "Listing" ${baseWhere} GROUP BY "town" ORDER BY count DESC NULLS LAST LIMIT 20`,
-      ...baseParams
-    );
-
-    const facetCategory = await prisma.$queryRawUnsafe<{ category: string; count: number }[]>(
-      `SELECT "category", COUNT(*)::int AS count FROM "Listing" ${baseWhere} GROUP BY "category" ORDER BY count DESC NULLS LAST LIMIT 20`,
-      ...baseParams
-    );
-
-    const facetBrand = await prisma.$queryRawUnsafe<{ brand: string; count: number }[]>(
-      `SELECT "brand", COUNT(*)::int AS count FROM "Listing" ${baseWhere} GROUP BY "brand" ORDER BY count DESC NULLS LAST LIMIT 20`,
-      ...baseParams
-    );
-
-    const facetCondition = await prisma.$queryRawUnsafe<{ condition: string; count: number }[]>(
-      `SELECT "condition", COUNT(*)::int AS count FROM "Listing" ${baseWhere} GROUP BY "condition" ORDER BY count DESC NULLS LAST LIMIT 5`,
-      ...baseParams
-    );
-
-    // Cheap hasMore heuristic: if we filled a page, we *might* have more.
-    const hasMore = items.length === pageSize;
-
-    return new NextResponse(
-      JSON.stringify({
-        items,
-        page,
-        pageSize,
-        hasMore,
-        facets: {
-          towns: facetTown
-            .filter((f: { town: string; count: number }) => f.town)
-            .map((f: { town: string; count: number }) => ({ value: f.town, count: f.count })),
-          categories: facetCategory
-            .filter((f: { category: string; count: number }) => f.category)
-            .map((f: { category: string; count: number }) => ({ value: f.category, count: f.count })),
-          brands: facetBrand
-            .filter((f: { brand: string; count: number }) => f.brand)
-            .map((f: { brand: string; count: number }) => ({ value: f.brand, count: f.count })),
-          conditions: facetCondition
-            .filter((f: { condition: string; count: number }) => f.condition)
-            .map((f: { condition: string; count: number }) => ({ value: f.condition, count: f.count })),
-        },
-      }),
-      {
-        headers: {
-          "content-type": "application/json",
-          // cache a little at the edge; feel free to tune based on traffic
-          "cache-control": "public, s-maxage=60, stale-while-revalidate=60",
-        },
+    let rows: Row[] = [];
+    try {
+      rows = (await prisma.$queryRawUnsafe(sql, ...params)) as Row[];
+    } catch (err: any) {
+      // Fallback if pg_trgm/similarity is unavailable: drop similarity and rely on ILIKE only.
+      if (String(err?.message || "").toLowerCase().includes("similarity")) {
+        const likeOnly = `
+          WITH base AS (
+            SELECT l.*
+            FROM "Listing" l
+            ${baseWhereShifted}
+          ),
+          filtered AS (
+            SELECT *
+            FROM base
+            WHERE (
+              ${q ? "($1 <> '' AND (" : "($1 = ''"} 
+              ${likePh ? `LOWER(title) ILIKE ${likePh} OR LOWER(description) ILIKE ${likePh}` : "TRUE"}
+              ${q ? "))" : ")"}
+            )
+          )
+          SELECT
+            id, title, price, image, town, category, brand, "condition", featured, "createdAt",
+            COUNT(*) OVER()::int AS _total
+          FROM filtered
+          ORDER BY ${sortSQL}
+          LIMIT ${limitPh}
+          OFFSET ${offsetPh};
+        `;
+        rows = (await prisma.$queryRawUnsafe(likeOnly, ...params)) as Row[];
+      } else {
+        throw err;
       }
-    );
+    }
+
+    const total = rows[0]?._total ?? 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const hasMore = page < totalPages;
+
+    // Facets (use ONLY base filters for stability; no trigram/like here)
+    const facetParams = [...baseParams];
+    const facetWhere = baseWhere || ""; // $1..$N for facetParams
+
+    const towns = (await prisma.$queryRawUnsafe(
+      `SELECT "town", COUNT(*)::int AS count FROM "Listing" ${facetWhere} GROUP BY "town" ORDER BY count DESC NULLS LAST LIMIT 20`,
+      ...facetParams
+    )) as TownFacet[];
+
+    const categories = (await prisma.$queryRawUnsafe(
+      `SELECT "category", COUNT(*)::int AS count FROM "Listing" ${facetWhere} GROUP BY "category" ORDER BY count DESC NULLS LAST LIMIT 20`,
+      ...facetParams
+    )) as CategoryFacet[];
+
+    const brands = (await prisma.$queryRawUnsafe(
+      `SELECT "brand", COUNT(*)::int AS count FROM "Listing" ${facetWhere} GROUP BY "brand" ORDER BY count DESC NULLS LAST LIMIT 20`,
+      ...facetParams
+    )) as BrandFacet[];
+
+    const conditions = (await prisma.$queryRawUnsafe(
+      `SELECT "condition", COUNT(*)::int AS count FROM "Listing" ${facetWhere} GROUP BY "condition" ORDER BY count DESC NULLS LAST LIMIT 5`,
+      ...facetParams
+    )) as ConditionFacet[];
+
+    const json = {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      hasMore,
+      items: rows.map((r: Row) => ({
+        id: r.id,
+        title: r.title,
+        price: r.price,
+        image: r.image,
+        town: r.town,
+        category: r.category,
+        brand: r.brand,
+        condition: r.condition,
+        featured: r.featured,
+        createdAt:
+          r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
+      })),
+      facets: {
+        towns: towns.filter((f: TownFacet) => f.town).map((f: TownFacet) => ({ value: f.town, count: f.count })),
+        categories: categories.filter((f: CategoryFacet) => f.category).map((f: CategoryFacet) => ({ value: f.category, count: f.count })),
+        brands: brands.filter((f: BrandFacet) => f.brand).map((f: BrandFacet) => ({ value: f.brand, count: f.count })),
+        conditions: conditions
+          .filter((f: ConditionFacet) => f.condition)
+          .map((f: ConditionFacet) => ({ value: f.condition, count: f.count })),
+      },
+    };
+
+    const res = NextResponse.json(json);
+    return isAnonSafe(req, page, pageSize) ? setEdgeCache(res, 60) : setNoStore(res);
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/search GET] error:", e);
-    return new NextResponse(JSON.stringify({ error: "Server error" }), {
-      status: 500,
-      headers: { "content-type": "application/json", "cache-control": "no-store" },
-    });
+    return setNoStore(NextResponse.json({ error: "Server error" }, { status: 500 }));
   }
 }
-
-

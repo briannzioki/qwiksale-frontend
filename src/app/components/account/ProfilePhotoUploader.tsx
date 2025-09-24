@@ -8,6 +8,7 @@ import { useProfilePhotoUpload } from "@/app/hooks/useProfilePhotoUpload";
 /**
  * Profile photo uploader:
  * - Drag & drop + click/keyboard to pick
+ * - Paste-from-clipboard support
  * - Local preview (object URL) while uploading
  * - Progress bar (a11y)
  * - File validation (size/type)
@@ -46,12 +47,13 @@ function track(event: string, payload?: Record<string, unknown>) {
 export default function ProfilePhotoUploader({
   initialImage,
   maxBytes = 5 * 1024 * 1024, // 5MB
-  allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"],
+  allowedTypes = ["image/*", "image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"],
   sizePx = 96,
   shape = "xl",
   className = "",
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const helpId = useRef(`avatar-help-${Math.random().toString(36).slice(2)}`).current;
 
   const [image, setImage] = useState<string | null>(initialImage ?? null); // server-truthy value
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null); // server generated variant
@@ -201,10 +203,29 @@ export default function ProfilePhotoUploader({
     e.preventDefault();
     setDragOver(true);
   }, []);
+
   const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragOver(false);
   }, []);
+
+  // Paste from clipboard (optional nicety)
+  const onPaste = useCallback(
+    async (e: React.ClipboardEvent<HTMLDivElement>) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.kind === "file") {
+          const f = it.getAsFile();
+          if (f) {
+            await beginUpload(f);
+            break;
+          }
+        }
+      }
+    },
+    [beginUpload]
+  );
 
   const px = `${sizePx}px`;
 
@@ -226,8 +247,10 @@ export default function ProfilePhotoUploader({
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
+        onPaste={onPaste}
         role="button"
         aria-label={previewSrc ? "Profile photo" : "No profile photo"}
+        aria-describedby={helpId}
         tabIndex={0}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -235,7 +258,7 @@ export default function ProfilePhotoUploader({
             fileInputRef.current?.click();
           }
         }}
-        title="Drop an image here, or click/press Enter to pick a file"
+        title="Drop an image here, paste, or click/press Enter to pick a file"
       >
         {previewSrc ? (
           <Image
@@ -360,9 +383,9 @@ export default function ProfilePhotoUploader({
         )}
 
         {/* Tiny help text */}
-        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+        <p id={helpId} className="text-[11px] text-gray-500 dark:text-gray-400">
           Accepted: JPG, PNG, WebP, AVIF, GIF. Max {Math.round(maxBytes / 1024 / 1024)}MB.
-          Drag & drop supported.
+          Drag & drop and paste supported.
         </p>
       </div>
     </div>

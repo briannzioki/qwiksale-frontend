@@ -20,7 +20,7 @@ type ServiceFetched = {
   subcategory?: string | null;
   image?: string | null;
   gallery?: string[];
-  price?: number | null; // per hour/day/fixed
+  price?: number | null;
   rateType?: "hour" | "day" | "fixed" | null;
   serviceArea?: string | null;
   availability?: string | null;
@@ -75,10 +75,11 @@ async function startThread(
 }
 
 export default function ServicePage() {
+  // ✅ typed params avoids index-signature errors
   const params = useParams<{ id: string }>();
-  const id = params?.id ? String(params.id) : "";
-
+  const id = params.id ?? "";
   const router = useRouter();
+
   const { data: session } = useSession();
   const viewerId = (session?.user as any)?.id as string | undefined;
 
@@ -87,12 +88,20 @@ export default function ServicePage() {
   const [err, setErr] = useState<string | null>(null);
 
   const [origin, setOrigin] = useState<string>("");
-
   useEffect(() => {
     if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
 
+  // Early guard if the dynamic segment is missing
   useEffect(() => {
+    if (!id) {
+      setLoading(false);
+      setErr("Invalid service id.");
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
     let cancelled = false;
     (async () => {
       try {
@@ -121,7 +130,7 @@ export default function ServicePage() {
     });
     if (set.size === 0) set.add(PLACEHOLDER);
     return Array.from(set);
-  }, [data]);
+  }, [data?.image, data?.gallery]);
 
   const seller = useMemo(() => {
     const nested: any = (data as any)?.seller || {};
@@ -137,23 +146,20 @@ export default function ServicePage() {
 
   const isOwner = Boolean(viewerId && seller.id && viewerId === seller.id);
 
+  // Build SEO without injecting nulls
   const seo = useMemo(() => {
     if (!data) return null;
     const imgs = [data.image, ...(data.gallery ?? [])].filter(Boolean) as string[];
-
     const args: Parameters<typeof buildProductSeo>[0] = {
       id: data.id,
       name: data.name,
       ...(data.description != null ? { description: data.description } : {}),
       ...(typeof data.price === "number" ? { price: data.price as number | null } : {}),
       ...(imgs.length ? { image: imgs } : {}),
-      brand: null,
       ...(data.category ? { category: data.category } : {}),
-      condition: null,
       status: "ACTIVE",
       urlPath: `/service/${data.id}`,
     };
-
     return buildProductSeo(args);
   }, [data]);
 
@@ -193,11 +199,10 @@ export default function ServicePage() {
             </span>
           )}
 
-          {/* Accessible gallery (keyboard + lightbox) */}
           <Gallery images={images} lightbox />
 
           <div className="absolute right-3 top-3 z-10 flex gap-2">
-            <button onClick={copyLink} className="btn-outline px-2 py-1 text-xs" title="Copy link">
+            <button type="button" onClick={copyLink} className="btn-outline px-2 py-1 text-xs" title="Copy link">
               Copy link
             </button>
             <FavoriteButton productId={data.id} />
@@ -243,7 +248,7 @@ export default function ServicePage() {
               )}
             </div>
           </div>
-          <FavoriteButton productId={data.id} />
+          {/* Removed duplicate FavoriteButton to avoid double render */}
         </div>
 
         <div className="space-y-1 rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -288,7 +293,6 @@ export default function ServicePage() {
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            {/* Standardized contact modal for services */}
             <ContactModalService
               className="rounded-lg"
               serviceId={data.id}
@@ -298,9 +302,9 @@ export default function ServicePage() {
               buttonLabel="Show Contact"
             />
 
-            {/* Internal messaging */}
-            {seller.id && (
+            {seller.id && !isOwner && (
               <button
+                type="button"
                 onClick={() =>
                   startThread(
                     seller.id!,

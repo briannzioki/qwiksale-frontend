@@ -1,3 +1,4 @@
+// src/app/api/services/search/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,6 +17,7 @@ function setNoStore(res: NextResponse) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 function setEdgeCache(res: NextResponse, seconds = 45) {
@@ -32,7 +34,13 @@ function s(v?: string | null) {
 function n(v?: string | null) {
   if (v == null || v === "") return undefined;
   const num = Number(v);
-  return Number.isFinite(num) ? num : undefined;
+  return Number.isFinite(num) ? Math.trunc(num) : undefined;
+}
+function b(v?: string | null) {
+  const t = (v || "").trim().toLowerCase();
+  if (["1", "true", "yes"].includes(t)) return true;
+  if (["0", "false", "no"].includes(t)) return false;
+  return undefined;
 }
 function isSafeToCache(req: NextRequest, page: number, pageSize: number) {
   const auth = req.headers.get("authorization");
@@ -42,17 +50,18 @@ function isSafeToCache(req: NextRequest, page: number, pageSize: number) {
   return true;
 }
 
-/** Use a lenient handle to the Service model to avoid TS errors if not generated yet. */
-const db: any = prisma as any;
+/* ----------------------------- safety caps ------------------------------ */
+const MAX_PAGE_SIZE = 48;
+const DEFAULT_PAGE_SIZE = 24;
+const MAX_RESULT_WINDOW = 10_000; // guard deep offset scans
 
+/** Keep search payload lean (omit big fields like description/gallery). */
 const baseSelect = {
   id: true,
   name: true,
-  description: true,
   category: true,
   subcategory: true,
   image: true,
-  gallery: true,
   price: true,
   rateType: true,
   serviceArea: true,
@@ -87,10 +96,13 @@ function shape(row: any) {
   };
 }
 
+/** Lenient handle in case your Prisma model is generated with a different name. */
+const db: any = prisma as any;
+
 /* ------------------------------ GET ------------------------------ */
 export async function GET(req: NextRequest) {
   try {
-    // Per-IP rate limit (extraKey omitted; IP is already part of the key)
+    // Per-IP throttle
     const rl = await checkRateLimit(req.headers, {
       name: "services_search",
       limit: 60,
@@ -104,46 +116,70 @@ export async function GET(req: NextRequest) {
     const q = s(url.searchParams.get("q"));
     const category = s(url.searchParams.get("category"));
     const subcategory = s(url.searchParams.get("subcategory"));
+    const rateType = s(url.searchParams.get("rateType")); // "fixed" | "hour" | "day"
+    const location = s(url.searchParams.get("location")) || s(url.searchParams.get("serviceArea"));
     const minPrice = n(url.searchParams.get("minPrice"));
     const maxPrice = n(url.searchParams.get("maxPrice"));
+    const includeNoPrice = b(url.searchParams.get("includeNoPrice")) === true; // default false
+    const verifiedOnly = b(url.searchParams.get("verifiedOnly")); // featured only
     const sort = (s(url.searchParams.get("sort")) || "top") as
       | "top"
       | "new"
       | "price_asc"
       | "price_desc";
-    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
-    const pageSize = Math.min(
-      96,
-      Math.max(1, Number(url.searchParams.get("pageSize") || 24))
-    );
 
+    // pagination: cursor (preferred) OR page
+    const cursor = s(url.searchParams.get("cursor"));
+    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+    const rawPageSize = Number(url.searchParams.get("pageSize") || DEFAULT_PAGE_SIZE);
+    const pageSize =
+      Number.isFinite(rawPageSize) && rawPageSize > 0
+        ? Math.min(MAX_PAGE_SIZE, Math.trunc(rawPageSize))
+        : DEFAULT_PAGE_SIZE;
+
+    // WHERE
     const where: any = { status: "ACTIVE" };
+    const and: any[] = [];
 
     if (q) {
-      where.OR = [
-        { name: { contains: q, mode: "insensitive" } },
-        { description: { contains: q, mode: "insensitive" } },
-        { category: { contains: q, mode: "insensitive" } },
-        { subcategory: { contains: q, mode: "insensitive" } },
-        { serviceArea: { contains: q, mode: "insensitive" } },
-        { availability: { contains: q, mode: "insensitive" } },
-        { sellerName: { contains: q, mode: "insensitive" } },
-        { sellerLocation: { contains: q, mode: "insensitive" } },
-      ];
+      and.push({
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { category: { contains: q, mode: "insensitive" } },
+          { subcategory: { contains: q, mode: "insensitive" } },
+          { serviceArea: { contains: q, mode: "insensitive" } },
+          { availability: { contains: q, mode: "insensitive" } },
+          { location: { contains: q, mode: "insensitive" } },
+          { sellerName: { contains: q, mode: "insensitive" } },
+          { sellerLocation: { contains: q, mode: "insensitive" } },
+        ],
+      });
     }
-    if (category) where.category = category;
-    if (subcategory) where.subcategory = subcategory;
+    if (category) and.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (rateType) and.push({ rateType: { equals: rateType, mode: "insensitive" } });
+    if (location) {
+      and.push({
+        OR: [
+          { location: { contains: location, mode: "insensitive" } },
+          { serviceArea: { contains: location, mode: "insensitive" } },
+        ],
+      });
+    }
+    if (verifiedOnly === true) and.push({ featured: true });
 
-    if (typeof minPrice === "number") {
-      where.OR ??= [];
-      where.OR.push({ price: null }, { price: { gte: Math.max(0, minPrice) } });
-    }
-    if (typeof maxPrice === "number") {
-      where.OR ??= [];
-      where.OR.push({ price: null }, { price: { lte: Math.max(0, maxPrice) } });
+    // Price range (AND bounds); optionally include nulls
+    if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+      const price: any = {};
+      if (Number.isFinite(minPrice)) price.gte = Math.max(0, minPrice!);
+      if (Number.isFinite(maxPrice)) price.lte = Math.max(0, maxPrice!);
+      and.push(includeNoPrice ? { OR: [{ price: null }, { price }] } : { price });
     }
 
-    let orderBy: any = {};
+    if (and.length) where.AND = and;
+
+    // ORDER BY (stable with id tiebreaker)
+    let orderBy: any[] = [];
     switch (sort) {
       case "new":
         orderBy = [{ createdAt: "desc" }];
@@ -156,27 +192,60 @@ export async function GET(req: NextRequest) {
         break;
       case "top":
       default:
-        orderBy = [{ featured: "desc" }, { createdAt: "desc" }, { id: "asc" }];
+        orderBy = [{ featured: "desc" }, { createdAt: "desc" }];
         break;
     }
+    orderBy.push({ id: "desc" });
 
+    // Count (for pagination UI)
     const total = await db.service.count({ where });
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const safePage = Math.min(page, totalPages);
-    const items = await db.service.findMany({
+
+    // Result window guard if using offset
+    if (!cursor) {
+      const skipEst = (safePage - 1) * pageSize;
+      if (skipEst > MAX_RESULT_WINDOW) {
+        const res = resp({
+          page: safePage,
+          pageSize,
+          total,
+          totalPages,
+          items: [] as any[],
+          nextCursor: null,
+          hasMore: false,
+        });
+        return setNoStore(res);
+      }
+    }
+
+    // Query list (cursor wins)
+    const listArgs: any = {
       where,
       orderBy,
-      skip: (safePage - 1) * pageSize,
-      take: pageSize,
       select: baseSelect,
-    });
+      take: pageSize + 1, // +1 to detect hasMore
+    };
+    if (cursor) {
+      listArgs.cursor = { id: cursor };
+      listArgs.skip = 1;
+    } else {
+      listArgs.skip = (safePage - 1) * pageSize;
+    }
+
+    const rows = await db.service.findMany(listArgs);
+    const hasMore = rows.length > pageSize;
+    const data = hasMore ? rows.slice(0, pageSize) : rows;
+    const nextCursor = hasMore ? data[data.length - 1]?.id ?? null : null;
 
     const json = {
       page: safePage,
       pageSize,
       total,
       totalPages,
-      items: items.map(shape),
+      items: data.map(shape),
+      nextCursor,
+      hasMore,
     };
 
     const res = resp(json);
@@ -187,5 +256,3 @@ export async function GET(req: NextRequest) {
     return setNoStore(resp({ error: "Server error" }, { status: 500 }));
   }
 }
-
-

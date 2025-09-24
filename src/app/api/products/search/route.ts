@@ -1,4 +1,3 @@
-export const preferredRegion = 'fra1';
 // src/app/api/products/search/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +10,7 @@ import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
 /* ---------------------------- helpers ---------------------------- */
-function resp(json: unknown, init?: ResponseInit) {
+function json(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   return res;
 }
@@ -19,6 +18,7 @@ function setNoStore(res: NextResponse) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 function setEdgeCache(res: NextResponse, seconds = 45) {
@@ -28,8 +28,12 @@ function setEdgeCache(res: NextResponse, seconds = 45) {
   res.headers.set("Vary", "Accept-Encoding");
   return res;
 }
+function addReqId(res: NextResponse, id: string) {
+  res.headers.set("x-request-id", id);
+  return res;
+}
 function s(v?: string | null) {
-  const t = (v || "").trim();
+  const t = (v || "").replace(/[\u0000-\u0008\u000B-\u001F\u007F]+/g, "").trim();
   return t ? t : undefined;
 }
 function n(v?: string | null) {
@@ -44,7 +48,7 @@ function b(v?: string | null) {
   return undefined;
 }
 function isSafeToCache(req: NextRequest, page: number, pageSize: number) {
-  // Conservative: only cache anonymous, non-personalized, reasonable pages
+  // Anonymous only, modest page windows
   const auth = req.headers.get("authorization");
   const cookie = req.headers.get("cookie");
   if (auth || (cookie && cookie.includes("session"))) return false;
@@ -57,12 +61,10 @@ const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_RESULT_WINDOW = 10_000; // guard deep offset scans
 
-/** Lean selection for search hits: keep payload tiny. */
+/** Lean selection for search hits. */
 const baseSelect = {
   id: true,
   name: true,
-  // Omit big fields like description/gallery to avoid huge JSON.
-  // Re-add a short snippet only if you truly need it.
   category: true,
   subcategory: true,
   brand: true,
@@ -100,8 +102,37 @@ function shape(row: any) {
   };
 }
 
+/** Split "q" into tokens (AND), each token ORs across fields. */
+function buildTokenizedWhere(q?: string) {
+  if (!q) return undefined;
+  const tokens = q
+    .split(/[^\p{L}\p{N}]+/u) // split on non letters/numbers (unicode aware)
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  if (!tokens.length) return undefined;
+
+  const perTokenOr = (tok: string) => ({
+    OR: [
+      { name: { contains: tok, mode: "insensitive" } },
+      { brand: { contains: tok, mode: "insensitive" } },
+      { category: { contains: tok, mode: "insensitive" } },
+      { subcategory: { contains: tok, mode: "insensitive" } },
+      { location: { contains: tok, mode: "insensitive" } },
+      { sellerName: { contains: tok, mode: "insensitive" } },
+      { sellerLocation: { contains: tok, mode: "insensitive" } },
+    ],
+  });
+
+  return { AND: tokens.map(perTokenOr) };
+}
+
 /* ------------------------------ GET ------------------------------ */
 export async function GET(req: NextRequest) {
+  const reqId =
+    (globalThis as any).crypto?.randomUUID?.() ??
+    Math.random().toString(36).slice(2);
+
   try {
     // Per-IP throttle
     const rl = await checkRateLimit(req.headers, {
@@ -110,17 +141,22 @@ export async function GET(req: NextRequest) {
       windowMs: 60_000,
     });
     if (!rl.ok) {
-      return tooMany("You’re searching too fast. Please slow down.", rl.retryAfterSec);
+      return addReqId(
+        tooMany("You’re searching too fast. Please slow down.", rl.retryAfterSec),
+        reqId
+      );
     }
 
     const url = new URL(req.url);
-    const q = s(url.searchParams.get("q"));
+    const qRaw = s(url.searchParams.get("q"));
+    const qWhere = buildTokenizedWhere(qRaw);
+
     const category = s(url.searchParams.get("category"));
     const subcategory = s(url.searchParams.get("subcategory"));
     const brand = s(url.searchParams.get("brand"));
     const condition = s(url.searchParams.get("condition"));
-    const minPrice = n(url.searchParams.get("minPrice"));
-    const maxPrice = n(url.searchParams.get("maxPrice"));
+    let minPrice = n(url.searchParams.get("minPrice"));
+    let maxPrice = n(url.searchParams.get("maxPrice"));
     const includeNoPrice = b(url.searchParams.get("includeNoPrice")) === true; // default false
     const verifiedOnly = b(url.searchParams.get("verifiedOnly"));
     const negotiable = b(url.searchParams.get("negotiable"));
@@ -139,23 +175,22 @@ export async function GET(req: NextRequest) {
         ? Math.min(MAX_PAGE_SIZE, Math.trunc(rawPageSize))
         : DEFAULT_PAGE_SIZE;
 
+    // Fix reversed price range (if user passed min>max)
+    if (
+      Number.isFinite(minPrice) &&
+      Number.isFinite(maxPrice) &&
+      (minPrice as number) > (maxPrice as number)
+    ) {
+      const tmp = minPrice!;
+      minPrice = maxPrice!;
+      maxPrice = tmp;
+    }
+
     // WHERE
     const where: any = { status: "ACTIVE" };
     const and: any[] = [];
 
-    if (q) {
-      and.push({
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { brand: { contains: q, mode: "insensitive" } },
-          { category: { contains: q, mode: "insensitive" } },
-          { subcategory: { contains: q, mode: "insensitive" } },
-          { location: { contains: q, mode: "insensitive" } },
-          { sellerName: { contains: q, mode: "insensitive" } },
-          { sellerLocation: { contains: q, mode: "insensitive" } },
-        ],
-      });
-    }
+    if (qWhere) and.push(qWhere);
     if (category) and.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (brand) and.push({ brand: { equals: brand, mode: "insensitive" } });
@@ -163,14 +198,17 @@ export async function GET(req: NextRequest) {
     if (typeof negotiable === "boolean") and.push({ negotiable });
     if (verifiedOnly === true) and.push({ featured: true });
 
-    // Price range: AND the bounds; optionally include nulls
+    // Price range: AND bounds; optionally include nulls
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
       const price: any = {};
       if (Number.isFinite(minPrice)) price.gte = Math.max(0, minPrice!);
       if (Number.isFinite(maxPrice)) price.lte = Math.max(0, maxPrice!);
-      and.push(
-        includeNoPrice ? { OR: [{ price: null }, { price }] } : { price }
-      );
+      and.push(includeNoPrice ? { OR: [{ price: null }, { price }] } : { price });
+    } else if (includeNoPrice === false) {
+      // If sorting by price and user didn't request nulls, drop nulls to keep order meaningful
+      if (sort === "price_asc" || sort === "price_desc") {
+        and.push({ NOT: { price: null } });
+      }
     }
 
     if (and.length) where.AND = and;
@@ -182,10 +220,11 @@ export async function GET(req: NextRequest) {
         orderBy = [{ createdAt: "desc" }];
         break;
       case "price_asc":
-        orderBy = [{ price: "asc" }, { createdAt: "desc" }];
+        // Prisma supports nulls ordering in recent versions; fall back silently if unavailable
+        orderBy = [{ price: { sort: "asc", nulls: "last" } as any }, { createdAt: "desc" }];
         break;
       case "price_desc":
-        orderBy = [{ price: "desc" }, { createdAt: "desc" }];
+        orderBy = [{ price: { sort: "desc", nulls: "last" } as any }, { createdAt: "desc" }];
         break;
       case "top":
       default:
@@ -203,7 +242,7 @@ export async function GET(req: NextRequest) {
     if (!cursor) {
       const skipEst = (safePage - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
-        const res = resp({
+        const res = json({
           page: safePage,
           pageSize,
           total,
@@ -211,8 +250,21 @@ export async function GET(req: NextRequest) {
           items: [] as any[],
           nextCursor: null,
           hasMore: false,
+          applied: {
+            q: qRaw || undefined,
+            category,
+            subcategory,
+            brand,
+            condition,
+            minPrice,
+            maxPrice,
+            includeNoPrice,
+            verifiedOnly,
+            negotiable,
+            sort,
+          },
         });
-        return setNoStore(res);
+        return addReqId(setNoStore(res), reqId);
       }
     }
 
@@ -233,9 +285,9 @@ export async function GET(req: NextRequest) {
     const rows = await prisma.product.findMany(listArgs);
     const hasMore = rows.length > pageSize;
     const data = hasMore ? rows.slice(0, pageSize) : rows;
-    const nextCursor = hasMore ? data[data.length - 1]?.id ?? null : null;
+    const nextCursor = hasMore ? (data[data.length - 1]?.id ?? null) : null;
 
-    const json = {
+    const payload = {
       page: safePage,
       pageSize,
       total,
@@ -243,15 +295,29 @@ export async function GET(req: NextRequest) {
       items: data.map(shape),
       nextCursor,
       hasMore,
+      applied: {
+        q: qRaw || undefined,
+        category,
+        subcategory,
+        brand,
+        condition,
+        minPrice,
+        maxPrice,
+        includeNoPrice,
+        verifiedOnly,
+        negotiable,
+        sort,
+      },
     };
 
-    const res = resp(json);
-    return isSafeToCache(req, safePage, pageSize) ? setEdgeCache(res, 45) : setNoStore(res);
+    const res = json(payload);
+    return addReqId(
+      isSafeToCache(req, safePage, pageSize) ? setEdgeCache(res, 45) : setNoStore(res),
+      reqId
+    );
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[products/search GET] error", e);
-    return setNoStore(resp({ error: "Server error" }, { status: 500 }));
+    return addReqId(setNoStore(json({ error: "Server error" }, { status: 500 })), reqId);
   }
 }
-
-

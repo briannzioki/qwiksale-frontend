@@ -3,9 +3,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
+import { checkRateLimit } from "@/app/lib/ratelimit";
+import { tooMany } from "@/app/lib/ratelimit-response";
+import { revalidateTag } from "next/cache";
 
 /* -------------------- helpers -------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
@@ -13,11 +16,13 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const USERNAME_RE = /^[a-zA-Z0-9._]{3,24}$/;
+// Consistent username rule (no leading/trailing dot/underscore, no repeats)
+const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 
 function isValidEmail(email: string) {
   return EMAIL_RE.test(email);
@@ -26,19 +31,56 @@ function looksLikeValidUsername(u: string) {
   return USERNAME_RE.test(u);
 }
 
+// Built-ins + extend via env (comma-separated)
 const RESERVED = new Set(
-  (process.env["RESERVED_USERNAMES"] || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
+  [
+    "admin","administrator","root","support","help","contact","api","auth",
+    "login","logout","signup","register","me","profile","settings",
+    "qwiksale","qwik","user"
+  ].concat(
+    (process.env["RESERVED_USERNAMES"] || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  )
 );
 
+/* -------------------- CORS (optional) -------------------- */
+export function OPTIONS() {
+  const res = new NextResponse(null, { status: 204 });
+  res.headers.set("Access-Control-Allow-Origin", process.env["NEXT_PUBLIC_APP_URL"] || "*");
+  res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.headers.set("Access-Control-Max-Age", "86400");
+  res.headers.set("Cache-Control", "no-store");
+  return res;
+}
+
 /* -------------------- route -------------------- */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   // Require auth
-  const session = await auth();
+  const session = await auth().catch(() => null);
   const userId = (session as any)?.user?.id as string | undefined;
   if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
+
+  // Rate limit (per IP + user)
+  const rl = await checkRateLimit(req.headers, {
+    name: "complete_profile",
+    limit: 12,
+    windowMs: 10 * 60_000,
+    extraKey: userId,
+  });
+  if (!rl.ok) return tooMany("Too many attempts. Please slow down.", rl.retryAfterSec);
+
+  // Content-Type + tiny body-size guard
+  const ctype = (req.headers.get("content-type") || "").toLowerCase();
+  if (!ctype.includes("application/json")) {
+    return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
+  }
+  const clen = Number(req.headers.get("content-length") || "0");
+  if (Number.isFinite(clen) && clen > 32_000) {
+    return noStore({ error: "Payload too large" }, { status: 413 });
+  }
 
   // Parse body
   let body: unknown;
@@ -59,14 +101,13 @@ export async function POST(req: Request) {
   const wantEmail =
     typeof email === "string" && email.trim() ? email.trim().toLowerCase() : undefined;
 
-  // Validate shapes (reject present-but-empty or wrong type)
+  // Validate shapes (present-but-empty or wrong type)
   if (username !== undefined && wantUsername === undefined) {
     return noStore({ error: "username must be a non-empty string." }, { status: 400 });
   }
   if (email !== undefined && wantEmail === undefined) {
     return noStore({ error: "email must be a non-empty string." }, { status: 400 });
   }
-
   if (!wantUsername && !wantEmail) {
     return noStore({ error: "Nothing to update." }, { status: 400 });
   }
@@ -74,7 +115,7 @@ export async function POST(req: Request) {
   if (wantUsername) {
     if (!looksLikeValidUsername(wantUsername)) {
       return noStore(
-        { error: "Username must be 3–24 chars: letters, numbers, dot, underscore." },
+        { error: "Username must be 3–24 chars (letters, numbers, dot, underscore), no leading/trailing symbol, no repeats." },
         { status: 400 }
       );
     }
@@ -90,16 +131,19 @@ export async function POST(req: Request) {
   // Load current to detect no-op and for conflict checks
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, username: true, emailVerified: true },
+    select: { id: true, email: true, username: true, emailVerified: true, name: true },
   });
   if (!me) return noStore({ error: "Not found" }, { status: 404 });
 
   const nextUsername = wantUsername ?? me.username ?? null;
-  const nextEmail = wantEmail ?? me.email ?? null;
+  const nextEmail = wantEmail ?? (me.email ? me.email.toLowerCase() : null);
 
   // No-op?
-  if (nextUsername === (me.username ?? null) && nextEmail === (me.email ?? null)) {
-    return noStore({ ok: true, user: me, noChange: true });
+  if (
+    (nextUsername ?? null) === (me.username ?? null) &&
+    (nextEmail ?? null) === (me.email ? me.email.toLowerCase() : null)
+  ) {
+    return noStore({ ok: true, user: me, noChange: true, profileComplete: true });
   }
 
   // Case-insensitive uniqueness checks (exclude self)
@@ -130,9 +174,9 @@ export async function POST(req: Request) {
   if (wantUsername) data.username = wantUsername;
   if (wantEmail) {
     data.email = wantEmail;
-    // If your schema includes emailVerified, clear it on email change
     if (typeof me.emailVerified !== "undefined") {
-      data.emailVerified = null;
+      // If your schema tracks verification, clear on change
+      if ((me.email ?? "").toLowerCase() !== wantEmail) data.emailVerified = null;
     }
   }
 
@@ -150,18 +194,21 @@ export async function POST(req: Request) {
       },
     });
 
-    // (Optional) You might kick off a new verification email here.
+    // Best-effort revalidate any profile-tagged data
+    try {
+      revalidateTag(`user:${me.id}:profile`);
+    } catch {}
 
-    return noStore({ ok: true, user });
+    // (Optional) trigger email verification here if email changed
+
+    return noStore({ ok: true, user, profileComplete: true });
   } catch (e: any) {
-    // Unique constraint fallback (just in case)
     if (e?.code === "P2002") {
+      // Unique constraint fallback
       return noStore({ error: "Already in use" }, { status: 409 });
     }
     // eslint-disable-next-line no-console
-    console.error("[complete-profile] POST error:", e);
+    console.error("[complete-profile POST] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
-
-

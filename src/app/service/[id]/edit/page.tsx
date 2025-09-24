@@ -1,3 +1,4 @@
+// src/app/service/[id]/edit/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,12 +13,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function EditServicePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+export default async function EditServicePage(props: any) {
+  // Accept `any` to satisfy Next's PageProps checker, then read defensively
+  const id = String(props?.params?.id ?? "");
+  if (!id) notFound();
 
   // Require auth
   const session = await auth().catch(() => null);

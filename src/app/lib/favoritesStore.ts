@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 /* ------------------------------------------------------------------ */
 /* --------------------------- Constants ----------------------------- */
@@ -114,10 +114,6 @@ async function backoff(attempt: number, capMs = 8000) {
 /* ------------------------------------------------------------------ */
 
 type Options = {
-  /**
-   * Called whenever the set of favorites changes (after optimistic update).
-   * NOTE: Named with the `Action` suffix to comply with Next’s client-entry rule.
-   */
   onChangeAction?: (ids: string[]) => void;
 };
 
@@ -235,23 +231,23 @@ export function useFavourites(opts: Options = {}) {
   const idsSet = useMemo(() => new Set(ids.map(String)), [ids]);
   const isFavourite = useCallback((id: string | number) => idsSet.has(String(id)), [idsSet]);
 
-  /** internal api call with tiny retry/backoff */
+  /** internal api call with tiny retry/backoff — USE PROPER VERBS */
   const callToggle = useCallback(
     async (productId: string, nowFav: boolean) => {
       inFlightRef.current?.abort();
       const ac = new AbortController();
       inFlightRef.current = ac;
 
-      const body: ApiToggleBody = { productId, action: nowFav ? "add" : "remove" };
+      const method = nowFav ? "POST" : "DELETE";
+      const body: ApiToggleBody = { productId };
 
       let attempt = 0;
-      // 1 quick try + up to 2 retries with backoff
       while (attempt < 3) {
         try {
           const { res, json } = await fetchJson<ApiOk | ApiErr>(
             "/api/favorites",
             {
-              method: "POST",
+              method,
               headers: { "content-type": "application/json" },
               credentials: "include",
               body: JSON.stringify(body),

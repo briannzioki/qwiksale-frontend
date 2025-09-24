@@ -1,16 +1,11 @@
-// src/app/sell/service/SellServiceClient.tsx
+// src/app/sell/product/SellProductClient.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { categories, type CategoryNode } from "../../data/categories";
+import { useProducts } from "../../lib/productsStore";
 import toast from "react-hot-toast";
-import SuggestInput from "@/app/components/SuggestInput";
-
-const SERVICE_CATEGORIES = [
-  { name: "Home Services", subcategories: [{ name: "Cleaning" }, { name: "Repairs" }] },
-  { name: "Automotive", subcategories: [{ name: "Mechanic" }, { name: "Car Wash" }] },
-  { name: "Events", subcategories: [{ name: "Photography" }, { name: "Catering" }] },
-] as const;
 
 type FilePreview = { file: File; url: string; key: string };
 type Me = { id: string; email: string | null; profileComplete?: boolean; whatsapp?: string | null };
@@ -35,6 +30,15 @@ function normalizePhone(raw: string): string {
 }
 function looksLikeValidKePhone(input: string): boolean {
   return /^254(7|1)\d{8}$/.test(normalizePhone(input));
+}
+
+/* ----------------------------- Money helper ----------------------------- */
+function fmtKES(n: number) {
+  try {
+    return new Intl.NumberFormat("en-KE").format(n);
+  } catch {
+    return n.toString();
+  }
 }
 
 /* --------------------------- Cloudinary uploader -------------------------- */
@@ -98,7 +102,7 @@ async function uploadToCloudinary(
   return p;
 }
 
-export default function SellServiceClient() {
+export default function SellProductClient() {
   const router = useRouter();
 
   // ---------------------- Profile Gate (no server redirects) ----------------------
@@ -108,32 +112,23 @@ export default function SellServiceClient() {
   // ----------------------------- Form state -----------------------------
   const [name, setName] = useState<string>("");
   const [price, setPrice] = useState<number | "">("");
-  const [rateType, setRateType] = useState<"hour" | "day" | "fixed">("fixed");
+  const [negotiable, setNegotiable] = useState<boolean>(false);
+  const [condition, setCondition] = useState<"brand new" | "pre-owned">("brand new");
 
-  const [category, setCategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.name || ""));
-  const [subcategory, setSubcategory] = useState<string>(
-    String(SERVICE_CATEGORIES[0]?.subcategories?.[0]?.name || "")
-  );
+  const [category, setCategory] = useState<string>("");
+  const [subcategory, setSubcategory] = useState<string>("");
 
-  const [serviceArea, setServiceArea] = useState<string>("");
-  const [availability, setAvailability] = useState<string>("");
+  const [brand, setBrand] = useState<string>("");
   const [location, setLocation] = useState<string>("Nairobi");
   const [phone, setPhone] = useState<string>("");
   const [description, setDescription] = useState<string>("");
-
   const [previews, setPreviews] = useState<FilePreview[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // keep phone in a ref so the effect doesn't depend on state (avoids extra fetch & deps warning)
-  const phoneRef = useRef<string>("");
-  useEffect(() => {
-    phoneRef.current = phone;
-  }, [phone]);
-
-  // Prefill phone from profile + gate checks
+  // Prefill phone from profile + gate checks (supports {user:{...}} or top-level)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -141,7 +136,7 @@ export default function SellServiceClient() {
         const res = await fetch("/api/me", { cache: "no-store" });
 
         if (res.status === 401) {
-          if (!cancelled) router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`);
+          if (!cancelled) router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell")}`);
           return;
         }
         if (!res.ok) {
@@ -153,14 +148,14 @@ export default function SellServiceClient() {
         }
 
         const j = (await res.json().catch(() => null)) as any;
-        const me: Me | null = j?.user ?? null;
+        const me: Me | null = (j && (j.user ?? j)) || null;
 
         if (!cancelled && me && me.profileComplete === false) {
-          router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell/service")}`);
+          router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell")}`);
           return;
         }
-        if (!cancelled && !phoneRef.current && me?.whatsapp) setPhone(me.whatsapp);
 
+        if (!cancelled && !phone && me?.whatsapp) setPhone(me.whatsapp);
         if (!cancelled) setAllowed(true);
       } catch {
         if (!cancelled) setAllowed(true); // fail-open
@@ -171,17 +166,28 @@ export default function SellServiceClient() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, phone]);
 
-  // Derived options (local)
-  type Sub = { readonly name: string };
-  type Cat = { readonly name: string; readonly subcategories: readonly Sub[] };
-  const cats: readonly Cat[] = SERVICE_CATEGORIES;
+  // Zustand store (optional)
+  const store = useProducts() as any;
+  const addProduct: (payload: any) => Promise<any> | any =
+    store && typeof store.addProduct === "function" ? store.addProduct : async () => undefined;
 
-  const subcats = useMemo(() => {
+  // ----- Strong typing for categories to avoid "implicit any" -----
+  const cats: readonly CategoryNode[] = categories;
+
+  const subcats: readonly { name: string }[] = useMemo(() => {
     const found = cats.find((c) => c.name === category);
-    return (found?.subcategories ?? []) as readonly Sub[];
+    return (found?.subcategories ?? []).map((s) => ({ name: s.name }));
   }, [cats, category]);
+
+  // Initialize default category/subcategory once categories are known (guard cats[0])
+  useEffect(() => {
+    if (!category) {
+      const first = cats[0]; // CategoryNode | undefined
+      if (first) setCategory(first.name);
+    }
+  }, [category, cats]);
 
   useEffect(() => {
     if (!subcats.length) {
@@ -189,7 +195,8 @@ export default function SellServiceClient() {
       return;
     }
     if (!subcats.some((s) => s.name === subcategory)) {
-      setSubcategory(subcats[0]?.name || "");
+      const firstSub = subcats[0]; // { name: string } | undefined
+      setSubcategory(firstSub ? firstSub.name : "");
     }
   }, [subcats, subcategory]);
 
@@ -200,12 +207,15 @@ export default function SellServiceClient() {
   }, [previews]);
 
   const normalizedPhone = phone ? normalizePhone(phone) : "";
+  const priceNum = price === "" ? 0 : Number(price);
   const phoneOk = !phone || looksLikeValidKePhone(phone);
 
   const canSubmit =
     name.trim().length >= 3 &&
     !!category &&
+    !!subcategory &&
     description.trim().length >= 10 &&
+    (price === "" || (typeof price === "number" && price >= 0)) &&
     phoneOk;
 
   function filesToAdd(files: FileList | File[]) {
@@ -235,7 +245,7 @@ export default function SellServiceClient() {
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  function onDrop(e: DragEvent<HTMLDivElement>) {
+  function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer?.files?.length) filesToAdd(e.dataTransfer.files);
@@ -274,7 +284,6 @@ export default function SellServiceClient() {
     setUploadPct(0);
 
     try {
-      // Upload to Cloudinary if files present
       let uploaded: { secure_url: string; public_id: string }[] = [];
       if (previews.length) {
         if (!CLOUD_NAME) {
@@ -288,7 +297,7 @@ export default function SellServiceClient() {
 
         for (const p of previews) {
           const item = await uploadToCloudinary(p.file, {
-            folder: "qwiksale/services",
+            folder: "qwiksale/products",
             onProgress: (pct) => {
               const overall = Math.round(((done + pct / 100) / total) * 100);
               setUploadPct(overall);
@@ -303,46 +312,54 @@ export default function SellServiceClient() {
       const imageUrl = uploaded[0]?.secure_url || previews[0]?.url || "/placeholder/default.jpg";
       const gallery = uploaded.length ? uploaded.map((u) => u.secure_url) : previews.map((p) => p.url);
 
-      // Service payload
       const payload = {
         name: name.trim(),
         description: description.trim(),
         category,
-        subcategory: subcategory || undefined,
-        price: price === "" ? null : Math.max(0, Math.round(Number(price))),
-        rateType,
-        serviceArea: serviceArea || undefined,
-        availability: availability || undefined,
+        subcategory,
+        brand: brand || undefined,
+        condition,
+        price: price === "" ? undefined : Math.max(0, Math.round(Number(price))),
         image: imageUrl,
         gallery,
         location: location.trim(),
+        negotiable,
         sellerPhone: normalizedPhone || undefined,
       };
 
-      // POST to services create
-      const r = await fetch("/api/services/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify(payload),
-      });
+      // 1) Try Zustand store if present
+      let created: any = await addProduct(payload);
 
-      if (r.status === 429) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error || "You’re posting too fast. Please slow down.");
+      // 2) Fallback to server API if store doesn’t handle it
+      if (!created) {
+        const r = await fetch("/api/products/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json().catch(() => ({} as any));
+        if (!r.ok || (j as any)?.error) {
+          throw new Error((j as any)?.error || `Failed to create (${r.status})`);
+        }
+        created = { id: (j as any).productId };
       }
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j?.error) throw new Error(j?.error || `Failed to create (${r.status})`);
 
-      const createdId: string = j?.serviceId || j?.id || j?.data?.id || "";
-      toast.success("Service posted!");
+      const createdId =
+        typeof created === "string"
+          ? created
+          : created && typeof created === "object" && "id" in created
+          ? String((created as any).id)
+          : "";
 
-      router.push(createdId ? `/service/${createdId}` : "/");
+      toast.success("Product posted!");
+
+      router.push(createdId ? `/product/${createdId}` : "/");
       router.refresh();
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error(err);
-      toast.error(err?.message || "Failed to post service.");
+      toast.error(err?.message || "Failed to post product.");
     } finally {
       setSubmitting(false);
       setUploadPct(0);
@@ -353,7 +370,7 @@ export default function SellServiceClient() {
     return (
       <div className="container-page py-10">
         <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
-          <h1 className="text-2xl font-bold">Post a Service</h1>
+          <h1 className="text-2xl font-bold">Post a Product</h1>
           <p className="text-white/90">Checking your account…</p>
         </div>
       </div>
@@ -364,41 +381,27 @@ export default function SellServiceClient() {
     <div className="container-page py-6">
       {/* Header card */}
       <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-        <h1 className="text-2xl font-bold text-balance">Post a Service</h1>
-        <p className="text-white/90">List your service — it takes less than 2 minutes.</p>
+        <h1 className="text-2xl font-bold text-balance">Post a Product</h1>
+        <p className="text-white/90">List your item — it takes less than 2 minutes.</p>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
         {/* Title & Price */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
-            <label className="label">Service Title</label>
-            <SuggestInput
-              endpoint="/api/services/suggest"
+            <label className="label">Title</label>
+            <input
+              className="input"
               value={name}
-              onChangeAction={async (next) => setName(next)}
-              onPickAction={async (item) => {
-                if (item.type === "service" || item.type === "name") {
-                  setName(item.value);
-                } else if (item.type === "subcategory") {
-                  const parts = item.value.split("•").map((s) => s.trim());
-                  if (parts.length === 2) {
-                    setCategory(parts[0] || category);
-                    setSubcategory(parts[1] || subcategory);
-                  } else {
-                    setSubcategory(item.value);
-                  }
-                } else if (item.type === "category") {
-                  setCategory(item.value);
-                }
-              }}
-              placeholder="e.g. Deep Cleaning for Apartments"
-              typesAllowed={["service", "name", "subcategory", "category"]}
-              inputClassName="input"
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. iPhone 13 Pro 256GB"
+              required
+              minLength={3}
+              aria-label="Listing title"
             />
           </div>
           <div>
-            <label className="label">Base Price (KES)</label>
+            <label className="label">Price (KES)</label>
             <input
               type="number"
               inputMode="numeric"
@@ -406,53 +409,45 @@ export default function SellServiceClient() {
               className="input"
               value={price}
               onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
-              placeholder="e.g. 1500 (leave blank for quote)"
+              placeholder="e.g. 35000"
               aria-describedby="price-help"
               aria-label="Price in Kenyan shillings"
             />
             <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              Leave empty for <em>Contact for quote</em>.
+              Leave empty for <em>Contact for price</em>.
             </p>
-            <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="fixed"
-                  checked={rateType === "fixed"}
-                  onChange={() => setRateType("fixed")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
-                Fixed
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="hour"
-                  checked={rateType === "hour"}
-                  onChange={() => setRateType("hour")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
-                /hour
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="day"
-                  checked={rateType === "day"}
-                  onChange={() => setRateType("day")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
-                /day
-              </label>
-            </div>
+            <label className="mt-3 flex items-center gap-2 text-sm text-gray-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300 dark:border-slate-600"
+                checked={negotiable}
+                onChange={(e) => setNegotiable(e.target.checked)}
+                aria-label="Negotiable price"
+              />
+              Negotiable price
+            </label>
+            {typeof price === "number" && price > 0 && (
+              <div className="text-xs mt-1 text-gray-600 dark:text-slate-400">
+                You entered: KES {fmtKES(priceNum)}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Category, Subcategory, Area */}
+        {/* Condition, Category, Subcategory */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="label">Condition</label>
+            <select
+              className="select"
+              value={condition}
+              onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
+              aria-label="Item condition"
+            >
+              <option value="brand new">Brand New</option>
+              <option value="pre-owned">Pre-Owned</option>
+            </select>
+          </div>
           <div>
             <label className="label">Category</label>
             <select
@@ -461,7 +456,7 @@ export default function SellServiceClient() {
               onChange={(e) => setCategory(e.target.value)}
               aria-label="Category"
             >
-              {SERVICE_CATEGORIES.map((c) => (
+              {cats.map((c) => (
                 <option key={c.name} value={c.name}>
                   {c.name}
                 </option>
@@ -482,62 +477,23 @@ export default function SellServiceClient() {
                 </option>
               ))}
             </select>
-
-            <div className="mt-2">
-              <SuggestInput
-                endpoint="/api/services/suggest"
-                value=""
-                onChangeAction={async () => {
-                  /* picks drive state */
-                }}
-                onPickAction={async (item) => {
-                  if (item.type === "subcategory") {
-                    const parts = item.value.split("•").map((s) => s.trim());
-                    if (parts.length === 2) {
-                      setCategory(parts[0] || category);
-                      setSubcategory(parts[1] || subcategory);
-                    } else {
-                      setSubcategory(item.value);
-                    }
-                  } else if (item.type === "category") {
-                    setCategory(item.value);
-                    setSubcategory("");
-                  } else if (item.type === "service" || item.type === "name") {
-                    setSubcategory(item.value);
-                  }
-                }}
-                placeholder="Quick pick: type to find a category/subcategory"
-                typesAllowed={["subcategory", "category", "service", "name"]}
-                inputClassName="input"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="label">Service Area (optional)</label>
-            <input
-              className="input"
-              value={serviceArea}
-              onChange={(e) => setServiceArea(e.target.value)}
-              placeholder="e.g. Nairobi CBD, Westlands"
-              aria-label="Service area"
-            />
           </div>
         </div>
 
-        {/* Availability, Location, Phone */}
+        {/* Brand, Location, Phone (optional) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="label">Availability (optional)</label>
+            <label className="label">Brand (optional)</label>
             <input
               className="input"
-              value={availability}
-              onChange={(e) => setAvailability(e.target.value)}
-              placeholder="e.g. Mon–Sat 8am–6pm"
-              aria-label="Availability"
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              placeholder="e.g. Samsung"
+              aria-label="Brand"
             />
           </div>
           <div>
-            <label className="label">Base Location</label>
+            <label className="label">Location</label>
             <input
               className="input"
               value={location}
@@ -570,10 +526,10 @@ export default function SellServiceClient() {
             rows={5}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe your service, experience, what’s included, etc."
+            placeholder="Describe the item, condition, accessories, warranty, etc."
             required
             minLength={10}
-            aria-label="Service description"
+            aria-label="Listing description"
           />
         </div>
 
@@ -661,7 +617,10 @@ export default function SellServiceClient() {
             {submitting && uploadPct > 0 && (
               <div className="mt-3" aria-live="polite">
                 <div className="h-2 w-full bg-gray-200 rounded">
-                  <div className="h-2 bg-emerald-500 rounded transition-all" style={{ width: `${uploadPct}%` }} />
+                  <div
+                    className="h-2 bg-emerald-500 rounded transition-all"
+                    style={{ width: `${uploadPct}%` }}
+                  />
                 </div>
                 <p className="text-xs text-gray-600 mt-1">Uploading images… {uploadPct}%</p>
               </div>
@@ -673,10 +632,10 @@ export default function SellServiceClient() {
           <button
             type="submit"
             disabled={!canSubmit || submitting}
-            className={`btn-gradient-primary ${!canSubmit || submitting ? "opacity-60" : ""}`}
-            aria-label="Post service"
+            className={`btn-gradient-primary ${(!canSubmit || submitting) ? "opacity-60" : ""}`}
+            aria-label="Post product"
           >
-            {submitting ? "Posting…" : "Post Service"}
+            {submitting ? "Posting…" : "Post Product"}
           </button>
           <button type="button" onClick={() => router.back()} className="btn-outline" aria-label="Cancel">
             Cancel
