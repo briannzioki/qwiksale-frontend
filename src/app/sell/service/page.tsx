@@ -1,9 +1,11 @@
+// src/app/sell/service/page.tsx
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
+import SuggestInput from "@/app/components/SuggestInput";
 
 type Me = { id: string; email: string | null; profileComplete: boolean; whatsapp?: string | null };
 
@@ -220,13 +222,30 @@ function SellServiceInner() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">Service name</label>
-            <input
-              className="input"
+            <SuggestInput
+              endpoint="/api/services/suggest"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChangeAction={async (next) => setName(next)}
+              onPickAction={async (item) => {
+                // Prefer sensible defaults from picks
+                if (item.type === "service" || item.type === "name") {
+                  setName(item.value);
+                } else if (item.type === "subcategory") {
+                  // handle "Category • Subcategory" combos
+                  const parts = item.value.split("•").map((s) => s.trim());
+                  if (parts.length === 2) {
+                    setCategory(parts[0] || "Services");
+                    setSubcategory(parts[1] || "");
+                  } else {
+                    setSubcategory(item.value);
+                  }
+                } else if (item.type === "category") {
+                  setCategory(item.value);
+                }
+              }}
               placeholder="e.g. Mama Fua (house cleaning)"
-              required
-              minLength={3}
+              typesAllowed={["service", "name", "subcategory", "category"]}
+              inputClassName="input"
             />
           </div>
           <div>
@@ -294,11 +313,29 @@ function SellServiceInner() {
           </div>
           <div>
             <label className="label">Category / Subcategory (optional)</label>
-            <input
-              className="input"
+            <SuggestInput
+              endpoint="/api/services/suggest"
               value={subcategory}
-              onChange={(e) => setSubcategory(e.target.value)}
+              onChangeAction={async (next) => setSubcategory(next)}
+              onPickAction={async (item) => {
+                if (item.type === "subcategory") {
+                  const parts = item.value.split("•").map((s) => s.trim());
+                  if (parts.length === 2) {
+                    setCategory(parts[0] || "Services");
+                    setSubcategory(parts[1] || "");
+                  } else {
+                    setSubcategory(item.value);
+                  }
+                } else if (item.type === "category") {
+                  setCategory(item.value);
+                  setSubcategory("");
+                } else if (item.type === "service" || item.type === "name") {
+                  setSubcategory(item.value);
+                }
+              }}
               placeholder="e.g. Cleaning"
+              typesAllowed={["subcategory", "category", "service", "name"]}
+              inputClassName="input"
             />
           </div>
         </div>

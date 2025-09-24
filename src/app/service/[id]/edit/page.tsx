@@ -1,3 +1,4 @@
+// src/app/service/[id]/edit/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,9 +16,10 @@ export const metadata: Metadata = {
 export default async function EditServicePage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id } = await params;
+  const id = params?.id;
+  if (!id || typeof id !== "string") notFound();
 
   // Require auth
   const session = await auth().catch(() => null);

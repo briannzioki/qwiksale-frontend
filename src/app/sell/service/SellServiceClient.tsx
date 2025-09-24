@@ -1,11 +1,11 @@
+// src/app/sell/service/SellServiceClient.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import SuggestInput from "@/app/components/SuggestInput";
 
-// If you keep a separate categories list for services, import it here.
-// For now we just provide small defaults to avoid coupling.
 const SERVICE_CATEGORIES = [
   { name: "Home Services", subcategories: [{ name: "Cleaning" }, { name: "Repairs" }] },
   { name: "Automotive", subcategories: [{ name: "Mechanic" }, { name: "Car Wash" }] },
@@ -21,7 +21,7 @@ const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 // Cloudinary (client-safe)
 const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
-const UPLOAD_PRESET = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? ""; // unsigned preset if you have one
+const UPLOAD_PRESET = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? "";
 
 /* ----------------------------- Phone helpers ----------------------------- */
 function normalizePhone(raw: string): string {
@@ -42,15 +42,12 @@ async function uploadToCloudinary(
   file: File,
   opts?: { onProgress?: (pct: number) => void; folder?: string }
 ): Promise<{ secure_url: string; public_id: string }> {
-  if (!CLOUD_NAME) {
-    throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
-  }
+  if (!CLOUD_NAME) throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
   const folder = opts?.folder || "qwiksale";
   const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
   const fd = new FormData();
   fd.append("file", file);
 
-  // Prefer unsigned (simpler)
   if (UPLOAD_PRESET) {
     fd.append("upload_preset", UPLOAD_PRESET);
     fd.append("folder", folder);
@@ -62,7 +59,6 @@ async function uploadToCloudinary(
     return { secure_url: json.secure_url, public_id: json.public_id };
   }
 
-  // Signed: get signature from our API
   const sigRes = await fetch(`/api/upload/sign?folder=${encodeURIComponent(folder)}`, {
     method: "GET",
     cache: "no-store",
@@ -111,11 +107,13 @@ export default function SellServiceClient() {
 
   // ----------------------------- Form state -----------------------------
   const [name, setName] = useState<string>("");
-  const [price, setPrice] = useState<number | "">(""); // nullable -> "Contact for quote"
+  const [price, setPrice] = useState<number | "">("");
   const [rateType, setRateType] = useState<"hour" | "day" | "fixed">("fixed");
 
   const [category, setCategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.name || ""));
-  const [subcategory, setSubcategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.subcategories?.[0]?.name || ""));
+  const [subcategory, setSubcategory] = useState<string>(
+    String(SERVICE_CATEGORIES[0]?.subcategories?.[0]?.name || "")
+  );
 
   const [serviceArea, setServiceArea] = useState<string>("");
   const [availability, setAvailability] = useState<string>("");
@@ -128,6 +126,12 @@ export default function SellServiceClient() {
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // keep phone in a ref so the effect doesn't depend on state (avoids extra fetch & deps warning)
+  const phoneRef = useRef<string>("");
+  useEffect(() => {
+    phoneRef.current = phone;
+  }, [phone]);
 
   // Prefill phone from profile + gate checks
   useEffect(() => {
@@ -155,7 +159,7 @@ export default function SellServiceClient() {
           router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell/service")}`);
           return;
         }
-        if (!cancelled && !phone && me?.whatsapp) setPhone(me.whatsapp);
+        if (!cancelled && !phoneRef.current && me?.whatsapp) setPhone(me.whatsapp);
 
         if (!cancelled) setAllowed(true);
       } catch {
@@ -169,7 +173,7 @@ export default function SellServiceClient() {
     };
   }, [router]);
 
-  // Derived options (kept local to avoid importing product categories)
+  // Derived options (local)
   type Sub = { readonly name: string };
   type Cat = { readonly name: string; readonly subcategories: readonly Sub[] };
   const cats: readonly Cat[] = SERVICE_CATEGORIES;
@@ -231,7 +235,7 @@ export default function SellServiceClient() {
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+  function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer?.files?.length) filesToAdd(e.dataTransfer.files);
@@ -296,13 +300,10 @@ export default function SellServiceClient() {
         }
       }
 
-      const imageUrl =
-        uploaded[0]?.secure_url || previews[0]?.url || "/placeholder/default.jpg";
-      const gallery = uploaded.length
-        ? uploaded.map((u) => u.secure_url)
-        : previews.map((p) => p.url);
+      const imageUrl = uploaded[0]?.secure_url || previews[0]?.url || "/placeholder/default.jpg";
+      const gallery = uploaded.length ? uploaded.map((u) => u.secure_url) : previews.map((p) => p.url);
 
-      // Service payload (matches /api/services/create)
+      // Service payload
       const payload = {
         name: name.trim(),
         description: description.trim(),
@@ -326,7 +327,6 @@ export default function SellServiceClient() {
         body: JSON.stringify(payload),
       });
 
-      // Handle rate limiting & errors
       if (r.status === 429) {
         const j = await r.json().catch(() => ({}));
         throw new Error(j?.error || "You’re posting too fast. Please slow down.");
@@ -334,14 +334,10 @@ export default function SellServiceClient() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok || j?.error) throw new Error(j?.error || `Failed to create (${r.status})`);
 
-      const createdId: string = j?.serviceId || "";
+      const createdId: string = j?.serviceId || j?.id || j?.data?.id || "";
       toast.success("Service posted!");
 
-      // Navigate to the new service page…
       router.push(createdId ? `/service/${createdId}` : "/");
-
-      // …and nudge server components / caches to refetch.
-      // If you add route segment/tag-based revalidation later, you can trigger it here as well.
       router.refresh();
     } catch (err: any) {
       // eslint-disable-next-line no-console
@@ -377,14 +373,28 @@ export default function SellServiceClient() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
             <label className="label">Service Title</label>
-            <input
-              className="input"
+            <SuggestInput
+              endpoint="/api/services/suggest"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChangeAction={async (next) => setName(next)}
+              onPickAction={async (item) => {
+                if (item.type === "service" || item.type === "name") {
+                  setName(item.value);
+                } else if (item.type === "subcategory") {
+                  const parts = item.value.split("•").map((s) => s.trim());
+                  if (parts.length === 2) {
+                    setCategory(parts[0] || category);
+                    setSubcategory(parts[1] || subcategory);
+                  } else {
+                    setSubcategory(item.value);
+                  }
+                } else if (item.type === "category") {
+                  setCategory(item.value);
+                }
+              }}
               placeholder="e.g. Deep Cleaning for Apartments"
-              required
-              minLength={3}
-              aria-label="Service title"
+              typesAllowed={["service", "name", "subcategory", "category"]}
+              inputClassName="input"
             />
           </div>
           <div>
@@ -395,9 +405,7 @@ export default function SellServiceClient() {
               min={0}
               className="input"
               value={price}
-              onChange={(e) =>
-                setPrice(e.target.value === "" ? "" : Number(e.target.value))
-              }
+              onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
               placeholder="e.g. 1500 (leave blank for quote)"
               aria-describedby="price-help"
               aria-label="Price in Kenyan shillings"
@@ -474,6 +482,35 @@ export default function SellServiceClient() {
                 </option>
               ))}
             </select>
+
+            <div className="mt-2">
+              <SuggestInput
+                endpoint="/api/services/suggest"
+                value=""
+                onChangeAction={async () => {
+                  /* picks drive state */
+                }}
+                onPickAction={async (item) => {
+                  if (item.type === "subcategory") {
+                    const parts = item.value.split("•").map((s) => s.trim());
+                    if (parts.length === 2) {
+                      setCategory(parts[0] || category);
+                      setSubcategory(parts[1] || subcategory);
+                    } else {
+                      setSubcategory(item.value);
+                    }
+                  } else if (item.type === "category") {
+                    setCategory(item.value);
+                    setSubcategory("");
+                  } else if (item.type === "service" || item.type === "name") {
+                    setSubcategory(item.value);
+                  }
+                }}
+                placeholder="Quick pick: type to find a category/subcategory"
+                typesAllowed={["subcategory", "category", "service", "name"]}
+                inputClassName="input"
+              />
+            </div>
           </div>
           <div>
             <label className="label">Service Area (optional)</label>
@@ -520,8 +557,7 @@ export default function SellServiceClient() {
               aria-label="WhatsApp phone number (optional)"
             />
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              If provided, we’ll normalize as{" "}
-              <code className="font-mono">{normalizedPhone || "—"}</code>
+              If provided, we’ll normalize as <code className="font-mono">{normalizedPhone || "—"}</code>
             </div>
           </div>
         </div>
@@ -556,9 +592,7 @@ export default function SellServiceClient() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <p className="text-sm text-gray-600 dark:text-slate-400">
                 Drag & drop images here, or choose files.
-                <span className="ml-2 text-xs">
-                  (JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)
-                </span>
+                <span className="ml-2 text-xs">(JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)</span>
               </p>
               <div className="flex items-center gap-2">
                 <input
@@ -627,10 +661,7 @@ export default function SellServiceClient() {
             {submitting && uploadPct > 0 && (
               <div className="mt-3" aria-live="polite">
                 <div className="h-2 w-full bg-gray-200 rounded">
-                  <div
-                    className="h-2 bg-emerald-500 rounded transition-all"
-                    style={{ width: `${uploadPct}%` }}
-                  />
+                  <div className="h-2 bg-emerald-500 rounded transition-all" style={{ width: `${uploadPct}%` }} />
                 </div>
                 <p className="text-xs text-gray-600 mt-1">Uploading images… {uploadPct}%</p>
               </div>
@@ -642,7 +673,7 @@ export default function SellServiceClient() {
           <button
             type="submit"
             disabled={!canSubmit || submitting}
-            className={`btn-gradient-primary ${(!canSubmit || submitting) ? "opacity-60" : ""}`}
+            className={`btn-gradient-primary ${!canSubmit || submitting ? "opacity-60" : ""}`}
             aria-label="Post service"
           >
             {submitting ? "Posting…" : "Post Service"}

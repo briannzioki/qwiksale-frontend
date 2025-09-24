@@ -13,14 +13,13 @@ import { buildProductSeo } from "@/app/lib/seo";
 import Gallery from "@/app/components/Gallery";
 import ContactModal from "@/app/components/ContactModal";
 
-/** Infer a single product shape from the products store */
-type ProductFromStore = ReturnType<typeof useProducts> extends { products: infer U }
-  ? U extends (infer V)[]
-    ? V
-    : never
-  : never;
+type ProductFromStore =
+  ReturnType<typeof useProducts> extends { products: infer U }
+    ? U extends (infer V)[]
+      ? V
+      : never
+    : never;
 
-/** Product shape we’ll accept from either cache or API */
 type FetchedProduct = Partial<ProductFromStore> & {
   id: string;
   name: string;
@@ -56,7 +55,6 @@ function fmtKES(n?: number | null) {
   }
 }
 
-/* ---------- helper to start internal message thread ---------- */
 async function startThread(
   sellerUserId: string,
   listingType: "product" | "service",
@@ -79,8 +77,9 @@ async function startThread(
 }
 
 export default function ProductPage() {
+  // ✅ Typed params so TS knows id is a string (no index-signature warning)
   const params = useParams<{ id: string }>();
-  const id = params?.id ? String(params.id) : "";
+  const id = params.id ?? "";
 
   const router = useRouter();
   const { data: session } = useSession();
@@ -93,21 +92,18 @@ export default function ProductPage() {
   const [fetchErr, setFetchErr] = useState<string | null>(null);
 
   const [origin, setOrigin] = useState<string>("");
-
   useEffect(() => {
     if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
 
   const product = useMemo(() => {
+    if (!id) return undefined;
     const p = products.find((x: any) => String(x.id) === id) as ProductFromStore | undefined;
     return (p as FetchedProduct) || undefined;
   }, [products, id]);
 
-  // Fetch from API if not in store
   useEffect(() => {
-    if (!ready || !id) return;
-    if (product) return;
-
+    if (!ready || !id || product) return;
     let cancelled = false;
     (async () => {
       try {
@@ -123,7 +119,6 @@ export default function ProductPage() {
         if (!cancelled) setFetching(false);
       }
     })();
-
     return () => {
       cancelled = true;
     };
@@ -133,10 +128,7 @@ export default function ProductPage() {
 
   const seo = useMemo(() => {
     if (!display) return null;
-
     const imgs = [display.image, ...(display.gallery ?? [])].filter(Boolean) as string[];
-
-    // Build args without ever assigning `undefined` to optional fields.
     const args: Parameters<typeof buildProductSeo>[0] = {
       id: display.id,
       name: display.name,
@@ -149,11 +141,9 @@ export default function ProductPage() {
       status: "ACTIVE",
       urlPath: `/product/${display.id}`,
     };
-
     return buildProductSeo(args);
   }, [display]);
 
-  /** Ordered unique image list for the Gallery */
   const images = useMemo(() => {
     const set = new Set<string>();
     if (display?.image) set.add(display.image);
@@ -202,7 +192,7 @@ export default function ProductPage() {
     }
   }, [origin, display?.id]);
 
-  // ---------- States ----------
+  // Loading states
   if (!ready && !display) {
     return (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
@@ -236,10 +226,8 @@ export default function ProductPage() {
     return <div className="text-gray-600 dark:text-slate-300">Product not found.</div>;
   }
 
-  // ---------- UI ----------
   return (
     <>
-      {/* JSON-LD for SEO (inject only when present) */}
       {seo?.jsonLd && (
         <script
           type="application/ld+json"
@@ -257,7 +245,6 @@ export default function ProductPage() {
               </span>
             )}
 
-            {/* Accessible gallery (keyboard + lightbox built-in) */}
             <Gallery images={images} lightbox />
             <div className="absolute right-3 top-3 z-10 flex gap-2">
               <button onClick={copyLink} className="btn-outline px-2 py-1 text-xs" title="Copy link">
@@ -275,7 +262,7 @@ export default function ProductPage() {
                   </Link>
                   <DeleteListingButton
                     id={display.id}
-                    type="product"             // <-- add this to satisfy the union prop
+                    type="product"
                     className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
                     label="Delete"
                     confirmText="Delete this listing? This cannot be undone."
@@ -292,7 +279,6 @@ export default function ProductPage() {
 
         {/* Content */}
         <div className="space-y-4 lg:col-span-2">
-          {/* Title + quick meta */}
           <div className="flex items-start justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{display.name}</h1>
@@ -307,10 +293,8 @@ export default function ProductPage() {
                 )}
               </div>
             </div>
-            <FavoriteButton productId={display.id} />
           </div>
 
-          {/* Pricing box */}
           <div className="space-y-1 rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">{fmtKES(display.price)}</p>
             {display.negotiable && <p className="text-sm text-gray-500">Negotiable</p>}
@@ -319,7 +303,6 @@ export default function ProductPage() {
             {display.location && <p className="text-sm text-gray-500">Location: {display.location}</p>}
           </div>
 
-          {/* Description */}
           <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <h2 className="mb-2 font-semibold">Description</h2>
             <p className="whitespace-pre-line text-gray-700 dark:text-slate-200">
@@ -327,10 +310,8 @@ export default function ProductPage() {
             </p>
           </div>
 
-          {/* Seller card + contact modal */}
           <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <h3 className="mb-3 font-semibold">Seller</h3>
-
             <div className="space-y-1 text-gray-700 dark:text-slate-200">
               <p className="flex items-center gap-2">
                 <span className="font-medium">Name:</span>
@@ -368,7 +349,6 @@ export default function ProductPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              {/* Standardized contact flow */}
               <ContactModal
                 className="rounded-lg"
                 productId={display.id}
@@ -377,8 +357,6 @@ export default function ProductPage() {
                 fallbackLocation={seller.location}
                 buttonLabel="Show Contact"
               />
-
-              {/* Internal messaging */}
               {seller.id && !isOwner && (
                 <button
                   onClick={() =>
@@ -395,8 +373,6 @@ export default function ProductPage() {
                   Message Seller
                 </button>
               )}
-
-              {/* Visit Store CTA if username exists */}
               {seller.username && (
                 <Link
                   href={`/store/${seller.username}`}
@@ -407,14 +383,12 @@ export default function ProductPage() {
                   Visit Store
                 </Link>
               )}
-
               <Link
                 href="/donate"
                 className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 Donate
               </Link>
-
               {display.featured && (
                 <div className="ml-auto inline-flex items-center gap-2 rounded-full bg-[#161748] px-3 py-1 text-xs text-white">
                   <span>Priority support</span>
