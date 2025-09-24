@@ -3,89 +3,90 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { NextResponse } from "next/server";
-// Prefer a shared Prisma singleton everywhere in the app:
-// import { prisma } from "@/app/lib/prisma";
-import { PrismaClient } from "@prisma/client";
+import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
+import { prisma } from "@/app/lib/prisma";          // ← use shared singleton
+import { checkRateLimit } from "@/app/lib/ratelimit";
+import { tooMany } from "@/app/lib/ratelimit-response";
 
-/* ----------------------------- Prisma singleton ---------------------------- */
-// NOTE: Do NOT export prisma from a route file.
-const g = globalThis as unknown as { __qsPrisma?: PrismaClient };
-const prisma = g.__qsPrisma ?? new PrismaClient();
-if (!g.__qsPrisma) g.__qsPrisma = prisma;
-
-/* ------------------------------ Tiny rate limit ---------------------------- */
-const rlStore = new Map<string, { count: number; resetAt: number }>();
-const RL_MAX = 15;
-const RL_WINDOW_MS = 60 * 1000;
-function rateLimitTry(key: string) {
-  const now = Date.now();
-  const cur = rlStore.get(key);
-  if (!cur || now >= cur.resetAt) {
-    rlStore.set(key, { count: 1, resetAt: now + RL_WINDOW_MS });
-    return { success: true };
-  }
-  if (cur.count >= RL_MAX) return { success: false };
-  cur.count += 1;
-  return { success: true };
+/* ------------------------------ helpers ------------------------------ */
+function json(json: unknown, init?: ResponseInit) {
+  return NextResponse.json(json, init);
 }
-
-/* --------------------------------- helpers --------------------------------- */
-function noStore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
+function noStore(res: NextResponse) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
+function setEdgeCache(res: NextResponse, seconds = 60) {
+  const v = `public, s-maxage=${seconds}, stale-while-revalidate=${seconds}`;
+  res.headers.set("Cache-Control", v);
+  res.headers.set("CDN-Cache-Control", v);
+  res.headers.set("Vary", "Accept-Encoding");
+  return res;
+}
+/** Only cache when there's no auth/cookies to avoid user-specific answers. */
+function isAnon(req: NextRequest) {
+  const authz = req.headers.get("authorization");
+  const cookie = req.headers.get("cookie");
+  return !authz && !(cookie && cookie.includes("session"));
+}
 
-/** Username: 3–24 chars; letters/digits/._; no leading/trailing sep; no doubles */
-const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
+/** 3–24; letters/digits/._; no leading/trailing sep; no double sep */
+const USERNAME_RE =
+  /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
+
+const RESERVED = new Set(
+  [
+    "admin","administrator","root","support","help","contact",
+    "api","auth","login","logout","signup","register",
+    "me","profile","settings","qwiksale","qwik","user"
+  ].concat(
+    (process.env["RESERVED_USERNAMES"] || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  )
+);
+
+type Reason = "empty" | "invalid_format" | "reserved" | "taken" | null;
 
 /* ---------------------------------- GET ---------------------------------- */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    // per-IP RL (15/min)
-    const xf =
-      req.headers.get("x-forwarded-for") ??
-      req.headers.get("x-vercel-forwarded-for") ??
-      "";
-    const ip =
-      (xf && xf.split(",")[0]?.trim()) ||
-      req.headers.get("x-real-ip") ||
-      "0.0.0.0";
-    const rl = rateLimitTry(`username-check:${ip}`);
-    if (!rl.success) {
-      return noStore({ error: "Too many requests" }, { status: 429 });
-    }
+    // Per-IP throttle (uses your shared helper)
+    const rl = await checkRateLimit(req.headers, {
+      name: "username_check",
+      limit: 60,
+      windowMs: 60_000,
+    });
+    if (!rl.ok) return tooMany("Too many requests. Please slow down.", rl.retryAfterSec);
 
     const url = new URL(req.url);
     const raw = (url.searchParams.get("u") ?? url.searchParams.get("username") ?? "").trim();
 
     if (!raw) {
-      return noStore(
-        { available: false, valid: false, normalized: "", reason: "empty" },
-        { status: 400 }
-      );
+      return noStore(json({ available: false, valid: false, normalized: "", reason: "empty" as Reason }, { status: 400 }));
     }
 
-    const normalized = raw; // keep casing for display
+    // Keep original casing for display, but compare case-insensitively
+    const normalized = raw;
+    const lower = normalized.toLowerCase();
+
     if (!USERNAME_RE.test(normalized)) {
-      return noStore(
-        { available: false, valid: false, normalized, reason: "invalid_format" },
-        { status: 400 }
-      );
+      return noStore(json({ available: false, valid: false, normalized, reason: "invalid_format" as Reason }, { status: 400 }));
+    }
+
+    if (RESERVED.has(lower)) {
+      const res = json({ available: false, valid: true, normalized, reason: "reserved" as Reason }, { status: 200 });
+      return isAnon(req) ? setEdgeCache(res, 120) : noStore(res);
     }
 
     // Who is asking? (their current username counts as available)
-    let meId: string | undefined;
-    try {
-      const session = await auth();
-      meId = (session as any)?.user?.id as string | undefined;
-    } catch {
-      // guest
-    }
+    const session = await auth().catch(() => null);
+    const meId = (session as any)?.user?.id as string | undefined;
 
     const existing = await prisma.user.findFirst({
       where: { username: { equals: normalized, mode: "insensitive" } },
@@ -93,12 +94,24 @@ export async function GET(req: Request) {
     });
 
     const available = !existing || (!!meId && existing.id === meId);
-    return noStore({ available, valid: true, normalized }, { status: 200 });
+    const reason: Reason = available ? null : "taken";
+
+    const res = json({ available, valid: true, normalized, reason }, { status: 200 });
+    return isAnon(req) ? setEdgeCache(res, 60) : noStore(res);
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/username/check] error:", e);
-    return noStore({ error: "Server error" }, { status: 500 });
+    return noStore(json({ error: "Server error" }, { status: 500 }));
   }
 }
 
-
+/* ------------------------------ OPTIONS (CORS, optional) ------------------------------ */
+export function OPTIONS() {
+  const res = new NextResponse(null, { status: 204 });
+  res.headers.set("Access-Control-Allow-Origin", process.env["NEXT_PUBLIC_APP_URL"] || "*");
+  res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.headers.set("Access-Control-Max-Age", "86400");
+  res.headers.set("Cache-Control", "no-store");
+  return res;
+}
