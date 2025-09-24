@@ -5,10 +5,9 @@ export const runtime = "nodejs";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import Image from "next/image";
 import { prisma } from "@/app/lib/prisma";
 import UserAvatar from "@/app/components/UserAvatar";
-import { imgUrl } from "@/app/li/cdn";
+import SmartImage from "@/app/components/SmartImage";
 
 /* ----------------------------- utils ----------------------------- */
 function fmtKES(n?: number | null) {
@@ -162,43 +161,38 @@ export default async function StorePage({
           <div className="text-gray-600 dark:text-slate-300">This store hasn’t posted any items yet.</div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((p) => {
-              const rawImg = p.image || "/placeholder/default.jpg";
-              const thumb = imgUrl(rawImg, { w: 600, h: 320, fit: "fill", gravity: "auto" }) || rawImg;
-
-              return (
-                <Link key={p.id} href={`/product/${p.id}`} className="group">
-                  <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-                    {p.featured && (
-                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
-                        Verified
-                      </span>
-                    )}
-                    <div className="relative h-40 w-full">
-                      <Image
-                        src={thumb}
-                        alt={p.name || "Product image"}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      />
-                    </div>
-                    <div className="p-4">
-                      <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
-                        {p.name || "Unnamed item"}
-                      </h3>
-                      <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
-                        {[p.category, p.subcategory].filter(Boolean).join(" • ") || "—"}
-                      </p>
-                      <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">{fmtKES(p.price)}</p>
-                      <p className="mt-1 text-[11px] text-gray-400">
-                        {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : ""}
-                      </p>
-                    </div>
+            {products.map((p) => (
+              <Link key={p.id} href={`/listing/${p.id}`} className="group">
+                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                  {p.featured && (
+                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
+                      Verified
+                    </span>
+                  )}
+                  <div className="relative h-40 w-full bg-gray-100">
+                    <SmartImage
+                      src={p.image || undefined}
+                      alt={p.name || "Product image"}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                    />
                   </div>
-                </Link>
-              );
-            })}
+                  <div className="p-4">
+                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
+                      {p.name || "Unnamed item"}
+                    </h3>
+                    <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
+                      {[p.category, p.subcategory].filter(Boolean).join(" • ") || "—"}
+                    </p>
+                    <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">{fmtKES(p.price)}</p>
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : ""}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            ))}
           </div>
         )}
       </section>

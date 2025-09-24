@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import SuggestInput from "@/app/components/SuggestInput";
 
 export type Filters = {
   query: string;
@@ -36,6 +37,9 @@ type Props = {
    */
   onSubmitAction?: (f: Filters) => void | Promise<void>;
 
+  /** If provided, enables suggestions and points to an API endpoint (e.g. "/api/services/suggest"). */
+  suggestEndpoint?: string;
+
   showVerifiedToggle?: boolean;
   disabled?: boolean;
   className?: string;
@@ -57,6 +61,7 @@ export default function FiltersBar({
   value,
   onFiltersChangeAction,
   onSubmitAction,
+  suggestEndpoint,             // ← NEW
   showVerifiedToggle = false,
   disabled = false,
   className = "",
@@ -75,22 +80,19 @@ export default function FiltersBar({
     }
   }, []);
 
-  // Focus management: "/" focuses the search box
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // Focus management: "/" focuses the search box (use element id to support SuggestInput)
+  const idSearch = useId();
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (
-        e.key === "/" &&
-        (e.target as HTMLElement)?.tagName !== "INPUT" &&
-        (e.target as HTMLElement)?.tagName !== "TEXTAREA"
-      ) {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (e.key === "/" && targetTag !== "INPUT" && targetTag !== "TEXTAREA") {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        document.getElementById(idSearch)?.focus();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [idSearch]);
 
   // Keep local q in sync if the parent re-renders with a different value.query
   useEffect(() => {
@@ -185,7 +187,6 @@ export default function FiltersBar({
   const hasBoth = typeof minPrice === "number" && typeof maxPrice === "number";
   const rangeInvalid = hasBoth && (minPrice as number) > (maxPrice as number);
 
-  const idSearch = useId();
   const idCond = useId();
   const idSort = useId();
   const idMin = useId();
@@ -195,7 +196,7 @@ export default function FiltersBar({
 
   const placeholder = useMemo(() => "Search by name, brand, category…", []);
 
-  // Keyboard affordances: Enter submits, Esc clears current search
+  // Keyboard affordances with the plain input (SuggestInput handles its own keys)
   const onSearchKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter") void applyNow();
@@ -207,10 +208,11 @@ export default function FiltersBar({
     [applyNow, update]
   );
 
-  // Clamp helper for price fields
+  // Clamp helper for price fields (accepts commas and trims junk)
   const parsePrice = useCallback((v: string): number | "" => {
-    if (v === "") return "";
-    const n = Math.max(0, Number(v));
+    const raw = (v ?? "").toString().replace(/,/g, "").replace(/[^\d]/g, "");
+    if (raw === "") return "";
+    const n = Math.max(0, Number(raw));
     return Number.isFinite(n) ? n : "";
   }, []);
 
@@ -227,27 +229,61 @@ export default function FiltersBar({
           <label htmlFor={idSearch} className="sr-only">
             Search
           </label>
-          <input
-            id={idSearch}
-            ref={searchInputRef}
-            type="text"
-            value={qLocal}
-            onChange={(e) => setQLocal(e.target.value)}
-            onKeyDown={onSearchKeyDown}
-            placeholder={placeholder}
-            disabled={disabled}
-            autoCorrect="on"
-            spellCheck
-            className="
-              w-full px-4 py-2 rounded-lg
-              text-gray-900 dark:text-slate-100
-              placeholder:text-gray-500 dark:placeholder:text-slate-400
-              bg-white dark:bg-slate-800
-              border border-gray-300 dark:border-slate-700
-              focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
-              disabled:opacity-60
-            "
-          />
+
+          {/* If suggestEndpoint is provided, render SuggestInput; otherwise fallback to a plain input */}
+          {suggestEndpoint ? (
+            <div className="w-full">
+              <SuggestInput
+                // Use the deterministic id so the "/" shortcut can focus it
+                name={idSearch}
+                // aria-label provided since the visible label is sr-only
+                ariaLabel="Search"
+                endpoint={suggestEndpoint}
+                value={qLocal}
+                onChangeAction={async (next) => {
+                  setQLocal(next);
+                  // do NOT notify parent here; keep debounce/applyNow behavior
+                }}
+                // Explicit submit still goes through the Search button / Enter in plain input context
+                placeholder={placeholder}
+                disabled={disabled}
+                // Match styling to the old input
+                inputClassName="
+                  w-full px-4 py-2 rounded-lg
+                  text-gray-900 dark:text-slate-100
+                  placeholder:text-gray-500 dark:placeholder:text-slate-400
+                  bg-white dark:bg-slate-800
+                  border border-gray-300 dark:border-slate-700
+                  focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+                  disabled:opacity-60
+                "
+              />
+            </div>
+          ) : (
+            <input
+              id={idSearch}
+              type="text"
+              value={qLocal}
+              onChange={(e) => setQLocal(e.target.value)}
+              onKeyDown={onSearchKeyDown}
+              inputMode="search"
+              enterKeyHint="search"
+              placeholder={placeholder}
+              disabled={disabled}
+              autoCorrect="on"
+              spellCheck
+              className="
+                w-full px-4 py-2 rounded-lg
+                text-gray-900 dark:text-slate-100
+                placeholder:text-gray-500 dark:placeholder:text-slate-400
+                bg-white dark:bg-slate-800
+                border border-gray-300 dark:border-slate-700
+                focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+                disabled:opacity-60
+              "
+            />
+          )}
+
           <button
             onClick={() => void applyNow()}
             disabled={disabled}
@@ -342,9 +378,12 @@ export default function FiltersBar({
               id={idMin}
               type="number"
               min={0}
+              step={1}
               inputMode="numeric"
               value={minPrice === "" ? "" : Number(minPrice)}
               onChange={(e) => update({ minPrice: parsePrice(e.target.value) }, "minPrice")}
+              onBlur={(e) => update({ minPrice: parsePrice(e.target.value) }, "minPrice")}
+              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
               placeholder="Min KES"
               className={`
                 w-full rounded-lg px-3 py-2
@@ -368,9 +407,12 @@ export default function FiltersBar({
               id={idMax}
               type="number"
               min={0}
+              step={1}
               inputMode="numeric"
               value={maxPrice === "" ? "" : Number(maxPrice)}
               onChange={(e) => update({ maxPrice: parsePrice(e.target.value) }, "maxPrice")}
+              onBlur={(e) => update({ maxPrice: parsePrice(e.target.value) }, "maxPrice")}
+              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
               placeholder="Max KES"
               className={`
                 w-full rounded-lg px-3 py-2

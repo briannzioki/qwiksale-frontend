@@ -1,4 +1,3 @@
-// src/app/components/SearchBox.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -60,10 +59,10 @@ export default function SearchBox(props: Props) {
   // container ref so we can focus the inner <input> when inline opens
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // Prefetch the search route so the transition feels instant
+  // Prefetch the home route (grid lives on "/")
   useEffect(() => {
     try {
-      r.prefetch?.("/search");
+      r.prefetch?.("/");
     } catch {
       /* noop */
     }
@@ -128,6 +127,8 @@ export default function SearchBox(props: Props) {
       const term = raw.trim();
       const params = new URLSearchParams();
 
+      let modeSet = false;
+
       if (picked?.meta?.type) {
         const t = picked.meta.type;
         const label = picked.label;
@@ -144,6 +145,7 @@ export default function SearchBox(props: Props) {
         } else if (t === "service") {
           params.set("t", "services");
           params.set("q", label);
+          modeSet = true;
         } else if (t === "name") {
           params.set("q", label);
         }
@@ -151,8 +153,17 @@ export default function SearchBox(props: Props) {
         params.set("q", term);
       }
 
-      if (![...params.keys()].length && term) params.set("q", term);
-      r.push(`/search?${params.toString()}`);
+      // Default mode: products (unless explicitly set to services)
+      if (!modeSet && !params.has("t")) {
+        params.set("t", "products");
+      }
+
+      if (![...params.keys()].length && term) {
+        params.set("t", "products");
+        params.set("q", term);
+      }
+
+      r.push(`/?${params.toString()}`);
       // For inline variant, close after navigation
       if (isInline) (props as InlineVariantProps).onCloseAction?.();
     },
