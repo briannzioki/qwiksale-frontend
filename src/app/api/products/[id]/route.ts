@@ -1,13 +1,14 @@
 // src/app/api/products/[id]/route.ts
+export const preferredRegion = "fra1";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/server/prisma";
 import { auth } from "@/auth";
-import { revalidatePath, revalidateTag } from "next/cache"; // ← ADD
+import { revalidatePath, revalidateTag } from "next/cache";
 
 /* ---------------- analytics (console-only for now) ---------------- */
 type AnalyticsEvent =
@@ -329,6 +330,7 @@ export async function PATCH(req: NextRequest) {
       revalidateTag(`user:${userId}:listings`);
       revalidatePath("/");
       revalidatePath(`/product/${productId}`);
+      revalidatePath(`/listing/${productId}`);
     } catch {
       /* best-effort */
     }
@@ -398,6 +400,7 @@ export async function DELETE(req: NextRequest) {
       revalidateTag(`user:${userId}:listings`);
       revalidatePath("/");
       revalidatePath(`/product/${productId}`);
+      revalidatePath(`/listing/${productId}`);
     } catch {
       /* best-effort */
     }
