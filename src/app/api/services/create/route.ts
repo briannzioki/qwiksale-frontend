@@ -1,340 +1,248 @@
-// src/app/api/services/create/route.ts
+// src/app/api/services/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-// export const preferredRegion = "fra1"; // <- optional if you're pinning region
 
-import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { auth } from "@/auth";
-import { checkRateLimit } from "@/app/lib/ratelimit";
-import { tooMany } from "@/app/lib/ratelimit-response";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
-/* ------------------------- tiny helpers ------------------------- */
-function noStore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
-  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.headers.set("Pragma", "no-cache");
-  res.headers.set("Expires", "0");
-  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-  return res;
+/* ----------------------------- tiny helpers ----------------------------- */
+function toInt(v: string | null, def: number, min: number, max: number) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(max, Math.trunc(n)));
 }
-function withReqId(res: NextResponse, id: string) {
-  res.headers.set("x-request-id", id);
-  return res;
+function toBool(v: string | null): boolean | undefined {
+  if (v == null) return undefined;
+  const t = v.trim().toLowerCase();
+  if (["1", "true", "yes"].includes(t)) return true;
+  if (["0", "false", "no"].includes(t)) return false;
+  return undefined;
 }
-const RATE_TYPES = new Set(["hour", "day", "fixed"]);
-
-function clampLen(s: string | undefined, max: number) {
-  if (!s) return s;
-  return s.length > max ? s.slice(0, max) : s;
-}
-function s(v: unknown, max?: number): string | undefined {
-  if (typeof v !== "string") v = v == null ? "" : String(v);
-  const t = (v as string)
-    .replace(/[\u0000-\u0008\u000B-\u001F\u007F]+/g, "")
-    .trim();
+function optStr(v: string | null): string | undefined {
+  const t = (v ?? "").trim();
   if (!t) return undefined;
-  return typeof max === "number" ? clampLen(t, max) : t;
+  const l = t.toLowerCase();
+  if (l === "any" || l === "all" || l === "*") return undefined;
+  return t;
 }
-function nPrice(v: unknown): number | null | undefined {
-  // null/"" => “contact for quote”
-  if (v === null || v === "") return null;
-  if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.round(v));
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return nPrice(n);
-    return undefined; // explicit invalid string like "abc"
-  }
-  return undefined; // absent
-}
-function nRateType(v: unknown): "hour" | "day" | "fixed" | undefined {
-  const rt = s(v)?.toLowerCase();
-  if (!rt) return undefined;
-  return RATE_TYPES.has(rt) ? (rt as any) : undefined;
-}
-function nGallery(v: unknown, maxUrl: number, maxCount: number): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const cleaned = v
-    .map((x) => (typeof x === "string" ? x.trim() : ""))
-    .filter(Boolean)
-    .map((x) => clampLen(x, maxUrl)!)
-    .filter((x) => /^https?:\/\//i.test(x));
-  return Array.from(new Set(cleaned)).slice(0, maxCount);
-}
-function clip(str: string | undefined, max = 5000) {
-  if (!str) return str;
-  return str.length <= max ? str : str.slice(0, max);
-}
-/** Normalize Kenyan MSISDN to `2547XXXXXXXX` / `2541XXXXXXXX`. */
-function normalizeMsisdn(input?: string): string | undefined {
-  if (!input) return undefined;
-  let raw = input.trim();
-  if (/^\+254(7|1)\d{8}$/.test(raw)) raw = raw.replace(/^\+/, "");
-  let s = raw.replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) s = "254" + s.slice(1);
-  if (/^7\d{8}$/.test(s) || /^1\d{8}$/.test(s)) s = "254" + s;
-  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
-  return /^254(7|1)\d{8}$/.test(s) ? s : undefined;
+type SortKey = "newest" | "price_asc" | "price_desc" | "featured";
+function toSort(v: string | null): SortKey {
+  const t = (v || "").trim().toLowerCase();
+  if (t === "price_asc" || t === "price-asc") return "price_asc";
+  if (t === "price_desc" || t === "price-desc") return "price_desc";
+  if (t === "featured") return "featured";
+  return "newest";
 }
 
-/* ------------------------------ limits ------------------------------ */
-type Tier = "BASIC" | "GOLD" | "PLATINUM";
-const LIMITS: Record<Tier, { listingLimit: number; canFeature: boolean }> = {
-  BASIC: { listingLimit: 3, canFeature: false },
-  GOLD: { listingLimit: 30, canFeature: true },
-  PLATINUM: { listingLimit: 999_999, canFeature: true },
-};
-function toTier(sub?: string | null): Tier {
-  const s = (sub || "").toUpperCase();
-  if (s === "GOLD") return "GOLD";
-  if (s === "PLATINUM") return "PLATINUM";
-  return "BASIC";
-}
-
-const MAX = {
-  name: 140,
-  category: 64,
-  subcategory: 64,
-  location: 120,
-  serviceArea: 160,
-  availability: 160,
-  description: 5000,
-  imageUrl: 2048,
-  galleryCount: 20,
+/** minimal select for cards */
+const serviceListSelect = {
+  id: true,
+  name: true,
+  category: true,
+  subcategory: true,
+  price: true,
+  image: true,
+  location: true,
+  featured: true,
+  createdAt: true,
+  sellerId: true,
+  seller: {
+    select: { id: true, username: true, name: true, image: true, subscription: true },
+  },
 } as const;
 
-/* ----------------------------- analytics ----------------------------- */
-type AnalyticsEvent =
-  | "service_create_attempt"
-  | "service_create_validation_error"
-  | "service_create_limit_reached"
-  | "service_create_success"
-  | "service_create_error";
-function track(ev: AnalyticsEvent, props?: Record<string, unknown>) {
-  try {
-    console.log(`[track] ${ev}`, { ts: new Date().toISOString(), ...props });
-  } catch {}
+/** Access a Service-model compat layer that may not exist in this schema */
+function getServiceModel() {
+  const anyPrisma = prisma as any;
+  const svc =
+    anyPrisma.service ??
+    anyPrisma.services ??
+    anyPrisma.Service ??
+    anyPrisma.Services ??
+    null;
+  return typeof svc?.findMany === "function" ? svc : null;
 }
 
-/** Lenient handle if your Prisma model name differs */
-const db: any = prisma as any;
-
-/* ------------- robust create (handles missing `publishedAt`) ------------- */
-async function createServiceSafe(data: any) {
-  // Try with `publishedAt`; if Prisma schema lacks it, retry without.
+/* -------------------------- GET /api/services -------------------------- */
+export async function GET(req: NextRequest) {
   try {
-    return await db.service.create({ data, select: { id: true } });
-  } catch (e: any) {
-    const msg = String(e?.message || "");
-    if (
-      msg.includes("Unknown arg `publishedAt`") ||
-      msg.includes("Unknown argument") ||
-      msg.includes("Argument `publishedAt`")
-    ) {
-      try {
-        const { publishedAt, ...without } = data ?? {};
-        return await db.service.create({ data: without, select: { id: true } });
-      } catch {
-        throw e;
-      }
-    }
-    throw e;
-  }
-}
-
-/* ----------------------------- POST ----------------------------- */
-export async function POST(req: NextRequest) {
-  const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
-
-  try {
-    const session = await auth().catch(() => null);
-    const userId = (session?.user as any)?.id as string | undefined;
-    if (!userId) return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId);
-
-    // Per-IP + user throttle
-    const rl = await checkRateLimit(req.headers, {
-      name: "services_create",
-      limit: 6,
-      windowMs: 10 * 60_000,
-      extraKey: userId,
-    });
-    if (!rl.ok) {
-      return withReqId(tooMany("Too many create attempts. Try again later.", rl.retryAfterSec), reqId);
-    }
-
-    // Reject non-JSON early
-    const ctype = req.headers.get("content-type") || "";
-    if (!ctype.toLowerCase().includes("application/json")) {
-      return withReqId(noStore({ error: "Content-Type must be application/json" }, { status: 415 }), reqId);
-    }
-
-    // Snapshot seller (for tier/phone fallback)
-    const me = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        createdAt: true,
-        subscription: true,
-        whatsapp: true,
-        city: true,
-        country: true,
-      },
-    });
-    if (!me) return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId);
-
-    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-
-    track("service_create_attempt", { reqId, userId: me.id, tier: toTier(me.subscription) });
-
-    // Accept product-like and service-like payload keys
-    const name = s(body["name"], MAX.name) ?? s(body["title"], MAX.name);
-    const description = clip(s(body["description"]), MAX.description);
-    const category = s(body["category"], MAX.category) ?? "Services";
-    const subcategory = s(body["subcategory"], MAX.subcategory);
-    const image = s(body["image"], MAX.imageUrl) ?? s(body["thumbnailUrl"], MAX.imageUrl);
-    const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
-
-    // Rate type: default to "fixed" if not provided; if provided but invalid, error
-    const hasRateTypeKey = Object.prototype.hasOwnProperty.call(body, "rateType");
-    const parsedRateType = nRateType(body["rateType"]);
-    const rateType: "hour" | "day" | "fixed" = parsedRateType ?? "fixed";
-    if (hasRateTypeKey && !parsedRateType) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "rateType", reason: "invalid" });
-      return withReqId(noStore({ error: "Invalid rateType (use hour, day, or fixed)" }, { status: 400 }), reqId);
-    }
-
-    const serviceArea = s(body["serviceArea"], MAX.serviceArea);
-    const availability = s(body["availability"], MAX.availability);
-    const location = s(body["location"], MAX.location) ?? serviceArea;
-
-    const price = nPrice(body["price"]); // null => “contact for quote”; undefined => absent
-    const hasPriceKey = Object.prototype.hasOwnProperty.call(body, "price");
-
-    let sellerPhone = normalizeMsisdn(s(body["sellerPhone"]));
-    if (!sellerPhone && me.whatsapp) sellerPhone = normalizeMsisdn(me.whatsapp);
-
-    // Validation
-    if (!name || name.length < 3) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "name" });
-      return withReqId(noStore({ error: "Name is required (min 3 chars)" }, { status: 400 }), reqId);
-    }
-    if (!description || description.length < 10) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "description" });
-      return withReqId(noStore({ error: "Description is required (min 10 chars)" }, { status: 400 }), reqId);
-    }
-    if (hasPriceKey && price === undefined) {
-      // user attempted price but it's invalid (e.g. "abc")
-      track("service_create_validation_error", { reqId, userId: me.id, field: "price", reason: "invalid" });
-      return withReqId(noStore({ error: "Invalid price" }, { status: 400 }), reqId);
-    }
-    if (typeof body["sellerPhone"] === "string" && !normalizeMsisdn(body["sellerPhone"] as string)) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "sellerPhone", reason: "invalid" });
-      return withReqId(
-        noStore({ error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." }, { status: 400 }),
-        reqId
+    const Service = getServiceModel();
+    if (!Service) {
+      return jsonPublic(
+        {
+          page: 1,
+          pageSize: 0,
+          total: 0,
+          totalPages: 1,
+          sort: "newest" as const,
+          items: [] as any[],
+          facets: undefined,
+        },
+        60
       );
     }
 
-    // Tier enforcement (count only ACTIVE services)
-    const tier = toTier(me.subscription);
-    const limits = LIMITS[tier];
-    const myActiveCount = await db.service.count({
-      where: { sellerId: me.id, status: "ACTIVE" },
-    });
-    if (myActiveCount >= limits.listingLimit) {
-      track("service_create_limit_reached", {
-        reqId,
-        userId: me.id,
-        tier,
-        limit: limits.listingLimit,
+    const url = new URL(req.url);
+
+    const q = (url.searchParams.get("q") || "").trim();
+    const category = optStr(url.searchParams.get("category"));
+    const subcategory = optStr(url.searchParams.get("subcategory"));
+    const sellerId =
+      optStr(url.searchParams.get("sellerId")) || optStr(url.searchParams.get("userId"));
+    const sellerUsername =
+      optStr(url.searchParams.get("seller")) || optStr(url.searchParams.get("user"));
+    const featured = toBool(url.searchParams.get("featured"));
+    const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
+
+    const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
+    const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
+
+    const sort = toSort(url.searchParams.get("sort"));
+    const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
+    const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
+    const pageSize = toInt(url.searchParams.get("pageSize"), 24, 1, 200);
+
+    const where: Record<string, any> = { status: "ACTIVE" };
+    const and: any[] = [];
+
+    if (q) {
+      and.push({
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { description: { contains: q, mode: "insensitive" } },
+          { category: { contains: q, mode: "insensitive" } },
+          { subcategory: { contains: q, mode: "insensitive" } },
+          { seller: { is: { name: { contains: q, mode: "insensitive" } } } },
+        ],
       });
-      return withReqId(noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 }), reqId);
     }
+    if (category) and.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (sellerId) and.push({ sellerId });
+    if (sellerUsername)
+      and.push({
+        seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } },
+      });
+    if (typeof featured === "boolean") and.push({ featured });
+    if (verifiedOnly === true) and.push({ featured: true });
 
-    // Compose write
-    const created = await createServiceSafe({
-      name,
-      description,
-      category,
-      subcategory: subcategory ?? null,
-      price: price ?? null, // null => “contact for quote”
-      rateType,
-      serviceArea: serviceArea ?? null,
-      availability: availability ?? null,
-      image: image ?? null,
-      gallery: gallery ?? [],
-      location: location ?? null,
-
-      status: "ACTIVE",
-      featured: false, // tier check above; expand later if you want featured services
-      publishedAt: new Date(), // will be dropped automatically if column doesn't exist
-
-      sellerId: me.id,
-      sellerName: me.name ?? null,
-      sellerLocation:
-        me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
-      sellerMemberSince: me.createdAt ? me.createdAt.toISOString().slice(0, 10) : null,
-      sellerRating: null,
-      sellerSales: null,
-      sellerPhone: sellerPhone ?? null,
-    });
-
-    // Revalidate caches/tags so service appears immediately
-    try {
-      revalidateTag("home:active");
-      revalidateTag("services:latest");
-      revalidateTag(`user:${userId}:services`);
-      revalidatePath("/");
-      revalidatePath("/services");
-      if (me.username) revalidatePath(`/store/${me.username}`);
-      revalidatePath("/dashboard");
-      revalidatePath(`/service/${created.id}`);
-    } catch {
-      /* best-effort */
+    if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+      const price: any = {};
+      if (Number.isFinite(minPrice)) price.gte = minPrice;
+      if (Number.isFinite(maxPrice)) price.lte = maxPrice;
+      and.push({ price });
     }
+    if (and.length) where["AND"] = and;
 
-    track("service_create_success", {
-      reqId,
-      userId: me.id,
-      tier,
-      serviceId: created.id,
-      hasPrice: price != null,
-      gallerySize: (gallery ?? []).length,
-    });
+    const isSearchLike = q.length > 0 || !!category || !!subcategory;
+    let orderBy: any;
+    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { id: "asc" as const }];
+    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { id: "asc" as const }];
+    else if (sort === "featured")
+      orderBy = [
+        { featured: "desc" as const },
+        { createdAt: "desc" as const },
+        { id: "asc" as const },
+      ];
+    else
+      orderBy = isSearchLike
+        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "asc" as const }]
+        : [{ createdAt: "desc" as const }, { id: "asc" as const }];
 
-    return withReqId(noStore({ ok: true, serviceId: created.id }, { status: 201 }), reqId);
-  } catch (e: any) {
+    const [total, servicesRaw, facets] = await Promise.all([
+      Service.count({ where }),
+      Service.findMany({
+        where,
+        select: serviceListSelect,
+        orderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      wantFacets && page === 1 ? computeFacets(where, Service) : Promise.resolve(undefined),
+    ]);
+
+    const items = (servicesRaw as Array<any>).map((s) => ({
+      id: s.id as string,
+      name: s.name as string,
+      category: s.category as string | null,
+      subcategory: s.subcategory as string | null,
+      price: typeof s.price === "number" ? (s.price as number) : null,
+      image: (s.image as string | null) ?? null,
+      featured: Boolean(s.featured),
+      location: (s.location as string | null) ?? null,
+      createdAt:
+        s?.createdAt instanceof Date ? s.createdAt.toISOString() : String(s?.createdAt ?? ""),
+      sellerId: s.sellerId as string,
+      seller: s.seller ?? null,
+    }));
+
+    const res = jsonPublic(
+      {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        sort,
+        items,
+        facets,
+      },
+      60
+    );
+    res.headers.set("X-Total-Count", String(total));
+    return res;
+  } catch (e) {
     // eslint-disable-next-line no-console
-    console.error("[services/create POST] error", e);
-    track("service_create_error", { reqId, message: e?.message ?? String(e) });
-
-    if (e?.code === "P2002") {
-      return withReqId(noStore({ error: "Duplicate value not allowed" }, { status: 409 }), reqId);
-    }
-    return withReqId(noStore({ error: "Server error" }, { status: 500 }), reqId);
+    console.warn("[/api/services GET] error:", e);
+    return jsonPrivate({ error: "Server error" }, { status: 500 });
   }
 }
 
-/* ----------------------------- CORS (optional) ----------------------------- */
-export function OPTIONS() {
-  const origin =
-    process.env["NEXT_PUBLIC_SITE_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
-    "*";
+/* -------------------------- POST /api/services ------------------------- */
+export async function POST(req: NextRequest) {
+  const Service = getServiceModel();
+  if (!Service) {
+    return jsonPrivate({ error: "Service model not available in this schema." }, { status: 501 });
+  }
+  const { POST: createService } = await import("./create/route");
+  return createService(req);
+}
 
-  const res = new NextResponse(null, { status: 204 });
-  res.headers.set("Access-Control-Allow-Origin", origin);
-  res.headers.set("Vary", "Origin");
-  res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.headers.set("Access-Control-Max-Age", "86400");
-  res.headers.set("Cache-Control", "no-store");
-  return res;
+/* ------------------------------ facets -------------------------------- */
+type CatRow = { category: string | null; _count: { _all: number } };
+type SubcatRow = { subcategory: string | null; _count: { _all: number } };
+
+async function computeFacets(where: any, Service: any) {
+  try {
+    const [catsRaw, subsRaw] = await Promise.all([
+      Service.groupBy({ by: ["category"], where, _count: { _all: true } }),
+      Service.groupBy({ by: ["subcategory"], where, _count: { _all: true } }),
+    ]);
+
+    const categories = (catsRaw as CatRow[])
+      .filter((x) => !!x.category)
+      .sort((a, b) => b._count._all - a._count._all)
+      .slice(0, 10)
+      .map((x) => ({ value: String(x.category), count: x._count._all }));
+
+    const subcategories = (subsRaw as SubcatRow[])
+      .filter((x) => !!x.subcategory)
+      .sort((a, b) => b._count._all - a._count._all)
+      .slice(0, 10)
+      .map((x) => ({ value: String(x.subcategory), count: x._count._all }));
+
+    return { categories, subcategories };
+  } catch {
+    return undefined;
+  }
+}
+
+/* ----------------------------- misc verbs ----------------------------- */
+export async function HEAD() {
+  return jsonPublic(null, 60, { status: 204 });
+}
+
+export async function OPTIONS() {
+  return jsonPublic({ ok: true }, 60, { status: 204 });
 }

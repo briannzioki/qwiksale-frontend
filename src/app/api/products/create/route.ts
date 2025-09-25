@@ -1,5 +1,4 @@
 // src/app/api/products/create/route.ts
-export const preferredRegion = "fra1";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

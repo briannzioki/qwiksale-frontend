@@ -1,4 +1,4 @@
-﻿// src/app/layout.tsx
+// src/app/layout.tsx
 export const runtime = "nodejs";
 export const revalidate = 600;
 
