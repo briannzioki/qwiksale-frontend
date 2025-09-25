@@ -1,10 +1,9 @@
-export const preferredRegion = 'fra1';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic"; // CDN can still cache via s-maxage below.
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
-import { prisma } from "@/server/prisma";
+import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 

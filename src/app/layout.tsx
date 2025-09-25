@@ -1,4 +1,4 @@
-﻿// src/app/layout.tsx
+// src/app/layout.tsx
 export const runtime = "nodejs";
 export const revalidate = 600;
 
@@ -10,7 +10,7 @@ import Providers from "./providers";
 import AppShell from "./components/AppShell";
 import DevToolsMount from "./components/DevToolsMount";
 import { fontVars } from "./fonts";
-import ToasterClient from "./components/ToasterClient"; // ← add this
+import ToasterClient from "./components/ToasterClient";
 
 /* ----------------------------- Site URL helpers ---------------------------- */
 const envAppUrl =
@@ -94,7 +94,9 @@ export const metadata: Metadata = {
       },
   verification: {
     google: process.env["GOOGLE_SITE_VERIFICATION"] || undefined,
-    other: { "msvalidate.01": process.env["BING_SITE_VERIFICATION"] || "" },
+    other: process.env["BING_SITE_VERIFICATION"]
+      ? { "msvalidate.01": process.env["BING_SITE_VERIFICATION"] as string }
+      : undefined,
   },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "QwikSale" },
   category: "marketplace",
@@ -117,7 +119,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     url: siteUrl,
     potentialAction: {
       "@type": "SearchAction",
-      target: `${siteUrl}/?q={search_term_string}`,
+      target: `${siteUrl}/search?q={search_term_string}`,
       "query-input": "required name=search_term_string",
     },
   } as const;
@@ -126,14 +128,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const PLAUSIBLE_DOMAIN = process.env["NEXT_PUBLIC_PLAUSIBLE_DOMAIN"];
 
   return (
-    <html lang="en" dir="ltr" className="h-full" suppressHydrationWarning>
+    <html lang="en-KE" dir="ltr" className="h-full" suppressHydrationWarning>
       <head>
         <meta name="color-scheme" content="light dark" />
+
+        {/* Preconnect + DNS prefetch for image CDNs */}
         <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="//res.cloudinary.com" />
+        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="//images.unsplash.com" />
+        <link rel="preconnect" href="https://plus.unsplash.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//plus.unsplash.com" />
+        <link rel="preconnect" href="https://lh3.googleusercontent.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//lh3.googleusercontent.com" />
+        <link rel="preconnect" href="https://avatars.githubusercontent.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//avatars.githubusercontent.com" />
+        <link rel="preconnect" href="https://images.pexels.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//images.pexels.com" />
+        <link rel="preconnect" href="https://picsum.photos" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//picsum.photos" />
+
+        {/* Fonts (pair these; gstatic needs crossorigin) */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 
         <Script id="theme-script" strategy="beforeInteractive">{`try {
   const ls = localStorage.getItem('theme');
@@ -148,8 +165,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script id="ld-site" type="application/ld+json">
           {JSON.stringify(siteJsonLd)}
         </Script>
-
-        {isPreview ? <meta name="robots" content="noindex,nofollow,noimageindex" /> : null}
       </head>
 
       <body
@@ -177,7 +192,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           {GA_ID ? (
             <>
-              <Script id="ga-loader" strategy="afterInteractive" src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} />
+              <Script
+                id="ga-loader"
+                strategy="afterInteractive"
+                src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+              />
               <Script id="ga-init" strategy="afterInteractive">{`
 window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}

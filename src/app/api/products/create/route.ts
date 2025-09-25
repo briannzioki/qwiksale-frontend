@@ -1,5 +1,4 @@
 // src/app/api/products/create/route.ts
-export const preferredRegion = "fra1";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -180,6 +179,7 @@ async function getMe() {
     select: {
       id: true,
       name: true,
+      username: true, // include for store revalidation
       subscription: true,
       whatsapp: true,
       city: true,
@@ -200,6 +200,31 @@ export function OPTIONS() {
   res.headers.set("Access-Control-Max-Age", "86400");
   res.headers.set("Cache-Control", "no-store");
   return res;
+}
+
+/* --------------- Prisma-safe create (drops unknown columns) --------------- */
+
+const db: any = prisma as any;
+
+async function createProductSafe(data: any) {
+  try {
+    return await db.product.create({ data, select: { id: true } });
+  } catch (e: any) {
+    const msg = String(e?.message || "");
+    // If your schema doesn't have these columns, retry without them
+    if (
+      msg.includes("Unknown arg `publishedAt`") ||
+      msg.includes("Argument `publishedAt`")
+    ) {
+      const { publishedAt, ...rest } = data ?? {};
+      return await db.product.create({ data: rest, select: { id: true } });
+    }
+    if (msg.includes("Unknown arg `dedupeKey`") || msg.includes("Argument `dedupeKey`")) {
+      const { dedupeKey, ...rest } = data ?? {};
+      return await db.product.create({ data: rest, select: { id: true } });
+    }
+    throw e;
+  }
 }
 
 /* --------------- POST /api/products/create (main) --------------- */
@@ -373,30 +398,29 @@ export async function POST(req: NextRequest) {
       return r;
     }
 
-    const created = await prisma.product.create({
-      data: {
-        name,
-        category,
-        subcategory,
-        condition,
-        featured,
-        sellerId: me.id,
-        status: "ACTIVE",
-        createdAt: new Date(),
-        dedupeKey, // if your schema has it; otherwise remove this line
+    // Create ACTIVE listing (and try to set publishedAt when available)
+    const created = await createProductSafe({
+      name,
+      category,
+      subcategory,
+      condition,
+      featured,
+      sellerId: me.id,
+      status: "ACTIVE",
+      createdAt: new Date(),
+      publishedAt: new Date(), // helps any date filters; dropped if column missing
+      dedupeKey, // dropped below if column missing
 
-        ...(brand ? { brand } : {}),
-        ...(description ? { description } : {}),
-        ...(price !== undefined ? { price } : {}), // allow null for "contact for price"
-        ...(image ? { image } : {}),
-        ...(finalGallery.length ? { gallery: finalGallery } : {}),
-        ...(location ? { location } : {}),
-        ...(negotiable !== undefined ? { negotiable } : {}),
-        ...(sellerName ? { sellerName } : {}),
-        sellerPhone: sellerPhoneRaw ?? null,
-        ...(sellerLocation ? { sellerLocation } : {}),
-      },
-      select: { id: true },
+      ...(brand ? { brand } : {}),
+      ...(description ? { description } : {}),
+      ...(price !== undefined ? { price } : {}), // allow null for "contact for price"
+      ...(image ? { image } : {}),
+      ...(finalGallery.length ? { gallery: finalGallery } : {}),
+      ...(location ? { location } : {}),
+      ...(negotiable !== undefined ? { negotiable } : {}),
+      ...(sellerName ? { sellerName } : {}),
+      sellerPhone: sellerPhoneRaw ?? null,
+      ...(sellerLocation ? { sellerLocation } : {}),
     });
 
     // invalidate caches so the listing appears immediately
@@ -405,6 +429,12 @@ export async function POST(req: NextRequest) {
       revalidateTag("products:latest");
       revalidateTag(`user:${me.id}:listings`);
       revalidatePath("/");
+      revalidatePath("/dashboard");
+      revalidatePath("/saved");
+      if (me.username) revalidatePath(`/store/${me.username}`);
+      revalidatePath(`/product/${created.id}`);
+      // some projects also expose /listing/[id]
+      revalidatePath(`/listing/${created.id}`);
     } catch {
       /* best-effort */
     }

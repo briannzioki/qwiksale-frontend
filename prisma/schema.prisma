@@ -196,6 +196,13 @@ model Product {
   negotiable  Boolean       @default(false)
   status      ProductStatus @default(ACTIVE)
   soldAt      DateTime?
+
+  /// New: when the listing becomes visible (set on create)
+  publishedAt DateTime?     @default(now())
+
+  /// Optional dedupe key (sha256 hex) used by create endpoint
+  dedupeKey   String?       @db.VarChar(64)
+
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -224,6 +231,15 @@ model Product {
   @@index([status, price])
   @@index([sellerId, status, createdAt(sort: Desc)])
   @@index([status, brand])
+
+  /// New indexes for published ordering (kept alongside createdAt for safety)
+  @@index([status, featured, publishedAt(sort: Desc)])
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([status, category, subcategory, publishedAt(sort: Desc)])
+  @@index([sellerId, status, publishedAt(sort: Desc)])
+
+  /// Helpful for quick duplicate checks per-seller
+  @@index([sellerId, dedupeKey, createdAt(sort: Desc)])
 }
 
 model Service {
@@ -241,6 +257,9 @@ model Service {
   location     String?
   status       ProductStatus @default(ACTIVE) // reuse
   featured     Boolean       @default(false)
+
+  /// New: visible-from timestamp (set on create)
+  publishedAt DateTime?      @default(now())
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -262,6 +281,12 @@ model Service {
   @@index([status, category, subcategory, createdAt(sort: Desc)])
   @@index([status, price])
   @@index([sellerId, status, createdAt(sort: Desc)])
+
+  /// New indexes for published ordering
+  @@index([status, featured, publishedAt(sort: Desc)])
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([status, category, subcategory, publishedAt(sort: Desc)])
+  @@index([sellerId, status, publishedAt(sort: Desc)])
 }
 
 model Favorite {

@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { prisma } from "@/app/lib/prisma";
+import { prisma } from "@/lib/db"; // ✅ use central prisma client
 import { getServerSession, getSessionUser } from "@/app/lib/auth";
 
 export type Role = "ADMIN" | "STAFF" | "USER" | null | undefined;
@@ -14,15 +14,20 @@ const ROLE_RANK: Record<Exclude<Role, undefined | null>, number> = {
 
 // Parse allowlist once
 const ADMIN_EMAILS_ALLOWLIST: ReadonlySet<string> = (() => {
-  const raw = process.env['ADMIN_EMAILS'] || "";
+  const raw = process.env["ADMIN_EMAILS"] || "";
   return new Set(
-    raw.split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
+    raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
   );
 })();
 
+/** Prefer session.role (fast), fall back to DB (authoritative). Cached per request. */
 const getCurrentUserRole = cache(async (): Promise<Role> => {
   const u = await getSessionUser();
   if (!u?.id) return null;
+
+  const roleFromSession = (u as any)?.role as Role | undefined;
+  if (roleFromSession) return roleFromSession;
+
   const row = await prisma.user.findUnique({
     where: { id: u.id as string },
     select: { role: true },
