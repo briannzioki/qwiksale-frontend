@@ -31,7 +31,7 @@ function NavLink({
         "px-2 py-1 rounded-md transition",
         isActive
           ? "text-[#161748] dark:text-white bg-black/5 dark:bg-white/10"
-          : "text-gray-700 hover:bg-black/5 dark:text-slate-200 dark:hover:bg-white/10",
+          : "text-gray-700 hover:bg-black/5 dark:text-slate-200 dark:hover:bg:white/10 dark:hover:bg-white/10",
         className,
       ].join(" ")}
       aria-current={isActive ? "page" : undefined}
@@ -56,7 +56,7 @@ export default function Header() {
 
   // Pinned inline search
   const [inlineOpen, setInlineOpen] = useState(false);
-  const inlineWrapRef = useRef<HTMLDivElement>(null); // ← changed generic (no | null)
+  const inlineWrapRef = useRef<HTMLDivElement | null>(null); // correct typing
   const inlineBtnId = useId();
   useOutsideClick(inlineWrapRef, () => setInlineOpen(false));
 
@@ -128,7 +128,7 @@ export default function Header() {
           QwikSale
         </Link>
 
-        {/* Desktop search row */}
+        {/* Desktop search row (actual search input on md+) */}
         <div className="hidden md:flex flex-1">
           <SearchBox className="w-full" placeholder="Search phones, cars, services…" />
         </div>
@@ -139,6 +139,8 @@ export default function Header() {
             Home
           </NavLink>
           <NavLink href="/sell">Sell</NavLink>
+
+          {/* Minimal Search link so search is ALWAYS present on desktop */}
           <NavLink href="/search">Search</NavLink>
 
           {/* Pinned search icon + inline box */}
@@ -241,7 +243,7 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Mobile search row (kept as before) */}
+      {/* Mobile search row (always visible on mobile) */}
       <div className="border-t bg-white/90 px-4 py-2 dark:border-slate-800 dark:bg-slate-900/90 md:hidden">
         <SearchBox placeholder="Search phones, cars, services…" />
       </div>

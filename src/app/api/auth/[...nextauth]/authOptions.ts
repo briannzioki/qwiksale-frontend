@@ -5,7 +5,7 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import EmailProvider from "next-auth/providers/email";
 
-import { prisma } from "@/lib/db"; // ⬅️ use the new central prisma client
+import { prisma } from "@/lib/db"; // centralized prisma client
 import { verifyPassword, hashPassword } from "@/server/auth";
 
 const isProd = process.env.NODE_ENV === "production";
@@ -20,6 +20,7 @@ const ALLOWED_CALLBACK_PATHS = new Set<string>([
   "/saved",
   "/account/profile",
   "/account/complete-profile",
+  "/admin", // ✅ allow landing on admin after sign-in
 ]);
 
 export const authOptions: NextAuthOptions = {
@@ -100,6 +101,7 @@ export const authOptions: NextAuthOptions = {
             subscription: true,
             username: true,
             referralCode: true,
+            role: true, // (optional here; authoritative fetch happens in jwt callback)
           },
         });
 
@@ -181,12 +183,18 @@ export const authOptions: NextAuthOptions = {
         if (uid) {
           const profile = await prisma.user.findUnique({
             where: { id: uid },
-            select: { subscription: true, username: true, referralCode: true },
+            select: {
+              subscription: true,
+              username: true,
+              referralCode: true,
+              role: true, // ✅ pull role from DB
+            },
           });
           if (profile) {
             (token as any).subscription = profile.subscription ?? null;
             (token as any).username = profile.username ?? null;
             (token as any).referralCode = profile.referralCode ?? null;
+            (token as any).role = profile.role ?? "USER"; // ✅ keep role on token
           }
         }
       }
@@ -200,6 +208,7 @@ export const authOptions: NextAuthOptions = {
       (session.user as any).subscription = (token as any).subscription ?? null;
       (session.user as any).username = (token as any).username ?? null;
       (session.user as any).referralCode = (token as any).referralCode ?? null;
+      (session.user as any).role = (token as any).role ?? "USER"; // ✅ expose role in session
       return session;
     },
   },

@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import { useSession } from "next-auth/react";
 import FavoriteButton from "@/app/components/FavoriteButton";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
-import { buildProductSeo } from "@/app/lib/seo";
+import { buildServiceSeo } from "@/app/lib/seo";
 import Gallery from "@/app/components/Gallery";
 import ContactModalService from "@/app/components/ContactModalService";
 
@@ -146,21 +146,25 @@ export default function ServicePage() {
 
   const isOwner = Boolean(viewerId && seller.id && viewerId === seller.id);
 
-  // Build SEO without injecting nulls
+  // Build SEO without injecting nulls (uses @type: "Service")
   const seo = useMemo(() => {
     if (!data) return null;
     const imgs = [data.image, ...(data.gallery ?? [])].filter(Boolean) as string[];
-    const args: Parameters<typeof buildProductSeo>[0] = {
+    return buildServiceSeo({
       id: data.id,
       name: data.name,
       ...(data.description != null ? { description: data.description } : {}),
-      ...(typeof data.price === "number" ? { price: data.price as number | null } : {}),
+      ...(typeof data.price === "number" ? { price: data.price } : {}),
       ...(imgs.length ? { image: imgs } : {}),
       ...(data.category ? { category: data.category } : {}),
-      status: "ACTIVE",
+      ...(data.subcategory ? { subcategory: data.subcategory } : {}),
+      ...(data.rateType ? { rateType: data.rateType } : {}),
+      ...(data.location ? { location: data.location } : {}),
+      ...(data.serviceArea ? { serviceArea: data.serviceArea } : {}),
+      ...(data.sellerName ? { sellerName: data.sellerName } : {}),
       urlPath: `/service/${data.id}`,
-    };
-    return buildProductSeo(args);
+      status: "ACTIVE",
+    });
   }, [data]);
 
   const copyLink = useCallback(async () => {
@@ -186,6 +190,7 @@ export default function ServicePage() {
       {seo?.jsonLd && (
         <script
           type="application/ld+json"
+          // Avoid XSS: we control all fields; stringify once
           dangerouslySetInnerHTML={{ __html: JSON.stringify(seo.jsonLd) }}
         />
       )}
@@ -205,7 +210,11 @@ export default function ServicePage() {
             <button type="button" onClick={copyLink} className="btn-outline px-2 py-1 text-xs" title="Copy link">
               Copy link
             </button>
+
+            {/* If your FavoriteButton supports services, prefer serviceId=.
+               Otherwise you can remove this button or keep productId until service support is added. */}
             <FavoriteButton productId={data.id} />
+
             {isOwner && (
               <>
                 <Link

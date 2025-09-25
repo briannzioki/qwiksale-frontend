@@ -1,8 +1,9 @@
 // src/app/components/ProductCard.tsx
 "use client";
 
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import React, { memo, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
 
@@ -14,7 +15,7 @@ type Props = {
   featured?: boolean;
   /** 0-based position in the feed, used for analytics + image priority */
   position?: number;
-  /** Next.js prefetch (default true) */
+  /** Allow route prefetching (default true) */
   prefetch?: boolean;
   className?: string;
 };
@@ -24,8 +25,7 @@ type Props = {
 function formatKES(value?: number | null) {
   if (!value || value <= 0) return "Contact for price";
   try {
-    // Consistent with app: "KES 12,345"
-    return `KES ${new Intl.NumberFormat("en-KE").format(value)}`;
+    return `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(value)}`;
   } catch {
     return `KES ${Number(value).toLocaleString("en-KE")}`;
   }
@@ -47,7 +47,7 @@ function getBlurDataURL(width = 640, height = 360): string {
   return FALLBACK_BLUR;
 }
 
-/* ----------------------- Analytics: client-only event bus ----------------------- */
+/* ----------------------- Analytics ----------------------- */
 
 function trackClient(event: string, payload?: Record<string, unknown>) {
   // eslint-disable-next-line no-console
@@ -59,7 +59,7 @@ function trackClient(event: string, payload?: Record<string, unknown>) {
 
 /* ----------------------- Component ----------------------- */
 
-export default function ProductCard({
+function ProductCardImpl({
   id,
   name,
   price,
@@ -69,10 +69,11 @@ export default function ProductCard({
   prefetch = true,
   className = "",
 }: Props) {
+  const router = useRouter();
   const href = useMemo(() => `/product/${encodeURIComponent(id)}`, [id]);
 
   const url = image || "/placeholder/default.jpg";
-  const cardRef = useRef<HTMLAnchorElement | null>(null);
+  const anchorRef = useRef<HTMLAnchorElement | null>(null);
   const seenRef = useRef(false);
 
   // Make top-of-feed images priority for faster LCP (e.g., first 8)
@@ -80,43 +81,96 @@ export default function ProductCard({
 
   // One-time product_view when first visible
   useEffect(() => {
-    if (!cardRef.current || seenRef.current || typeof window === "undefined") return;
+    if (!anchorRef.current || seenRef.current || typeof window === "undefined") return;
 
-    const el = cardRef.current;
-    const io = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting && !seenRef.current) {
-          seenRef.current = true;
-          trackClient("product_view", { id, name, price, position });
-          io.disconnect();
-          break;
+    const el = anchorRef.current;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !seenRef.current) {
+            seenRef.current = true;
+            trackClient("product_view", { id, name, price, position });
+            io.disconnect();
+            break;
+          }
         }
-      }
-    });
+      },
+      { rootMargin: "0px 0px -10% 0px" }
+    );
 
     io.observe(el);
     return () => io.disconnect();
   }, [id, name, price, position]);
 
+  // Smart route prefetch: IO + hover/focus
+  useEffect(() => {
+    if (!prefetch || !anchorRef.current) return;
+    const el = anchorRef.current;
+    let done = false;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !done) {
+            done = true;
+            try {
+              // In App Router, Link already prefetches by default; this is a best-effort hint.
+              router.prefetch?.(href as any);
+            } catch {}
+            io.disconnect();
+            break;
+          }
+        }
+      },
+      { rootMargin: "300px" }
+    );
+
+    io.observe(el);
+    return () => io.disconnect();
+  }, [href, prefetch, router]);
+
+  const hoverPrefetch = useCallback(() => {
+    if (!prefetch) return;
+    try {
+      router.prefetch?.(href as any);
+    } catch {}
+  }, [href, prefetch, router]);
+
   const onClick = useCallback(() => {
     trackClient("product_click", { id, name, price, position, href });
   }, [id, name, price, position, href]);
 
-  const priceText = formatKES(price);
+  const priceText = useMemo(() => formatKES(price), [price]);
+  const aria = `${name}${price ? `, ${priceText}` : ""}`;
+
+  // ✅ Only pass blurDataURL when using "blur" placeholder
+  const blurProps = useMemo<
+    | { placeholder: "blur"; blurDataURL: string }
+    | { placeholder: "empty" }
+  >(
+    () =>
+      priority
+        ? { placeholder: "blur", blurDataURL: getBlurDataURL(640, 360) }
+        : { placeholder: "empty" },
+    [priority]
+  );
 
   return (
     <Link
       href={href}
       prefetch={prefetch}
+      onMouseEnter={hoverPrefetch}
+      onFocus={hoverPrefetch}
       onClick={onClick}
-      ref={cardRef}
+      ref={anchorRef}
       className={[
-        "group relative block rounded-xl border bg-white p-3 shadow-sm",
+        "group relative block rounded-xl border bg-white p-3 shadow-sm will-change-transform",
         "border-black/5 hover:border-black/10 hover:shadow-md",
         "dark:bg-gray-900 dark:border-white/10 dark:hover:border-white/15",
         className,
       ].join(" ")}
-      aria-label={`${name}${priceText ? `, ${priceText}` : ""}`}
+      aria-label={aria}
+      title={name}
     >
       {/* Featured badge */}
       {featured && (
@@ -136,9 +190,8 @@ export default function ProductCard({
           fill
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-          placeholder="blur"
-          blurDataURL={getBlurDataURL(640, 360)}
           priority={priority}
+          {...blurProps}
         />
       </div>
 
@@ -147,10 +200,10 @@ export default function ProductCard({
         <div className="line-clamp-1 font-medium text-gray-900 dark:text-gray-100" title={name}>
           {name}
         </div>
-        <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-          {priceText}
-        </div>
+        <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{priceText}</div>
       </div>
     </Link>
   );
 }
+
+export default memo(ProductCardImpl);

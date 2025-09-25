@@ -1,3 +1,5 @@
+// src/app/lib/seo.ts
+
 /* -------------------------------------------------------------------------- */
 /* Core URL helpers                                                           */
 /* -------------------------------------------------------------------------- */
@@ -300,6 +302,66 @@ export function productJsonLd(p: {
   return out;
 }
 
+/** Service JSON-LD */
+export function serviceJsonLd(s: {
+  id: string;
+  name: string;
+  description?: string | null;
+  price?: number | null;
+  currency?: string;
+  image?: string | string[] | null;
+  url?: string;
+  category?: string | null;
+  subcategory?: string | null;
+  status?: string | null;
+  rateType?: "hour" | "day" | "fixed" | null;
+  location?: string | null;
+  serviceArea?: string | null;
+  sellerName?: string | null;
+  sellerUrl?: string | null;
+}) {
+  const images = Array.isArray(s.image)
+    ? s.image
+    : s.image
+    ? [s.image]
+    : undefined;
+
+  const url = s.url || `${SITE_URL}/service/${encodeURIComponent(s.id)}`;
+
+  const offers =
+    typeof s.price === "number" && s.price > 0
+      ? {
+          "@type": "Offer",
+          price: s.price,
+          priceCurrency: s.currency || "KES",
+          availability: mapAvailability(s.status),
+        }
+      : undefined;
+
+  const area = s.serviceArea || s.location;
+
+  const out: any = {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    "@id": url,
+    name: safeTitle(s.name),
+    description: safeDesc(s.description || ""),
+    url,
+    ...(images ? { image: images } : {}),
+    ...(s.category ? { category: s.category } : {}),
+    ...(s.subcategory ? { serviceType: s.subcategory } : {}),
+    ...(area ? { areaServed: area } : {}),
+    ...(offers ? { offers } : {}),
+    ...(s.sellerName
+      ? { provider: { "@type": "Organization", name: s.sellerName, url: s.sellerUrl || SITE_URL } }
+      : {}),
+    // Non-standard but useful hint; search engines safely ignore unknown keys
+    ...(s.rateType ? { rateType: s.rateType } : {}),
+  };
+
+  return out;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Open Graph/Twitter helpers (framework-agnostic objects)                    */
 /* -------------------------------------------------------------------------- */
@@ -343,8 +405,7 @@ export function buildTwitter(meta: {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Build a consistent SEO bundle for a product page (you can adapt to Next Metadata).
- * Returns canonical, og, twitter, and JSON-LD blobs you can drop into your layout.
+ * Build a consistent SEO bundle for a product page.
  */
 export function buildProductSeo(p: {
   id: string;
@@ -377,18 +438,75 @@ export function buildProductSeo(p: {
     ...(singleImage ? { image: singleImage } : {}),
   });
 
-  // IMPORTANT: Omit keys instead of passing `undefined`
+  // Omit keys instead of passing `undefined`
   const jsonLd = productJsonLd({
     id: p.id,
     name: p.name,
     ...(p.description != null ? { description: p.description } : {}),
-    ...(typeof p.price === "number" ? { price: p.price } : {}), // no undefined here
+    ...(typeof p.price === "number" ? { price: p.price } : {}),
     ...(p.image ? { image: p.image } : {}),
     url,
     ...(p.brand ? { brand: p.brand } : {}),
     ...(p.category ? { category: p.category } : {}),
     ...(p.condition ? { condition: p.condition } : {}),
     ...(p.status ? { status: p.status } : {}),
+  });
+
+  return { canonical, og, twitter, jsonLd };
+}
+
+/**
+ * Build a consistent SEO bundle for a service page.
+ */
+export function buildServiceSeo(s: {
+  id: string;
+  name: string;
+  description?: string | null;
+  price?: number | null;
+  image?: string | string[] | null;
+  category?: string | null;
+  subcategory?: string | null;
+  status?: string | null;
+  rateType?: "hour" | "day" | "fixed" | null;
+  location?: string | null;
+  serviceArea?: string | null;
+  sellerName?: string | null;
+  sellerUrl?: string | null;
+  urlPath?: string; // e.g. `/service/123`
+}) {
+  const url = s.urlPath ? absUrl(s.urlPath) : `${SITE_URL}/service/${encodeURIComponent(s.id)}`;
+  const canonical = url;
+
+  const singleImage = Array.isArray(s.image) ? s.image[0] : s.image || undefined;
+
+  const og = buildOg({
+    title: s.name,
+    description: s.description || "",
+    url,
+    ...(singleImage ? { image: singleImage } : {}),
+  });
+
+  const twitter = buildTwitter({
+    title: s.name,
+    description: s.description || "",
+    ...(singleImage ? { image: singleImage } : {}),
+  });
+
+  const jsonLd = serviceJsonLd({
+    id: s.id,
+    name: s.name,
+    ...(s.description != null ? { description: s.description } : {}),
+    ...(typeof s.price === "number" ? { price: s.price } : {}),
+    ...(s.image ? { image: s.image } : {}),
+    url,
+    ...(s.category ? { category: s.category } : {}),
+    ...(s.subcategory ? { subcategory: s.subcategory } : {}),
+    ...(s.status ? { status: s.status } : {}),
+    ...(s.rateType ? { rateType: s.rateType } : {}),
+    ...(s.location ? { location: s.location } : {}),
+    ...(s.serviceArea ? { serviceArea: s.serviceArea } : {}),
+    ...(s.sellerName ? { sellerName: s.sellerName } : {}),
+    ...(s.sellerUrl ? { sellerUrl: s.sellerUrl } : {}),
   });
 
   return { canonical, og, twitter, jsonLd };

@@ -122,6 +122,29 @@ function track(ev: AnalyticsEvent, props?: Record<string, unknown>) {
 /** Lenient handle if your Prisma model name differs */
 const db: any = prisma as any;
 
+/* ------------- robust create (handles missing `publishedAt`) ------------- */
+async function createServiceSafe(data: any) {
+  // Try with `publishedAt`; if Prisma schema lacks it, retry without.
+  try {
+    return await db.service.create({ data, select: { id: true } });
+  } catch (e: any) {
+    const msg = String(e?.message || "");
+    if (
+      msg.includes("Unknown arg `publishedAt`") ||
+      msg.includes("Unknown argument") ||
+      msg.includes("Argument `publishedAt`")
+    ) {
+      try {
+        const { publishedAt, ...without } = data ?? {};
+        return await db.service.create({ data: without, select: { id: true } });
+      } catch {
+        throw e;
+      }
+    }
+    throw e;
+  }
+}
+
 /* ----------------------------- POST ----------------------------- */
 export async function POST(req: NextRequest) {
   const reqId =
@@ -177,7 +200,16 @@ export async function POST(req: NextRequest) {
     const subcategory = s(body["subcategory"], MAX.subcategory);
     const image = s(body["image"], MAX.imageUrl) ?? s(body["thumbnailUrl"], MAX.imageUrl);
     const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
-    const rateType = nRateType(body["rateType"]) ?? "fixed";
+
+    // Rate type: default to "fixed" if not provided; if provided but invalid, error
+    const hasRateTypeKey = Object.prototype.hasOwnProperty.call(body, "rateType");
+    const parsedRateType = nRateType(body["rateType"]);
+    const rateType: "hour" | "day" | "fixed" = parsedRateType ?? "fixed";
+    if (hasRateTypeKey && !parsedRateType) {
+      track("service_create_validation_error", { reqId, userId: me.id, field: "rateType", reason: "invalid" });
+      return withReqId(noStore({ error: "Invalid rateType (use hour, day, or fixed)" }, { status: 400 }), reqId);
+    }
+
     const serviceArea = s(body["serviceArea"], MAX.serviceArea);
     const availability = s(body["availability"], MAX.availability);
     const location = s(body["location"], MAX.location) ?? serviceArea;
@@ -201,10 +233,6 @@ export async function POST(req: NextRequest) {
       // user attempted price but it's invalid (e.g. "abc")
       track("service_create_validation_error", { reqId, userId: me.id, field: "price", reason: "invalid" });
       return withReqId(noStore({ error: "Invalid price" }, { status: 400 }), reqId);
-    }
-    if (!RATE_TYPES.has(rateType)) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "rateType", reason: "invalid" });
-      return withReqId(noStore({ error: "Invalid rateType" }, { status: 400 }), reqId);
     }
     if (typeof body["sellerPhone"] === "string" && !normalizeMsisdn(body["sellerPhone"] as string)) {
       track("service_create_validation_error", { reqId, userId: me.id, field: "sellerPhone", reason: "invalid" });
@@ -231,33 +259,31 @@ export async function POST(req: NextRequest) {
     }
 
     // Compose write
-    const created = await db.service.create({
-      data: {
-        name,
-        description,
-        category,
-        subcategory: subcategory ?? null,
-        price: price ?? null, // null => “contact for quote”
-        rateType,
-        serviceArea: serviceArea ?? null,
-        availability: availability ?? null,
-        image: image ?? null,
-        gallery: gallery ?? [],
-        location: location ?? null,
+    const created = await createServiceSafe({
+      name,
+      description,
+      category,
+      subcategory: subcategory ?? null,
+      price: price ?? null, // null => “contact for quote”
+      rateType,
+      serviceArea: serviceArea ?? null,
+      availability: availability ?? null,
+      image: image ?? null,
+      gallery: gallery ?? [],
+      location: location ?? null,
 
-        status: "ACTIVE",
-        featured: false, // tier check above; expand later if you want featured services
+      status: "ACTIVE",
+      featured: false, // tier check above; expand later if you want featured services
+      publishedAt: new Date(), // will be dropped automatically if column doesn't exist
 
-        sellerId: me.id,
-        sellerName: me.name ?? null,
-        sellerLocation:
-          me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
-        sellerMemberSince: me.createdAt ? me.createdAt.toISOString().slice(0, 10) : null,
-        sellerRating: null,
-        sellerSales: null,
-        sellerPhone: sellerPhone ?? null,
-      },
-      select: { id: true },
+      sellerId: me.id,
+      sellerName: me.name ?? null,
+      sellerLocation:
+        me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
+      sellerMemberSince: me.createdAt ? me.createdAt.toISOString().slice(0, 10) : null,
+      sellerRating: null,
+      sellerSales: null,
+      sellerPhone: sellerPhone ?? null,
     });
 
     // Revalidate caches/tags so service appears immediately
@@ -266,6 +292,9 @@ export async function POST(req: NextRequest) {
       revalidateTag("services:latest");
       revalidateTag(`user:${userId}:services`);
       revalidatePath("/");
+      revalidatePath("/services");
+      if (me.username) revalidatePath(`/store/${me.username}`);
+      revalidatePath("/dashboard");
       revalidatePath(`/service/${created.id}`);
     } catch {
       /* best-effort */

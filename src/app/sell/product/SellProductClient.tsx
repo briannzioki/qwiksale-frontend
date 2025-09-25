@@ -1,4 +1,3 @@
-// src/app/sell/product/SellProductClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -6,9 +5,18 @@ import { useRouter } from "next/navigation";
 import { categories, type CategoryNode } from "../../data/categories";
 import { useProducts } from "../../lib/productsStore";
 import toast from "react-hot-toast";
+import {
+  normalizeKenyanPhone,
+  validateKenyanPhone,
+} from "@/app/lib/phone";
 
 type FilePreview = { file: File; url: string; key: string };
 type Me = { id: string; email: string | null; profileComplete?: boolean; whatsapp?: string | null };
+
+type Props = {
+  /** If present, the form opens in EDIT mode and prefills from the server. */
+  id?: string | undefined; // ← allow explicit undefined to satisfy exactOptionalPropertyTypes
+};
 
 const MAX_FILES = 6;
 const MAX_MB = 5;
@@ -17,20 +25,6 @@ const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 // Cloudinary (client-safe)
 const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
 const UPLOAD_PRESET = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? "";
-
-/* ----------------------------- Phone helpers ----------------------------- */
-function normalizePhone(raw: string): string {
-  const trimmed = (raw || "").trim();
-  if (/^\+254(7|1)\d{8}$/.test(trimmed)) return trimmed.replace(/^\+/, "");
-  let s = trimmed.replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) s = "254" + s.slice(1);
-  if (/^7\d{8}$/.test(s) || /^1\d{8}$/.test(s)) s = "254" + s;
-  if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
-  return s;
-}
-function looksLikeValidKePhone(input: string): boolean {
-  return /^254(7|1)\d{8}$/.test(normalizePhone(input));
-}
 
 /* ----------------------------- Money helper ----------------------------- */
 function fmtKES(n: number) {
@@ -102,7 +96,7 @@ async function uploadToCloudinary(
   return p;
 }
 
-export default function SellProductClient() {
+export default function SellProductClient({ id }: Props) {
   const router = useRouter();
 
   // ---------------------- Profile Gate (no server redirects) ----------------------
@@ -122,7 +116,12 @@ export default function SellProductClient() {
   const [location, setLocation] = useState<string>("Nairobi");
   const [phone, setPhone] = useState<string>("");
   const [description, setDescription] = useState<string>("");
+
+  // Images
   const [previews, setPreviews] = useState<FilePreview[]>([]);
+  const [existingImage, setExistingImage] = useState<string | null>(null);
+  const [existingGallery, setExistingGallery] = useState<string[]>([]);
+
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadPct, setUploadPct] = useState<number>(0);
 
@@ -200,15 +199,18 @@ export default function SellProductClient() {
     }
   }, [subcats, subcategory]);
 
+  // Cleanup object URLs
   useEffect(() => {
     return () => {
       previews.forEach((p) => URL.revokeObjectURL(p.url));
     };
   }, [previews]);
 
-  const normalizedPhone = phone ? normalizePhone(phone) : "";
+  const phoneValidation = phone ? validateKenyanPhone(phone) : { ok: true as const };
+  const normalizedPhone = phone ? (normalizeKenyanPhone(phone) ?? "") : "";
+  const phoneOk = !phone || phoneValidation.ok;
+
   const priceNum = price === "" ? 0 : Number(price);
-  const phoneOk = !phone || looksLikeValidKePhone(phone);
 
   const canSubmit =
     name.trim().length >= 3 &&
@@ -218,6 +220,54 @@ export default function SellProductClient() {
     (price === "" || (typeof price === "number" && price >= 0)) &&
     phoneOk;
 
+  /* --------------------------- EDIT PREFILL LOGIC --------------------------- */
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const r = await fetch(`/api/products/${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (!r.ok) {
+          toast.error("Unable to load product for editing.");
+          return;
+        }
+        const p: any = await r.json();
+
+        if (cancelled) return;
+
+        // Map API product -> local form state
+        setName(p?.name ?? "");
+        setDescription(p?.description ?? "");
+        setCategory(p?.category ?? "");
+        setSubcategory(p?.subcategory ?? "");
+        setBrand(p?.brand ?? "");
+        setCondition(
+          (String(p?.condition || "").toLowerCase().includes("brand") ? "brand new" : "pre-owned") as
+            | "brand new"
+            | "pre-owned"
+        );
+        setPrice(typeof p?.price === "number" ? p.price : "");
+        setNegotiable(Boolean(p?.negotiable));
+        setLocation(p?.location ?? (p?.sellerLocation ?? "Nairobi"));
+        setPhone(p?.sellerPhone ?? "");
+
+        // existing images kept unless user uploads new ones
+        setExistingImage(p?.image ?? null);
+        setExistingGallery(Array.isArray(p?.gallery) ? p.gallery : []);
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.error(e);
+        toast.error("Failed to prefill product.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  /* ------------------------------ File helpers ----------------------------- */
   function filesToAdd(files: FileList | File[]) {
     const next: FilePreview[] = [];
     for (const f of Array.from(files)) {
@@ -273,6 +323,7 @@ export default function SellProductClient() {
     });
   }
 
+  /* -------------------------------- Submit -------------------------------- */
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) {
@@ -284,6 +335,7 @@ export default function SellProductClient() {
     setUploadPct(0);
 
     try {
+      // Upload new images if any were added
       let uploaded: { secure_url: string; public_id: string }[] = [];
       if (previews.length) {
         if (!CLOUD_NAME) {
@@ -309,8 +361,19 @@ export default function SellProductClient() {
         }
       }
 
-      const imageUrl = uploaded[0]?.secure_url || previews[0]?.url || "/placeholder/default.jpg";
-      const gallery = uploaded.length ? uploaded.map((u) => u.secure_url) : previews.map((p) => p.url);
+      // If no new images uploaded during EDIT, keep existing
+      const computedImage =
+        uploaded[0]?.secure_url ??
+        previews[0]?.url ??
+        existingImage ??
+        "/placeholder/default.jpg";
+
+      const computedGallery =
+        uploaded.length
+          ? uploaded.map((u) => u.secure_url)
+          : previews.length
+          ? previews.map((p) => p.url)
+          : (existingGallery?.length ? existingGallery : []);
 
       const payload = {
         name: name.trim(),
@@ -320,46 +383,65 @@ export default function SellProductClient() {
         brand: brand || undefined,
         condition,
         price: price === "" ? undefined : Math.max(0, Math.round(Number(price))),
-        image: imageUrl,
-        gallery,
+        image: computedImage,
+        gallery: computedGallery,
         location: location.trim(),
         negotiable,
         sellerPhone: normalizedPhone || undefined,
       };
 
-      // 1) Try Zustand store if present
-      let created: any = await addProduct(payload);
+      let resultId: string | null = null;
 
-      // 2) Fallback to server API if store doesn’t handle it
-      if (!created) {
-        const r = await fetch("/api/products/create", {
-          method: "POST",
+      if (id) {
+        // ---- EDIT: PATCH existing listing ----
+        const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
+          method: "PATCH",
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
           body: JSON.stringify(payload),
         });
         const j = await r.json().catch(() => ({} as any));
         if (!r.ok || (j as any)?.error) {
-          throw new Error((j as any)?.error || `Failed to create (${r.status})`);
+          throw new Error((j as any)?.error || `Failed to update (${r.status})`);
         }
-        created = { id: (j as any).productId };
+        resultId = id;
+        toast.success("Product updated!");
+      } else {
+        // ---- CREATE: POST new listing ----
+        // 1) Try Zustand store if present
+        let created: any = await addProduct(payload);
+
+        // 2) Fallback to server API if store doesn’t handle it
+        if (!created) {
+          const r = await fetch("/api/products/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify(payload),
+          });
+          const j = await r.json().catch(() => ({} as any));
+          if (!r.ok || (j as any)?.error) {
+            throw new Error((j as any)?.error || `Failed to create (${r.status})`);
+          }
+          created = { id: (j as any).productId };
+        }
+
+        resultId =
+          typeof created === "string"
+            ? created
+            : created && typeof created === "object" && "id" in created
+            ? String((created as any).id)
+            : null;
+
+        toast.success("Product posted!");
       }
 
-      const createdId =
-        typeof created === "string"
-          ? created
-          : created && typeof created === "object" && "id" in created
-          ? String((created as any).id)
-          : "";
-
-      toast.success("Product posted!");
-
-      router.push(createdId ? `/product/${createdId}` : "/");
+      router.push(resultId ? `/product/${resultId}` : "/");
       router.refresh();
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error(err);
-      toast.error(err?.message || "Failed to post product.");
+      toast.error(err?.message || (id ? "Failed to update product." : "Failed to post product."));
     } finally {
       setSubmitting(false);
       setUploadPct(0);
@@ -370,7 +452,7 @@ export default function SellProductClient() {
     return (
       <div className="container-page py-10">
         <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
-          <h1 className="text-2xl font-bold">Post a Product</h1>
+          <h1 className="text-2xl font-bold">{id ? "Edit Product" : "Post a Product"}</h1>
           <p className="text-white/90">Checking your account…</p>
         </div>
       </div>
@@ -381,8 +463,12 @@ export default function SellProductClient() {
     <div className="container-page py-6">
       {/* Header card */}
       <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-        <h1 className="text-2xl font-bold text-balance">Post a Product</h1>
-        <p className="text-white/90">List your item — it takes less than 2 minutes.</p>
+        <h1 className="text-2xl font-bold text-balance">
+          {id ? "Edit Product" : "Post a Product"}
+        </h1>
+        <p className="text-white/90">
+          {id ? "Update your listing details." : "List your item — it takes less than 2 minutes."}
+        </p>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
@@ -508,12 +594,16 @@ export default function SellProductClient() {
               className="input"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="07XXXXXXXX or 2547XXXXXXXX"
-              aria-invalid={!!phone && !looksLikeValidKePhone(phone)}
+              placeholder="07XXXXXXXX or +2547XXXXXXXX"
+              aria-invalid={!!phone && !phoneOk}
               aria-label="WhatsApp phone number (optional)"
             />
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              If provided, we’ll normalize as <code className="font-mono">{normalizedPhone || "—"}</code>
+              {phone
+                ? phoneOk
+                  ? <>Normalized: <code className="font-mono">{normalizedPhone}</code></>
+                  : <>Please enter a valid Kenyan mobile.</>
+                : <>Optional. We'll format it for WhatsApp.</>}
             </div>
           </div>
         </div>
@@ -536,6 +626,13 @@ export default function SellProductClient() {
         {/* Images + Uploader */}
         <div>
           <label className="label">Photos (up to {MAX_FILES})</label>
+
+          {/* Show a hint about existing photos in edit mode */}
+          {id && (existingImage || (existingGallery?.length ?? 0) > 0) && (
+            <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">
+              Existing photos will be kept if you don’t upload new ones.
+            </p>
+          )}
 
           <div
             onDragOver={(e) => {
@@ -633,9 +730,9 @@ export default function SellProductClient() {
             type="submit"
             disabled={!canSubmit || submitting}
             className={`btn-gradient-primary ${(!canSubmit || submitting) ? "opacity-60" : ""}`}
-            aria-label="Post product"
+            aria-label={id ? "Update product" : "Post product"}
           >
-            {submitting ? "Posting…" : "Post Product"}
+            {submitting ? (id ? "Updating…" : "Posting…") : (id ? "Update Product" : "Post Product")}
           </button>
           <button type="button" onClick={() => router.back()} className="btn-outline" aria-label="Cancel">
             Cancel

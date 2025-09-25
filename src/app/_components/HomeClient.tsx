@@ -29,14 +29,14 @@ type ProductItem = {
   createdAt?: string;
 };
 
-// Service item shape (from /api/services)
+// Service item shape (from /api/services) — uses name + image
 type ServiceItem = {
   id: string;
-  title: string;
+  name: string;
   category: string;
   subcategory: string;
   price?: number | null;
-  thumbnailUrl?: string | null;
+  image?: string | null;
   featured?: boolean;
   location?: string | null;
   createdAt?: string;
@@ -341,7 +341,7 @@ export default function HomeClient() {
     }
   }, [router, queryString, dmode]);
 
-  // Fetch from products or services (with abort + small retry)
+  // Fetch from unified home-feed (with abort + small retry)
   React.useEffect(() => {
     const ac = new AbortController();
 
@@ -351,13 +351,16 @@ export default function HomeClient() {
         setErr(null);
       }
       try {
-        const endpoint = dmode === "products" ? "/api/products" : "/api/services";
-        const url = queryString ? `${endpoint}?${queryString}` : endpoint;
+        const endpoint = "/api/home-feed";
+        const url = `${endpoint}?t=${dmode}${queryString ? `&${queryString}` : ""}`;
+
         const r = await fetch(url, {
-          cache: "no-store", // CSR: guaranteed fresh; server tags don’t apply here
+          cache: "no-store",
           signal: ac.signal,
         });
+
         const json = (await r.json()) as PageResponse<ProductItem | ServiceItem> | ErrorResponse;
+
         if (!r.ok || "error" in json) {
           const msg = ("error" in json && json.error) || `Request failed (${r.status})`;
           if (attempt < 2 && !ac.signal.aborted) return load(attempt + 1);
@@ -366,6 +369,7 @@ export default function HomeClient() {
           setFacets(undefined);
           return;
         }
+
         const pageJson = json as PageResponse<ProductItem | ServiceItem>;
         setRes(pageJson);
         setFacets(pageJson.facets);
@@ -838,8 +842,8 @@ export default function HomeClient() {
             const p = raw as ProductItem;
             const s = raw as ServiceItem;
 
-            const title = isProduct ? p.name : s.title;
-            const imageUrl = isProduct ? p.image : s.thumbnailUrl;
+            const title = isProduct ? p.name : s.name;
+            const imageUrl = isProduct ? p.image : s.image;
             const price = (isProduct ? p.price : s.price) ?? null;
             const featured = (isProduct ? p.featured : s.featured) ?? false;
             const categoryText = isProduct

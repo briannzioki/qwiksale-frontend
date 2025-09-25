@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import { normalizeKenyanPhone, makeWhatsAppLink } from "@/app/lib/phone";
 
 /* ----------------------------- Types ----------------------------- */
 
@@ -29,22 +30,6 @@ type Props = {
   /** Optional extra classes for the trigger button */
   className?: string;
 };
-
-/* ------------------------- Phone Utilities ------------------------- */
-
-function normalizeKenyanMsisdn(raw?: string | null): string | null {
-  if (!raw) return null;
-  let s = String(raw).trim();
-
-  if (/^\+?254(7|1)\d{8}$/.test(s)) return s.replace(/^\+/, "");
-  s = s.replace(/\D+/g, "");
-
-  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) return "254" + s.slice(1);
-  if (/^(7|1)\d{8}$/.test(s)) return "254" + s;
-  if (s.startsWith("254") && s.length >= 12) return s.slice(0, 12);
-
-  return null;
-}
 
 /* ------------------------- Event Utilities ------------------------- */
 
@@ -91,7 +76,7 @@ export default function ContactModal({
   const location = payload?.contact?.location ?? fallbackLocation ?? "—";
 
   const msisdn = useMemo(
-    () => normalizeKenyanMsisdn(payload?.contact?.phone),
+    () => (payload?.contact?.phone ? normalizeKenyanPhone(payload.contact.phone) : null),
     [payload?.contact?.phone]
   );
 
@@ -100,10 +85,11 @@ export default function ContactModal({
     const pname = productName || payload?.product?.name || "your item";
     const seller = name && name !== "—" ? name : "Seller";
     const text = `Hi ${seller}, I'm interested in "${pname}" on QwikSale. Is it still available?`;
-    return `https://wa.me/${msisdn}?text=${encodeURIComponent(text)}`;
+    return makeWhatsAppLink(msisdn, text) ?? null;
   }, [msisdn, name, productName, payload?.product?.name]);
 
-  const telLink = useMemo(() => (msisdn ? `tel:${msisdn}` : null), [msisdn]);
+  // Use E.164-like tel link (requires +)
+  const telLink = useMemo(() => (msisdn ? `tel:+${msisdn}` : null), [msisdn]);
 
   const reveal = useCallback(async () => {
     if (!productId || loading) return;
@@ -259,7 +245,10 @@ export default function ContactModal({
 
               {/* Optional safety nudge */}
               {payload?.suggestLogin && (
-                <div className="mb-3 p-3 text-sm rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-300 dark:border-yellow-900/50" role="note">
+                <div
+                  className="mb-3 p-3 text-sm rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-300 dark:border-yellow-900/50"
+                  role="note"
+                >
                   For safety, we recommend logging in first. You can still proceed.
                 </div>
               )}

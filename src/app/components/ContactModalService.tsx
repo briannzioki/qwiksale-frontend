@@ -1,7 +1,9 @@
+// src/app/components/ContactModalService.tsx
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import { normalizeKenyanPhone, makeWhatsAppLink } from "@/app/lib/phone";
 
 /* ----------------------------- Types ----------------------------- */
 
@@ -28,22 +30,6 @@ type Props = {
   /** Optional extra classes for the trigger button */
   className?: string;
 };
-
-/* ------------------------- Phone Utilities ------------------------- */
-
-function normalizeKenyanMsisdn(raw?: string | null): string | null {
-  if (!raw) return null;
-  let s = String(raw).trim();
-
-  if (/^\+?254(7|1)\d{8}$/.test(s)) return s.replace(/^\+/, "");
-  s = s.replace(/\D+/g, "");
-
-  if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) return "254" + s.slice(1);
-  if (/^(7|1)\d{8}$/.test(s)) return "254" + s;
-  if (s.startsWith("254") && s.length >= 12) return s.slice(0, 12);
-
-  return null;
-}
 
 /* ------------------------- Event Utilities ------------------------- */
 
@@ -89,7 +75,7 @@ export default function ContactModalService({
   const location = payload?.contact?.location ?? fallbackLocation ?? "—";
 
   const msisdn = useMemo(
-    () => normalizeKenyanMsisdn(payload?.contact?.phone),
+    () => (payload?.contact?.phone ? normalizeKenyanPhone(payload.contact.phone) : null),
     [payload?.contact?.phone]
   );
 
@@ -98,10 +84,11 @@ export default function ContactModalService({
     const sname = serviceName || payload?.service?.name || "your service";
     const provider = name && name !== "—" ? name : "Provider";
     const text = `Hi ${provider}, I'm interested in "${sname}" on QwikSale. Are you available?`;
-    return `https://wa.me/${msisdn}?text=${encodeURIComponent(text)}`;
+    // makeWhatsAppLink normalizes again safely; passing msisdn is fine
+    return makeWhatsAppLink(msisdn, text) ?? null;
   }, [msisdn, name, serviceName, payload?.service?.name]);
 
-  const telLink = useMemo(() => (msisdn ? `tel:${msisdn}` : null), [msisdn]);
+  const telLink = useMemo(() => (msisdn ? `tel:+${msisdn}` : null), [msisdn]);
 
   const reveal = useCallback(async () => {
     if (!serviceId || loading) return;

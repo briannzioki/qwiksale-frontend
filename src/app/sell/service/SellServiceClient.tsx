@@ -1,4 +1,3 @@
-// src/app/sell/service/SellServiceClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
@@ -14,6 +13,11 @@ const SERVICE_CATEGORIES = [
 
 type FilePreview = { file: File; url: string; key: string };
 type Me = { id: string; email: string | null; profileComplete?: boolean; whatsapp?: string | null };
+
+type Props = {
+  /** If present, load existing service and PATCH on submit */
+  editId?: string | null | undefined; // allow explicit undefined for exactOptionalPropertyTypes
+};
 
 const MAX_FILES = 6;
 const MAX_MB = 5;
@@ -59,6 +63,7 @@ async function uploadToCloudinary(
     return { secure_url: json.secure_url, public_id: json.public_id };
   }
 
+  // Signed fallback if you're not using unsigned uploads
   const sigRes = await fetch(`/api/upload/sign?folder=${encodeURIComponent(folder)}`, {
     method: "GET",
     cache: "no-store",
@@ -98,7 +103,7 @@ async function uploadToCloudinary(
   return p;
 }
 
-export default function SellServiceClient() {
+export default function SellServiceClient({ editId }: Props) {
   const router = useRouter();
 
   // ---------------------- Profile Gate (no server redirects) ----------------------
@@ -110,24 +115,28 @@ export default function SellServiceClient() {
   const [price, setPrice] = useState<number | "">("");
   const [rateType, setRateType] = useState<"hour" | "day" | "fixed">("fixed");
 
-  const [category, setCategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.name || ""));
+  const [category, setCategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.name || "Services"));
   const [subcategory, setSubcategory] = useState<string>(
     String(SERVICE_CATEGORIES[0]?.subcategories?.[0]?.name || "")
   );
 
-  const [serviceArea, setServiceArea] = useState<string>("");
-  const [availability, setAvailability] = useState<string>("");
+  const [serviceArea, setServiceArea] = useState<string>("Nairobi");
+  const [availability, setAvailability] = useState<string>("Weekdays");
   const [location, setLocation] = useState<string>("Nairobi");
   const [phone, setPhone] = useState<string>("");
   const [description, setDescription] = useState<string>("");
 
+  // Images
   const [previews, setPreviews] = useState<FilePreview[]>([]);
+  const [existingImage, setExistingImage] = useState<string | null>(null);
+  const [existingGallery, setExistingGallery] = useState<string[]>([]);
+
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // keep phone in a ref so the effect doesn't depend on state (avoids extra fetch & deps warning)
+  // keep phone in a ref so the effect doesn't depend on state
   const phoneRef = useRef<string>("");
   useEffect(() => {
     phoneRef.current = phone;
@@ -153,7 +162,7 @@ export default function SellServiceClient() {
         }
 
         const j = (await res.json().catch(() => null)) as any;
-        const me: Me | null = j?.user ?? null;
+        const me: Me | null = j?.user ?? j ?? null;
 
         if (!cancelled && me && me.profileComplete === false) {
           router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell/service")}`);
@@ -172,6 +181,44 @@ export default function SellServiceClient() {
       cancelled = true;
     };
   }, [router]);
+
+  /* --------------------------- EDIT PREFILL LOGIC --------------------------- */
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/services/${encodeURIComponent(editId)}`, { cache: "no-store" });
+        if (!r.ok) {
+          toast.error("Unable to load service for editing.");
+          return;
+        }
+        const s: any = await r.json();
+        if (cancelled) return;
+
+        setName(s?.name ?? "");
+        setDescription(s?.description ?? "");
+        setCategory(s?.category ?? "Services");
+        setSubcategory(s?.subcategory ?? "");
+        setRateType((s?.rateType as "hour" | "day" | "fixed") ?? "fixed");
+        setPrice(typeof s?.price === "number" ? s.price : s?.price === null ? "" : "");
+        setServiceArea(s?.serviceArea ?? s?.location ?? "Nairobi");
+        setAvailability(s?.availability ?? "Weekdays");
+        setLocation(s?.location ?? s?.serviceArea ?? "Nairobi");
+        setPhone(s?.sellerPhone ?? "");
+
+        setExistingImage(s?.image ?? null);
+        setExistingGallery(Array.isArray(s?.gallery) ? s.gallery : []);
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.error(e);
+        toast.error("Failed to prefill service.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editId]);
 
   // Derived options (local)
   type Sub = { readonly name: string };
@@ -208,6 +255,7 @@ export default function SellServiceClient() {
     description.trim().length >= 10 &&
     phoneOk;
 
+  /* -------------------------------- Files -------------------------------- */
   function filesToAdd(files: FileList | File[]) {
     const next: FilePreview[] = [];
     for (const f of Array.from(files)) {
@@ -263,6 +311,7 @@ export default function SellServiceClient() {
     });
   }
 
+  /* -------------------------------- Submit -------------------------------- */
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) {
@@ -274,7 +323,7 @@ export default function SellServiceClient() {
     setUploadPct(0);
 
     try {
-      // Upload to Cloudinary if files present
+      // Upload images if added
       let uploaded: { secure_url: string; public_id: string }[] = [];
       if (previews.length) {
         if (!CLOUD_NAME) {
@@ -282,10 +331,8 @@ export default function SellServiceClient() {
             "Cloudinary not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
           );
         }
-
         const total = previews.length;
         let done = 0;
-
         for (const p of previews) {
           const item = await uploadToCloudinary(p.file, {
             folder: "qwiksale/services",
@@ -300,10 +347,20 @@ export default function SellServiceClient() {
         }
       }
 
-      const imageUrl = uploaded[0]?.secure_url || previews[0]?.url || "/placeholder/default.jpg";
-      const gallery = uploaded.length ? uploaded.map((u) => u.secure_url) : previews.map((p) => p.url);
+      // If no new images during EDIT, keep existing
+      const computedImage =
+        uploaded[0]?.secure_url ??
+        previews[0]?.url ??
+        existingImage ??
+        "/placeholder/default.jpg";
 
-      // Service payload
+      const computedGallery =
+        uploaded.length
+          ? uploaded.map((u) => u.secure_url)
+          : previews.length
+          ? previews.map((p) => p.url)
+          : (existingGallery?.length ? existingGallery : []);
+
       const payload = {
         name: name.trim(),
         description: description.trim(),
@@ -313,36 +370,54 @@ export default function SellServiceClient() {
         rateType,
         serviceArea: serviceArea || undefined,
         availability: availability || undefined,
-        image: imageUrl,
-        gallery,
+        image: computedImage,
+        gallery: computedGallery,
         location: location.trim(),
         sellerPhone: normalizedPhone || undefined,
       };
 
-      // POST to services create
-      const r = await fetch("/api/services/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify(payload),
-      });
+      let resultId: string | null = null;
 
-      if (r.status === 429) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error || "You’re posting too fast. Please slow down.");
+      if (editId) {
+        // PATCH existing
+        const r = await fetch(`/api/services/${encodeURIComponent(editId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json().catch(() => ({} as any));
+        if (!r.ok || (j as any)?.error) {
+          throw new Error((j as any)?.error || `Failed to update (${r.status})`);
+        }
+        resultId = editId;
+        toast.success("Service updated!");
+      } else {
+        // POST new
+        const r = await fetch("/api/services/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify(payload),
+        });
+        if (r.status === 429) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j?.error || "You’re posting too fast. Please slow down.");
+        }
+        const j = await r.json().catch(() => ({} as any));
+        if (!r.ok || (j as any)?.error) {
+          throw new Error((j as any)?.error || `Failed to create (${r.status})`);
+        }
+        resultId = String((j as any)?.serviceId || "");
+        toast.success("Service posted!");
       }
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j?.error) throw new Error(j?.error || `Failed to create (${r.status})`);
 
-      const createdId: string = j?.serviceId || j?.id || j?.data?.id || "";
-      toast.success("Service posted!");
-
-      router.push(createdId ? `/service/${createdId}` : "/");
+      router.push(resultId ? `/service/${resultId}` : "/");
       router.refresh();
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error(err);
-      toast.error(err?.message || "Failed to post service.");
+      toast.error(err?.message || (editId ? "Failed to update service." : "Failed to post service."));
     } finally {
       setSubmitting(false);
       setUploadPct(0);
@@ -353,7 +428,7 @@ export default function SellServiceClient() {
     return (
       <div className="container-page py-10">
         <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
-          <h1 className="text-2xl font-bold">Post a Service</h1>
+          <h1 className="text-2xl font-bold">{editId ? "Edit Service" : "Post a Service"}</h1>
           <p className="text-white/90">Checking your account…</p>
         </div>
       </div>
@@ -364,15 +439,19 @@ export default function SellServiceClient() {
     <div className="container-page py-6">
       {/* Header card */}
       <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-        <h1 className="text-2xl font-bold text-balance">Post a Service</h1>
-        <p className="text-white/90">List your service — it takes less than 2 minutes.</p>
+        <h1 className="text-2xl font-bold text-balance">
+          {editId ? "Edit Service" : "Post a Service"}
+        </h1>
+        <p className="text-white/90">
+          {editId ? "Update your service details." : "List your service — it takes less than 2 minutes."}
+        </p>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
-        {/* Title & Price */}
+        {/* Name & Price */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
-            <label className="label">Service Title</label>
+            <label className="label">Service Name</label>
             <SuggestInput
               endpoint="/api/services/suggest"
               value={name}
@@ -581,6 +660,12 @@ export default function SellServiceClient() {
         <div>
           <label className="label">Photos (up to {MAX_FILES})</label>
 
+          {editId && (existingImage || (existingGallery?.length ?? 0) > 0) && (
+            <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">
+              Existing photos will be kept if you don’t upload new ones.
+            </p>
+          )}
+
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -674,9 +759,9 @@ export default function SellServiceClient() {
             type="submit"
             disabled={!canSubmit || submitting}
             className={`btn-gradient-primary ${!canSubmit || submitting ? "opacity-60" : ""}`}
-            aria-label="Post service"
+            aria-label={editId ? "Update service" : "Post service"}
           >
-            {submitting ? "Posting…" : "Post Service"}
+            {submitting ? (editId ? "Updating…" : "Posting…") : (editId ? "Update Service" : "Post Service")}
           </button>
           <button type="button" onClick={() => router.back()} className="btn-outline" aria-label="Cancel">
             Cancel
