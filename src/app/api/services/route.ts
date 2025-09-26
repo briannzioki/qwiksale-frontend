@@ -65,6 +65,10 @@ function getServiceModel() {
   return typeof svc?.findMany === "function" ? svc : null;
 }
 
+/* ------------------------------ caps ----------------------------------- */
+const MAX_PAGE_SIZE = 48;
+const DEFAULT_PAGE_SIZE = 24;
+
 /* -------------------------- GET /api/services -------------------------- */
 export async function GET(req: NextRequest) {
   try {
@@ -96,15 +100,24 @@ export async function GET(req: NextRequest) {
     const featured = toBool(url.searchParams.get("featured"));
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
 
-    const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
-    const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
+    // Only apply price filter if params are present
+    const minPriceStr = url.searchParams.get("minPrice");
+    const maxPriceStr = url.searchParams.get("maxPrice");
 
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
-    const pageSize = toInt(url.searchParams.get("pageSize"), 24, 1, 200);
+    const pageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
-    const where: Record<string, any> = { status: "ACTIVE" };
+    // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
+    const statusParam = optStr(url.searchParams.get("status"));
+    const where: Record<string, any> = {};
+    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") {
+      where["status"] = "ACTIVE";
+    } else if (statusParam.toUpperCase() !== "ALL") {
+      where["status"] = statusParam.toUpperCase();
+    }
+
     const and: any[] = [];
 
     if (q) {
@@ -128,28 +141,45 @@ export async function GET(req: NextRequest) {
     if (typeof featured === "boolean") and.push({ featured });
     if (verifiedOnly === true) and.push({ featured: true });
 
-    if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
-      const price: any = {};
-      if (Number.isFinite(minPrice)) price.gte = minPrice;
-      if (Number.isFinite(maxPrice)) price.lte = maxPrice;
-      and.push({ price });
+    // Price filter logic:
+    // - Apply ONLY if minPrice or maxPrice is provided
+    // - When minPrice is 0 (or absent), include price:null to allow "unset/free"
+    if (minPriceStr !== null || maxPriceStr !== null) {
+      const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
+      const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
+
+      const priceClause: any = {};
+      if (typeof minPrice === "number") priceClause.gte = minPrice;
+      if (typeof maxPrice === "number") priceClause.lte = maxPrice;
+
+      if (!minPrice || minPrice === 0) {
+        and.push({ OR: [{ price: null }, { price: priceClause }] });
+      } else {
+        and.push({ price: priceClause });
+      }
     }
+
+    // When sorting by price, exclude null prices for deterministic ordering
+    if (sort === "price_asc" || sort === "price_desc") {
+      and.push({ price: { not: null } });
+    }
+
     if (and.length) where["AND"] = and;
 
     const isSearchLike = q.length > 0 || !!category || !!subcategory;
     let orderBy: any;
-    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { id: "asc" as const }];
-    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { id: "asc" as const }];
+    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { id: "desc" as const }];
+    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { id: "desc" as const }];
     else if (sort === "featured")
       orderBy = [
         { featured: "desc" as const },
         { createdAt: "desc" as const },
-        { id: "asc" as const },
+        { id: "desc" as const },
       ];
     else
       orderBy = isSearchLike
-        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "asc" as const }]
-        : [{ createdAt: "desc" as const }, { id: "asc" as const }];
+        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
+        : [{ createdAt: "desc" as const }, { id: "desc" as const }];
 
     const [total, servicesRaw, facets] = await Promise.all([
       Service.count({ where }),

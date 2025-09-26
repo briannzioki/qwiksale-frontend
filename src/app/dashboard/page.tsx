@@ -16,23 +16,51 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-type RecentListing = {
+/* -------------------------------- types -------------------------------- */
+type Status = "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
+
+type ApiListResp<T> = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  items: T[];
+};
+
+type ProductItem = {
   id: string;
   name: string;
   image: string | null;
-  createdAt: string;
+  createdAt?: string | null;
   price: number | null;
   featured: boolean | null;
   category: string | null;
   subcategory: string | null;
-  status: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
+  status?: Status | null;
 };
+
+type ServiceItem = {
+  id: string;
+  name: string;
+  image: string | null;
+  createdAt?: string | null;
+  price: number | null;
+  featured: boolean | null;
+  category: string | null;
+  subcategory: string | null;
+  status?: Status | null;
+};
+
+type RecentListing =
+  | (ProductItem & { type: "product" })
+  | (ServiceItem & { type: "service" });
 
 type TopCat = {
   category: string | null;
   _count: { category: number };
 };
 
+/* -------------------------------- utils -------------------------------- */
 function fmtKES(n?: number | null) {
   if (!n || n <= 0) return "Contact for price";
   try {
@@ -56,6 +84,19 @@ async function getUserId(): Promise<string | null> {
   }
 }
 
+// Some deployments name the model Service/Services; be flexible.
+function getServiceModel() {
+  const anyPrisma = prisma as any;
+  return (
+    anyPrisma.service ??
+    anyPrisma.services ??
+    anyPrisma.Service ??
+    anyPrisma.Services ??
+    null
+  );
+}
+
+/* -------------------------------- page -------------------------------- */
 export default async function DashboardPage() {
   const userId = await getUserId();
 
@@ -78,37 +119,41 @@ export default async function DashboardPage() {
   const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
   const since30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
+  const Service = getServiceModel();
+
+  // Counts & aggregates that are cheap to keep on Prisma
   const [
     me,
-    myListingsCount,
-    favoritesCount,
-    newLast7Days,
-    likesOnMyListings,
+    productCount,
+    serviceCount,
+    favoritesCount,          // favorites on products (legacy)
+    newProductsLast7,
+    newServicesLast7,
+    likesOnMyListings,       // likes on my products
     topCats30Raw,
-    recentListingsRaw,
   ] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, name: true, email: true, subscription: true, image: true, createdAt: true, username: true },
     }).catch(() => null),
+
     prisma.product.count({ where: { sellerId: userId } }).catch(() => 0),
+    (Service ? Service.count({ where: { sellerId: userId } }).catch(() => 0) : Promise.resolve(0)),
+
     prisma.favorite.count({ where: { userId } }).catch(() => 0),
+
     prisma.product.count({ where: { sellerId: userId, createdAt: { gte: since7d } } }).catch(() => 0),
+    (Service
+      ? Service.count({ where: { sellerId: userId, createdAt: { gte: since7d } } }).catch(() => 0)
+      : Promise.resolve(0)),
+
     prisma.favorite.count({ where: { product: { sellerId: userId } } }).catch(() => 0),
+
     prisma.product.groupBy({
       by: ["category"],
       where: { status: "ACTIVE", createdAt: { gte: since30d } },
       _count: { category: true },
     }).catch(() => [] as TopCat[]),
-    prisma.product.findMany({
-      where: { sellerId: userId },
-      orderBy: [{ createdAt: "desc" }],
-      take: 6,
-      select: {
-        id: true, name: true, image: true, createdAt: true, price: true,
-        featured: true, category: true, subcategory: true, status: true,
-      },
-    }).catch(() => [] as any[]),
   ]);
 
   if (!me) {
@@ -120,19 +165,57 @@ export default async function DashboardPage() {
     );
   }
 
+  // Fetch recent items (use API + tags so we can revalidateTag on mutations)
+  const qs = `sellerId=${encodeURIComponent(userId)}&pageSize=6&sort=newest`;
+  const [prodRes, svcRes] = await Promise.all([
+    fetch(`/api/products?${qs}`, {
+      next: { tags: ["products", `user:${userId}:products`, "dashboard"] },
+    }),
+    fetch(`/api/services?${qs}`, {
+      next: { tags: ["services", `user:${userId}:services`, "dashboard"] },
+    }),
+  ]);
+
+  const productsJson: ApiListResp<ProductItem> = prodRes.ok
+    ? await prodRes.json()
+    : { page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] };
+
+  const servicesJson: ApiListResp<ServiceItem> = svcRes.ok
+    ? await svcRes.json()
+    : { page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] };
+
+  const products = (productsJson.items || []).map<RecentListing>((p) => ({
+    ...p,
+    type: "product",
+    category: p.category ?? null,
+    subcategory: p.subcategory ?? null,
+  }));
+
+  const services = (servicesJson.items || []).map<RecentListing>((s) => ({
+    ...s,
+    type: "service",
+    category: s.category ?? null,
+    subcategory: s.subcategory ?? null,
+  }));
+
+  // Merge & sort by createdAt desc (fallback to id for tie-breaker)
+  const recentListings = [...products, ...services]
+    .sort((a, b) => {
+      const at = Date.parse(a.createdAt || "") || 0;
+      const bt = Date.parse(b.createdAt || "") || 0;
+      if (bt !== at) return bt - at;
+      return String(b.id).localeCompare(String(a.id));
+    })
+    .slice(0, 6);
+
   const topCats30 = (topCats30Raw as TopCat[])
     .filter((x) => !!x.category)
     .sort((a, b) => (b._count?.category ?? 0) - (a._count?.category ?? 0))
     .slice(0, 5);
 
-  const recentListings: RecentListing[] = (recentListingsRaw as any[]).map((p) => ({
-    ...p,
-    category: p.category ?? null,
-    subcategory: p.subcategory ?? null,
-    createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt ?? ""),
-  }));
-
   const subLabel = me.subscription === "BASIC" ? "FREE" : me.subscription ?? "FREE";
+  const myListingsCount = (productCount ?? 0) + (serviceCount ?? 0);
+  const newLast7Days = (newProductsLast7 ?? 0) + (newServicesLast7 ?? 0);
 
   return (
     <div className="p-6 space-y-6">
@@ -165,9 +248,9 @@ export default async function DashboardPage() {
       </div>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric title="My Listings" value={myListingsCount ?? 0} />
+        <Metric title="My Listings" value={myListingsCount} />
         <Metric title="My Favorites" value={favoritesCount ?? 0} />
-        <Metric title="New in last 7 days" value={newLast7Days ?? 0} />
+        <Metric title="New in last 7 days" value={newLast7Days} />
         <Metric title="Likes on my listings" value={likesOnMyListings ?? 0} />
       </section>
 
@@ -190,17 +273,6 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      <section className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="mb-1 text-lg font-semibold">Boost your store</h2>
-        <p className="mb-3 text-sm text-gray-600 dark:text-slate-300">Add your social links so buyers can trust your brand.</p>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/account/profile#socials" className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">Add social links</Link>
-          {me.username && (
-            <Link href={`/store/${me.username}`} className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">View my store</Link>
-          )}
-        </div>
-      </section>
-
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Your Recent Listings</h2>
@@ -211,44 +283,55 @@ export default async function DashboardPage() {
           <div className="text-gray-600 dark:text-slate-300">No listings yet. Post your first item.</div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {recentListings.map((p) => (
-              <div key={p.id} className="group">
-                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-                  {p.featured && (
-                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">Featured</span>
-                  )}
-                  {p.status !== "ACTIVE" && (
-                    <span className="absolute right-2 top-2 z-10 rounded-md bg-gray-800 px-2 py-1 text-xs text-white shadow">
-                      {p.status}
-                    </span>
-                  )}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.image || "/placeholder/default.jpg"} alt={p.name} className="h-40 w-full object-cover" />
-                  <div className="p-4">
-                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">{p.name || "Unnamed item"}</h3>
-                    <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
-                      {[p.category, p.subcategory].filter(Boolean).join(" • ") || "—"}
-                    </p>
-                    <p className="mt-1 font-bold text-[#161748] dark:text-white">{fmtKES(p.price)}</p>
-                    <p className="mt-1 text-[11px] text-gray-400">
-                      {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-KE") : ""}
-                    </p>
-                    <div className="mt-3 flex gap-2">
-                      <Link href={`/product/${p.id}`} className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">View</Link>
-                      {/* EDIT link -> new edit route */}
-                      <Link
-                        href={`/product/${p.id}/edit`}
-                        className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
-                        title="Edit listing"
-                      >
-                        Edit
-                      </Link>
-                      <DeleteListingButton productId={p.id} productName={p.name} />
+            {recentListings.map((item) => {
+              const hrefView = item.type === "product" ? `/product/${item.id}` : `/service/${item.id}`;
+              const hrefEdit = item.type === "product" ? `/product/${item.id}/edit` : `/service/${item.id}/edit`;
+              return (
+                <div key={`${item.type}-${item.id}`} className="group">
+                  <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                    {item.featured ? (
+                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
+                        Featured
+                      </span>
+                    ) : null}
+                    {item.status && item.status !== "ACTIVE" ? (
+                      <span className="absolute right-2 top-2 z-10 rounded-md bg-gray-800 px-2 py-1 text-xs text-white shadow">
+                        {item.status}
+                      </span>
+                    ) : null}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={item.image || "/placeholder/default.jpg"}
+                      alt={item.name}
+                      className="h-40 w-full object-cover"
+                    />
+                    <div className="p-4">
+                      <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
+                        {item.name || (item.type === "product" ? "Unnamed item" : "Unnamed service")}
+                      </h3>
+                      <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
+                        {[item.category, item.subcategory].filter(Boolean).join(" • ") || "—"}
+                      </p>
+                      <p className="mt-1 font-bold text-[#161748] dark:text-white">
+                        {fmtKES(item.price)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        {item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-KE") : ""}
+                      </p>
+                      <div className="mt-3 flex gap-2">
+                        <Link href={hrefView} className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">View</Link>
+                        <Link href={hrefEdit} className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800" title="Edit listing">
+                          Edit
+                        </Link>
+                        {item.type === "product" ? (
+                          <DeleteListingButton productId={item.id} productName={item.name} />
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
