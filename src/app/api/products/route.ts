@@ -1,3 +1,4 @@
+// src/app/api/products/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic"; // CDN can still cache via s-maxage below.
 export const revalidate = 0;
@@ -6,6 +7,19 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
+
+/* ----------------------------- debug ----------------------------- */
+const PRODUCTS_VER = "vDEBUG-PRODUCTS-002";
+function attachVersion(h: Headers) {
+  h.set("X-Products-Version", PRODUCTS_VER);
+}
+function safe(obj: unknown) {
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return String(obj);
+  }
+}
 
 /* ----------------------------- tiny helpers ----------------------------- */
 function toInt(v: string | null, def: number, min: number, max: number) {
@@ -70,10 +84,14 @@ const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_RESULT_WINDOW = 10_000;
 
+/** Price clause with known keys (avoids index-signature property warnings) */
+type PriceClause = { gte?: number; lte?: number };
+
 /* ------------------------- GET /api/products ------------------------- */
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
+    console.log("[/api/products GET]", PRODUCTS_VER, url.toString());
 
     // Clamp q to avoid expensive scans on huge strings
     const rawQ = (url.searchParams.get("q") || "").trim();
@@ -89,8 +107,9 @@ export async function GET(req: NextRequest) {
     const featured = toBool(url.searchParams.get("featured"));
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
 
-    const minPrice = toInt(url.searchParams.get("minPrice"), NaN, 0, 9_999_999);
-    const maxPrice = toInt(url.searchParams.get("maxPrice"), NaN, 0, 9_999_999);
+    // Only apply price filter if params are present
+    const minPriceStr = url.searchParams.get("minPrice");
+    const maxPriceStr = url.searchParams.get("maxPrice");
 
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
@@ -101,7 +120,15 @@ export async function GET(req: NextRequest) {
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
-    const where: Record<string, any> = { status: "ACTIVE" };
+    // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
+    const statusParam = optStr(url.searchParams.get("status"));
+    const where: Record<string, any> = {};
+    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") {
+      where["status"] = "ACTIVE";
+    } else if (statusParam.toUpperCase() !== "ALL") {
+      where["status"] = statusParam.toUpperCase();
+    }
+
     const and: any[] = [];
 
     if (q) {
@@ -125,11 +152,23 @@ export async function GET(req: NextRequest) {
     if (typeof featured === "boolean") and.push({ featured });
     if (verifiedOnly === true) and.push({ featured: true });
 
-    if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
-      const price: any = {};
-      if (Number.isFinite(minPrice)) price.gte = minPrice;
-      if (Number.isFinite(maxPrice)) price.lte = maxPrice;
-      and.push({ price });
+    // Price filter:
+    // - Apply ONLY if minPrice or maxPrice is provided
+    // - If minPrice is 0 or omitted, include price:null (free/unset) via OR
+    if (minPriceStr !== null || maxPriceStr !== null) {
+      const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
+      const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
+
+      const priceClause: PriceClause = {};
+      if (typeof minPrice === "number") priceClause.gte = minPrice;
+      if (typeof maxPrice === "number") priceClause.lte = maxPrice;
+
+      const includeNulls = !minPrice || minPrice === 0;
+      if (includeNulls) {
+        and.push({ OR: [{ price: null }, { price: priceClause }] });
+      } else {
+        and.push({ price: priceClause });
+      }
     }
 
     // When sorting by price, exclude null prices for deterministic ordering
@@ -151,6 +190,10 @@ export async function GET(req: NextRequest) {
       orderBy = isSearchLike
         ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
         : [{ createdAt: "desc" as const }, { id: "desc" as const }];
+
+    console.log("[/api/products WHERE]", safe(where));
+    console.log("[/api/products ORDER]", safe(orderBy));
+    console.log("[/api/products page/pageSize]", page, pageSize);
 
     // Resolve user only if caller explicitly wants personal favorite flag
     let userId: string | null = null;
@@ -196,6 +239,7 @@ export async function GET(req: NextRequest) {
           },
           60
         );
+        attachVersion(res.headers);
         res.headers.set("X-Total-Count", "0");
         return res;
       }
@@ -246,16 +290,16 @@ export async function GET(req: NextRequest) {
       hasMore,
     };
 
-    const res = userId
-      ? jsonPrivate(payload) // personalized -> no-store
-      : jsonPublic(payload, 60); // public -> cache for 60s
-
+    const res = userId ? jsonPrivate(payload) : jsonPublic(payload, 60);
+    attachVersion(res.headers);
     res.headers.set("X-Total-Count", String(total));
     return res;
-  } catch (e) {
+  } catch (e: any) {
     // eslint-disable-next-line no-console
-    console.warn("[/api/products GET] error:", e);
-    return jsonPrivate({ error: "Server error" }, { status: 500 });
+    console.warn("[/api/products GET] ERROR:", e?.message, e);
+    const res = jsonPrivate({ error: "Server error" }, { status: 500 });
+    attachVersion(res.headers);
+    return res;
   }
 }
 
@@ -308,9 +352,13 @@ async function computeFacets(where: any) {
 
 /* ----------------------------- misc verbs ----------------------------- */
 export async function HEAD() {
-  return jsonPublic(null, 60, { status: 204 });
+  const res = jsonPublic(null, 60, { status: 204 });
+  attachVersion(res.headers);
+  return res;
 }
 
 export async function OPTIONS() {
-  return jsonPublic({ ok: true }, 60, { status: 200 });
+  const res = jsonPublic({ ok: true }, 60, { status: 200 });
+  attachVersion(res.headers);
+  return res;
 }

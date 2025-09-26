@@ -8,11 +8,12 @@ export type BaseListing = {
   description?: string | null;
   image?: string | null;
   gallery?: string[] | null;
-  category: string;
+  /** Can be null in your data, so keep it optional+nullable */
+  category?: string | null;
   subcategory?: string | null;
   location?: string | null; // generic place field
   featured?: boolean;
-  createdAt?: string; // ISO
+  createdAt?: string | null; // ISO
   // Seller snapshot (safe)
   sellerId?: string | null;
   sellerName?: string | null;
@@ -25,7 +26,8 @@ export type BaseListing = {
     username?: string | null;
     name?: string | null;
     image?: string | null;
-    subscription?: "FREE" | "GOLD" | "PLATINUM";
+    /** Match actual values seen in DB ("BASIC", "GOLD"). Keep others for forward-compat. */
+    subscription?: "BASIC" | "FREE" | "GOLD" | "PLATINUM" | null;
   } | null;
 };
 
@@ -33,8 +35,9 @@ export type ProductListing = BaseListing & {
   type: "product";
   brand?: string | null;
   condition?: "brand new" | "pre-owned" | string | null;
-  price?: number | null; // null => contact for price
-  negotiable?: boolean;
+  /** null => contact for price */
+  price?: number | null;
+  negotiable?: boolean | null;
 };
 
 export type RateType = "hour" | "day" | "fixed";
@@ -42,7 +45,8 @@ export type RateType = "hour" | "day" | "fixed";
 export type ServiceListing = BaseListing & {
   type: "service";
   rateType?: RateType | null;   // hour/day/fixed
-  price?: number | null;        // null => contact for quote
+  /** null => contact for quote */
+  price?: number | null;
   serviceArea?: string | null;  // e.g. "Nairobi" or "Nairobi County"
   availability?: string | null; // e.g. "Weekdays", "24/7"
 };

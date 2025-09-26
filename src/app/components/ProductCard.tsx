@@ -13,6 +13,8 @@ type Props = {
   price?: number | null;
   image?: string | null;
   featured?: boolean;
+  /** Optional small meta text, e.g. "Electronics • Phones & Tablets" */
+  subtitle?: string | null;
   /** 0-based position in the feed, used for analytics + image priority */
   position?: number;
   /** Allow route prefetching (default true) */
@@ -65,6 +67,7 @@ function ProductCardImpl({
   price,
   image,
   featured = false,
+  subtitle = null,
   position,
   prefetch = true,
   className = "",
@@ -200,6 +203,9 @@ function ProductCardImpl({
         <div className="line-clamp-1 font-medium text-gray-900 dark:text-gray-100" title={name}>
           {name}
         </div>
+        {subtitle ? (
+          <div className="line-clamp-1 text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
+        ) : null}
         <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{priceText}</div>
       </div>
     </Link>

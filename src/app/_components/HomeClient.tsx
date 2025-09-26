@@ -1,3 +1,4 @@
+// src/app/_components/HomeClient.tsx
 "use client";
 
 import * as React from "react";
@@ -11,38 +12,40 @@ import HomeClientHero from "../components/HomeClientHero";
    Types
    ====================== */
 
-// Unified “mode” switcher
-type Mode = "products" | "services";
+type Mode = "all" | "products" | "services";
 
-// Product item shape (from /api/products)
+/** Product item shape (backend may return nulls for some fields) */
 type ProductItem = {
+  type: "product";
   id: string;
   name: string;
-  category: string;
-  subcategory: string;
+  category: string | null;
+  subcategory: string | null;
   brand?: string | null;
-  condition?: string | null;
+  condition?: "brand new" | "pre-owned" | null;
   price?: number | null;
   image?: string | null;
-  featured?: boolean;
+  featured?: boolean | null;
   location?: string | null;
-  createdAt?: string;
+  createdAt?: string | null;
 };
 
-// Service item shape (from /api/services) — uses name + image
+/** Service item shape (backend may return nulls) */
 type ServiceItem = {
+  type: "service";
   id: string;
   name: string;
-  category: string;
-  subcategory: string;
+  category: string | null;
+  subcategory: string | null;
   price?: number | null;
   image?: string | null;
-  featured?: boolean;
+  featured?: boolean | null;
   location?: string | null;
-  createdAt?: string;
+  createdAt?: string | null;
 };
 
-// Facets
+type AnyItem = ProductItem | ServiceItem;
+
 type FacetEntry = { value: string; count: number };
 
 type ProductFacets = {
@@ -57,7 +60,6 @@ type ServiceFacets = {
 };
 
 type PageResponse<TItems> = {
-  mode?: "page";
   page: number;
   pageSize: number;
   total: number;
@@ -203,16 +205,26 @@ function useDebounced<T>(value: T, delay = 300) {
 }
 
 /* ======================
+   Type guards
+   ====================== */
+function isProductFacets(x: ProductFacets | ServiceFacets | undefined): x is ProductFacets {
+  return !!x && (Array.isArray((x as ProductFacets).brands) || Array.isArray((x as ProductFacets).conditions));
+}
+function isServiceFacets(x: ProductFacets | ServiceFacets | undefined): x is ServiceFacets {
+  return !!x && Array.isArray((x as ServiceFacets).subcategories);
+}
+
+/* ======================
    Page (client)
    ====================== */
 export default function HomeClient() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // Mode from URL (?t=products|services). Default: products (keeps current UX)
+  // Mode from URL (?t=all|products|services). Default: all
   const [mode, setMode] = React.useState<Mode>(() => {
     const t = (sp.get("t") || "").toLowerCase();
-    return t === "services" ? "services" : "products";
+    return t === "products" || t === "services" ? (t as Mode) : "all";
   });
 
   // URL state (initialize from current query)
@@ -230,9 +242,23 @@ export default function HomeClient() {
     return Number.isFinite(n) && n > 0 ? n : 1;
   });
 
-  // Keep local state in-sync if URL changes externally (back/forward, links, etc.)
+  // --------- Geolocation state (declare BEFORE effects that use it) ---------
+  const [myLoc, setMyLoc] = React.useState<{ lat: number; lng: number } | null>(null);
+  const [geoDenied, setGeoDenied] = React.useState<boolean>(false);
+
   React.useEffect(() => {
-    const nextMode = (sp.get("t") || "").toLowerCase() === "services" ? "services" : "products";
+    if (!("geolocation" in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setMyLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setGeoDenied(true),
+      { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 8000 }
+    );
+  }, []);
+
+  // Keep local state in-sync if URL changes externally
+  React.useEffect(() => {
+    const t = (sp.get("t") || "").toLowerCase();
+    const nextMode: Mode = t === "products" || t === "services" ? (t as Mode) : "all";
     if (nextMode !== mode) setMode(nextMode);
 
     const get = (k: string) => sp.get(k) || "";
@@ -255,9 +281,9 @@ export default function HomeClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp]);
 
-  // When switching to services, clear product-only fields (brand/condition)
+  // When switching away from products, disable product-only fields (brand/condition)
   React.useEffect(() => {
-    if (mode === "services") {
+    if (mode !== "products") {
       if (brand) setBrand("");
       if (condition) setCondition("");
     }
@@ -277,26 +303,13 @@ export default function HomeClient() {
   const dpage = useDebounced(page, DEBOUNCE_MS);
 
   // Data
-  const [res, setRes] = React.useState<PageResponse<ProductItem | ServiceItem> | null>(null);
+  const [res, setRes] = React.useState<PageResponse<AnyItem> | null>(null);
   const [facets, setFacets] = React.useState<ProductFacets | ServiceFacets | undefined>(undefined);
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
 
-  // Buyer geolocation (optional)
-  const [myLoc, setMyLoc] = React.useState<{ lat: number; lng: number } | null>(null);
-  const [geoDenied, setGeoDenied] = React.useState<boolean>(false);
-
-  React.useEffect(() => {
-    if (!("geolocation" in navigator)) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setMyLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setGeoDenied(true),
-      { enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 8000 }
-    );
-  }, []);
-
-  // Only compute facets on page 1 (faster)
-  const includeFacets = dpage === 1;
+  // Only compute facets on page 1 and when a single mode is selected
+  const includeFacets = dpage === 1 && dmode !== "all";
 
   // Build querystring from (debounced) state
   const queryString = React.useMemo(() => {
@@ -332,7 +345,6 @@ export default function HomeClient() {
   // Keep URL in sync (shallow) without spamming history
   const lastUrlRef = React.useRef<string>("");
   React.useEffect(() => {
-    // Always include ?t=
     const base = `/?t=${dmode}`;
     const next = queryString ? `${base}&${queryString}` : base;
     if (next !== lastUrlRef.current) {
@@ -359,7 +371,7 @@ export default function HomeClient() {
           signal: ac.signal,
         });
 
-        const json = (await r.json()) as PageResponse<ProductItem | ServiceItem> | ErrorResponse;
+        const json = (await r.json()) as PageResponse<AnyItem> | ErrorResponse;
 
         if (!r.ok || "error" in json) {
           const msg = ("error" in json && json.error) || `Request failed (${r.status})`;
@@ -370,7 +382,7 @@ export default function HomeClient() {
           return;
         }
 
-        const pageJson = json as PageResponse<ProductItem | ServiceItem>;
+        const pageJson = json as PageResponse<AnyItem>;
         setRes(pageJson);
         setFacets(pageJson.facets);
       } catch (e: any) {
@@ -396,7 +408,7 @@ export default function HomeClient() {
   const canPrev = pageNum > 1;
   const canNext = pageNum < totalPages;
 
-  const items = Array.isArray(res?.items) ? res!.items : [];
+  const items = Array.isArray(res?.items) ? (res!.items as AnyItem[]) : [];
 
   // Facet clicks (mode-aware)
   const applyFacet = React.useCallback(
@@ -442,54 +454,38 @@ export default function HomeClient() {
     [myLoc]
   );
 
-  // Mode toggle button component
+  // Mode toggle
   const ModeToggle = () => (
     <div className="card-surface p-2 sticky top-[64px] z-30">
       <div className="inline-flex rounded-xl border overflow-hidden shadow-sm" role="tablist" aria-label="Mode">
-        <button
-          type="button"
-          onClick={() => {
-            setMode("products");
-            setPage(1);
-          }}
-          className={`px-4 py-2 text-sm ${
-            mode === "products"
-              ? "bg-[#161748] text-white"
-              : "bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-200"
-          }`}
-          aria-pressed={mode === "products"}
-          role="tab"
-          aria-selected={mode === "products"}
-        >
-          Products
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMode("services");
-            setPage(1);
-          }}
-          className={`px-4 py-2 text-sm border-l ${
-            mode === "services"
-              ? "bg-[#161748] text-white"
-              : "bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-200"
-          }`}
-          aria-pressed={mode === "services"}
-          role="tab"
-          aria-selected={mode === "services"}
-        >
-          Services
-        </button>
+        {(["all", "products", "services"] as Mode[]).map((m, i) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => {
+              setMode(m);
+              setPage(1);
+            }}
+            className={`px-4 py-2 text-sm ${i > 0 ? "border-l" : ""} ${
+              mode === m
+                ? "bg-[#161748] text-white"
+                : "bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-200"
+            }`}
+            aria-pressed={mode === m}
+            role="tab"
+            aria-selected={mode === m}
+          >
+           {m === "all" ? "All" : `${m.charAt(0).toUpperCase()}${m.slice(1)}`}
+          </button>
+        ))}
       </div>
     </div>
   );
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Authenticated hero */}
       <HomeClientHero />
 
-      {/* Mode Toggle */}
       <ModeToggle />
 
       {/* =======================
@@ -511,7 +507,13 @@ export default function HomeClient() {
                 setPage(1);
                 setQ(e.target.value);
               }}
-              placeholder={mode === "services" ? "Service, category…" : "Name, brand, category…"}
+              placeholder={
+                mode === "services"
+                  ? "Service, category…"
+                  : mode === "products"
+                  ? "Name, brand, category…"
+                  : "Search products & services…"
+              }
               className="mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#39a0ca]"
               aria-label="Search items"
             />
@@ -554,7 +556,7 @@ export default function HomeClient() {
           {/* Brand (products only) */}
           <div className="md:col-span-2">
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
-              Brand {mode === "services" ? "(n/a)" : ""}
+              Brand {mode !== "products" ? "(n/a)" : ""}
             </label>
             <input
               value={brand}
@@ -562,17 +564,17 @@ export default function HomeClient() {
                 setPage(1);
                 setBrand(e.target.value);
               }}
-              placeholder={mode === "services" ? "—" : "e.g. Samsung"}
+              placeholder={mode !== "products" ? "—" : "e.g. Samsung"}
               className="mt-1 w-full rounded-lg border px-3 py-2"
               aria-label="Brand"
-              disabled={mode === "services"}
+              disabled={mode !== "products"}
             />
           </div>
 
           {/* Condition (products only) */}
           <div className="md:col-span-1">
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
-              Condition {mode === "services" ? "(n/a)" : ""}
+              Condition {mode !== "products" ? "(n/a)" : ""}
             </label>
             <select
               value={condition}
@@ -582,7 +584,7 @@ export default function HomeClient() {
               }}
               className="mt-1 w-full rounded-lg border px-3 py-2"
               aria-label="Condition"
-              disabled={mode === "services"}
+              disabled={mode !== "products"}
             >
               <option value="">Any</option>
               <option value="brand new">Brand New</option>
@@ -692,7 +694,6 @@ export default function HomeClient() {
           </div>
         </div>
 
-        {/* subtle loading shimmer under the bar */}
         {loading && (
           <div
             className="mt-3 h-1 w-full bg-gradient-to-r from-[#161748]/20 via-[#478559]/40 to-[#39a0ca]/30 animate-pulse rounded-full"
@@ -705,20 +706,19 @@ export default function HomeClient() {
           Facets (mode-aware)
           ======================= */}
       {facets &&
-      ((mode === "products" &&
-        ((facets as ProductFacets).categories?.length ||
-          (facets as ProductFacets).brands?.length ||
-          (facets as ProductFacets).conditions?.length)) ||
-        (mode === "services" &&
-          ((facets as ServiceFacets).categories?.length ||
-            (facets as ServiceFacets).subcategories?.length))) ? (
+      dmode !== "all" &&
+      ((isProductFacets(facets) &&
+        ((facets.categories?.length || 0) + (facets.brands?.length || 0) + (facets.conditions?.length || 0) >
+          0)) ||
+        (isServiceFacets(facets) &&
+          ((facets.categories?.length || 0) + (facets.subcategories?.length || 0) > 0))) ? (
         <section className="card-surface p-4" aria-label="Facets">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Categories */}
             <div>
               <div className="text-sm font-semibold mb-2">Top Categories</div>
               <div className="flex flex-wrap gap-2">
-                {((facets as any).categories || []).map((f: FacetEntry) => (
+                {(facets.categories ?? []).map((f) => (
                   <button
                     key={`cat-${f.value}`}
                     onClick={() => applyFacet("category", f.value)}
@@ -739,9 +739,9 @@ export default function HomeClient() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {(mode === "products"
-                  ? ((facets as ProductFacets).brands || [])
-                  : ((facets as ServiceFacets).subcategories || [])
-                ).map((f: FacetEntry) => (
+                  ? (isProductFacets(facets) ? facets.brands ?? [] : [])
+                  : (isServiceFacets(facets) ? facets.subcategories ?? [] : [])
+                ).map((f) => (
                   <button
                     key={(mode === "products" ? "brand-" : "sub-") + f.value}
                     onClick={() =>
@@ -762,7 +762,7 @@ export default function HomeClient() {
               <div>
                 <div className="text-sm font-semibold mb-2">Condition</div>
                 <div className="flex flex-wrap gap-2">
-                  {((facets as ProductFacets).conditions || []).map((f) => (
+                  {(isProductFacets(facets) ? facets.conditions ?? [] : []).map((f) => (
                     <button
                       key={`cond-${f.value}`}
                       onClick={() => applyFacet("condition", f.value)}
@@ -791,7 +791,7 @@ export default function HomeClient() {
             ? "Loading…"
             : err
             ? "Error loading listings"
-            : `${total} ${mode} • page ${pageNum} of ${totalPages}`}
+            : `${total} ${mode === "all" ? "items" : mode} • page ${pageNum} of ${totalPages}`}
         </p>
         <div className="flex items-center gap-2">
           <button
@@ -831,32 +831,29 @@ export default function HomeClient() {
       ) : err ? (
         <div className="card-surface p-6 text-red-600">{err}</div>
       ) : items.length === 0 ? (
-        <div className="text-gray-500 dark:text-slate-400">No {mode} found.</div>
+        <div className="text-gray-500 dark:text-slate-400">No {mode === "all" ? "items" : mode} found.</div>
       ) : (
         <section
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6"
           aria-label="Search results"
         >
-          {items.map((raw) => {
-            const isProduct = mode === "products";
-            const p = raw as ProductItem;
-            const s = raw as ServiceItem;
-
-            const title = isProduct ? p.name : s.name;
-            const imageUrl = isProduct ? p.image : s.image;
-            const price = (isProduct ? p.price : s.price) ?? null;
-            const featured = (isProduct ? p.featured : s.featured) ?? false;
-            const categoryText = isProduct
-              ? `${p.category} • ${p.subcategory}`
-              : `${s.category} • ${s.subcategory}`;
-            const location = isProduct ? p.location : s.location;
+          {items.map((it) => {
+            const isProduct = it.type === "product";
+            const title = it.name || "";
+            const imageUrl = it.image || null;
+            const price = it.price ?? null;
+            const featured = it.featured ?? false;
+            const c1 = it.category || "—";
+            const c2 = it.subcategory || "—";
+            const categoryText = `${c1} • ${c2}`;
+            const location = it.location || null;
 
             const locInfo = computeDistanceText(location);
             const blur = shimmer(800, 440);
-            const href = isProduct ? `/product/${p.id}` : `/service/${s.id}`;
+            const href = isProduct ? `/product/${it.id}` : `/service/${it.id}`;
 
             return (
-              <Link key={(isProduct ? p.id : s.id) + "-" + mode} href={href} className="relative group">
+              <Link key={`${it.type}-${it.id}`} href={href} className="relative group">
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800">
                   <div className="relative">
                     {featured && (
@@ -873,12 +870,12 @@ export default function HomeClient() {
                       placeholder="blur"
                       blurDataURL={blur}
                       priority={false}
-                      unoptimized={Boolean((imageUrl as string | undefined)?.endsWith?.(".svg"))}
+                      unoptimized={Boolean((imageUrl as string | null)?.endsWith?.(".svg"))}
                       onError={makeOnImgError(FALLBACK_IMG)}
                       loading="lazy"
                     />
                     <div className="absolute top-2 right-2 z-10">
-                      {isProduct ? <FavoriteButton productId={p.id} /> : null}
+                      {isProduct ? <FavoriteButton productId={it.id} /> : null}
                     </div>
                   </div>
                   <div className="p-4">

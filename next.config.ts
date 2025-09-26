@@ -135,7 +135,10 @@ const baseConfig: NextConfig = {
       source: string;
       destination: string;
       permanent: boolean;
-      has?: Array<{ type: "host"; value: string } | { type: "header" | "cookie" | "query"; key: string; value?: string }>;
+      has?: Array<
+        | { type: "host"; value: string }
+        | { type: "header" | "cookie" | "query"; key: string; value?: string }
+      >;
       missing?: Array<{ type: "header" | "cookie" | "query"; key: string; value?: string }>;
     }> = [];
 
@@ -149,7 +152,7 @@ const baseConfig: NextConfig = {
       });
     }
 
-    // Force HTTPS (send to apex on http)
+    // Force HTTPS (route http → https apex)
     rules.push({
       source: "/:path*",
       destination: `https://${APEX_DOMAIN}/:path*`,
