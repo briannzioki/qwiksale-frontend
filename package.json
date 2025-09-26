@@ -26,7 +26,11 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:install-browsers": "playwright install --with-deps",
-    "ci": "npm run typecheck && npm run test:unit && npm run build && npm run test:e2e"
+    "ci": "npm run typecheck && npm run test:unit && npm run build && npm run test:e2e",
+    "smoke:db": "tsx scripts/quick-check.ts",
+    "smoke:feed": "tsx scripts/smoke-home-feed.ts",
+    "prepr": "pnpm typecheck && pnpm smoke:feed && pnpm smoke:db",
+    "prepr:full": "pnpm typecheck && pnpm build && pnpm smoke:feed && pnpm smoke:db"
   },
   "engines": {
     "node": "20.x",
