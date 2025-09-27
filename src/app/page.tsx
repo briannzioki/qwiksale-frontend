@@ -1,4 +1,4 @@
-﻿// src/app/page.tsx
+// src/app/page.tsx
 export const runtime = "nodejs";
 export const revalidate = 300;
 
