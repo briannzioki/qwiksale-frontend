@@ -1,6 +1,5 @@
 ﻿// src/app/page.tsx
-export const runtime = "nodejs";
-export const revalidate = 300;
+export const runtime = "nodejs"; // keep Node runtime for server features
 
 import Link from "next/link";
 
@@ -29,6 +28,7 @@ type HomeFeedResponse = {
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 
+<<<<<<< HEAD
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
   const explicit = process.env["NEXT_PUBLIC_APP_URL"];
@@ -40,20 +40,22 @@ function makeApiUrl(path: string) {
   return new URL(path, base);
 }
 
-/** Read a query param from URLSearchParams or a plain object or a Promise of either */
-async function readParam(spOrObj: unknown, key: string): Promise<string | null> {
-  // Await if it's Promise-like
-  const maybePromise = spOrObj as { then?: unknown };
-  const resolved: any =
-    maybePromise && typeof maybePromise.then === "function"
-      ? await (spOrObj as Promise<any>)
-      : spOrObj;
+/** Read a query param from URLSearchParams or a plain object */
+async function readParam(
+  spPromise: Promise<any> | undefined,
+  key: string
+): Promise<string | null> {
+  if (!spPromise) return null;
+  const r: any = await spPromise;
 
   // ReadonlyURLSearchParams / URLSearchParams
   if (resolved && typeof resolved.get === "function") {
     try {
-      const v = resolved.get(key);
+      const v = r.get(key);
       return v == null ? null : String(v);
+=======
+      return typeof v === "string" ? v : v == null ? null : String(v);
+>>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
     } catch {
       /* fall through */
     }
@@ -91,10 +93,10 @@ function labelFor(mode: Mode) {
 }
 
 export default async function HomePage({
-  // IMPORTANT: must be exactly Promise<any> to satisfy Next 15's PageProps check
+  // Accept MaybePromise or plain object; don't import Next's PageProps
   searchParams,
 }: {
-  searchParams?: any;
+  searchParams: Promise<any>;
 }) {
   const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
   const t = rawT === "products" || rawT === "services" ? (rawT as "products" | "services") : "all";
