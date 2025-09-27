@@ -7,6 +7,8 @@ import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
 import FavoriteButton from "../components/FavoriteButton";
 import HomeClientHero from "../components/HomeClientHero";
+import ProductGrid from "../components/ProductGrid";
+import ServiceGrid from "../components/ServiceGrid";
 
 /* ======================
    Types
@@ -76,6 +78,19 @@ type ErrorResponse = { error: string };
 const PAGE_SIZE = 24;
 const DEBOUNCE_MS = 300;
 const FALLBACK_IMG = "/placeholder/default.jpg";
+
+type SortKey = "featured" | "newest" | "price_asc" | "price_desc";
+type ConditionKey = "all" | "brand new" | "pre-owned";
+
+function toSortKey(s: string | null | undefined): SortKey {
+  return s === "featured" || s === "price_asc" || s === "price_desc" || s === "newest"
+    ? s
+    : "newest";
+}
+
+function toConditionKey(s: string | null | undefined): ConditionKey {
+  return s === "brand new" || s === "pre-owned" ? s : "all";
+}
 
 const fmtKES = (n?: number | null) =>
   typeof n === "number" && n > 0 ? `KES ${n.toLocaleString()}` : "Contact for price";
@@ -475,7 +490,7 @@ export default function HomeClient() {
             role="tab"
             aria-selected={mode === m}
           >
-           {m === "all" ? "All" : `${m.charAt(0).toUpperCase()}${m.slice(1)}`}
+            {m === "all" ? "All" : `${m.charAt(0).toUpperCase()}${m.slice(1)}`}
           </button>
         ))}
       </div>
@@ -783,55 +798,47 @@ export default function HomeClient() {
       ) : null}
 
       {/* =======================
-          Results header
+          Results / Grid
           ======================= */}
-      <section className="flex items-center justify-between" aria-live="polite">
-        <p className="text-sm text-gray-600 dark:text-slate-300">
-          {loading
-            ? "Loading…"
-            : err
-            ? "Error loading listings"
-            : `${total} ${mode === "all" ? "items" : mode} • page ${pageNum} of ${totalPages}`}
-        </p>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={!canPrev || loading}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className={`rounded-lg px-3 py-1.5 border ${
-              canPrev && !loading
-                ? "hover:bg-gray-50 dark:hover:bg-slate-800"
-                : "opacity-50 cursor-not-allowed"
-            }`}
-            aria-label="Previous page"
-          >
-            ← Prev
-          </button>
-          <button
-            type="button"
-            disabled={!canNext || loading}
-            onClick={() => setPage((p) => p + 1)}
-            className={`rounded-lg px-3 py-1.5 border ${
-              canNext && !loading
-                ? "hover:bg-gray-50 dark:hover:bg-slate-800"
-                : "opacity-50 cursor-not-allowed"
-            }`}
-            aria-label="Next page"
-          >
-            Next →
-          </button>
-        </div>
-      </section>
-
-      {/* =======================
-          Grid
-          ======================= */}
-      {loading ? (
+      {mode === "products" ? (
+        <ProductGrid
+          pageSize={PAGE_SIZE}
+          prefetchCards
+          filters={{
+            query: q,
+            condition: toConditionKey(condition),
+            minPrice: minPrice ? Number(minPrice) : "",
+            maxPrice: maxPrice ? Number(maxPrice) : "",
+            sort: toSortKey(sort),
+            verifiedOnly: featuredOnly,
+          }}
+          className=""
+          emptyText="No products found. Try adjusting filters."
+        />
+      ) : mode === "services" ? (
+        <ServiceGrid
+          pageSize={PAGE_SIZE}
+          prefetchCards
+          filters={{
+            query: q,
+            // condition/brand ignored by ServiceGrid, but satisfy Filters type
+            condition: toConditionKey(condition),
+            minPrice: minPrice ? Number(minPrice) : "",
+            maxPrice: maxPrice ? Number(maxPrice) : "",
+            sort: toSortKey(sort),
+            verifiedOnly: featuredOnly,
+          }}
+          className=""
+          emptyText="No services found. Try adjusting filters."
+        />
+      ) : loading ? (
         <SkeletonGrid />
       ) : err ? (
         <div className="card-surface p-6 text-red-600">{err}</div>
-      ) : items.length === 0 ? (
-        <div className="text-gray-500 dark:text-slate-400">No {mode === "all" ? "items" : mode} found.</div>
+      ) : (Array.isArray(items) ? items.length : 0) === 0 ? (
+        <div className="text-gray-500 dark:text-slate-400">
+          No {mode === "all" ? "items" : mode} found.
+        </div>
       ) : (
         <section
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6"
@@ -913,6 +920,47 @@ export default function HomeClient() {
               </Link>
             );
           })}
+        </section>
+      )}
+
+      {/* Results footer: show only for "All" (Products/Services use infinite scroll) */}
+      {mode === "all" && (
+        <section className="flex items-center justify-between" aria-live="polite">
+          <p className="text-sm text-gray-600 dark:text-slate-300">
+            {loading
+              ? "Loading…"
+              : err
+              ? "Error loading listings"
+              : `${total} items • page ${pageNum} of ${totalPages}`}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!canPrev || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className={`rounded-lg px-3 py-1.5 border ${
+                canPrev && !loading
+                  ? "hover:bg-gray-50 dark:hover:bg-slate-800"
+                  : "opacity-50 cursor-not-allowed"
+              }`}
+              aria-label="Previous page"
+            >
+              ← Prev
+            </button>
+            <button
+              type="button"
+              disabled={!canNext || loading}
+              onClick={() => setPage((p) => p + 1)}
+              className={`rounded-lg px-3 py-1.5 border ${
+                canNext && !loading
+                  ? "hover:bg-gray-50 dark:hover:bg-slate-800"
+                  : "opacity-50 cursor-not-allowed"
+              }`}
+              aria-label="Next page"
+            >
+              Next →
+            </button>
+          </div>
         </section>
       )}
     </div>

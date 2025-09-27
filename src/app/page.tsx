@@ -1,19 +1,13 @@
-﻿// src/app/page.tsx
-export const runtime = "nodejs";
-// Enable caching so next.tags actually matter
+﻿export const runtime = "nodejs";
 export const revalidate = 300;
 
 import { Suspense } from "react";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
 
-type SearchParams =
-  | { [key: string]: string | string[] | undefined }
-  | URLSearchParams;
-
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
-  const explicit = process.env['NEXT_PUBLIC_SITE_URL'];
-  const vercel = process.env['VERCEL_URL'];
+  const explicit = process.env["NEXT_PUBLIC_SITE_URL"];
+  const vercel = process.env["VERCEL_URL"];
   const base =
     explicit ||
     (vercel ? (vercel.startsWith("http") ? vercel : `https://${vercel}`) : null) ||
@@ -24,25 +18,24 @@ function makeApiUrl(path: string) {
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams?: Promise<SearchParams>;
+  // Next 15 generated types expect Promise here
+  searchParams: Promise<URLSearchParams>;
 }) {
-  const sp = (await searchParams) as SearchParams | undefined;
+  const sp = await searchParams;
 
-  const t =
-    (sp &&
-      (sp instanceof URLSearchParams
-        ? sp.get("t")
-        : typeof (sp as any)["t"] === "string"
-        ? ((sp as any)["t"] as string)
-        : Array.isArray((sp as any)["t"])
-        ? ((sp as any)["t"][0] as string)
-        : null)) || "all";
+  // Determine tab (omit t for "all" to keep backend happy)
+  const rawT = (sp.get("t") || "all").toLowerCase();
+  const isAll = rawT !== "products" && rawT !== "services";
+  const t = isAll ? "all" : (rawT as "products" | "services");
 
-  const params = new URLSearchParams({
-    t,
-    limit: "24",
-    facets: "true",
-  });
+  // Prefetch the API to warm the cache; include t only when not "all"
+  const params = new URLSearchParams();
+  params.set("limit", "24");
+  params.set("pageSize", "24");
+  if (!isAll) {
+    params.set("t", t);
+    params.set("facets", "true");
+  }
 
   try {
     await fetch(makeApiUrl(`/api/home-feed?${params.toString()}`), {

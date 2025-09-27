@@ -79,7 +79,7 @@ function ProductCardImpl({
   const anchorRef = useRef<HTMLAnchorElement | null>(null);
   const seenRef = useRef(false);
 
-  // Make top-of-feed images priority for faster LCP (e.g., first 8)
+  // Make above-the-fold images priority for better LCP (e.g., first 8)
   const priority = typeof position === "number" ? position < 8 : false;
 
   // One-time product_view when first visible
@@ -105,7 +105,7 @@ function ProductCardImpl({
     return () => io.disconnect();
   }, [id, name, price, position]);
 
-  // Smart route prefetch: IO + hover/focus
+  // Smart route prefetch: IO + hover/focus (best-effort)
   useEffect(() => {
     if (!prefetch || !anchorRef.current) return;
     const el = anchorRef.current;
@@ -117,8 +117,8 @@ function ProductCardImpl({
           if (entry.isIntersecting && !done) {
             done = true;
             try {
-              // In App Router, Link already prefetches by default; this is a best-effort hint.
-              router.prefetch?.(href as any);
+              // App Router: Link prefetches, but this is a hint when visible
+              (router as any)?.prefetch?.(href);
             } catch {}
             io.disconnect();
             break;
@@ -135,7 +135,7 @@ function ProductCardImpl({
   const hoverPrefetch = useCallback(() => {
     if (!prefetch) return;
     try {
-      router.prefetch?.(href as any);
+      (router as any)?.prefetch?.(href);
     } catch {}
   }, [href, prefetch, router]);
 
@@ -144,7 +144,7 @@ function ProductCardImpl({
   }, [id, name, price, position, href]);
 
   const priceText = useMemo(() => formatKES(price), [price]);
-  const aria = `${name}${price ? `, ${priceText}` : ""}`;
+  const aria = `${name || "Product"}${price ? `, ${priceText}` : ""}`;
 
   // ✅ Only pass blurDataURL when using "blur" placeholder
   const blurProps = useMemo<
@@ -174,6 +174,8 @@ function ProductCardImpl({
       ].join(" ")}
       aria-label={aria}
       title={name}
+      data-product-id={id}
+      role="article"
     >
       {/* Featured badge */}
       {featured && (
@@ -211,5 +213,7 @@ function ProductCardImpl({
     </Link>
   );
 }
+
+(ProductCardImpl as any).displayName = "ProductCard";
 
 export default memo(ProductCardImpl);

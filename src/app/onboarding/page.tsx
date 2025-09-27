@@ -23,11 +23,11 @@ function isSafePath(p?: string | null): p is string {
 }
 
 // 3–24; letters/digits/._; no leading/trailing sep; no doubles
-const USERNAME_RE =
-  /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
+const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 
 function canonicalUsername(raw: string) {
-  return raw.trim();
+  // lower-case to avoid case-sensitive dupes backend-side
+  return raw.trim().toLowerCase();
 }
 
 function useDebounced<T>(value: T, delay = 400) {
@@ -273,6 +273,7 @@ function OnboardingPageInner() {
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
+                maxLength={24}
                 required
               />
               <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs">
@@ -381,7 +382,12 @@ function OnboardingPageInner() {
           <div className="flex gap-3 pt-2">
             <button
               type="submit"
-              disabled={saving || unameStatus === "checking"}
+              disabled={
+                saving ||
+                unameStatus === "checking" ||
+                unameStatus === "invalid" ||
+                unameStatus === "taken"
+              }
               className="rounded-xl bg-[#161748] text-white px-4 py-2 font-semibold hover:opacity-95 disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save & continue"}

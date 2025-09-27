@@ -75,9 +75,9 @@ function saveLocal(ids: string[]) {
   }
 }
 
-/** fetch with abort + timeout + JSON parsing */
+/** fetch with abort + timeout + JSON parsing (exactOptionalPropertyTypes-safe) */
 async function fetchJson<T = unknown>(
-  input: RequestInfo,
+  input: RequestInfo | URL,
   init: RequestInit = {},
   timeoutMs = FETCH_TIMEOUT_MS
 ): Promise<{ res: Response; json: T | null }> {
@@ -89,8 +89,9 @@ async function fetchJson<T = unknown>(
       credentials: "include",
       headers: { Accept: "application/json", ...(init.headers || {}) },
       ...init,
-      signal: init.signal ?? ac.signal,
-    });
+      // keep the property defined and never undefined
+      signal: (init as any).signal ?? ac.signal ?? null,
+    } as RequestInit);
     let json: any = null;
     try {
       json = await res.json();
@@ -122,18 +123,20 @@ export function useFavourites(opts: Options = {}) {
 
   const [ids, setIds] = useState<string[]>([]);
   const [authed, setAuthed] = useState(false);
+  const authedRef = useRef(authed); // <- live flag for storage listener
   const [state, setState] = useState<LoadState>("idle");
 
   const mountedRef = useRef(true);
   const inFlightRef = useRef<AbortController | null>(null);
   const optimisticPrevRef = useRef<string[] | null>(null);
 
-  // keep ref for rollback
+  // keep refs in sync
   const idsRef = useRef<string[]>([]);
   useEffect(() => {
     idsRef.current = ids;
+    authedRef.current = authed;
     onChangeAction?.(ids);
-  }, [ids, onChangeAction]);
+  }, [ids, authed, onChangeAction]);
 
   /** initial load: try server; on 401 fall back to local. also merge local → server on first signin */
   useEffect(() => {
@@ -157,7 +160,7 @@ export function useFavourites(opts: Options = {}) {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ productId: pid, action: "add" } satisfies ApiToggleBody),
+                body: JSON.stringify({ productId: pid } as ApiToggleBody),
               });
             } catch {
               /* ignore */
@@ -197,10 +200,10 @@ export function useFavourites(opts: Options = {}) {
       }
     })();
 
-    // cross-tab sync (anon only)
+    // cross-tab sync (anon only; use live ref)
     const onStorage = (e: StorageEvent) => {
       if (!mountedRef.current) return;
-      if (e.key === FAV_KEY && !authed) {
+      if (e.key === FAV_KEY && !authedRef.current) {
         try {
           const arr = e.newValue ? JSON.parse(e.newValue) : [];
           if (Array.isArray(arr)) setIds(arr.map(String));

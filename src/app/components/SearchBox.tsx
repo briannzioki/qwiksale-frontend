@@ -1,3 +1,4 @@
+// src/app/components/SearchBox.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +18,7 @@ const DEBOUNCE_MS = 160;
 const SUGGEST_LIMIT = 12;
 const CACHE_MAX = 30;
 
-function classNames(...xs: Array<string | false | null | undefined>) {
+function classNames(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
 }
 
@@ -72,46 +73,82 @@ export default function SearchBox(props: Props) {
   const cacheRef = useRef<Map<string, ComboItem<SuggestionMeta>[]>>(new Map());
   const abortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    // abort any in-flight on unmount
+    return () => abortRef.current?.abort();
+  }, []);
+
+  const fetchJson = useCallback(
+    async (url: string, signal: AbortSignal) => {
+      try {
+        const res = await fetch(url, { cache: "no-store", signal });
+        if (!res.ok) return null;
+        return (await res.json().catch(() => null)) as
+          | { items?: Array<{ label: string; value: string; type: SuggestionType }> }
+          | null;
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
+
+  function mergeAndDedupe(
+    lists: Array<{ items?: Array<{ label: string; value: string; type: SuggestionType }> } | null>
+  ): ComboItem<SuggestionMeta>[] {
+    const seen = new Set<string>();
+    const out: ComboItem<SuggestionMeta>[] = [];
+    let idx = 0;
+    for (const j of lists) {
+      const arr = j?.items ?? [];
+      for (const s of arr) {
+        const key = `${s.type}:${(s.value || s.label || "").toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          id: `${s.type}:${s.value}:${idx++}`,
+          label: s.label,
+          meta: { type: s.type },
+        });
+      }
+    }
+    return out.slice(0, SUGGEST_LIMIT);
+  }
+
   const fetchSuggest = useCallback(
     async (term: string): Promise<ComboItem<SuggestionMeta>[]> => {
       const t = term.trim();
       if (!t) return [];
+      const key = t.toLowerCase();
 
       // Serve from cache if present
-      const cached = cacheRef.current.get(t);
+      const cached = cacheRef.current.get(key);
       if (cached) return cached;
 
       // Abort any in-flight request
       abortRef.current?.abort();
       abortRef.current = new AbortController();
 
-      const url = `/api/products/suggest?q=${encodeURIComponent(t)}&limit=${SUGGEST_LIMIT}`;
-      const res = await fetch(url, { cache: "no-store", signal: abortRef.current.signal }).catch(
-        () => null
-      );
-      const json = (await res?.json().catch(() => null)) as
-        | { items?: Array<{ label: string; value: string; type: SuggestionType }> }
-        | null;
+      // Try unified suggest first; if unavailable, fall back to products + services
+      const unifiedUrl = `/api/suggest?q=${encodeURIComponent(t)}&limit=${SUGGEST_LIMIT}`;
+      const unified = await fetchJson(unifiedUrl, abortRef.current.signal);
 
-      if (!json?.items || !Array.isArray(json.items)) return [];
-
-      // Dedupe by (type+value) to avoid repeats, keep first
-      const seen = new Set<string>();
-      const items: ComboItem<SuggestionMeta>[] = [];
-      for (let i = 0; i < json.items.length; i++) {
-        const s = json.items[i]!;
-        const key = `${s.type}:${s.value}`.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        items.push({
-          id: `${s.type}:${s.value}:${i}`,
-          label: s.label,
-          meta: { type: s.type },
-        });
+      let items: ComboItem<SuggestionMeta>[];
+      if (unified && Array.isArray(unified.items)) {
+        items = mergeAndDedupe([unified]);
+      } else {
+        const per = Math.max(4, Math.floor(SUGGEST_LIMIT / 2));
+        const prodUrl = `/api/products/suggest?q=${encodeURIComponent(t)}&limit=${per}`;
+        const svcUrl = `/api/services/suggest?q=${encodeURIComponent(t)}&limit=${per}`;
+        const [p, s] = await Promise.all([
+          fetchJson(prodUrl, abortRef.current.signal),
+          fetchJson(svcUrl, abortRef.current.signal),
+        ]);
+        items = mergeAndDedupe([p, s]);
       }
 
       // Cache (simple LRU-ish: trim oldest when > CACHE_MAX)
-      cacheRef.current.set(t, items);
+      cacheRef.current.set(key, items);
       if (cacheRef.current.size > CACHE_MAX) {
         const firstKey = cacheRef.current.keys().next().value as string | undefined;
         if (firstKey) cacheRef.current.delete(firstKey);
@@ -119,7 +156,7 @@ export default function SearchBox(props: Props) {
 
       return items;
     },
-    []
+    [fetchJson]
   );
 
   const go = useCallback(
@@ -138,10 +175,14 @@ export default function SearchBox(props: Props) {
         } else if (t === "category") {
           params.set("category", label);
         } else if (t === "subcategory") {
-          // Expect "Category • Subcategory"
-          const [cat, sub] = label.split("•").map((s) => s.trim());
-          if (cat) params.set("category", cat);
-          if (sub) params.set("subcategory", sub);
+          // Expect "Category • Subcategory" but handle plain "Subcategory" too
+          const parts = label.split("•").map((s) => s.trim()).filter(Boolean);
+          if (parts.length === 2) {
+            params.set("category", parts[0]!);
+            params.set("subcategory", parts[1]!);
+          } else {
+            params.set("subcategory", label);
+          }
         } else if (t === "service") {
           params.set("t", "services");
           params.set("q", label);
@@ -158,7 +199,7 @@ export default function SearchBox(props: Props) {
         params.set("t", "products");
       }
 
-      if (![...params.keys()].length && term) {
+      if ([...params.keys()].length === 0 && term) {
         params.set("t", "products");
         params.set("q", term);
       }
@@ -201,7 +242,7 @@ export default function SearchBox(props: Props) {
 
   // ---- Renders ----
   if (!isInline) {
-    // Default wide search row (your existing UI, unchanged)
+    // Default wide search row
     return (
       <div className={classNames("relative w-full max-w-2xl", className)}>
         <div className="flex items-center gap-2 rounded-2xl border border-gray-300 bg-white px-3 py-2 shadow-sm transition focus-within:ring-2 focus-within:ring-brandBlue dark:border-slate-700 dark:bg-slate-900">

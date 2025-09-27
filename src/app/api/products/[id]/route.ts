@@ -103,14 +103,13 @@ const productBaseSelect = {
   sellerRating: true,
   sellerSales: true,
 
-  // linked seller (no email/phone)
+  // linked seller (safe fields only; includes username)
   seller: {
     select: {
       id: true,
+      username: true, // <- ensure username is included
       name: true,
       image: true,
-      subscription: true,
-      username: true,
     },
   },
 } as const;
@@ -126,12 +125,15 @@ function shapeProduct(p: any) {
   const createdAt =
     p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
 
+  const sellerUsername = p?.seller?.username ?? null;
+
   const { _count: _c, favorites: _f, ...rest } = p || {};
   return {
     ...rest,
     createdAt,
     favoritesCount,
     isFavoritedByMe,
+    sellerUsername, // convenience mirror on the root payload
   };
 }
 

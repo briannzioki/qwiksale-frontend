@@ -47,3 +47,7 @@ next-env.d.ts
 scripts/*.ps1
 nvm-windows/
 bypass.txt
+
+playwright-report/
+test-results/
+

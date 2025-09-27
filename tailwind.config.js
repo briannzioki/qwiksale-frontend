@@ -9,7 +9,6 @@ module.exports = {
     "./src/**/*.{md,mdx}",
   ],
 
-  // Helpful future defaults
   future: {
     hoverOnlyWhenSupported: true,
   },
@@ -26,7 +25,6 @@ module.exports = {
       },
     },
     extend: {
-      // Wire next/font CSS vars into Tailwind utilities
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
@@ -34,8 +32,8 @@ module.exports = {
       colors: {
         brandGreen: "#478559",
         brandNavy: "#161748",
-        brandPink: "#f95d9b",
-        brandBlue: "#39a0ca",
+        brandPink:  "#f95d9b",
+        brandBlue:  "#39a0ca",
       },
       borderRadius: {
         "2xl": "1rem",
@@ -43,6 +41,8 @@ module.exports = {
       },
       boxShadow: {
         card: "0 2px 12px rgba(0,0,0,0.06)",
+        // you referenced `shadow-soft` in components:
+        soft: "0 12px 32px rgba(0,0,0,0.12)",
       },
       keyframes: {
         "accordion-down": {
@@ -68,7 +68,7 @@ module.exports = {
     require("tailwindcss-animate"),
     require("@tailwindcss/container-queries"),
 
-    // 🔌 Gradient button utilities (classnames: btn-gradient-primary / -accent / -hero)
+    // Gradient buttons + semantic surfaces/tokens
     function ({ addComponents, theme }) {
       const baseBtn = {
         display: "inline-flex",
@@ -83,22 +83,22 @@ module.exports = {
         transition: "opacity 120ms ease, filter 120ms ease",
         cursor: "pointer",
         userSelect: "none",
+        outline: "none",
       };
 
       addComponents({
+        /* --------- Buttons (kept from your config, slightly tidied) --------- */
         ".btn-gradient-primary": {
           ...baseBtn,
           backgroundImage: `linear-gradient(90deg, ${theme("colors.brandNavy")} 0%, ${theme("colors.brandGreen")} 50%, ${theme("colors.brandBlue")} 100%)`,
           "&:hover": { opacity: ".9" },
           "&:active": { filter: "brightness(0.98)" },
-          outline: "none",
         },
         ".btn-gradient-accent": {
           ...baseBtn,
           backgroundImage: `linear-gradient(90deg, ${theme("colors.brandGreen")} 0%, ${theme("colors.brandBlue")} 100%)`,
           "&:hover": { opacity: ".9" },
           "&:active": { filter: "brightness(0.98)" },
-          outline: "none",
         },
         ".btn-gradient-hero": {
           ...baseBtn,
@@ -106,9 +106,43 @@ module.exports = {
           backgroundImage: `linear-gradient(90deg, ${theme("colors.brandNavy")} 0%, ${theme("colors.brandBlue")} 100%)`,
           "&:hover": { opacity: ".92" },
           "&:active": { filter: "brightness(0.98)" },
-          outline: "none",
+        },
+
+        /* ------------------------- Semantic surfaces ------------------------- */
+        // Page container token used across pages
+        ".container-page": {
+          width: "100%",
+          maxWidth: theme("maxWidth.6xl"),
+          marginLeft: "auto",
+          marginRight: "auto",
+          paddingLeft: theme("spacing.4"),
+          paddingRight: theme("spacing.4"),
+        },
+
+        // Hero surface: brand gradient + white text; used in /contact & /onboarding
+        ".hero-surface": {
+          borderRadius: theme("borderRadius.2xl"),
+          color: "#fff",
+          backgroundImage: `linear-gradient(90deg, ${theme("colors.brandNavy")} 0%, ${theme("colors.brandGreen")} 50%, ${theme("colors.brandBlue")} 100%)`,
+          boxShadow: theme("boxShadow.soft"),
+        },
+
+        // Card surface: light/dark aware card container
+        ".card-surface": {
+          borderRadius: theme("borderRadius.2xl"),
+          backgroundColor: "#fff",
+          border: `1px solid ${theme("colors.gray.200")}`,
+          boxShadow: theme("boxShadow.card"),
+        },
+
+        // Helper class you referenced: `shadow-soft`
+        ".shadow-soft": {
+          boxShadow: theme("boxShadow.soft"),
         },
       });
     },
   ],
+
+  // (Optional) safelist if you ever build class strings dynamically elsewhere:
+  // safelist: ["shadow-soft", "hero-surface", "card-surface", "btn-gradient-primary", "btn-gradient-accent", "btn-gradient-hero"],
 };

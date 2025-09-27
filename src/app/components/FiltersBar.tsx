@@ -16,39 +16,22 @@ export type Filters = {
   condition: "all" | "brand new" | "pre-owned";
   minPrice?: number | "";
   maxPrice?: number | "";
-  // ⬇️ match API sort keys
   sort: "newest" | "price_asc" | "price_desc" | "featured";
-  // ⬇️ keeps the old name, but this maps to API `featured=true`
   verifiedOnly?: boolean;
 };
 
 type Props = {
-  /** Initial filters value (controlled-from-server); component manages local changes */
   value: Filters;
-
-  /**
-   * Optional callback (can be a Server Action) notified whenever filters change.
-   * Renamed to end with "Action" to satisfy Next.js serialization rules.
-   */
   onFiltersChangeAction?: (f: Filters) => void | Promise<void>;
-
-  /**
-   * Optional callback (can be a Server Action) for an explicit submit (Search button or Enter key).
-   */
   onSubmitAction?: (f: Filters) => void | Promise<void>;
-
-  /** If provided, enables suggestions and points to an API endpoint (e.g. "/api/services/suggest"). */
   suggestEndpoint?: string;
-
   showVerifiedToggle?: boolean;
   disabled?: boolean;
   className?: string;
-  /** Debounce for typing into the search box */
   debounceMs?: number;
 };
 
 /* ---------- lightweight client analytics / events ---------- */
-
 function emit<T = unknown>(name: string, detail?: T) {
   // eslint-disable-next-line no-console
   console.log(`[qs:event] ${name}`, detail);
@@ -61,7 +44,7 @@ export default function FiltersBar({
   value,
   onFiltersChangeAction,
   onSubmitAction,
-  suggestEndpoint,             // ← NEW
+  suggestEndpoint,
   showVerifiedToggle = false,
   disabled = false,
   className = "",
@@ -80,33 +63,41 @@ export default function FiltersBar({
     }
   }, []);
 
-  // Focus management: "/" focuses the search box (use element id to support SuggestInput)
+  // Focus management: "/" focuses the search box (works for input or SuggestInput[name=...])
   const idSearch = useId();
   useEffect(() => {
+    function focusSearch() {
+      const byId = document.getElementById(idSearch) as HTMLElement | null;
+      if (byId) {
+        byId.focus();
+        return;
+      }
+      const byName = document.querySelector<HTMLElement>(`[name="${idSearch}"]`);
+      byName?.focus();
+    }
     function onKey(e: KeyboardEvent) {
-      const targetTag = (e.target as HTMLElement)?.tagName;
-      if (e.key === "/" && targetTag !== "INPUT" && targetTag !== "TEXTAREA") {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA") {
         e.preventDefault();
-        document.getElementById(idSearch)?.focus();
+        focusSearch();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [idSearch]);
 
-  // Keep local q in sync if the parent re-renders with a different value.query
+  // Keep local q in sync if parent changes value.query
   useEffect(() => {
     if (value.query !== qLocal) setQLocal(value.query ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.query]);
 
-  // Debounced search typing → notify parent (if provided) + emit client event
+  // Debounced search typing → notify parent
   useEffect(() => {
     if (disabled) {
       clearDebounce();
       return;
     }
-
     clearDebounce();
     const t = setTimeout(async () => {
       if (qLocal !== (value.query ?? "")) {
@@ -216,6 +207,10 @@ export default function FiltersBar({
     return Number.isFinite(n) ? n : "";
   }, []);
 
+  // safe values for selects (avoid uncontrolled component warnings)
+  const conditionValue = (condition ?? "all") as Filters["condition"];
+  const sortValue = (sort ?? "newest") as Filters["sort"];
+
   return (
     <div
       className={`card-surface w-full px-4 py-3 ${className}`}
@@ -234,20 +229,17 @@ export default function FiltersBar({
           {suggestEndpoint ? (
             <div className="w-full">
               <SuggestInput
-                // Use the deterministic id so the "/" shortcut can focus it
+                /* Use a deterministic name so our '/' shortcut can query by [name] */
                 name={idSearch}
-                // aria-label provided since the visible label is sr-only
                 ariaLabel="Search"
                 endpoint={suggestEndpoint}
                 value={qLocal}
                 onChangeAction={async (next) => {
                   setQLocal(next);
-                  // do NOT notify parent here; keep debounce/applyNow behavior
+                  // debounced/applyNow will handle notifying the parent
                 }}
-                // Explicit submit still goes through the Search button / Enter in plain input context
                 placeholder={placeholder}
                 disabled={disabled}
-                // Match styling to the old input
                 inputClassName="
                   w-full px-4 py-2 rounded-lg
                   text-gray-900 dark:text-slate-100
@@ -327,7 +319,7 @@ export default function FiltersBar({
             </label>
             <select
               id={idCond}
-              value={condition}
+              value={conditionValue}
               onChange={(e) =>
                 update({ condition: e.target.value as Filters["condition"] }, "condition")
               }
@@ -352,7 +344,7 @@ export default function FiltersBar({
             </label>
             <select
               id={idSort}
-              value={sort}
+              value={sortValue}
               onChange={(e) => update({ sort: e.target.value as Filters["sort"] }, "sort")}
               className="
                 w-full rounded-lg px-3 py-2
@@ -380,7 +372,7 @@ export default function FiltersBar({
               min={0}
               step={1}
               inputMode="numeric"
-              value={minPrice === "" ? "" : Number(minPrice)}
+              value={minPrice === "" || minPrice == null ? "" : Number(minPrice)}
               onChange={(e) => update({ minPrice: parsePrice(e.target.value) }, "minPrice")}
               onBlur={(e) => update({ minPrice: parsePrice(e.target.value) }, "minPrice")}
               onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
@@ -409,7 +401,7 @@ export default function FiltersBar({
               min={0}
               step={1}
               inputMode="numeric"
-              value={maxPrice === "" ? "" : Number(maxPrice)}
+              value={maxPrice === "" || maxPrice == null ? "" : Number(maxPrice)}
               onChange={(e) => update({ maxPrice: parsePrice(e.target.value) }, "maxPrice")}
               onBlur={(e) => update({ maxPrice: parsePrice(e.target.value) }, "maxPrice")}
               onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}

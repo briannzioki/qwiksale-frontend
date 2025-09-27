@@ -98,15 +98,14 @@ export default function ToasterClient({
 
   return (
     <Toaster
-      // Also avoid passing an undefined position (fix for exactOptionalPropertyTypes)
       {...(position ? { position } : { position: resolvedPosition })}
       gutter={8}
       reverseOrder={false}
       toastOptions={toastOptions}
       containerStyle={{
         zIndex: 60,
-        inset: 12, // breathing room from edges
-        pointerEvents: "none", // clicks pass through gaps
+        inset: 12,
+        pointerEvents: "none",
       }}
     />
   );

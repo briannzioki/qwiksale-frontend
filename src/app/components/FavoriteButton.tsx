@@ -51,13 +51,13 @@ export default function FavoriteButton(props: Props) {
     className = "",
   } = props as BaseProps;
 
-  // ✅ Use the exported hook directly
-  const store = useFavourites();
+  // Your favourites API (non-selector style)
+  const store = useFavourites(); // returns an object with ids/isFavourite/toggle etc.
 
   const callIsFav = useCallback(
     (id: string): boolean => {
       if (typeof store?.isFavourite === "function") return !!store.isFavourite(id);
-      const ids: string[] = Array.isArray(store?.ids) ? store.ids.map(String) : [];
+      const ids: string[] = Array.isArray((store as any)?.ids) ? (store as any).ids.map(String) : [];
       return ids.includes(id);
     },
     [store]
@@ -67,7 +67,7 @@ export default function FavoriteButton(props: Props) {
     async (id: string): Promise<boolean> => {
       if (typeof store?.toggle === "function") {
         try {
-          const res = await store.toggle(id); // store handles add/remove + API
+          const res = await store.toggle(id);
           if (typeof res === "boolean") return res;
           return callIsFav(id);
         } catch {
@@ -84,23 +84,57 @@ export default function FavoriteButton(props: Props) {
   const [pending, setPending] = useState(false);
   const cooldownRef = useRef<number>(0);
   const mountedRef = useRef(false);
-  const [live, setLive] = useState("");
 
+  // Live region with cleanup to avoid overlaps
+  const [live, setLive] = useState("");
+  const liveTimerRef = useRef<number | null>(null);
+  const announce = useCallback((message: string) => {
+    if (liveTimerRef.current) {
+      clearTimeout(liveTimerRef.current);
+      liveTimerRef.current = null;
+    }
+    setLive(message);
+    liveTimerRef.current = window.setTimeout(() => {
+      setLive("");
+      liveTimerRef.current = null;
+    }, 1200);
+  }, []);
+
+  // Initial sync + on id change
   useEffect(() => {
     setFav(callIsFav(targetId));
+  }, [callIsFav, targetId]);
+
+  // Subscribe to store changes if your store exposes a subscribe API (Zustand-like)
+  useEffect(() => {
+    const api = (useFavourites as unknown) as { subscribe?: (listener: () => void) => () => void };
+    if (api?.subscribe) {
+      const unsub = api.subscribe(() => setFav(callIsFav(targetId)));
+      return () => {
+        try {
+          unsub?.();
+        } catch {}
+      };
+    }
+    return;
+  }, [callIsFav, targetId]);
+
+  // Fallback: keep in sync when localStorage changes (if persisted)
+  useEffect(() => {
+    const onStorage = () => setFav(callIsFav(targetId));
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [callIsFav, targetId]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (liveTimerRef.current) {
+        clearTimeout(liveTimerRef.current);
+        liveTimerRef.current = null;
+      }
     };
-  }, []);
-
-  const announce = useCallback((message: string) => {
-    setLive(message);
-    const t = setTimeout(() => setLive(""), 1200);
-    return () => clearTimeout(t);
   }, []);
 
   const onClick = useCallback(
@@ -116,7 +150,7 @@ export default function FavoriteButton(props: Props) {
       setPending(true);
       const prev = fav;
       const next = !prev;
-      setFav(next);
+      setFav(next); // optimistic
 
       try {
         const confirmed = await callToggle(targetId);
@@ -174,7 +208,7 @@ export default function FavoriteButton(props: Props) {
   if (compact) {
     return (
       <>
-        <span className="sr-only" aria-live="polite">
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
           {live}
         </span>
         <button
@@ -182,8 +216,10 @@ export default function FavoriteButton(props: Props) {
           onClick={onClick}
           aria-label={aria}
           aria-pressed={fav}
+          aria-busy={pending}
           disabled={pending}
           title={title}
+          data-state={fav ? "on" : "off"}
           className={[
             "absolute top-2 right-2 rounded-full p-2 shadow-md border transition",
             fav
@@ -202,7 +238,7 @@ export default function FavoriteButton(props: Props) {
 
   return (
     <>
-      <span className="sr-only" aria-live="polite">
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
         {live}
       </span>
       <button
@@ -210,8 +246,10 @@ export default function FavoriteButton(props: Props) {
         onClick={onClick}
         aria-label={aria}
         aria-pressed={fav}
+        aria-busy={pending}
         disabled={pending}
         title={title}
+        data-state={fav ? "on" : "off"}
         className={[
           "rounded-lg border px-5 py-3 font-semibold flex items-center gap-2 transition",
           fav
