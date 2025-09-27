@@ -5,10 +5,9 @@ export const revalidate = 300;
 import { Suspense } from "react";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
 
-type RawSearchParams =
-  | URLSearchParams
-  | { [key: string]: string | string[] | undefined };
-type MaybePromise<T> = T | Promise<T>;
+type RawSearchParams = {
+  [key: string]: string | string[] | undefined;
+};
 
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
@@ -21,23 +20,26 @@ function makeApiUrl(path: string) {
   return new URL(path, base);
 }
 
-// Robustly read a query param whether searchParams is a Promise, URLSearchParams, or plain object
+// Robustly read a query param whether the resolved value behaves like URLSearchParams or a plain object
 async function readParam(
-  sp: MaybePromise<RawSearchParams> | undefined,
+  spPromise: Promise<unknown> | undefined,
   key: string
 ): Promise<string | null> {
-  if (!sp) return null;
-  const r: any = await sp;
+  if (!spPromise) return null;
+  const r: any = await spPromise;
+
+  // ReadonlyURLSearchParams / URLSearchParams shape
   if (r && typeof r.get === "function") {
-    // URLSearchParams / ReadonlyURLSearchParams style
     try {
       return r.get(key);
     } catch {
       /* fall through */
     }
   }
+
+  // Plain object shape
   if (r && typeof r === "object") {
-    const v = (r as Record<string, unknown>)[key];
+    const v = (r as RawSearchParams)[key];
     if (typeof v === "string") return v;
     if (Array.isArray(v)) return (v[0] as string) ?? null;
   }
@@ -45,16 +47,14 @@ async function readParam(
 }
 
 export default async function HomePage({
-  searchParams,
+  searchParams, // ← MUST be a Promise to satisfy Next 15's PageProps
 }: {
-  searchParams?: MaybePromise<RawSearchParams>;
+  searchParams: Promise<RawSearchParams>;
 }) {
-  // Determine tab (omit t for "all" to keep backend happy)
   const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
   const isAll = rawT !== "products" && rawT !== "services";
   const t = (isAll ? "all" : (rawT as "products" | "services"));
 
-  // Prefetch the API to warm the cache; include t only when not "all"
   const params = new URLSearchParams();
   params.set("limit", "24");
   params.set("pageSize", "24");
@@ -68,7 +68,7 @@ export default async function HomePage({
       next: { tags: ["home-feed", `home-feed:${t}`] },
     });
   } catch {
-    // ignore prefetch failures; the client will still fetch.
+    /* ignore prefetch failure */
   }
 
   return (
