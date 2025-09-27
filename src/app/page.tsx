@@ -1,8 +1,14 @@
-﻿export const runtime = "nodejs";
+﻿// src/app/page.tsx
+export const runtime = "nodejs";
 export const revalidate = 300;
 
 import { Suspense } from "react";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
+
+type RawSearchParams =
+  | URLSearchParams
+  | { [key: string]: string | string[] | undefined };
+type MaybePromise<T> = T | Promise<T>;
 
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
@@ -15,18 +21,38 @@ function makeApiUrl(path: string) {
   return new URL(path, base);
 }
 
+// Robustly read a query param whether searchParams is a Promise, URLSearchParams, or plain object
+async function readParam(
+  sp: MaybePromise<RawSearchParams> | undefined,
+  key: string
+): Promise<string | null> {
+  if (!sp) return null;
+  const r: any = await sp;
+  if (r && typeof r.get === "function") {
+    // URLSearchParams / ReadonlyURLSearchParams style
+    try {
+      return r.get(key);
+    } catch {
+      /* fall through */
+    }
+  }
+  if (r && typeof r === "object") {
+    const v = (r as Record<string, unknown>)[key];
+    if (typeof v === "string") return v;
+    if (Array.isArray(v)) return (v[0] as string) ?? null;
+  }
+  return null;
+}
+
 export default async function HomePage({
   searchParams,
 }: {
-  // Next 15 generated types expect Promise here
-  searchParams: Promise<URLSearchParams>;
+  searchParams?: MaybePromise<RawSearchParams>;
 }) {
-  const sp = await searchParams;
-
   // Determine tab (omit t for "all" to keep backend happy)
-  const rawT = (sp.get("t") || "all").toLowerCase();
+  const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
   const isAll = rawT !== "products" && rawT !== "services";
-  const t = isAll ? "all" : (rawT as "products" | "services");
+  const t = (isAll ? "all" : (rawT as "products" | "services"));
 
   // Prefetch the API to warm the cache; include t only when not "all"
   const params = new URLSearchParams();
