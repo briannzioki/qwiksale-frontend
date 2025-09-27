@@ -1,4 +1,4 @@
-// src/app/sell/success/page.tsx
+﻿// src/app/sell/success/page.tsx
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import { track } from "@/app/lib/analytics";
 
 // Prefer configured public URL; fall back to current origin (client-only)
-const ENV_SITE = (process.env["NEXT_PUBLIC_SITE_URL"] ?? "").replace(/\/+$/, "");
+const ENV_SITE = (process.env["NEXT_PUBLIC_APP_URL"] ?? "").replace(/\/+$/, "");
 const SUBSCRIPTIONS_ENABLED =
   (process.env["NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED"] ?? "1") !== "0";
 const REDIRECT_SECONDS = 6;

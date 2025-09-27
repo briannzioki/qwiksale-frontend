@@ -40,7 +40,7 @@ function resolveEnvelopeUrl(): string | null {
 /** Resolve a CORS origin (lock to your site in prod if available). */
 function allowedOrigin(): string {
   const base =
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     "";
   try {

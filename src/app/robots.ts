@@ -1,8 +1,8 @@
-import type { MetadataRoute } from "next";
+﻿import type { MetadataRoute } from "next";
 
 function siteUrl() {
   return (
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     "https://qwiksale.co"
   ).replace(/\/+$/, "");

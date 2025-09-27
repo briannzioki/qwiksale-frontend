@@ -1,17 +1,15 @@
-// src/app/page.tsx
+﻿// src/app/page.tsx
 export const runtime = "nodejs";
 export const revalidate = 300;
 
 import { Suspense } from "react";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
 
-type RawSearchParams = {
-  [key: string]: string | string[] | undefined;
-};
+type RawSearchParams = Record<string, string | string[] | undefined>;
 
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
-  const explicit = process.env["NEXT_PUBLIC_SITE_URL"];
+  const explicit = process.env["NEXT_PUBLIC_APP_URL"]; // unified env var
   const vercel = process.env["VERCEL_URL"];
   const base =
     explicit ||
@@ -20,49 +18,52 @@ function makeApiUrl(path: string) {
   return new URL(path, base);
 }
 
-// Robustly read a query param whether the resolved value behaves like URLSearchParams or a plain object
+/** Read a query param from URLSearchParams or a plain object */
 async function readParam(
-  spPromise: Promise<unknown> | undefined,
+  spPromise: Promise<any> | undefined,
   key: string
 ): Promise<string | null> {
   if (!spPromise) return null;
   const r: any = await spPromise;
 
-  // ReadonlyURLSearchParams / URLSearchParams shape
+  // ReadonlyURLSearchParams / URLSearchParams
   if (r && typeof r.get === "function") {
     try {
-      return r.get(key);
+      const v = r.get(key);
+      return v == null ? null : String(v);
     } catch {
       /* fall through */
     }
   }
 
-  // Plain object shape
+  // Plain object
   if (r && typeof r === "object") {
     const v = (r as RawSearchParams)[key];
     if (typeof v === "string") return v;
     if (Array.isArray(v)) return (v[0] as string) ?? null;
   }
+
   return null;
 }
 
 export default async function HomePage({
-  searchParams, // ← MUST be a Promise to satisfy Next 15's PageProps
+  // IMPORTANT: must be exactly Promise<any> to satisfy Next 15's PageProps check
+  searchParams,
 }: {
-  searchParams: Promise<RawSearchParams>;
+  searchParams: Promise<any>;
 }) {
   const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
-  const isAll = rawT !== "products" && rawT !== "services";
-  const t = (isAll ? "all" : (rawT as "products" | "services"));
+  const t = rawT === "products" || rawT === "services" ? (rawT as "products" | "services") : "all";
 
   const params = new URLSearchParams();
   params.set("limit", "24");
   params.set("pageSize", "24");
-  if (!isAll) {
+  if (t !== "all") {
     params.set("t", t);
     params.set("facets", "true");
   }
 
+  // Warm the tag cache; ignore failures (doesn't block page render)
   try {
     await fetch(makeApiUrl(`/api/home-feed?${params.toString()}`), {
       next: { tags: ["home-feed", `home-feed:${t}`] },

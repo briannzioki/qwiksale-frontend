@@ -262,7 +262,7 @@ export async function DELETE(req: NextRequest) {
 /* ----------------------------- CORS ----------------------------- */
 export function OPTIONS() {
   const origin =
-    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
     process.env["NEXT_PUBLIC_APP_URL"] ??
     "*";
 

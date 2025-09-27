@@ -1,4 +1,4 @@
-// src/app/sitemap.ts
+﻿// src/app/sitemap.ts
 export const runtime = "nodejs";
 // dynamic here doesn't stop Next from evaluating at build time for sitemap,
 // but we keep it for consistency.
@@ -8,7 +8,7 @@ import type { MetadataRoute } from "next";
 
 function siteUrl(): string {
   return (
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     "https://qwiksale.sale"
   ).replace(/\/+$/, "");

@@ -1,4 +1,4 @@
-// src/app/api/referrals/stats/route.ts
+﻿// src/app/api/referrals/stats/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -76,7 +76,7 @@ async function ensureReferralCodeAtomic(userId: string, username?: string | null
 function baseUrlFrom(req: NextRequest): string {
   const envUrl =
     process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
     "";
   if (envUrl) return envUrl.replace(/\/+$/, "");

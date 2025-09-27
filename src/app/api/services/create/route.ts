@@ -1,4 +1,4 @@
-// src/app/api/services/create/route.ts
+﻿// src/app/api/services/create/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -325,7 +325,7 @@ export async function POST(req: NextRequest) {
 /* ----------------------------- CORS (optional) ----------------------------- */
 export function OPTIONS() {
   const origin =
-    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
     process.env["NEXT_PUBLIC_APP_URL"] ??
     "*";
 

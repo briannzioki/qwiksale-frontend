@@ -1,3 +1,4 @@
+// src/app/(store)/service-listing/[id]/page.tsx
 export const revalidate = 300;
 export const runtime = "nodejs";
 
@@ -33,6 +34,12 @@ type Service = {
 
 const PLACEHOLDER = "/placeholder/default.jpg";
 
+/** Absolute base URL for server contexts (prod/preview/dev) */
+const BASE = (
+  process.env['NEXT_PUBLIC_APP_URL'] ||
+  (process.env['VERCEL_URL'] ? `https://${process.env['VERCEL_URL']}` : "http://localhost:3000")
+).replace(/\/+$/, "");
+
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || n <= 0) return "Contact for quote";
   try {
@@ -57,9 +64,18 @@ async function getService(id: string): Promise<Service | null> {
   const s = await prisma.service.findFirst({
     where: { id, status: "ACTIVE" },
     select: {
-      id: true, name: true, description: true, category: true, subcategory: true,
-      price: true, image: true, location: true, featured: true,
-      rateType: true, availability: true, serviceArea: true,
+      id: true,
+      name: true,
+      description: true,
+      category: true,
+      subcategory: true,
+      price: true,
+      image: true,
+      location: true,
+      featured: true,
+      rateType: true,
+      availability: true,
+      serviceArea: true,
       seller: { select: { id: true, username: true, name: true, image: true } },
     },
   });
@@ -135,8 +151,10 @@ export default async function ServicePage(
   const hero = svc.image || PLACEHOLDER;
   const priceTxt = fmtKES(svc.price);
   const suffix = rateSuffix(svc.rateType);
-  const sellerName = svc.seller?.name || (svc.seller?.username ? `@${svc.seller.username}` : "Provider");
-  const serviceType = [svc.category, svc.subcategory].filter(Boolean).join(" / ") || undefined;
+  const sellerName =
+    svc.seller?.name || (svc.seller?.username ? `@${svc.seller.username}` : "Provider");
+  const serviceType =
+    [svc.category, svc.subcategory].filter(Boolean).join(" / ") || undefined;
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -146,13 +164,16 @@ export default async function ServicePage(
     image: [hero],
     serviceType,
     areaServed: svc.serviceArea || svc.location || undefined,
-    provider: svc.seller?.username || svc.seller?.name
-      ? {
-          "@type": "Organization",
-          name: sellerName,
-          url: svc.seller?.username ? `/store/${encodeURIComponent(svc.seller.username)}` : undefined,
-        }
-      : undefined,
+    provider:
+      svc.seller?.username || svc.seller?.name
+        ? {
+            "@type": "Organization",
+            name: sellerName,
+            url: svc.seller?.username
+              ? `${BASE}/store/${encodeURIComponent(svc.seller.username)}`
+              : undefined,
+          }
+        : undefined,
     offers: {
       "@type": "Offer",
       priceCurrency: "KES",
@@ -163,7 +184,10 @@ export default async function ServicePage(
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <main className="container-page py-6">
         <div className="mx-auto max-w-5xl grid gap-6 lg:grid-cols-5">
           {/* Visual */}
@@ -195,16 +219,25 @@ export default async function ServicePage(
               </div>
 
               {(svc.serviceArea || svc.location) && (
-                <div className="text-gray-600 mt-1">Area: {svc.serviceArea || svc.location}</div>
+                <div className="text-gray-600 mt-1">
+                  Area: {svc.serviceArea || svc.location}
+                </div>
               )}
-              {svc.availability && <div className="text-gray-600">Availability: {svc.availability}</div>}
+              {svc.availability && (
+                <div className="text-gray-600">Availability: {svc.availability}</div>
+              )}
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <a href={`/api/services/${svc.id}/contact`} className="rounded-xl bg-[#161748] px-4 py-2 text-white hover:opacity-90">
+                <a
+                  href={`/api/services/${svc.id}/contact`}
+                  className="rounded-xl bg-[#161748] px-4 py-2 text-white hover:opacity-90"
+                >
                   Reveal contact
                 </a>
                 <a
-                  href={`https://wa.me/254000000000?text=${encodeURIComponent(`Hi! I'm interested in your service "${svc.name}".`)}`}
+                  href={`https://wa.me/254000000000?text=${encodeURIComponent(
+                    `Hi! I'm interested in your service "${svc.name}".`
+                  )}`}
                   className="rounded-xl border px-4 py-2 hover:bg-gray-50"
                   target="_blank"
                   rel="noreferrer"
@@ -227,7 +260,10 @@ export default async function ServicePage(
                 <div className="min-w-0">
                   <div className="font-medium truncate">{sellerName}</div>
                   {svc.seller.username ? (
-                    <Link href={`/store/${encodeURIComponent(svc.seller.username)}`} className="text-sm text-[#161748] underline underline-offset-2">
+                    <Link
+                      href={`/store/${encodeURIComponent(svc.seller.username)}`}
+                      className="text-sm text-[#161748] underline underline-offset-2"
+                    >
                       Visit store
                     </Link>
                   ) : (
