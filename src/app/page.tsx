@@ -2,43 +2,11 @@
 export const runtime = "nodejs";
 export const revalidate = 300;
 
-import Link from "next/link";
-
-/** Shapes mirrored from /api/home-feed */
-type Mode = "all" | "products" | "services";
-type CombinedItem = {
-  type: "product" | "service";
-  id: string;
-  name: string;
-  category: string | null;
-  subcategory: string | null;
-  price: number | null;
-  image: string | null;
-  location: string | null;
-  featured: boolean;
-  createdAt: string;
-};
-type HomeFeedResponse = {
-  mode: Mode;
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-  items: CombinedItem[];
-};
+import { Suspense } from "react";
+import HomeClientNoSSR from "./_components/HomeClientNoSSR";
+import { makeApiUrl } from "@/app/lib/url";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
-
-/** Build absolute URL on the server (works in dev and prod) */
-function makeApiUrl(path: string) {
-  const explicit = process.env["NEXT_PUBLIC_APP_URL"];
-  const vercel = process.env["VERCEL_URL"];
-  const base =
-    explicit ||
-    (vercel ? (vercel.startsWith("http") ? vercel : `https://${vercel}`) : null) ||
-    "http://127.0.0.1:3000";
-  return new URL(path, base);
-}
 
 /** Read a query param from URLSearchParams or a plain object */
 async function readParam(
@@ -90,19 +58,23 @@ function labelFor(mode: Mode) {
 }
 
 export default async function HomePage({
-  // keep Promise<any> to satisfy Next 15 PageProps checker
+  // IMPORTANT: keep Promise<any> to satisfy Next 15 PageProps checker
   searchParams,
 }: {
   searchParams: Promise<any>;
 }) {
-  const t = normalizeMode(await readParam(searchParams, "t"));
+  const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
+  const isAll = rawT !== "products" && rawT !== "services";
+  const t = (isAll ? "all" : (rawT as "products" | "services"));
 
   // Always call /api/home-feed for the chosen tab
   const params = new URLSearchParams();
   params.set("limit", "24");
   params.set("pageSize", "24");
-  params.set("t", t);
-  if (t !== "all") params.set("facets", "true");
+  if (!isAll) {
+    params.set("t", t);
+    params.set("facets", "true");
+  }
 
   let data: HomeFeedResponse | null = null;
   try {
