@@ -7,6 +7,7 @@ import HomeClientNoSSR from "./_components/HomeClientNoSSR";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 
+<<<<<<< HEAD
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
   const explicit = process.env["NEXT_PUBLIC_APP_URL"];
@@ -37,6 +38,9 @@ async function readParam(
       const v = r.get(key);
 <<<<<<< HEAD
       return v == null ? null : String(v);
+=======
+      return typeof v === "string" ? v : v == null ? null : String(v);
+>>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
     } catch {
       /* fall through */
     }
@@ -74,7 +78,7 @@ function labelFor(mode: Mode) {
 }
 
 export default async function HomePage({
-  // IMPORTANT: Promise<any> keeps Next 15 PageProps checker happy
+  // IMPORTANT: must be exactly Promise<any> to satisfy Next 15's PageProps check
   searchParams,
 }: {
   searchParams: Promise<any>;
