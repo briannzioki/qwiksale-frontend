@@ -53,37 +53,17 @@ function nPrice(v: unknown): number | null | undefined {
 function nRateType(v: unknown): "hour" | "day" | "fixed" | undefined {
   const rt = s(v)?.toLowerCase();
   if (!rt) return undefined;
-  return RATE_TYPES.has(rt) ? (rt as "hour" | "day" | "fixed") : undefined;
+  return RATE_TYPES.has(rt) ? (rt as any) : undefined;
 }
-
-/* -------- image allowlist (match products/create policy) -------- */
-const ALLOWED_IMAGE_HOSTS = [
-  "res.cloudinary.com",
-  "images.unsplash.com",
-] as const;
-function isAllowedHost(hostname: string): boolean {
-  return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
-}
-function isAllowedUrl(u: string): boolean {
-  try {
-    const { protocol, hostname } = new URL(u);
-    if (protocol !== "https:" && protocol !== "http:") return false;
-    return isAllowedHost(hostname);
-  } catch {
-    return false;
-  }
-}
-
 function nGallery(v: unknown, maxUrl: number, maxCount: number): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const cleaned = v
     .map((x) => (typeof x === "string" ? x.trim() : ""))
     .filter(Boolean)
     .map((x) => clampLen(x, maxUrl)!)
-    .filter((x) => /^https?:\/\//i.test(x) && isAllowedUrl(x));
+    .filter((x) => /^https?:\/\//i.test(x));
   return Array.from(new Set(cleaned)).slice(0, maxCount);
 }
-
 function clip(str: string | undefined, max = 5000) {
   if (!str) return str;
   return str.length <= max ? str : str.slice(0, max);
@@ -144,6 +124,7 @@ const db: any = prisma as any;
 
 /* ------------- robust create (handles missing `publishedAt`) ------------- */
 async function createServiceSafe(data: any) {
+  // Try with `publishedAt`; if Prisma schema lacks it, retry without.
   try {
     return await db.service.create({ data, select: { id: true } });
   } catch (e: any) {
@@ -153,8 +134,12 @@ async function createServiceSafe(data: any) {
       msg.includes("Unknown argument") ||
       msg.includes("Argument `publishedAt`")
     ) {
-      const { publishedAt, ...without } = data ?? {};
-      return await db.service.create({ data: without, select: { id: true } });
+      try {
+        const { publishedAt, ...without } = data ?? {};
+        return await db.service.create({ data: without, select: { id: true } });
+      } catch {
+        throw e;
+      }
     }
     throw e;
   }
@@ -213,12 +198,8 @@ export async function POST(req: NextRequest) {
     const description = clip(s(body["description"]), MAX.description);
     const category = s(body["category"], MAX.category) ?? "Services";
     const subcategory = s(body["subcategory"], MAX.subcategory);
-
-    // Image + gallery (enforce allowlist & dedupe with cover image)
-    const rawImage = s(body["image"], MAX.imageUrl) ?? s(body["thumbnailUrl"], MAX.imageUrl);
-    const image = rawImage && isAllowedUrl(rawImage) ? rawImage : undefined;
+    const image = s(body["image"], MAX.imageUrl) ?? s(body["thumbnailUrl"], MAX.imageUrl);
     const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
-    const finalGallery = Array.from(new Set([...(image ? [image] : []), ...(gallery ?? [])]));
 
     // Rate type: default to "fixed" if not provided; if provided but invalid, error
     const hasRateTypeKey = Object.prototype.hasOwnProperty.call(body, "rateType");
@@ -288,12 +269,12 @@ export async function POST(req: NextRequest) {
       serviceArea: serviceArea ?? null,
       availability: availability ?? null,
       image: image ?? null,
-      gallery: finalGallery, // already deduped and allow-listed
+      gallery: gallery ?? [],
       location: location ?? null,
 
       status: "ACTIVE",
       featured: false, // tier check above; expand later if you want featured services
-      publishedAt: new Date(), // dropped automatically if column doesn't exist
+      publishedAt: new Date(), // will be dropped automatically if column doesn't exist
 
       sellerId: me.id,
       sellerName: me.name ?? null,
@@ -325,7 +306,7 @@ export async function POST(req: NextRequest) {
       tier,
       serviceId: created.id,
       hasPrice: price != null,
-      gallerySize: finalGallery.length,
+      gallerySize: (gallery ?? []).length,
     });
 
     return withReqId(noStore({ ok: true, serviceId: created.id }, { status: 201 }), reqId);
@@ -343,7 +324,11 @@ export async function POST(req: NextRequest) {
 
 /* ----------------------------- CORS (optional) ----------------------------- */
 export function OPTIONS() {
-  const origin = process.env["NEXT_PUBLIC_APP_URL"] || "*";
+  const origin =
+    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
+    "*";
+
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
   res.headers.set("Vary", "Origin");
