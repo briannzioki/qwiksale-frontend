@@ -178,7 +178,7 @@ export async function PATCH(req: NextRequest) {
 /* --------- minimal CORS/health helpers (optional) --------- */
 export function OPTIONS() {
   const origin =
-    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
     process.env["NEXT_PUBLIC_APP_URL"] ??
     "*";
   const res = new NextResponse(null, { status: 204 });

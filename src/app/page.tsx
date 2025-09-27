@@ -1,55 +1,45 @@
-// src/app/page.tsx
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const revalidate = 300;
 
 import { Suspense } from "react";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
+import { makeApiUrl } from "@/app/lib/url";
 
-type RawSearchParams = {
-  [key: string]: string | string[] | undefined;
-};
+type RawSearchParams = Record<string, string | string[] | undefined>;
 
-/** Build absolute URL on the server (works in dev and prod) */
-function makeApiUrl(path: string) {
-  const explicit = process.env["NEXT_PUBLIC_SITE_URL"];
-  const vercel = process.env["VERCEL_URL"];
-  const base =
-    explicit ||
-    (vercel ? (vercel.startsWith("http") ? vercel : `https://${vercel}`) : null) ||
-    "http://127.0.0.1:3000";
-  return new URL(path, base);
-}
-
-// Robustly read a query param whether the resolved value behaves like URLSearchParams or a plain object
+/** Read a query param from URLSearchParams or a plain object */
 async function readParam(
-  spPromise: Promise<unknown> | undefined,
+  spMaybe: Promise<RawSearchParams> | RawSearchParams | undefined,
   key: string
 ): Promise<string | null> {
-  if (!spPromise) return null;
-  const r: any = await spPromise;
+  if (!spMaybe) return null;
+  const r: any = await spMaybe;
 
-  // ReadonlyURLSearchParams / URLSearchParams shape
+  // ReadonlyURLSearchParams / URLSearchParams
   if (r && typeof r.get === "function") {
     try {
-      return r.get(key);
+      const v = r.get(key);
+      return typeof v === "string" ? v : v == null ? null : String(v);
     } catch {
       /* fall through */
     }
   }
 
-  // Plain object shape
+  // Plain object
   if (r && typeof r === "object") {
     const v = (r as RawSearchParams)[key];
     if (typeof v === "string") return v;
     if (Array.isArray(v)) return (v[0] as string) ?? null;
   }
+
   return null;
 }
 
 export default async function HomePage({
-  searchParams, // ← MUST be a Promise to satisfy Next 15's PageProps
+  // Accept MaybePromise or plain object; don't import Next's PageProps
+  searchParams,
 }: {
-  searchParams: Promise<RawSearchParams>;
+  searchParams?: Promise<RawSearchParams> | RawSearchParams;
 }) {
   const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
   const isAll = rawT !== "products" && rawT !== "services";
@@ -63,6 +53,7 @@ export default async function HomePage({
     params.set("facets", "true");
   }
 
+  // Warm the tag cache; ignore failures (doesn't block page render)
   try {
     await fetch(makeApiUrl(`/api/home-feed?${params.toString()}`), {
       next: { tags: ["home-feed", `home-feed:${t}`] },

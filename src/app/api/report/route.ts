@@ -1,4 +1,4 @@
-// src/app/api/report/route.ts
+﻿// src/app/api/report/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -81,7 +81,7 @@ function normalizeType(v: unknown): SupportType {
 
 export function OPTIONS() {
   const origin =
-    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
     process.env["NEXT_PUBLIC_APP_URL"] ??
     "*";
   const res = new NextResponse(null, { status: 204 });

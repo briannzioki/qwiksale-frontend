@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
 /* ----------------------------- CORS (optional) ----------------------------- */
 export function OPTIONS() {
   const origin =
-    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
     process.env["NEXT_PUBLIC_APP_URL"] ??
     "*";
 

@@ -1,4 +1,4 @@
-// src/app/api/cron/weekly-digest/route.ts
+﻿// src/app/api/cron/weekly-digest/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -24,7 +24,7 @@ function hasValidDbUrl(): boolean {
 function baseUrl(): string {
   const raw =
     process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
     "https://qwiksale.sale";
   return String(raw).trim().replace(/\/+$/, "");

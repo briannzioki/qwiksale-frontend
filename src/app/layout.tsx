@@ -1,4 +1,4 @@
-// src/app/layout.tsx
+﻿// src/app/layout.tsx
 export const runtime = "nodejs";
 export const revalidate = 600;
 
@@ -11,14 +11,10 @@ import AppShell from "./components/AppShell";
 import DevToolsMount from "./components/DevToolsMount";
 import { fontVars } from "./fonts";
 import ToasterClient from "./components/ToasterClient";
+import { getBaseUrl } from "@/app/lib/url";
 
 /* ----------------------------- Site URL helpers ---------------------------- */
-const envAppUrl =
-  process.env["NEXT_PUBLIC_APP_URL"] ||
-  (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "") ||
-  "http://localhost:3000";
-const siteUrl = envAppUrl.replace(/\/+$/, "");
-
+const siteUrl = getBaseUrl().replace(/\/+$/, "");
 const isPreview =
   process.env["VERCEL_ENV"] === "preview" || process.env["NEXT_PUBLIC_NOINDEX"] === "1";
 
@@ -35,13 +31,7 @@ export const viewport: Viewport = {
 
 /* ------------------------------- Site metadata ----------------------------- */
 export const metadata: Metadata = {
-  metadataBase: (() => {
-    try {
-      return new URL(siteUrl);
-    } catch {
-      return new URL("http://localhost:3000");
-    }
-  })(),
+  metadataBase: new URL(siteUrl),
   applicationName: "QwikSale",
   title: { default: "QwikSale", template: "%s · QwikSale" },
   description:

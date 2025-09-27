@@ -1,4 +1,4 @@
-// src/app/lib/seo.ts
+﻿// src/app/lib/seo.ts
 
 /* -------------------------------------------------------------------------- */
 /* Core URL helpers                                                           */
@@ -6,7 +6,7 @@
 
 function resolveSiteUrl(): string {
   const raw =
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
     "https://qwiksale.sale";

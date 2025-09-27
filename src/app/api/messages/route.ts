@@ -3,26 +3,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
-/* --------------------------- TS-safe Prisma alias --------------------------- */
-const db = prisma as unknown as typeof prisma & {
-  thread: {
-    findMany: (args: any) => Promise<any[]>;
-    findUnique: (args: any) => Promise<any | null>;
-    create: (args: any) => Promise<any>;
-    update: (args: any) => Promise<any>;
-  };
-  message: { create: (args: any) => Promise<any> };
-};
-
-function noStore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
+/* ------------------------------ utils ------------------------------ */
+function json(data: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(data, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
@@ -30,7 +19,32 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
+function unsupportedMedia() {
+  return json({ ok: false, error: "Content-Type must be application/json", code: "UNSUPPORTED_MEDIA" }, { status: 415 });
+}
+
+function badRequest(msg: string, code = "BAD_REQUEST", extra?: Record<string, unknown>) {
+  return json({ ok: false, error: msg, code, ...(extra || {}) }, { status: 400 });
+}
+
+function unauthorized() {
+  return json({ ok: false, error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
+}
+
+function notFound(msg = "Not found") {
+  return json({ ok: false, error: msg, code: "NOT_FOUND" }, { status: 404 });
+}
+
+function nowISO() {
+  return new Date();
+}
+
 type ListingType = "product" | "service";
+const isUUIDish = (s: string) => /^[a-f0-9-]{8,}$/i.test(s);
+
+/* Prisma error guard without importing @prisma/client/runtime */
+const isUniqueViolation = (err: unknown) =>
+  !!(err && typeof err === "object" && "code" in err && (err as any).code === "P2002");
 
 /* ----------------------------------- GET ---------------------------------- */
 /** GET /api/messages -> my threads */
@@ -38,9 +52,8 @@ export async function GET(req: NextRequest) {
   try {
     const session = await auth().catch(() => null);
     const uid = (session?.user as any)?.id as string | undefined;
-    if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
+    if (!uid) return unauthorized();
 
-    // Rate limit listing threads fetch (per user)
     if (typeof checkRateLimit === "function") {
       const rl = await checkRateLimit(req.headers, {
         name: "messages_list",
@@ -51,9 +64,9 @@ export async function GET(req: NextRequest) {
       if (!rl.ok) return tooMany("Please slow down.", rl.retryAfterSec);
     }
 
-    const threads = await db.thread.findMany({
+    const threads = await prisma.thread.findMany({
       where: { OR: [{ buyerId: uid }, { sellerId: uid }] },
-      orderBy: { lastMessageAt: "desc" }, // newest first fits inbox expectations
+      orderBy: { lastMessageAt: "desc" },
       select: {
         id: true,
         listingId: true,
@@ -71,11 +84,11 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return noStore({ items: threads });
+    return json({ ok: true, items: threads });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[messages GET] error", e);
-    return noStore({ error: "Server error" }, { status: 500 });
+    return json({ ok: false, error: "Server error", code: "SERVER_ERROR" }, { status: 500 });
   }
 }
 
@@ -83,36 +96,43 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/messages
  * Create (or find) a thread and optionally send the first message.
- * Body: { toUserId: string, listingType: "product" | "service", listingId: string, firstMessage?: string }
+ * Body:
+ * {
+ *   toUserId: string,
+ *   listingType: "product" | "service",
+ *   listingId: string,
+ *   firstMessage?: string   // alias: text
+ * }
  */
 export async function POST(req: NextRequest) {
   try {
     const session = await auth().catch(() => null);
     const uid = (session?.user as any)?.id as string | undefined;
-    if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
+    if (!uid) return unauthorized();
 
-    const ctype = (req.headers.get("content-type") || "").toLowerCase();
-    if (!ctype.includes("application/json")) {
-      return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
-    }
+    const ct = (req.headers.get("content-type") || "").toLowerCase();
+    if (!ct.includes("application/json")) return unsupportedMedia();
 
-    const b = await req.json().catch(() => ({} as any));
-    const toUserId = String(b?.toUserId || "").trim();
-    const listingType = (String(b?.listingType || "") as ListingType).toLowerCase() as ListingType;
-    const listingId = String(b?.listingId || "").trim();
-    const firstMessage = (b?.firstMessage ? String(b.firstMessage) : "").trim();
+    const body = await req.json().catch(() => ({} as any));
+    const toUserId = String(body?.toUserId ?? "").trim();
+    const listingType = String(body?.listingType ?? "").toLowerCase() as ListingType;
+    const listingId = String(body?.listingId ?? "").trim();
+    // accept alias "text" from older clients
+    const firstMessageRaw = (body?.firstMessage ?? body?.text ?? "") as string;
+    const firstMessage = String(firstMessageRaw).replace(/\s+/g, " ").trim();
 
-    if (!toUserId || !listingId || (listingType !== "product" && listingType !== "service")) {
-      return noStore({ error: "Missing fields" }, { status: 400 });
+    // Basic checks
+    if (!toUserId || !isUUIDish(toUserId)) {
+      return badRequest("Recipient is required.", "MISSING_RECIPIENT");
     }
-    if (toUserId === uid) {
-      return noStore({ error: "Cannot message yourself" }, { status: 400 });
+    if (!listingId) return badRequest("Listing id is required.", "MISSING_LISTING");
+    if (listingType !== "product" && listingType !== "service") {
+      return badRequest("Invalid listing type.", "INVALID_LISTING_TYPE", { allowed: ["product", "service"] });
     }
-    if (firstMessage.length > 5000) {
-      return noStore({ error: "Message too long" }, { status: 400 });
-    }
+    if (toUserId === uid) return badRequest("You can’t message yourself.", "SELF_MESSAGE");
+    if (firstMessage.length > 5000) return badRequest("Message too long.", "MESSAGE_TOO_LONG");
 
-    // Rate limit thread creation / first message (per user + target + listing)
+    // Rate limit (caller + target + listing tuple)
     if (typeof checkRateLimit === "function") {
       const rl = await checkRateLimit(req.headers, {
         name: "messages_create_or_send",
@@ -125,49 +145,79 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Ensure recipient exists
+    const recipient = await prisma.user.findUnique({
+      where: { id: toUserId },
+      select: { id: true, username: true, name: true },
+    });
+    if (!recipient) return notFound("Recipient not found.");
+
+    // Ensure listing exists and belongs to recipient (prevents miswired threads)
+    if (listingType === "product") {
+      const prod = await prisma.product.findFirst({
+        where: { id: listingId, status: "ACTIVE" },
+        select: { id: true, sellerId: true },
+      });
+      if (!prod) return notFound("Product not found.");
+      if (prod.sellerId !== toUserId) {
+        return badRequest("Recipient does not own this product.", "RECIPIENT_NOT_OWNER");
+      }
+    } else {
+      const svc = await prisma.service.findFirst({
+        where: { id: listingId, status: "ACTIVE" },
+        select: { id: true, sellerId: true },
+      });
+      if (!svc) return notFound("Service not found.");
+      if (svc.sellerId !== toUserId) {
+        return badRequest("Recipient does not own this service.", "RECIPIENT_NOT_OWNER");
+      }
+    }
+
     const buyerId = uid;
     const sellerId = toUserId;
 
-    // Find or create thread (composite unique in schema)
-    let thread = await db.thread.findUnique({
-      where: {
-        listingType_listingId_buyerId_sellerId: {
-          listingType,
-          listingId,
-          buyerId,
-          sellerId,
-        },
-      },
-      select: { id: true },
-    });
+    // Find or create thread (dupe-safe)
+    const uniqueKey = {
+      listingType_listingId_buyerId_sellerId: { listingType, listingId, buyerId, sellerId },
+    } as const;
+
+    let thread = await prisma.thread.findUnique({ where: uniqueKey, select: { id: true } });
 
     if (!thread) {
-      thread = await db.thread.create({
-        data: {
-          listingType,
-          listingId,
-          buyerId,
-          sellerId,
-          lastMessageAt: new Date(),
-        },
-        select: { id: true },
-      });
+      try {
+        thread = await prisma.thread.create({
+          data: { listingType, listingId, buyerId, sellerId, lastMessageAt: nowISO() },
+          select: { id: true },
+        });
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          // raced: fetch the existing one
+          thread = await prisma.thread.findUnique({ where: uniqueKey, select: { id: true } });
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!thread) {
+      // extremely unlikely, but keep a guard
+      return json({ ok: false, error: "Could not initialize conversation.", code: "THREAD_INIT_FAILED" }, { status: 500 });
     }
 
     if (firstMessage) {
-      await db.message.create({
-        data: { threadId: thread.id, senderId: uid, body: firstMessage },
-      });
-      await db.thread.update({
-        where: { id: thread.id },
-        data: { lastMessageAt: new Date() },
-      });
+      if (firstMessage.trim().length === 0) {
+        return badRequest("Message cannot be empty.", "EMPTY_MESSAGE");
+      }
+      await prisma.$transaction([
+        prisma.message.create({ data: { threadId: thread.id, senderId: uid, body: firstMessage } }),
+        prisma.thread.update({ where: { id: thread.id }, data: { lastMessageAt: nowISO() } }),
+      ]);
     }
 
-    return noStore({ threadId: thread.id }, { status: 201 });
+    return json({ ok: true, threadId: thread.id }, { status: 201 });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[messages POST] error", e);
-    return noStore({ error: "Server error" }, { status: 500 });
+    return json({ ok: false, error: "Server error", code: "SERVER_ERROR" }, { status: 500 });
   }
 }

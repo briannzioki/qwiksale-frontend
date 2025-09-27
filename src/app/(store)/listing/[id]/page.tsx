@@ -1,3 +1,4 @@
+// src/app/(store)/listing/[id]/page.tsx
 export const revalidate = 300;
 export const runtime = "nodejs";
 
@@ -102,12 +103,13 @@ export async function generateMetadata(
 
   const priceTxt = fmtKES(listing.price);
   const town = listing.location ? ` — ${listing.location}` : "";
-  const images = Array.from(new Set([listing.image, ...(listing.gallery || [])].filter(Boolean) as string[]));
+  const images = Array.from(
+    new Set([listing.image, ...(listing.gallery || [])].filter(Boolean) as string[])
+  );
 
   return {
     title: `${listing.name} • ${priceTxt}${town}`,
     description: listing.description ?? undefined,
-    // Duplicate path → point bots to the primary product URL
     alternates: { canonical: `/product/${listing.id}` },
     robots: { index: false, follow: true },
     openGraph: {
@@ -132,7 +134,9 @@ export default async function ListingPage(
   const product = await getListing(id);
   if (!product) notFound();
 
-  const images = Array.from(new Set([product.image, ...(product.gallery || [])].filter(Boolean) as string[]));
+  const images = Array.from(
+    new Set([product.image, ...(product.gallery || [])].filter(Boolean) as string[])
+  );
   const hero = images[0] ?? PLACEHOLDER;
 
   const jsonLd = {
@@ -141,17 +145,15 @@ export default async function ListingPage(
     name: product.name,
     image: images.length ? images : [PLACEHOLDER],
     description: product.description ?? undefined,
-    category: [product.category, product.subcategory].filter(Boolean).join(" / ") || product.category,
+    category:
+      [product.category, product.subcategory].filter(Boolean).join(" / ") ||
+      product.category,
     offers: {
       "@type": "Offer",
       priceCurrency: "KES",
       price: typeof product.price === "number" ? String(product.price) : undefined,
       availability: "https://schema.org/InStock",
     },
-    areaServed: product.location ?? undefined,
-    itemCondition: product.condition?.toLowerCase().includes("brand")
-      ? "https://schema.org/NewCondition"
-      : "https://schema.org/UsedCondition",
   };
 
   const sellerName =
@@ -159,12 +161,15 @@ export default async function ListingPage(
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <main className="container-page py-6">
         <div className="mx-auto max-w-5xl grid gap-6 lg:grid-cols-5">
           {/* Gallery */}
           <section className="lg:col-span-3 space-y-3">
-            <div className="relative aspect-square w/full overflow-hidden rounded-xl bg-gray-100">
+            <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gray-100">
               <SmartImage
                 src={hero}
                 alt={product.name}
@@ -177,7 +182,10 @@ export default async function ListingPage(
             {images.length > 1 && (
               <div className="grid grid-cols-4 gap-2">
                 {images.slice(1, 5).map((src, i) => (
-                  <div key={src + i} className="relative aspect-square overflow-hidden rounded-lg bg-gray-100">
+                  <div
+                    key={src + i}
+                    className="relative aspect-square overflow-hidden rounded-lg bg-gray-100"
+                  >
                     <SmartImage
                       src={src}
                       alt={`${product.name} ${i + 2}`}
@@ -196,8 +204,12 @@ export default async function ListingPage(
             <div className="rounded-2xl border p-4">
               <h1 className="text-xl font-semibold">{product.name}</h1>
               <div className="mt-1 text-gray-700">{fmtKES(product.price)}</div>
-              {product.location && <div className="text-gray-600 mt-1">Location: {product.location}</div>}
-              {product.condition && <div className="text-gray-600">Condition: {product.condition}</div>}
+              {product.location && (
+                <div className="text-gray-600 mt-1">Location: {product.location}</div>
+              )}
+              {product.condition && (
+                <div className="text-gray-600">Condition: {product.condition}</div>
+              )}
               {product.featured && (
                 <div className="mt-2 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
                   Verified seller
@@ -205,11 +217,16 @@ export default async function ListingPage(
               )}
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <a href={`/api/products/${product.id}/contact`} className="rounded-xl bg-[#161748] px-4 py-2 text-white hover:opacity-90">
+                <a
+                  href={`/api/products/${product.id}/contact`}
+                  className="rounded-xl bg-[#161748] px-4 py-2 text-white hover:opacity-90"
+                >
                   Reveal contact
                 </a>
                 <a
-                  href={`https://wa.me/254000000000?text=${encodeURIComponent(`Hi! Is "${product.name}" still available?`)}`}
+                  href={`https://wa.me/254000000000?text=${encodeURIComponent(
+                    `Hi! Is "${product.name}" still available?`
+                  )}`}
                   className="rounded-xl border px-4 py-2 hover:bg-gray-50"
                   target="_blank"
                   rel="noreferrer"
@@ -232,7 +249,10 @@ export default async function ListingPage(
                 <div className="min-w-0">
                   <div className="font-medium truncate">{sellerName}</div>
                   {product.seller.username ? (
-                    <Link href={`/store/${encodeURIComponent(product.seller.username)}`} className="text-sm text-[#161748] underline underline-offset-2">
+                    <Link
+                      href={`/store/${encodeURIComponent(product.seller.username)}`}
+                      className="text-sm text-[#161748] underline underline-offset-2"
+                    >
                       Visit store
                     </Link>
                   ) : (

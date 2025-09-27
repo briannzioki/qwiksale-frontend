@@ -1,4 +1,4 @@
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 3600; // cache 1h at the edge/CDN
 
@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 /** Resolve a canonical absolute base URL (no trailing slash). */
 function getBaseUrl(): string {
   const raw =
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     "https://qwiksale.sale";
   const trimmed = String(raw).trim().replace(/\/+$/, "");

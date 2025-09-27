@@ -1,4 +1,4 @@
-// src/app/api/support/route.ts
+﻿// src/app/api/support/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -108,7 +108,7 @@ export function OPTIONS() {
   res.headers.set(
     "Access-Control-Allow-Origin",
     process.env["NEXT_PUBLIC_BASE_URL"] ||
-      process.env["NEXT_PUBLIC_SITE_URL"] ||
+      process.env["NEXT_PUBLIC_APP_URL"] ||
       process.env["NEXT_PUBLIC_APP_URL"] ||
       "*"
   );

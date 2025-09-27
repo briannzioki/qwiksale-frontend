@@ -1,4 +1,4 @@
-// src/app/search/page.tsx
+﻿// src/app/search/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ProductCard from "@/app/components/ProductCard";
@@ -63,7 +63,7 @@ function getParam(sp: SearchParams, k: string): string | undefined {
 }
 function siteUrl() {
   const raw =
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "");
   return (raw || "").replace(/\/+$/, "");

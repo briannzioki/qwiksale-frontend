@@ -2,23 +2,33 @@
 "use client";
 
 import Image, { type ImageProps } from "next/image";
+import type { StaticImageData } from "next/image";
 import { useMemo, useState, useEffect } from "react";
 
+type AcceptableSrc = string | StaticImageData | null | undefined;
+
 type Props = Omit<ImageProps, "src" | "alt"> & {
-  /** Cloudinary public ID, absolute URL, data/blob URL, or site-relative path. */
-  src?: string | null | undefined; // allow undefined to satisfy exactOptionalPropertyTypes
+  /** Cloudinary public ID, absolute URL, data/blob URL, site-relative path, or StaticImageData. */
+  src?: AcceptableSrc; // allow undefined to satisfy exactOptionalPropertyTypes
   /** Optional alt; defaults to a safe string if omitted/empty. */
   alt?: string | null | undefined;
+  /** Optional hard fallback image path/URL; defaults to local placeholder. */
+  fallbackSrc?: string;
 };
 
 /** Local placeholder (ensure this file exists). */
-const PLACEHOLDER = "/placeholder/default.jpg";
-const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
+const DEFAULT_PLACEHOLDER = "/placeholder/default.jpg";
+const CLOUD_NAME = process.env['NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME'] ?? "";
 
-/** Build a safe display URL from a possibly-partial input. */
-function resolveSrc(input?: string | null): string {
-  const raw = (input || "").trim();
-  if (!raw) return PLACEHOLDER;
+/** Build a safe display URL/value from a possibly-partial input. */
+function resolveSrc(input?: AcceptableSrc, fallback = DEFAULT_PLACEHOLDER): string | StaticImageData {
+  if (!input) return fallback;
+
+  // If this is a Next static import, just pass it through.
+  if (typeof input === "object" && "src" in input) return input;
+
+  const raw = String(input).trim();
+  if (!raw) return fallback;
 
   // Absolute / special schemes or site-relative file (e.g. /placeholder/default.jpg)
   if (/^(https?:|data:|blob:)/i.test(raw) || raw.startsWith("/")) return raw;
@@ -28,24 +38,28 @@ function resolveSrc(input?: string | null): string {
     // remove accidental leading slash to avoid double slashes
     const pid = raw.replace(/^\/+/, "");
     // encode each segment but preserve folder slashes
-    const encoded = pid
-      .split("/")
-      .map((seg) => encodeURIComponent(seg))
-      .join("/");
+    const encoded = pid.split("/").map(encodeURIComponent).join("/");
     // f_auto,q_auto gives good defaults; tweak as needed
     return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/f_auto,q_auto/${encoded}`;
   }
 
   // No Cloudinary config and not an absolute path — fall back
-  return PLACEHOLDER;
+  return fallback;
 }
 
-export default function SmartImage({ src: srcProp, alt, onError, ...rest }: Props) {
+export default function SmartImage({
+  src: srcProp,
+  alt,
+  onError,
+  onLoadingComplete,
+  fallbackSrc = DEFAULT_PLACEHOLDER,
+  ...rest
+}: Props) {
   // Derive the initial resolved source
-  const initial = useMemo(() => resolveSrc(srcProp), [srcProp]);
+  const initial = useMemo(() => resolveSrc(srcProp, fallbackSrc), [srcProp, fallbackSrc]);
 
   // Track the actual src used by <Image>; swap to placeholder if it errors
-  const [actualSrc, setActualSrc] = useState<string>(initial);
+  const [actualSrc, setActualSrc] = useState<string | StaticImageData>(initial);
 
   // If the input src changes (e.g. index switched in a gallery), reset
   useEffect(() => {
@@ -54,19 +68,26 @@ export default function SmartImage({ src: srcProp, alt, onError, ...rest }: Prop
 
   const handleError: NonNullable<ImageProps["onError"]> = (e) => {
     // Only swap once to avoid loops if placeholder ever fails
-    if (actualSrc !== PLACEHOLDER) {
-      setActualSrc(PLACEHOLDER);
+    if (actualSrc !== fallbackSrc) setActualSrc(fallbackSrc);
+    // Bubble up
+    onError?.(e);
+  };
+
+  // Some broken images load with 200 but have 0×0 natural size; treat as failure.
+  const handleLoadingComplete: NonNullable<ImageProps["onLoadingComplete"]> = (img) => {
+    if (img?.naturalWidth === 0 && actualSrc !== fallbackSrc) {
+      setActualSrc(fallbackSrc);
+      return; // don't bubble incomplete loads
     }
-    // Call through if the parent passed an onError
-    onError?.(e as any);
+    onLoadingComplete?.(img);
   };
 
   // Guarantee a non-empty alt (accessibility)
   const safeAlt = (alt && alt.trim().length > 0 ? alt : "image") as string;
 
   // Skip Next optimization for local placeholder and SVGs (common perf+compat choice)
-  const isSvg = useMemo(() => actualSrc.toLowerCase().endsWith(".svg"), [actualSrc]);
-  const unoptimized = actualSrc === PLACEHOLDER || isSvg;
+  const isSvg = typeof actualSrc === "string" && actualSrc.toLowerCase().endsWith(".svg");
+  const unoptimized = actualSrc === fallbackSrc || isSvg;
 
   return (
     <Image
@@ -74,6 +95,7 @@ export default function SmartImage({ src: srcProp, alt, onError, ...rest }: Prop
       alt={safeAlt}
       src={actualSrc}
       onError={handleError}
+      onLoadingComplete={handleLoadingComplete}
       unoptimized={unoptimized}
       loading={(rest as ImageProps).loading ?? "lazy"}
     />

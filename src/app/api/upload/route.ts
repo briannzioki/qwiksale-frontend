@@ -1,4 +1,4 @@
-// src/app/api/upload/route.ts
+﻿// src/app/api/upload/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -52,7 +52,7 @@ function sanitizeFolder(input: unknown, fallback = "qwiksale"): string {
 /** CORS preflight (optional; safe no-op for same-origin) */
 export function OPTIONS() {
   const origin =
-    process.env["NEXT_PUBLIC_SITE_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ??
     process.env["NEXT_PUBLIC_APP_URL"] ??
     "*";
   const res = new NextResponse(null, { status: 204 });

@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/app/lib/prisma";
 import UserAvatar from "@/app/components/UserAvatar";
 import SmartImage from "@/app/components/SmartImage";
+import { makeApiUrl } from "@/app/lib/url";
 
 /* ----------------------------- utils ----------------------------- */
 function fmtKES(n?: number | null) {
@@ -21,17 +22,6 @@ function fmtKES(n?: number | null) {
 function cleanUsername(raw?: string) {
   const v = decodeURIComponent(String(raw ?? "")).trim();
   return /^[a-z0-9._-]{2,32}$/i.test(v) ? v : "";
-}
-
-/** Build absolute URL on the server (works in dev and prod) */
-function makeApiUrl(path: string) {
-  const explicit = process.env["NEXT_PUBLIC_SITE_URL"];
-  const vercel = process.env["VERCEL_URL"];
-  const base =
-    explicit ||
-    (vercel ? (vercel.startsWith("http") ? vercel : `https://${vercel}`) : null) ||
-    "http://127.0.0.1:3000";
-  return new URL(path, base).toString();
 }
 
 /* ----------------------------- Metadata ----------------------------- */

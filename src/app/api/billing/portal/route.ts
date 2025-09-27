@@ -1,4 +1,4 @@
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -14,7 +14,7 @@ function noStore(json: unknown, init?: ResponseInit) {
 export async function POST() {
   const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"];
   const STRIPE_BILLING_PORTAL = process.env["STRIPE_BILLING_PORTAL"] || "";
-  const returnUrl = process.env["NEXT_PUBLIC_SITE_URL"] || process.env["NEXT_PUBLIC_APP_URL"] || "https://example.com";
+  const returnUrl = process.env["NEXT_PUBLIC_APP_URL"] || process.env["NEXT_PUBLIC_APP_URL"] || "https://example.com";
 
   if (!STRIPE_SECRET_KEY || !STRIPE_BILLING_PORTAL) {
     return noStore({ error: "Stripe not configured" }, { status: 501 });
