@@ -1,12 +1,18 @@
+<<<<<<< HEAD
 ﻿// src/app/page.tsx
 export const runtime = "nodejs";
+=======
+﻿export const runtime = "nodejs";
+>>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
 export const revalidate = 300;
 
 import { Suspense } from "react";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
+import { makeApiUrl } from "@/app/lib/url";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 
+<<<<<<< HEAD
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
   const explicit = process.env["NEXT_PUBLIC_APP_URL"]; // unified env var
@@ -21,16 +27,25 @@ function makeApiUrl(path: string) {
 /** Read a query param from URLSearchParams or a plain object */
 async function readParam(
   spPromise: Promise<any> | undefined,
+=======
+/** Read a query param from URLSearchParams or a plain object */
+async function readParam(
+  spMaybe: Promise<RawSearchParams> | RawSearchParams | undefined,
+>>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
   key: string
 ): Promise<string | null> {
-  if (!spPromise) return null;
-  const r: any = await spPromise;
+  if (!spMaybe) return null;
+  const r: any = await spMaybe;
 
   // ReadonlyURLSearchParams / URLSearchParams
   if (r && typeof r.get === "function") {
     try {
       const v = r.get(key);
+<<<<<<< HEAD
       return v == null ? null : String(v);
+=======
+      return typeof v === "string" ? v : v == null ? null : String(v);
+>>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
     } catch {
       /* fall through */
     }
@@ -47,10 +62,17 @@ async function readParam(
 }
 
 export default async function HomePage({
+<<<<<<< HEAD
   // IMPORTANT: must be exactly Promise<any> to satisfy Next 15's PageProps check
   searchParams,
 }: {
   searchParams: Promise<any>;
+=======
+  // Accept MaybePromise or plain object; don't import Next's PageProps
+  searchParams,
+}: {
+  searchParams?: Promise<RawSearchParams> | RawSearchParams;
+>>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
 }) {
   const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
   const t = rawT === "products" || rawT === "services" ? (rawT as "products" | "services") : "all";
