@@ -41,7 +41,17 @@ type FetchedProduct = Partial<ProductFromStore> & {
   sellerMemberSince?: string | null;
   sellerRating?: number | null;
   sellerSales?: number | null;
-  seller?: { id?: string; username?: string | null; name?: string | null; image?: string | null } | null;
+  seller?: {
+    id?: string;
+    username?: string | null;
+    name?: string | null;
+    image?: string | null;
+    phone?: string | null;
+    location?: string | null;
+    memberSince?: string | null;
+    rating?: number | null;
+    sales?: number | null;
+  } | null;
 };
 
 const PLACEHOLDER = "/placeholder/default.jpg";
@@ -77,7 +87,7 @@ async function startThread(
 }
 
 export default function ProductPage() {
-  // ✅ Typed params so TS knows id is a string (no index-signature warning)
+  // Typed params so TS knows id is a string
   const params = useParams<{ id: string }>();
   const id = params.id ?? "";
 
@@ -157,9 +167,10 @@ export default function ProductPage() {
 
   const seller = useMemo(() => {
     const nested: any = (display as any)?.seller || {};
+    const username = (nested?.username || "").trim() || null;
     return {
       id: nested?.id ?? display?.sellerId ?? null,
-      username: (nested?.username || "").trim() || null,
+      username,
       name: nested?.name ?? display?.sellerName ?? "Private Seller",
       image: nested?.image ?? null,
       phone: nested?.phone ?? display?.sellerPhone ?? null,
@@ -373,6 +384,7 @@ export default function ProductPage() {
                   Message Seller
                 </button>
               )}
+              {/* Only show "Visit Store" when a public username exists */}
               {seller.username && (
                 <Link
                   href={`/store/${seller.username}`}

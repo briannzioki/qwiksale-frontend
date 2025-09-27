@@ -1,4 +1,3 @@
-// src/app/store/[username]/page.tsx
 export const revalidate = 300;
 export const runtime = "nodejs";
 
@@ -24,11 +23,24 @@ function cleanUsername(raw?: string) {
   return /^[a-z0-9._-]{2,32}$/i.test(v) ? v : "";
 }
 
+/** Build absolute URL on the server (works in dev and prod) */
+function makeApiUrl(path: string) {
+  const explicit = process.env["NEXT_PUBLIC_SITE_URL"];
+  const vercel = process.env["VERCEL_URL"];
+  const base =
+    explicit ||
+    (vercel ? (vercel.startsWith("http") ? vercel : `https://${vercel}`) : null) ||
+    "http://127.0.0.1:3000";
+  return new URL(path, base).toString();
+}
+
 /* ----------------------------- Metadata ----------------------------- */
-export async function generateMetadata(
-  props: { params: Promise<{ username: string }> }
-): Promise<Metadata> {
-  const { username: raw } = await props.params;
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}): Promise<Metadata> {
+  const { username: raw } = await params;
   const username = cleanUsername(raw);
   if (!username) return { title: "Store | QwikSale" };
 
@@ -46,7 +58,7 @@ export async function generateMetadata(
       };
     }
   } catch {
-    /* ignore metadata errors; return generic below */
+    /* ignore */
   }
 
   return {
@@ -87,10 +99,12 @@ type StoreService = {
 };
 
 /* ----------------------------- Page ----------------------------- */
-export default async function StorePage(
-  props: { params: Promise<{ username: string }> }
-) {
-  const { username: raw } = await props.params;
+export default async function StorePage({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}) {
+  const { username: raw } = await params;
   const username = cleanUsername(raw);
   if (!username) notFound();
 
@@ -112,28 +126,30 @@ export default async function StorePage(
 
   if (!user) notFound();
 
-  // Pull both products & services for this seller via API (so we can tag caches)
+  // Pull both products & services for this seller via API (absolute URLs + tagged cache)
   const qs = `sellerId=${encodeURIComponent(user.id)}&pageSize=48&sort=newest`;
 
   const [prodRes, svcRes] = await Promise.all([
-    fetch(`/api/products?${qs}`, {
-      next: { tags: ["products", `user:${user.id}:products`, `store:${username}`] },
-    }),
-    fetch(`/api/services?${qs}`, {
-      next: { tags: ["services", `user:${user.id}:services`, `store:${username}`] },
-    }),
+    fetch(makeApiUrl(`/api/products?${qs}`), {
+      next: { tags: ["products:latest", `user:${user.id}:listings`, `store:${username}`] },
+    }).catch(() => null),
+    fetch(makeApiUrl(`/api/services?${qs}`), {
+      next: { tags: ["services:latest", `user:${user.id}:listings`, `store:${username}`] },
+    }).catch(() => null),
   ]);
 
-  // Gracefully handle API hiccups
-  const productsJson: ApiListResp<StoreProduct> = prodRes.ok
-    ? await prodRes.json()
+  const prodOk = Boolean(prodRes?.ok);
+  const svcOk = Boolean(svcRes?.ok);
+
+  const productsJson: ApiListResp<StoreProduct> = prodOk
+    ? await prodRes!.json()
     : { page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] };
 
-  const servicesJson: ApiListResp<StoreService> = svcRes.ok
-    ? await svcRes.json()
+  const servicesJson: ApiListResp<StoreService> = svcOk
+    ? await svcRes!.json()
     : { page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] };
 
-  // Normalize a couple of nullable fields for UI
+  // Normalize nullable bits for UI
   const products = (productsJson.items || []).map((p) => ({
     ...p,
     category: p.category ?? null,
@@ -144,6 +160,9 @@ export default async function StorePage(
     category: s.category ?? null,
     subcategory: s.subcategory ?? null,
   }));
+
+  const hasAny =
+    (Number(productsJson.total || 0) + Number(servicesJson.total || 0)) > 0;
 
   return (
     <div className="space-y-6">
@@ -165,28 +184,44 @@ export default async function StorePage(
               {user.city || user.country ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}` : ""}
             </p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <Link href="/" className="btn-outline">Back to Home</Link>
           </div>
         </div>
       </div>
 
-      {/* Products */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            {productsJson.total > 0 ? "Products" : "No products yet"}
-          </h2>
-          {productsJson.total > 0 ? (
-            <span className="text-sm text-gray-500">{productsJson.total} items</span>
-          ) : null}
+      {/* API warning (non-fatal) */}
+      {(!prodOk || !svcOk) && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
+          <p className="font-semibold">Some listings couldn’t be loaded.</p>
+          <p className="text-sm opacity-80">
+            {prodOk ? null : "Products API failed. "}
+            {svcOk ? null : "Services API failed."} Please refresh later.
+          </p>
         </div>
+      )}
 
-        {products.length === 0 ? (
-          <div className="text-gray-600 dark:text-slate-300">
-            This store hasn’t posted any products yet.
+      {/* Empty store state */}
+      {!hasAny && (
+        <div className="rounded-xl border p-8 text-center text-gray-600 dark:border-slate-800 dark:text-slate-300">
+          <p className="text-lg font-semibold">No listings yet</p>
+          <p className="mt-1 text-sm opacity-80">
+            This store hasn’t posted any products or services yet.
+          </p>
+          <div className="mt-4">
+            <Link href="/" className="btn-outline">Browse Home</Link>
           </div>
-        ) : (
+        </div>
+      )}
+
+      {/* Products */}
+      {productsJson.total > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Products</h2>
+            <span className="text-sm text-gray-500">{productsJson.total} items</span>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((p) => (
               <Link key={p.id} href={`/product/${p.id}`} className="group">
@@ -196,7 +231,7 @@ export default async function StorePage(
                       Featured
                     </span>
                   ) : null}
-                  <div className="relative h-40 w-full bg-gray-100">
+                  <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
                     <SmartImage
                       src={p.image || undefined}
                       alt={p.name || "Product image"}
@@ -220,25 +255,17 @@ export default async function StorePage(
               </Link>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {/* Services */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            {servicesJson.total > 0 ? "Services" : "No services yet"}
-          </h2>
-          {servicesJson.total > 0 ? (
+      {servicesJson.total > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Services</h2>
             <span className="text-sm text-gray-500">{servicesJson.total} items</span>
-          ) : null}
-        </div>
-
-        {services.length === 0 ? (
-          <div className="text-gray-600 dark:text-slate-300">
-            This store hasn’t posted any services yet.
           </div>
-        ) : (
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {services.map((s) => (
               <Link key={s.id} href={`/service/${s.id}`} className="group">
@@ -248,7 +275,7 @@ export default async function StorePage(
                       Featured
                     </span>
                   ) : null}
-                  <div className="relative h-40 w-full bg-gray-100">
+                  <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
                     <SmartImage
                       src={s.image || undefined}
                       alt={s.name || "Service image"}
@@ -272,8 +299,8 @@ export default async function StorePage(
               </Link>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }

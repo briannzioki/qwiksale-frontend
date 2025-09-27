@@ -106,6 +106,7 @@ export async function GET(req: NextRequest, context: ParamCtx) {
 
     const otherId = thread.buyerId === uid ? thread.sellerId : thread.buyerId;
 
+    // Mark other party's unread messages as read + bump lastRead on my side
     await prisma.$transaction([
       prisma.message.updateMany({
         where: { threadId, senderId: otherId, readAt: null },
@@ -113,7 +114,9 @@ export async function GET(req: NextRequest, context: ParamCtx) {
       }),
       prisma.thread.update({
         where: { id: threadId },
-        data: thread.buyerId === uid ? { buyerLastReadAt: new Date() } : { sellerLastReadAt: new Date() },
+        data: thread.buyerId === uid
+          ? { buyerLastReadAt: new Date() }
+          : { sellerLastReadAt: new Date() },
       }),
     ]);
 
@@ -123,7 +126,7 @@ export async function GET(req: NextRequest, context: ParamCtx) {
         buyerLastReadAt: iso(thread.buyerLastReadAt),
         sellerLastReadAt: iso(thread.sellerLastReadAt),
       },
-      messages: messages.map((m: MessageRow) => ({
+      messages: messages.map((m) => ({
         id: m.id,
         senderId: m.senderId,
         body: m.body,
@@ -143,6 +146,7 @@ export async function GET(req: NextRequest, context: ParamCtx) {
 }
 
 /* -------------------------------- POST ------------------------------- */
+/** POST /api/messages/:id — send a message. Body: { body: string } */
 export async function POST(req: NextRequest, context: ParamCtx) {
   try {
     const guard = requireJson(req);
@@ -201,9 +205,15 @@ export async function POST(req: NextRequest, context: ParamCtx) {
 
 /* -------------------------------- misc -------------------------------- */
 export async function HEAD() {
-  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  return new NextResponse(null, {
+    status: 204,
+    headers: { "Cache-Control": "no-store", Vary: "Authorization, Cookie" },
+  });
 }
 
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  return new NextResponse(null, {
+    status: 204,
+    headers: { "Cache-Control": "no-store", Vary: "Authorization, Cookie" },
+  });
 }

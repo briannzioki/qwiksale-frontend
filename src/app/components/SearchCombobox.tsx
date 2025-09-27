@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 export type ComboItem<TMeta = unknown> = {
   id: string;
@@ -36,7 +37,7 @@ export type Props<TMeta = unknown> = {
   debounceMs?: number;
 
   /** Optional custom item renderer */
-  renderItemAction?: (item: ComboItem<TMeta>, active: boolean) => React.ReactNode;
+  renderItemAction?: (item: ComboItem<TMeta>, active: boolean) => ReactNode;
 
   /** Optional aria-label for the input (if no visible label) */
   ariaLabel?: string;
@@ -89,13 +90,20 @@ export default function SearchCombobox<TMeta = unknown>({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
+  // Scroll active option into view when navigating with arrows
+  useEffect(() => {
+    if (!open || active == null) return;
+    const el = document.getElementById(`${listId}-opt-${active}`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [open, active, listId]);
+
   // Load suggestions (debounced) only if items not controlled
   useEffect(() => {
     if (controlledItems) {
       setItems(controlledItems);
       // show dropdown only if you have something to show
       setOpen(Boolean(controlledItems.length));
-      setActive(null);
+      setActive(controlledItems.length ? 0 : null);
       return;
     }
     if (!fetchSuggestionsAction) return;
@@ -180,15 +188,7 @@ export default function SearchCombobox<TMeta = unknown>({
   };
 
   return (
-    <div
-      ref={rootRef}
-      role="combobox"
-      aria-expanded={open}
-      aria-controls={listId}
-      aria-haspopup="listbox"
-      aria-activedescendant={activeId}
-      className={["relative w-full", className].join(" ")}
-    >
+    <div ref={rootRef} className={["relative w-full", className].join(" ")}>
       <label htmlFor={inputId} className="sr-only">
         {ariaLabel}
       </label>
@@ -207,10 +207,15 @@ export default function SearchCombobox<TMeta = unknown>({
         onFocus={() => {
           if (items.length) setOpen(true);
         }}
-        aria-autocomplete="list"
-        autoComplete="off"
         placeholder={placeholder}
         className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+        // ---- ARIA combobox on the input (recommended) ----
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-haspopup="listbox"
+        aria-activedescendant={activeId}
       />
 
       {open && (

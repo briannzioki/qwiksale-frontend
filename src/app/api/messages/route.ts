@@ -18,17 +18,15 @@ const db = prisma as unknown as typeof prisma & {
     create: (args: any) => Promise<any>;
     update: (args: any) => Promise<any>;
   };
-  message: {
-    create: (args: any) => Promise<any>;
-  };
+  message: { create: (args: any) => Promise<any> };
 };
 
-/* --------------------------------- helpers -------------------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie");
   return res;
 }
 
@@ -43,17 +41,19 @@ export async function GET(req: NextRequest) {
     if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     // Rate limit listing threads fetch (per user)
-    const rl = await checkRateLimit(req.headers, {
-      name: "messages_list",
-      limit: 60,
-      windowMs: 60_000,
-      extraKey: uid,
-    });
-    if (!rl.ok) return tooMany("Please slow down.", rl.retryAfterSec);
+    if (typeof checkRateLimit === "function") {
+      const rl = await checkRateLimit(req.headers, {
+        name: "messages_list",
+        limit: 60,
+        windowMs: 60_000,
+        extraKey: uid,
+      });
+      if (!rl.ok) return tooMany("Please slow down.", rl.retryAfterSec);
+    }
 
     const threads = await db.thread.findMany({
       where: { OR: [{ buyerId: uid }, { sellerId: uid }] },
-      orderBy: { lastMessageAt: "asc" }, // or "desc" if you prefer newest first
+      orderBy: { lastMessageAt: "desc" }, // newest first fits inbox expectations
       select: {
         id: true,
         listingId: true,
@@ -80,14 +80,17 @@ export async function GET(req: NextRequest) {
 }
 
 /* ---------------------------------- POST ---------------------------------- */
-/** POST /api/messages -> create thread (optional first message) */
+/**
+ * POST /api/messages
+ * Create (or find) a thread and optionally send the first message.
+ * Body: { toUserId: string, listingType: "product" | "service", listingId: string, firstMessage?: string }
+ */
 export async function POST(req: NextRequest) {
   try {
     const session = await auth().catch(() => null);
     const uid = (session?.user as any)?.id as string | undefined;
     if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    // Quick content-type check
     const ctype = (req.headers.get("content-type") || "").toLowerCase();
     if (!ctype.includes("application/json")) {
       return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
@@ -95,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     const b = await req.json().catch(() => ({} as any));
     const toUserId = String(b?.toUserId || "").trim();
-    const listingType = String(b?.listingType || "") as ListingType;
+    const listingType = (String(b?.listingType || "") as ListingType).toLowerCase() as ListingType;
     const listingId = String(b?.listingId || "").trim();
     const firstMessage = (b?.firstMessage ? String(b.firstMessage) : "").trim();
 
@@ -105,19 +108,21 @@ export async function POST(req: NextRequest) {
     if (toUserId === uid) {
       return noStore({ error: "Cannot message yourself" }, { status: 400 });
     }
+    if (firstMessage.length > 5000) {
+      return noStore({ error: "Message too long" }, { status: 400 });
+    }
 
     // Rate limit thread creation / first message (per user + target + listing)
-    const rl = await checkRateLimit(req.headers, {
-      name: "messages_create_or_send",
-      limit: 30,
-      windowMs: 60_000,
-      extraKey: `${uid}:${toUserId}:${listingType}:${listingId}`,
-    });
-    if (!rl.ok) {
-      return tooMany(
-        "You’re sending messages too quickly. Please slow down.",
-        rl.retryAfterSec
-      );
+    if (typeof checkRateLimit === "function") {
+      const rl = await checkRateLimit(req.headers, {
+        name: "messages_create_or_send",
+        limit: 30,
+        windowMs: 60_000,
+        extraKey: `${uid}:${toUserId}:${listingType}:${listingId}`,
+      });
+      if (!rl.ok) {
+        return tooMany("You’re sending messages too quickly. Please slow down.", rl.retryAfterSec);
+      }
     }
 
     const buyerId = uid;
@@ -166,5 +171,3 @@ export async function POST(req: NextRequest) {
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
-
-

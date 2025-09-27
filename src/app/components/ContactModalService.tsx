@@ -59,6 +59,7 @@ export default function ContactModalService({
 }: Props) {
   const modalUid = useId(); // stable, unique per instance
   const modalId = `service-contact-modal-${modalUid}`;
+  const descId = `${modalId}-desc`;
 
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -211,6 +212,7 @@ export default function ContactModalService({
         aria-busy={loading ? "true" : "false"}
         aria-haspopup="dialog"
         aria-controls={modalId}
+        aria-expanded={open}
       >
         {loading ? "Revealing…" : buttonLabel}
       </button>
@@ -231,12 +233,18 @@ export default function ContactModalService({
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${modalId}-title`}
+            aria-describedby={descId}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
             <div
               ref={panelRef}
               className="w-full max-w-md rounded-2xl border bg-white p-5 shadow-lg dark:border-gray-800 dark:bg-gray-950"
             >
+              {/* Hidden description for screen readers */}
+              <p id={descId} className="sr-only">
+                Provider contact details and quick actions.
+              </p>
+
               {/* Optional safety nudge */}
               {payload?.suggestLogin && (
                 <div className="mb-3 rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-900/50 dark:bg-yellow-950/30 dark:text-yellow-300">
@@ -259,7 +267,9 @@ export default function ContactModalService({
               </div>
 
               {error ? (
-                <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
+                <div className="text-sm text-red-600 dark:text-red-400" role="alert" aria-live="polite">
+                  {error}
+                </div>
               ) : (
                 <>
                   <div className="space-y-2 text-sm text-gray-800 dark:text-gray-200">
@@ -294,6 +304,7 @@ export default function ContactModalService({
                         rel="noopener noreferrer"
                         className="rounded-xl bg-[#25D366] px-3 py-1.5 text-sm text-white hover:opacity-90"
                         onClick={() => track("service_contact_whatsapp_click", { serviceId })}
+                        aria-label="Open WhatsApp chat with provider"
                       >
                         WhatsApp
                       </a>
@@ -303,6 +314,7 @@ export default function ContactModalService({
                         href={telLink}
                         className="rounded-xl border px-3 py-1.5 text-sm dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900 hover:bg-gray-50"
                         onClick={() => track("service_contact_call_click", { serviceId })}
+                        aria-label="Call provider"
                       >
                         Call
                       </a>

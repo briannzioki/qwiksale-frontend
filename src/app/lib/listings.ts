@@ -101,15 +101,14 @@ function nInt(x: unknown): number | undefined {
   return undefined;
 }
 
-/** Build OR blocks for simple tokenized search across provided fields */
-function tokenSearchOR(tokens: string[], fields: string[]) {
-  if (!tokens.length) return undefined as unknown as any[];
-  // For each token, match if it appears in ANY of the fields (insensitive)
+/** Build AND of OR-blocks for tokenized search across provided fields */
+function tokenSearchAND(tokens: string[], fields: string[]) {
+  if (!tokens.length) return undefined as undefined | Array<Record<string, unknown>>;
   return tokens.map((tok) => ({
     OR: fields.map((f) => ({
       [f]: { contains: tok, mode: "insensitive" as const },
     })),
-  })) as any[];
+  }));
 }
 
 /* =========================
@@ -174,6 +173,16 @@ export async function getProductsPage(input: ListingQuery): Promise<PageResponse
 
   const sort = (input.sort || "newest") as NonNullable<ListingQuery["sort"]>;
 
+  const priceWhere =
+    minPrice != null || maxPrice != null
+      ? {
+          price: {
+            ...(minPrice != null ? { gte: minPrice } : {}),
+            ...(maxPrice != null ? { lte: maxPrice } : {}),
+          },
+        }
+      : {};
+
   const where: Record<string, unknown> = {
     status: "ACTIVE",
     ...(featuredOnly ? { featured: true } : {}),
@@ -181,12 +190,18 @@ export async function getProductsPage(input: ListingQuery): Promise<PageResponse
     ...(subcategory ? { subcategory: { equals: subcategory, mode: "insensitive" } } : {}),
     ...(brand ? { brand: { equals: brand, mode: "insensitive" } } : {}),
     ...(condition ? { condition } : {}),
-    ...(minPrice != null ? { price: { gte: minPrice } } : {}),
-    ...(maxPrice != null ? { price: { ...(minPrice != null ? { gte: minPrice } : {}), lte: maxPrice } } : {}),
+    ...priceWhere,
   };
 
-  const searchOR = tokenSearchOR(tokens, ["name", "category", "subcategory", "brand", "description", "location"]);
-  const whereFinal = searchOR ? { AND: [where, ...searchOR] } : where;
+  const searchAND = tokenSearchAND(tokens, [
+    "name",
+    "category",
+    "subcategory",
+    "brand",
+    "description",
+    "location",
+  ]);
+  const whereFinal = searchAND ? { AND: [where, ...searchAND] } : where;
 
   const orderBy =
     sort === "featured"
@@ -222,7 +237,7 @@ export async function getProductsPage(input: ListingQuery): Promise<PageResponse
 
   const rows = rowsRaw as ProductRow[];
 
-  const items: ProductItem[] = rows.map((r: ProductRow) => ({
+  const items: ProductItem[] = rows.map((r) => ({
     id: r.id,
     name: r.name ?? "Untitled",
     category: r.category ?? null,
@@ -268,28 +283,19 @@ export async function getProductsPage(input: ListingQuery): Promise<PageResponse
 
     facets = {
       categories: cats
-        .filter((x: ProductCategoryGroup) => !!x.category)
-        .map<FacetEntry>((x: ProductCategoryGroup) => ({
-          value: x.category as string,
-          count: x._count.category,
-        }))
-        .sort((a: FacetEntry, b: FacetEntry) => b.count - a.count)
+        .filter((x) => !!x.category)
+        .map<FacetEntry>((x) => ({ value: x.category as string, count: x._count.category }))
+        .sort((a, b) => b.count - a.count)
         .slice(0, 20),
       brands: brands
-        .filter((x: ProductBrandGroup) => !!x.brand)
-        .map<FacetEntry>((x: ProductBrandGroup) => ({
-          value: x.brand as string,
-          count: x._count.brand,
-        }))
-        .sort((a: FacetEntry, b: FacetEntry) => b.count - a.count)
+        .filter((x) => !!x.brand)
+        .map<FacetEntry>((x) => ({ value: x.brand as string, count: x._count.brand }))
+        .sort((a, b) => b.count - a.count)
         .slice(0, 20),
       conditions: conds
-        .filter((x: ProductConditionGroup) => !!x.condition)
-        .map<FacetEntry>((x: ProductConditionGroup) => ({
-          value: x.condition as string,
-          count: x._count.condition,
-        }))
-        .sort((a: FacetEntry, b: FacetEntry) => b.count - a.count)
+        .filter((x) => !!x.condition)
+        .map<FacetEntry>((x) => ({ value: x.condition as string, count: x._count.condition }))
+        .sort((a, b) => b.count - a.count)
         .slice(0, 5),
     };
   }
@@ -326,16 +332,25 @@ export async function getServicesPage(input: ListingQuery): Promise<PageResponse
 
   const sort = (input.sort || "newest") as NonNullable<ListingQuery["sort"]>;
 
+  const priceWhere =
+    minPrice != null || maxPrice != null
+      ? {
+          price: {
+            ...(minPrice != null ? { gte: minPrice } : {}),
+            ...(maxPrice != null ? { lte: maxPrice } : {}),
+          },
+        }
+      : {};
+
   const where: Record<string, unknown> = {
     status: "ACTIVE",
     ...(featuredOnly ? { featured: true } : {}),
     ...(category ? { category: { equals: category, mode: "insensitive" } } : {}),
     ...(subcategory ? { subcategory: { equals: subcategory, mode: "insensitive" } } : {}),
-    ...(minPrice != null ? { price: { gte: minPrice } } : {}),
-    ...(maxPrice != null ? { price: { ...(minPrice != null ? { gte: minPrice } : {}), lte: maxPrice } } : {}),
+    ...priceWhere,
   };
 
-  const searchOR = tokenSearchOR(tokens, [
+  const searchAND = tokenSearchAND(tokens, [
     "name",
     "category",
     "subcategory",
@@ -344,7 +359,7 @@ export async function getServicesPage(input: ListingQuery): Promise<PageResponse
     "serviceArea",
     "location",
   ]);
-  const whereFinal = searchOR ? { AND: [where, ...searchOR] } : where;
+  const whereFinal = searchAND ? { AND: [where, ...searchAND] } : where;
 
   const orderBy =
     sort === "featured"
@@ -381,7 +396,7 @@ export async function getServicesPage(input: ListingQuery): Promise<PageResponse
 
   const rows = rowsRaw as ServiceRow[];
 
-  const items: ServiceItem[] = rows.map((r: ServiceRow) => ({
+  const items: ServiceItem[] = rows.map((r) => ({
     id: r.id,
     name: r.name ?? "Untitled",
     category: r.category ?? null,
@@ -420,20 +435,14 @@ export async function getServicesPage(input: ListingQuery): Promise<PageResponse
 
     facets = {
       categories: cats
-        .filter((x: ServiceCategoryGroup) => !!x.category)
-        .map<FacetEntry>((x: ServiceCategoryGroup) => ({
-          value: x.category as string,
-          count: x._count.category,
-        }))
-        .sort((a: FacetEntry, b: FacetEntry) => b.count - a.count)
+        .filter((x) => !!x.category)
+        .map<FacetEntry>((x) => ({ value: x.category as string, count: x._count.category }))
+        .sort((a, b) => b.count - a.count)
         .slice(0, 20),
       subcategories: subs
-        .filter((x: ServiceSubcategoryGroup) => !!x.subcategory)
-        .map<FacetEntry>((x: ServiceSubcategoryGroup) => ({
-          value: x.subcategory as string,
-          count: x._count.subcategory,
-        }))
-        .sort((a: FacetEntry, b: FacetEntry) => b.count - a.count)
+        .filter((x) => !!x.subcategory)
+        .map<FacetEntry>((x) => ({ value: x.subcategory as string, count: x._count.subcategory }))
+        .sort((a, b) => b.count - a.count)
         .slice(0, 20),
     };
   }

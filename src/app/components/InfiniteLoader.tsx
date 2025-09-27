@@ -4,64 +4,126 @@
 import { useEffect, useRef } from "react";
 
 type Props = {
-  /** Callback fired when the sentinel becomes visible */
-  onLoadAction: () => void;
+  /** Fired when the sentinel becomes (pre)visible. Can be async. */
+  onLoadAction: () => void | Promise<void>;
+  /** Disable observing (e.g., while loading or when no more pages). */
   disabled?: boolean;
+  /** IntersectionObserver options (sane defaults below). */
+  rootMargin?: string;
+  threshold?: number | number[];
+  /** If true, fires once then disconnects. */
+  once?: boolean;
+  /** Optional className for sizing/spacing the sentinel. */
+  className?: string;
 };
 
-export default function InfiniteLoader({ onLoadAction, disabled = false }: Props) {
+export default function InfiniteLoader({
+  onLoadAction,
+  disabled = false,
+  rootMargin = "600px 0px",
+  threshold = 0,
+  once = false,
+  className = "h-12",
+}: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const ioRef = useRef<IntersectionObserver | null>(null);
-  const tickingRef = useRef(false);
-  const timeoutRef = useRef<number | null>(null);
-  const cbRef = useRef(onLoadAction);
 
-  // keep latest callback without re-subscribing the observer
+  // Prevent re-entrancy while we're handling a load
+  const busyRef = useRef(false);
+
+  // Keep the latest callback without re-subscribing the observer
+  const cbRef = useRef(onLoadAction);
   useEffect(() => {
     cbRef.current = onLoadAction;
   }, [onLoadAction]);
 
+  // Any pending timeout used for throttle/settling
+  const timeoutRef = useRef<number | null>(null);
+
+  // Helper to release busy flag after layout settles
+  const releaseBusy = () => {
+    // Two RAFs lets the DOM update and paint once (common pattern)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        busyRef.current = false;
+      });
+    });
+  };
+
   useEffect(() => {
     const el = ref.current;
+
+    // Clean up any previous observer
+    if (ioRef.current) {
+      ioRef.current.disconnect();
+      ioRef.current = null;
+    }
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    busyRef.current = false;
+
     if (!el || disabled) return;
 
-    // Reset any previous observer
-    if (ioRef.current) ioRef.current.disconnect();
-
-    ioRef.current = new IntersectionObserver(
+    const io = new IntersectionObserver(
       (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting && !tickingRef.current) {
-            // leading-edge throttle to avoid rapid re-fires
-            tickingRef.current = true;
-            cbRef.current?.();
-            // tiny debounce to let the list append & layout settle
-            timeoutRef.current = window.setTimeout(() => {
-              tickingRef.current = false;
-              if (timeoutRef.current) {
-                window.clearTimeout(timeoutRef.current);
-                timeoutRef.current = null;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          if (busyRef.current) return;
+
+          busyRef.current = true;
+
+          try {
+            const res = cbRef.current?.();
+
+            // If the callback is async, only release when it settles;
+            // otherwise apply a tiny throttle to allow list append + layout.
+            if (res && typeof (res as Promise<void>).then === "function") {
+              (res as Promise<void>)
+                .catch(() => {
+                  /* swallow callback errors here; caller handles UI */
+                })
+                .finally(() => {
+                  if (once) {
+                    io.disconnect();
+                  }
+                  releaseBusy();
+                });
+            } else {
+              if (once) {
+                io.disconnect();
               }
-            }, 150);
-            break;
+              timeoutRef.current = window.setTimeout(() => {
+                timeoutRef.current && window.clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+                releaseBusy();
+              }, 150);
+            }
+          } catch {
+            // If the callback throws synchronously, release the lock so we can retry later
+            releaseBusy();
           }
+
+          break; // only need one matching entry
         }
       },
-      { rootMargin: "600px 0px" }
+      { rootMargin, threshold }
     );
 
-    ioRef.current.observe(el);
+    io.observe(el);
+    ioRef.current = io;
 
     return () => {
-      ioRef.current?.disconnect();
+      io.disconnect();
       ioRef.current = null;
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
-      tickingRef.current = false;
+      busyRef.current = false;
     };
-  }, [disabled]);
+  }, [disabled, rootMargin, threshold, once]);
 
-  return <div ref={ref} aria-hidden={true} className="h-12" />;
+  return <div ref={ref} aria-hidden={true} role="presentation" className={className} />;
 }

@@ -21,7 +21,8 @@ export function isValidKenyanMsisdn(msisdn: string): boolean {
 
 /**
  * Normalize common Kenyan mobile input to canonical MSISDN:
- * Accepts: 07XXXXXXXX, 01XXXXXXXX, +2547XXXXXXXX, 2547XXXXXXXX, 7XXXXXXXX, 1XXXXXXXX
+ * Accepts: 07XXXXXXXX, 01XXXXXXXX, +2547XXXXXXXX, 2547XXXXXXXX, 7XXXXXXXX, 1XXXXXXXX,
+ *          002547XXXXXXXX, 25407XXXXXXXX (fixes accidental extra 0)
  * Returns: "2547XXXXXXXX" or "2541XXXXXXXX" (12 digits), else null.
  * Notes:
  * - Landlines (020 / 0xx not starting 7/1) are not accepted.
@@ -31,6 +32,12 @@ export function normalizeKenyanPhone(input: string): string | null {
   if (!input) return null;
 
   let d = digitsOnly(input);
+
+  // Handle "00" international prefix (e.g., 002547...)
+  if (d.startsWith("00")) d = d.slice(2);
+
+  // Fix common mistake: 2540XXXXXXXX -> 254XXXXXXXX
+  if (d.startsWith("2540")) d = "254" + d.slice(4);
 
   // Already with country code
   if (d.startsWith("254")) {

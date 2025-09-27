@@ -21,13 +21,22 @@ export default function ContactPage() {
   const [submitting, setSubmitting] = useState(false);
   const [sentOnce, setSentOnce] = useState(false);
 
+  // Require email and validate format
+  const trimmedEmail = email.trim();
   const emailErr =
-    email.trim().length === 0 ? null : EMAIL_RE.test(email.trim()) ? null : "Enter a valid email.";
-  const subjectErr = subject.length > MAX_SUBJECT ? "Subject is too long." : null;
-  const messageErr =
-    message.trim().length === 0
+    trimmedEmail.length === 0
+      ? "Email is required."
+      : EMAIL_RE.test(trimmedEmail)
       ? null
-      : message.trim().length < MIN_MESSAGE
+      : "Enter a valid email.";
+
+  const subjectErr = subject.length > MAX_SUBJECT ? "Subject is too long." : null;
+
+  const trimmedMsg = message.trim();
+  const messageErr =
+    trimmedMsg.length === 0
+      ? "Message is required."
+      : trimmedMsg.length < MIN_MESSAGE
       ? `Message must be at least ${MIN_MESSAGE} characters.`
       : message.length > MAX_MESSAGE
       ? `Message must be under ${MAX_MESSAGE} characters.`
@@ -36,10 +45,9 @@ export default function ContactPage() {
   const canSubmit =
     !submitting &&
     hpt === "" && // bots fill this
-    (!emailErr || email.trim().length === 0 ? true : false) &&
+    !emailErr &&
     !subjectErr &&
-    !messageErr &&
-    message.trim().length >= MIN_MESSAGE;
+    !messageErr;
 
   const subjectLeft = MAX_SUBJECT - subject.length;
   const messageLeft = MAX_MESSAGE - message.length;
@@ -65,9 +73,9 @@ export default function ContactPage() {
         body: JSON.stringify({
           type,
           name: name.trim(),
-          email: email.trim(),
+          email: trimmedEmail,
           subject: subject.trim(),
-          message: message.trim(),
+          message: trimmedMsg,
           hpt,
         }),
       });
@@ -116,14 +124,15 @@ export default function ContactPage() {
         <div className="hero-surface rounded-2xl p-6 text-white shadow-soft">
           <h1 className="text-2xl md:text-3xl font-extrabold">Contact QwikSale</h1>
           <p className="text-sm text-white/85">{headerBlurb}</p>
-          <p className="mt-2 text-xs text-white/70">
-            We usually respond within 1–2 business days.
-          </p>
+          <p className="mt-2 text-xs text-white/70">We usually respond within 1–2 business days.</p>
         </div>
 
         {/* Success helper */}
         {sentOnce && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+          <div
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200"
+            aria-live="polite"
+          >
             Message sent — thanks! If you don’t see a reply, check your spam folder or add
             support@qwiksale.sale to your contacts.
           </div>
@@ -134,6 +143,7 @@ export default function ContactPage() {
           onSubmit={submit}
           className="card-surface rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
           noValidate
+          aria-busy={submitting}
         >
           <div className="grid gap-3 md:grid-cols-2">
             <div>
@@ -152,7 +162,7 @@ export default function ContactPage() {
 
             <div>
               <label htmlFor="email" className="label block text-sm font-semibold mb-1">
-                Email
+                Email <span className="text-red-500">*</span>
               </label>
               <input
                 id="email"
@@ -237,7 +247,7 @@ export default function ContactPage() {
 
           <div className="mt-3">
             <label htmlFor="message" className="label block text-sm font-semibold mb-1">
-              Message
+              Message <span className="text-red-500">*</span>
             </label>
             <textarea
               id="message"
@@ -274,6 +284,7 @@ export default function ContactPage() {
               disabled={!canSubmit}
               className="btn-gradient-primary rounded-xl px-4 py-2 font-semibold disabled:opacity-60"
               aria-disabled={!canSubmit}
+              type="submit"
             >
               {submitting ? "Sending…" : "Send message"}
             </button>

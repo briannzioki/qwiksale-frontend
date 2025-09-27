@@ -21,6 +21,7 @@ import crypto from "node:crypto";
  */
 
 const MAX_LEN = 4000;
+const MIN_MESSAGE = 10; // align with client
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 const TYPES = ["CONTACT", "BUG", "REPORT_LISTING", "REPORT_USER", "OTHER"] as const;
 type TicketType = (typeof TYPES)[number];
@@ -104,12 +105,19 @@ function contentHash(input: string): string {
 
 export function OPTIONS() {
   const res = new NextResponse(null, { status: 204 });
-  res.headers.set("Access-Control-Allow-Origin", process.env["NEXT_PUBLIC_BASE_URL"] || "*");
+  res.headers.set(
+    "Access-Control-Allow-Origin",
+    process.env["NEXT_PUBLIC_BASE_URL"] ||
+      process.env["NEXT_PUBLIC_SITE_URL"] ||
+      process.env["NEXT_PUBLIC_APP_URL"] ||
+      "*"
+  );
   res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
   // Also ensure no caching
   res.headers.set("Cache-Control", "no-store");
+  res.headers.set("Vary", "Origin");
   return res;
 }
 
@@ -136,12 +144,21 @@ export async function POST(req: NextRequest) {
     const type = parseType(body.type);
     const message = normalizeMessage(body.message);
     if (!message) return noStore({ error: "Message is required" }, { status: 400 });
+    if (message.trim().length < MIN_MESSAGE) {
+      return noStore(
+        { error: `Message must be at least ${MIN_MESSAGE} characters.` },
+        { status: 400 }
+      );
+    }
 
     const name = normalizeName(body.name);
     const email = normalizeEmail(body.email);
     const subject = normalizeSubject(body.subject);
     const url = validUrl(body.url);
     const productId = normalizeProductId(body.productId);
+
+    // Enforce email to match client form expectations
+    if (!email) return noStore({ error: "Email is required" }, { status: 400 });
 
     // Fast path validation for listing report
     if (type === "REPORT_LISTING" && productId) {
@@ -154,23 +171,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Soft abuse guard: recent ticket count by reporter/email/ip
+    // Soft abuse guard: recent ticket count by reporter/email
     const clientIp = getClientIp(req);
     const since = new Date(Date.now() - SOFT_RATE_LIMIT_WINDOW_MS);
 
-    // Build filter identities
-    const identities: Array<Record<string, unknown>> = [
-      ...(reporterId ? [{ reporterId }] : []),
-      ...(email ? [{ email }] : []),
-      { clientIp }, // if you don't have this column yet, leave as is for future use
-    ];
+    // Build filter identities (only include keys that exist in your schema)
+    const orIdentities: Array<Record<string, unknown>> = [];
+    if (reporterId) orIdentities.push({ reporterId });
+    if (email) orIdentities.push({ email });
+    // If you add a clientIp column to SupportTicket, you can enable this:
+    // orIdentities.push({ clientIp });
 
-    // Count recent submissions. If you haven't added clientIp to the schema,
-    // this still rate-limits by reporter/email.
     const recentCount = await prisma.supportTicket.count({
       where: {
         createdAt: { gte: since },
-        OR: identities,
+        ...(orIdentities.length ? { OR: orIdentities } : {}),
       },
     });
 
@@ -184,14 +199,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Light idempotency: avoid duplicates in 10 minutes (same identity + same message hash)
+    // Light idempotency: avoid duplicates in 10 minutes (same identity + same message)
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
     const msgKey = contentHash([message, email ?? "", reporterId ?? ""].join("|"));
 
     const dupe = await prisma.supportTicket.findFirst({
       where: {
         createdAt: { gte: tenMinAgo },
-        message, // keep exact match (indexed length permitting)
+        message,
         OR: [
           ...(reporterId ? [{ reporterId }] : []),
           ...(email ? [{ email }] : []),
@@ -219,11 +234,11 @@ export async function POST(req: NextRequest) {
         url,
         productId,
         reporterId: reporterId || null,
-        // If you added telemetry columns in schema, uncomment these:
+        // Telemetry fields — enable when present in your schema:
         // clientIp,
         // userAgent,
         // referer,
-        // contentHash: msgKey, // (add this column to fully leverage hashing)
+        // contentHash: msgKey,
       },
       select: { id: true, type: true, status: true, createdAt: true },
     });
@@ -235,5 +250,3 @@ export async function POST(req: NextRequest) {
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
-
-
