@@ -1,10 +1,8 @@
 ﻿// src/app/search/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import ProductCard from "@/app/components/ProductCard";
-import ServiceCard from "@/app/components/ServiceCard";
 import { InfiniteClient } from "./InfiniteClient";
-import type { Sort } from "./SearchClient"; // 
+import type { Sort } from "./SearchClient";
 
 /** Always render fresh – results depend on query string. */
 export const dynamic = "force-dynamic";
@@ -45,8 +43,6 @@ type ServiceHit = {
   featured?: boolean;
 };
 
-/* --------------------------- tiny utils --------------------------- */
-
 function toBool(v: string | undefined) {
   if (!v) return false;
   const s = v.toLowerCase();
@@ -63,7 +59,6 @@ function getParam(sp: SearchParams, k: string): string | undefined {
 }
 function siteUrl() {
   const raw =
-    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "");
   return (raw || "").replace(/\/+$/, "");
@@ -114,8 +109,6 @@ export default async function SearchPage({
   qs.set("sort", sort);
 
   const base = siteUrl();
-
-  // Endpoints consistent with HomeClient and your API
   const endpoint = type === "product" ? "/api/products" : "/api/services";
   const url = `${base}${endpoint}?${qs.toString()}`;
 
@@ -317,32 +310,85 @@ export default async function SearchPage({
         results {(data as any).total > 0 && `(page ${(data as any).page} / ${(data as any).totalPages})`}
       </div>
 
-      {/* Results grid (SSR page 1) */}
+      {/* Results grid (SSR page 1) – anchors with accessible names matching Home */}
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {type === "product"
-          ? (data as Envelope<ProductHit>).items.map((p) => (
-              <ProductCard
-                key={p.id}
-                id={p.id}
-                name={p.name}
-                image={p.image ?? null}
-                price={p.price === 0 ? null : p.price ?? null}
-                {...(typeof p.featured === "boolean" ? { featured: p.featured } : {})}
-              />
-            ))
-          : (data as Envelope<ServiceHit>).items.map((s) => (
-              <ServiceCard
-                key={s.id}
-                id={s.id}
-                name={s.name ?? s.title ?? "Service"}
-                image={s.image ?? null}
-                price={s.price ?? null}
-                {...(s.rateType ? { rateType: s.rateType } : {})}
-                {...(s.serviceArea != null ? { serviceArea: s.serviceArea } : {})}
-                {...(s.availability != null ? { availability: s.availability } : {})}
-                {...(typeof s.featured === "boolean" ? { featured: s.featured } : {})}
-              />
-            ))}
+          ? (data as Envelope<ProductHit>).items.map((p) => {
+              const href = `/product/${p.id}`;
+              const priceNum = typeof p.price === "number" && p.price > 0 ? p.price : undefined;
+              const priceStr = priceNum !== undefined ? priceNum.toLocaleString() : undefined;
+              const aria =
+                priceStr !== undefined
+                  ? `Product: ${p.name} — priced at KSh ${priceStr}`
+                  : `Product: ${p.name}`;
+
+              return (
+                <Link
+                  key={p.id}
+                  href={href}
+                  aria-label={aria}
+                  className="group block overflow-hidden rounded-xl border bg-white shadow-sm hover:shadow-md focus:outline-none focus:ring dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="aspect-[4/3] w-full bg-gray-100 dark:bg-slate-800">
+                    <div
+                      className="h-full w-full"
+                      style={{
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                        backgroundImage: p.image ? `url(${p.image})` : "none",
+                      }}
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <div className="p-3">
+                    <div className="line-clamp-1 text-sm font-medium">{p.name}</div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-gray-600 dark:text-slate-400">
+                      <span className="line-clamp-1">
+                        {p.category || p.subcategory || "—"}
+                      </span>
+                      <span>{priceStr !== undefined ? `KSh ${priceStr}` : "—"}</span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })
+          : (data as Envelope<ServiceHit>).items.map((s) => {
+              const name = s.name ?? s.title ?? "Service";
+              const href = `/service/${s.id}`;
+              const priceNum = typeof s.price === "number" && s.price > 0 ? s.price : undefined;
+              const priceStr = priceNum !== undefined ? priceNum.toLocaleString() : undefined;
+              const aria = `Service: ${name}`;
+
+              return (
+                <Link
+                  key={s.id}
+                  href={href}
+                  aria-label={aria}
+                  className="group block overflow-hidden rounded-xl border bg-white shadow-sm hover:shadow-md focus:outline-none focus:ring dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="aspect-[4/3] w-full bg-gray-100 dark:bg-slate-800">
+                    <div
+                      className="h-full w-full"
+                      style={{
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                        backgroundImage: s.image ? `url(${s.image})` : "none",
+                      }}
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <div className="p-3">
+                    <div className="line-clamp-1 text-sm font-medium">{name}</div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-gray-600 dark:text-slate-400">
+                      <span className="line-clamp-1">
+                        {s.serviceArea || s.availability || "—"}
+                      </span>
+                      <span>{priceStr !== undefined ? `KSh ${priceStr}` : "—"}</span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
       </div>
 
       {/* Empty state */}
