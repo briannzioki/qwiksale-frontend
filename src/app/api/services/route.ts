@@ -7,6 +7,19 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
+/* ----------------------------- debug ----------------------------- */
+const SERVICES_VER = "vDEBUG-SERVICES-002";
+function attachVersion(h: Headers) {
+  h.set("X-Services-Version", SERVICES_VER);
+}
+function safe(obj: unknown) {
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return String(obj);
+  }
+}
+
 /* ----------------------------- tiny helpers ----------------------------- */
 function toInt(v: string | null, def: number, min: number, max: number) {
   const n = Number(v);
@@ -68,13 +81,14 @@ function getServiceModel() {
 /* ------------------------------ caps ----------------------------------- */
 const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
+const MAX_RESULT_WINDOW = 10_000;
 
 /* -------------------------- GET /api/services -------------------------- */
 export async function GET(req: NextRequest) {
   try {
     const Service = getServiceModel();
     if (!Service) {
-      return jsonPublic(
+      const res = jsonPublic(
         {
           page: 1,
           pageSize: 0,
@@ -86,9 +100,16 @@ export async function GET(req: NextRequest) {
         },
         60
       );
+      attachVersion(res.headers);
+      res.headers.set("X-Total-Count", "0");
+      res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+      return res;
     }
 
     const url = new URL(req.url);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[/api/services GET]", SERVICES_VER, url.toString());
+    }
 
     const q = (url.searchParams.get("q") || "").trim();
     const category = optStr(url.searchParams.get("category"));
@@ -108,6 +129,27 @@ export async function GET(req: NextRequest) {
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+
+    // Guard result window (avoid huge DB offsets)
+    const skipEst = (page - 1) * pageSize;
+    if (skipEst > MAX_RESULT_WINDOW) {
+      const res = jsonPublic(
+        {
+          page,
+          pageSize,
+          total: 0,
+          totalPages: 1,
+          sort,
+          items: [],
+          facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
+        },
+        60
+      );
+      attachVersion(res.headers);
+      res.headers.set("X-Total-Count", "0");
+      res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+      return res;
+    }
 
     // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
     const statusParam = optStr(url.searchParams.get("status"));
@@ -138,8 +180,13 @@ export async function GET(req: NextRequest) {
       and.push({
         seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } },
       });
-    if (typeof featured === "boolean") and.push({ featured });
-    if (verifiedOnly === true) and.push({ featured: true });
+
+    // verifiedOnly should override a conflicting featured filter
+    if (verifiedOnly === true) {
+      and.push({ featured: true });
+    } else if (typeof featured === "boolean") {
+      and.push({ featured });
+    }
 
     // Price filter logic:
     // - Apply ONLY if minPrice or maxPrice is provided
@@ -181,6 +228,12 @@ export async function GET(req: NextRequest) {
         ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
         : [{ createdAt: "desc" as const }, { id: "desc" as const }];
 
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[/api/services WHERE]", safe(where));
+      console.log("[/api/services ORDER]", safe(orderBy));
+      console.log("[/api/services page/pageSize]", page, pageSize);
+    }
+
     const [total, servicesRaw, facets] = await Promise.all([
       Service.count({ where }),
       Service.findMany({
@@ -220,12 +273,17 @@ export async function GET(req: NextRequest) {
       },
       60
     );
+    attachVersion(res.headers);
     res.headers.set("X-Total-Count", String(total));
+    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
     return res;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/services GET] error:", e);
-    return jsonPrivate({ error: "Server error" }, { status: 500 });
+    const res = jsonPrivate({ error: "Server error" }, { status: 500 });
+    attachVersion(res.headers);
+    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+    return res;
   }
 }
 
@@ -233,7 +291,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const Service = getServiceModel();
   if (!Service) {
-    return jsonPrivate({ error: "Service model not available in this schema." }, { status: 501 });
+    const res = jsonPrivate({ error: "Service model not available in this schema." }, { status: 501 });
+    attachVersion(res.headers);
+    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+    return res;
   }
   const { POST: createService } = await import("./create/route");
   return createService(req);
@@ -270,9 +331,15 @@ async function computeFacets(where: any, Service: any) {
 
 /* ----------------------------- misc verbs ----------------------------- */
 export async function HEAD() {
-  return jsonPublic(null, 60, { status: 204 });
+  const res = jsonPublic(null, 60, { status: 204 });
+  attachVersion(res.headers);
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  return res;
 }
 
 export async function OPTIONS() {
-  return jsonPublic({ ok: true }, 60, { status: 204 });
+  const res = jsonPublic({ ok: true }, 60, { status: 204 });
+  attachVersion(res.headers);
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  return res;
 }

@@ -1,4 +1,3 @@
-// src/app/components/ServiceCard.tsx
 "use client";
 
 import React, { memo, useEffect, useMemo, useRef, useCallback } from "react";
@@ -24,6 +23,8 @@ type Props = {
 };
 
 /* ----------------------- Utils ----------------------- */
+
+const PLACEHOLDER = "/placeholder/default.jpg";
 
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "Contact for quote";
@@ -163,8 +164,7 @@ function ServiceCardImpl({
     track("service_click", { id, name, price, rateType, position, href });
   }, [id, name, price, rateType, position, href]);
 
-  const src = image || "/placeholder/default.jpg";
-  const aria = `${name}${price ? `, ${priceText}` : ""}`;
+  const src = image || PLACEHOLDER;
 
   // Only pass a blurDataURL when using "blur" placeholder
   const blurProps = priority
@@ -185,9 +185,7 @@ function ServiceCardImpl({
         "border-black/5 dark:border-slate-800 dark:bg-slate-900",
         className,
       ].join(" ")}
-      aria-label={aria}
       title={name}
-      role="article"
       data-service-id={id}
     >
       {/* Image */}

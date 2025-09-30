@@ -1,3 +1,4 @@
+// src/app/api/services/suggest/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,18 +9,24 @@ import { categories, suggestCategories as suggestCats, slugify } from "@/app/dat
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
-type SuggestionType = "service"; // normalize to "service" so SearchBox sets t=services
+const SUG_VER = "vDEBUG-002";
+
+type SuggestionType = "service"; // keep "service"; SearchBox maps it to t=services
 type Suggestion = { label: string; value: string; type: SuggestionType };
 
+function withCommonHeaders(res: NextResponse) {
+  res.headers.set("X-Suggest-Version", SUG_VER);
+  return res;
+}
 function ok(json: unknown, cache = "public, max-age=30, stale-while-revalidate=300") {
   const res = NextResponse.json(json);
   res.headers.set("Cache-Control", cache);
-  return res;
+  return withCommonHeaders(res);
 }
 function nostore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store");
-  return res;
+  return withCommonHeaders(res);
 }
 
 function toAscii(s: string) {
@@ -78,7 +85,7 @@ export async function GET(request: Request) {
       const Service = getServiceModel();
       if (Service) {
         const rows = await Service.findMany({
-          where: { status: "ACTIVE" },
+          where: { status: "ACTIVE", name: { not: null } },
           select: { name: true },
           orderBy: { createdAt: "desc" },
           take: 250,
@@ -142,5 +149,7 @@ export async function GET(request: Request) {
 }
 
 export async function HEAD() {
-  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  return withCommonHeaders(
+    new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } })
+  );
 }

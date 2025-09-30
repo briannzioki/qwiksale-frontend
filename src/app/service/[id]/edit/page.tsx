@@ -13,6 +13,18 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/** Access a Service-model compat layer that may not exist or may be named differently */
+function getServiceModel() {
+  const anyPrisma = prisma as any;
+  const svc =
+    anyPrisma.service ??
+    anyPrisma.services ??
+    anyPrisma.Service ??
+    anyPrisma.Services ??
+    null;
+  return svc && typeof svc.findUnique === "function" ? svc : null;
+}
+
 export default async function EditServicePage(props: any) {
   // Accept `any` to satisfy Next's PageProps checker, then read defensively
   const id = String(props?.params?.id ?? "");
@@ -25,10 +37,11 @@ export default async function EditServicePage(props: any) {
     redirect(`/signin?callbackUrl=${encodeURIComponent(`/service/${id}/edit`)}`);
   }
 
-  // Gate by ownership (hide if not owner)
-  const s = await prisma.service
-    .findUnique({ where: { id }, select: { sellerId: true } })
-    .catch(() => null);
+  // Gate by ownership (hide if not owner) — tolerate schemas without a `service` model
+  const Service = getServiceModel();
+  if (!Service) notFound();
+
+  const s = await Service.findUnique({ where: { id }, select: { sellerId: true } }).catch(() => null);
 
   if (!s) notFound();
   if (s.sellerId !== userId) notFound();

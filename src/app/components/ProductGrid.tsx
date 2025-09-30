@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import SmartImage from "@/app/components/SmartImage";
 import ProductCard from "@/app/components/ProductCard";
+import { shimmer as shimmerMaybe } from "@/app/lib/blur";
 import type { Filters } from "@/app/components/FiltersBar";
 
 /* --------------------------------- types --------------------------------- */
@@ -50,6 +51,24 @@ type Props = {
 };
 
 /* --------------------------------- utils --------------------------------- */
+
+const PLACEHOLDER = "/placeholder/default.jpg";
+
+// Tiny 1×1 transparent PNG as last-resort blur
+const FALLBACK_BLUR =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAuMB9l9b3a8AAAAASUVORK5CYII=";
+
+// Accept both shimmer(w, h) and shimmer({ width, height })
+function getBlurDataURL(width = 640, height = 360): string {
+  try {
+    const fn: any = shimmerMaybe;
+    if (typeof fn === "function") {
+      if (fn.length >= 2) return fn(width, height); // (w, h)
+      return fn({ width, height }); // ({ width, height })
+    }
+  } catch {}
+  return FALLBACK_BLUR;
+}
 
 function buildProductsQuery(filters: Filters, pageSize: number, cursor?: string | null) {
   const params = new URLSearchParams();
@@ -99,6 +118,21 @@ function MixedTile({
   prefetch: boolean;
 }) {
   const href = it.type === "service" ? `/service/${it.id}` : `/product/${it.id}`;
+  const url = it.image || PLACEHOLDER;
+
+  const priority = index < 8;
+  const blurProps =
+    priority
+      ? ({ placeholder: "blur", blurDataURL: getBlurDataURL(640, 360) } as const)
+      : ({ placeholder: "empty" } as const);
+
+  const alt =
+    it.name
+      ? `${it.type === "service" ? "Service" : "Product"} image for ${it.name}`
+      : it.type === "service"
+      ? "Service image"
+      : "Product image";
+
   return (
     <Link href={href} prefetch={prefetch} className="group">
       <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
@@ -109,12 +143,13 @@ function MixedTile({
         ) : null}
         <div className="relative h-40 w-full bg-gray-100">
           <SmartImage
-            src={it.image || undefined}
-            alt={it.name || (it.type === "service" ? "Service image" : "Product image")}
+            src={url}
+            alt={alt}
             fill
-            className="object-cover"
+            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
             sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            priority={index < 4}
+            priority={priority}
+            {...blurProps}
           />
         </div>
         <div className="p-3">
@@ -253,7 +288,12 @@ export default function ProductGrid({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {items.map((p, idx) =>
           isAll ? (
-            <MixedTile key={`${(p as AllItem).type}-${p.id}`} it={p as AllItem} index={idx} prefetch={prefetchCards} />
+            <MixedTile
+              key={`${(p as AllItem).type}-${p.id}`}
+              it={p as AllItem}
+              index={idx}
+              prefetch={prefetchCards}
+            />
           ) : (
             <ProductCard
               key={p.id}

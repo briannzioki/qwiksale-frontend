@@ -20,7 +20,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
   // avoid cache mixups across sessions/proxies
-  res.headers.set("Vary", "Authorization, Cookie");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 
@@ -91,11 +91,16 @@ const ALLOWED_IMAGE_HOSTS = [
   "images.unsplash.com",
 ] as const;
 
+function isAllowedHost(hostname: string): boolean {
+  // Require an exact match or a subdomain of an allowed host.
+  return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+}
+
 function isAllowedUrl(u: string): boolean {
   try {
     const { protocol, hostname } = new URL(u);
-    if (!/^https?:$/i.test(protocol)) return false;
-    return ALLOWED_IMAGE_HOSTS.some((h) => hostname.endsWith(h));
+    if (protocol !== "https:" && protocol !== "http:") return false;
+    return isAllowedHost(hostname);
   } catch {
     return false;
   }
@@ -207,24 +212,30 @@ export function OPTIONS() {
 const db: any = prisma as any;
 
 async function createProductSafe(data: any) {
-  try {
-    return await db.product.create({ data, select: { id: true } });
-  } catch (e: any) {
-    const msg = String(e?.message || "");
-    // If your schema doesn't have these columns, retry without them
-    if (
-      msg.includes("Unknown arg `publishedAt`") ||
-      msg.includes("Argument `publishedAt`")
-    ) {
-      const { publishedAt, ...rest } = data ?? {};
-      return await db.product.create({ data: rest, select: { id: true } });
+  // Iteratively strip known optional columns if the schema doesn't have them
+  const stripKeys = new Set(["publishedAt", "dedupeKey"]);
+  let payload = { ...data };
+
+  for (let i = 0; i < stripKeys.size + 1; i++) {
+    try {
+      return await db.product.create({ data: payload, select: { id: true } });
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      const offending = [...stripKeys].find(
+        (k) => msg.includes("Unknown arg `" + k + "`") || msg.includes("Argument `" + k + "`")
+      );
+      if (offending) {
+        const { [offending]: _removed, ...rest } = payload;
+        payload = rest;
+        stripKeys.delete(offending);
+        continue;
+      }
+      throw e;
     }
-    if (msg.includes("Unknown arg `dedupeKey`") || msg.includes("Argument `dedupeKey`")) {
-      const { dedupeKey, ...rest } = data ?? {};
-      return await db.product.create({ data: rest, select: { id: true } });
-    }
-    throw e;
   }
+
+  // Fallback (shouldn't normally reach)
+  return await db.product.create({ data: payload, select: { id: true } });
 }
 
 /* --------------- POST /api/products/create (main) --------------- */

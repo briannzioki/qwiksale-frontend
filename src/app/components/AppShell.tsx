@@ -209,7 +209,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <div className="flex items-center gap-2">
                 <Link
                   href="/dashboard"
-                  className="px-3 py-2 rounded bg-black/5 dark:bg-white/10 text-sm border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
+                  className="px-3 py-2 rounded bg-black/5 dark:bg_white/10 text-sm border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
                   title="Dashboard"
                 >
                   Dashboard
@@ -235,7 +235,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ) : (
               <Link
                 href="/signin"
-                className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
+                className="px-3 py-2 rounded bg_white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
                 title="Sign in"
                 onClick={() => track("auth_signin_click")}
               >
@@ -258,7 +258,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => setOpen(true)}
               className="inline-flex items-center gap-2 rounded-lg border border-black/10 dark:border-white/20 bg-black/5 dark:bg-white/10 px-3 py-2 text-sm backdrop-blur hover:bg-black/10 dark:hover:bg-white/20 transition text-gray-800 dark:text-slate-100"
               aria-expanded={open}
-              aria-controls="categories-drawer"
+              aria-controls={open ? "categories-drawer" : undefined}
               aria-label="Open categories menu"
             >
               <span>Categories</span>
@@ -295,7 +295,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </footer>
 
-      {/* ===== Backdrop ===== */}
+      {/* ===== Backdrop (only when open) ===== */}
       {open && (
         <button
           className="fixed inset-0 bg-black/40 z-40"
@@ -304,154 +304,154 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      {/* ===== Categories Drawer ===== */}
-      <aside
-        ref={drawerRef}
-        id="categories-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Categories"
-        className={`fixed left-0 top-0 z-50 h-full w-[340px] bg-slate-50 dark:bg-slate-900 shadow-2xl border-r border-gray-200 dark:border-white/10 transform transition-transform duration-300 ${
-          open ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        {/* Brand strip */}
-        <div
-          className="h-1 w-full"
-          style={{
-            backgroundImage:
-              "linear-gradient(90deg, #161748 0%, #478559 50%, #39a0ca 100%)",
-          }}
-        />
-
-        {/* Drawer header */}
-        <div className="px-5 py-4 flex items-center justify-between border-b bg-white dark:bg-slate-900 border-gray-200 dark:border-white/10">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-[#161748] dark:text-slate-100">
-              QwikSale
-            </span>
-          </div>
-          <button
-            ref={closeBtnRef}
-            onClick={() => setOpen(false)}
-            className="rounded-md border border-gray-300 dark:border-white/20 px-2 py-1 text-sm hover:bg-gray-50 dark:hover:bg-white/10 text-gray-800 dark:text-slate-100"
-            aria-label="Close categories"
-          >
-            Close
-          </button>
-        </div>
-
-        {/* Drawer content */}
-        <div
-          className="px-4 py-4 space-y-4 overflow-y-auto h-[calc(100%-56px-4px)]"
-          aria-busy={open && !cats}
+      {/* ===== Categories Drawer (UNMOUNTED when closed) ===== */}
+      {open && (
+        <aside
+          ref={drawerRef}
+          id="categories-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Categories"
+          className="fixed left-0 top-0 z-50 h-full w-[340px] bg-slate-50 dark:bg-slate-900 shadow-2xl border-r border-gray-200 dark:border-white/10 transform transition-transform duration-300 translate-x-0"
         >
-          <Link
-            href="/"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 px-3 py-2 border border-gray-200 dark:border-white/10 shadow-sm transition text-gray-800 dark:text-slate-100"
-          >
-            <span className="inline-block h-2 w-2 rounded-full bg-[#39a0ca]" />
-            All Products
-          </Link>
-
-          {!cats ? (
-            <div className="text-sm text-gray-500 dark:text-slate-400 px-1">
-              Loading categories…
-            </div>
-          ) : (
-            <ul className="space-y-2" aria-label="Browse categories">
-              {cats.map((cat) => {
-                const c = cat as unknown as Category;
-                return (
-                  <li
-                    key={c.name}
-                    className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-white/10 shadow-sm"
-                  >
-                    <details className="group">
-                      <summary className="flex items-center justify-between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
-                        <span className="font-medium">{c.name}</span>
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          className="transition-transform duration-200 group-open:rotate-180 text-gray-500 dark:text-slate-400"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M12 15.5l-7-7 1.4-1.4L12 12.7l5.6-5.6L19 8.5z" />
-                        </svg>
-                      </summary>
-
-                      {hasSubcategories(c) && c.subcategories.length > 0 && (
-                        <ul className="mt-1 border-t border-gray-100 dark:border-white/5">
-                          {c.subcategories.map((sub) => {
-                            const s = sub as Subcategory;
-                            return (
-                              <li key={s.name} className="pl-2">
-                                <details>
-                                  <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
-                                    <Link
-                                      href={categoryHref(s.name)}
-                                      onClick={() => setOpen(false)}
-                                      className="flex-1"
-                                    >
-                                      {s.name}
-                                    </Link>
-                                    <svg
-                                      width="14"
-                                      height="14"
-                                      viewBox="0 0 24 24"
-                                      className="text-gray-400"
-                                      fill="currentColor"
-                                      aria-hidden="true"
-                                    >
-                                      <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
-                                    </svg>
-                                  </summary>
-
-                                  {hasSubsubcategories(s) &&
-                                    s.subsubcategories.length > 0 && (
-                                      <ul className="ml-3 mb-2">
-                                        {s.subsubcategories.map((leaf: LeafName) => (
-                                          <li key={leaf}>
-                                            <Link
-                                              href={categoryHref(leaf)}
-                                              onClick={() => setOpen(false)}
-                                              className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-[#39a0ca] transition"
-                                            >
-                                              {leaf}
-                                            </Link>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    )}
-                                </details>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </details>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <Link
-            href="/saved"
-            onClick={() => setOpen(false)}
-            className="inline-flex w-full items-center justify-center rounded-xl text-white font-semibold shadow hover:opacity-90 px-4 py-2.5"
+          {/* Brand strip */}
+          <div
+            className="h-1 w-full"
             style={{
               backgroundImage:
                 "linear-gradient(90deg, #161748 0%, #478559 50%, #39a0ca 100%)",
             }}
+          />
+
+          {/* Drawer header */}
+          <div className="px-5 py-4 flex items-center justify-between border-b bg-white dark:bg-slate-900 border-gray-200 dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-[#161748] dark:text-slate-100">
+                QwikSale
+              </span>
+            </div>
+            <button
+              ref={closeBtnRef}
+              onClick={() => setOpen(false)}
+              className="rounded-md border border-gray-300 dark:border-white/20 px-2 py-1 text-sm hover:bg-gray-50 dark:hover:bg-white/10 text-gray-800 dark:text-slate-100"
+              aria-label="Close categories"
+            >
+              Close
+            </button>
+          </div>
+
+          {/* Drawer content */}
+          <div
+            className="px-4 py-4 space-y-4 overflow-y-auto h-[calc(100%-56px-4px)]"
+            aria-busy={open && !cats}
           >
-            View Saved Items
-          </Link>
-        </div>
-      </aside>
+            <Link
+              href="/"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-white/5 hover:bg-white dark:hover:bg_white/10 px-3 py-2 border border-gray-200 dark:border-white/10 shadow-sm transition text-gray-800 dark:text-slate-100"
+            >
+              <span className="inline-block h-2 w-2 rounded-full bg-[#39a0ca]" />
+              All Products
+            </Link>
+
+            {!cats ? (
+              <div className="text-sm text-gray-500 dark:text-slate-400 px-1">
+                Loading categories…
+              </div>
+            ) : (
+              <ul className="space-y-2" aria-label="Browse categories">
+                {cats.map((cat) => {
+                  const c = cat as unknown as Category;
+                  return (
+                    <li
+                      key={c.name}
+                      className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-white/10 shadow-sm"
+                    >
+                      <details className="group">
+                        <summary className="flex items-center justify_between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
+                          <span className="font-medium">{c.name}</span>
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            className="transition-transform duration-200 group-open:rotate-180 text-gray-500 dark:text-slate-400"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path d="M12 15.5l-7-7 1.4-1.4L12 12.7l5.6-5.6L19 8.5z" />
+                          </svg>
+                        </summary>
+
+                        {hasSubcategories(c) && c.subcategories.length > 0 && (
+                          <ul className="mt-1 border-t border-gray-100 dark:border-white/5">
+                            {c.subcategories.map((sub) => {
+                              const s = sub as Subcategory;
+                              return (
+                                <li key={s.name} className="pl-2">
+                                  <details>
+                                    <summary className="flex items-center justify_between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
+                                      <Link
+                                        href={categoryHref(s.name)}
+                                        onClick={() => setOpen(false)}
+                                        className="flex-1"
+                                      >
+                                        {s.name}
+                                      </Link>
+                                      <svg
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 24 24"
+                                        className="text-gray-400"
+                                        fill="currentColor"
+                                        aria-hidden="true"
+                                      >
+                                        <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
+                                      </svg>
+                                    </summary>
+
+                                    {hasSubsubcategories(s) &&
+                                      s.subsubcategories.length > 0 && (
+                                        <ul className="ml-3 mb-2">
+                                          {s.subsubcategories.map((leaf: LeafName) => (
+                                            <li key={leaf}>
+                                              <Link
+                                                href={categoryHref(leaf)}
+                                                onClick={() => setOpen(false)}
+                                                className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-[#39a0ca] transition"
+                                              >
+                                                {leaf}
+                                              </Link>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                  </details>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </details>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            <Link
+              href="/saved"
+              onClick={() => setOpen(false)}
+              className="inline-flex w-full items-center justify-center rounded-xl text-white font-semibold shadow hover:opacity-90 px-4 py-2.5"
+              style={{
+                backgroundImage:
+                  "linear-gradient(90deg, #161748 0%, #478559 50%, #39a0ca 100%)",
+              }}
+            >
+              View Saved Items
+            </Link>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

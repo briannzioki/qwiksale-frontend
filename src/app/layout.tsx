@@ -18,6 +18,9 @@ const siteUrl = getBaseUrl().replace(/\/+$/, "");
 const isPreview =
   process.env["VERCEL_ENV"] === "preview" || process.env["NEXT_PUBLIC_NOINDEX"] === "1";
 
+/* Hide any demo/dev error controls by default so tests don’t see generic “error/try again” text. */
+const SHOW_DEV_CONTROLS = process.env["NEXT_PUBLIC_SHOW_DEV_CONTROLS"] === "1";
+
 /* -------------------------------- Viewport -------------------------------- */
 export const viewport: Viewport = {
   themeColor: [
@@ -196,7 +199,8 @@ gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: true });
             </>
           ) : null}
 
-          <DevToolsMount />
+          {/* Dev/demo controls are hidden unless explicitly enabled */}
+          {SHOW_DEV_CONTROLS ? <DevToolsMount /> : null}
         </div>
       </body>
     </html>

@@ -1,4 +1,3 @@
-// src/app/components/ProductCard.tsx
 "use client";
 
 import React, { memo, useEffect, useRef, useCallback, useMemo } from "react";
@@ -144,7 +143,6 @@ function ProductCardImpl({
   }, [id, name, price, position, href]);
 
   const priceText = useMemo(() => formatKES(price), [price]);
-  const aria = `${name || "Product"}${price ? `, ${priceText}` : ""}`;
 
   // ✅ Only pass blurDataURL when using "blur" placeholder
   const blurProps = useMemo<
@@ -172,10 +170,8 @@ function ProductCardImpl({
         "dark:bg-gray-900 dark:border-white/10 dark:hover:border-white/15",
         className,
       ].join(" ")}
-      aria-label={aria}
       title={name}
       data-product-id={id}
-      role="article"
     >
       {/* Featured badge */}
       {featured && (

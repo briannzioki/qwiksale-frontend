@@ -78,7 +78,9 @@ enum ReportListingType {
   service
 }
 
-/** Messaging */
+/**
+ * Messaging
+ */
 enum ListingType {
   product
   service
@@ -158,12 +160,12 @@ model User {
   reports   Report[]        @relation("Reporters")
 
   // Messaging back-relations
-  threadsBought Thread[] @relation("ThreadBuyer")
-  threadsSold   Thread[] @relation("ThreadSeller")
+  threadsBought Thread[]  @relation("ThreadBuyer")
+  threadsSold   Thread[]  @relation("ThreadSeller")
   messagesSent  Message[]
 
-  sessions  Session[]
-  accounts  Account[]
+  sessions Session[]
+  accounts Account[]
 }
 
 model Referral {
@@ -198,13 +200,13 @@ model Product {
   soldAt      DateTime?
 
   /// New: when the listing becomes visible (set on create)
-  publishedAt DateTime?     @default(now())
+  publishedAt DateTime? @default(now())
 
   /// Optional dedupe key (sha256 hex) used by create endpoint
-  dedupeKey   String?       @db.VarChar(64)
+  dedupeKey String? @db.VarChar(64)
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   sellerId String?
   seller   User?   @relation("UserProducts", fields: [sellerId], references: [id])
@@ -231,13 +233,11 @@ model Product {
   @@index([status, price])
   @@index([sellerId, status, createdAt(sort: Desc)])
   @@index([status, brand])
-
   /// New indexes for published ordering (kept alongside createdAt for safety)
   @@index([status, featured, publishedAt(sort: Desc)])
   @@index([status, publishedAt(sort: Desc)])
   @@index([status, category, subcategory, publishedAt(sort: Desc)])
   @@index([sellerId, status, publishedAt(sort: Desc)])
-
   /// Helpful for quick duplicate checks per-seller
   @@index([sellerId, dedupeKey, createdAt(sort: Desc)])
 }
@@ -248,7 +248,7 @@ model Service {
   description  String?       @db.Text
   category     String
   subcategory  String?
-  price        Int?          // null => “contact for quote”
+  price        Int? // null => “contact for quote”
   rateType     RateType      @default(fixed)
   serviceArea  String?
   availability String?
@@ -259,10 +259,10 @@ model Service {
   featured     Boolean       @default(false)
 
   /// New: visible-from timestamp (set on create)
-  publishedAt DateTime?      @default(now())
+  publishedAt DateTime? @default(now())
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   sellerId String?
   seller   User?   @relation("UserServices", fields: [sellerId], references: [id])
@@ -281,7 +281,6 @@ model Service {
   @@index([status, category, subcategory, createdAt(sort: Desc)])
   @@index([status, price])
   @@index([sellerId, status, createdAt(sort: Desc)])
-
   /// New indexes for published ordering
   @@index([status, featured, publishedAt(sort: Desc)])
   @@index([status, publishedAt(sort: Desc)])
@@ -294,8 +293,9 @@ model Favorite {
   productId String
   createdAt DateTime @default(now())
 
-  user    User    @relation(fields: [userId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
+  // Make deletes of users/products clean up favorites automatically
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@id([userId, productId])
   @@index([productId])
@@ -391,7 +391,7 @@ model Report {
   userId      String?
   user        User?             @relation("Reporters", fields: [userId], references: [id], onDelete: SetNull)
 
-  resolved     Boolean  @default(false)
+  resolved     Boolean   @default(false)
   resolvedById String?
   resolvedAt   DateTime?
 
@@ -407,19 +407,19 @@ model Report {
  * ---------- Messaging ----------
  */
 model Thread {
-  id            String      @id @default(cuid())
-  listingType   ListingType
-  listingId     String
+  id          String      @id @default(cuid())
+  listingType ListingType
+  listingId   String
 
-  buyerId       String
-  sellerId      String
+  buyerId  String
+  sellerId String
 
-  buyerHidden   Boolean     @default(false)
-  sellerHidden  Boolean     @default(false)
+  buyerHidden  Boolean @default(false)
+  sellerHidden Boolean @default(false)
 
-  lastMessageAt DateTime    @default(now())
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   buyerLastReadAt  DateTime?
   sellerLastReadAt DateTime?
@@ -495,10 +495,10 @@ model VerificationToken {
 }
 
 model Review {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   raterId   String
   rateeId   String
-  listingId String?  // optional: product/service id
+  listingId String? // optional: product/service id
 
   rating Int
   text   String? @db.Text

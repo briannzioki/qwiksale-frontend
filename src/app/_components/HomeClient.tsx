@@ -7,8 +7,6 @@ import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
 import FavoriteButton from "../components/FavoriteButton";
 import HomeClientHero from "../components/HomeClientHero";
-import ProductGrid from "../components/ProductGrid";
-import ServiceGrid from "../components/ServiceGrid";
 
 /* ======================
    Types
@@ -48,26 +46,12 @@ type ServiceItem = {
 
 type AnyItem = ProductItem | ServiceItem;
 
-type FacetEntry = { value: string; count: number };
-
-type ProductFacets = {
-  categories?: FacetEntry[];
-  brands?: FacetEntry[];
-  conditions?: FacetEntry[];
-};
-
-type ServiceFacets = {
-  categories?: FacetEntry[];
-  subcategories?: FacetEntry[];
-};
-
 type PageResponse<TItems> = {
   page: number;
   pageSize: number;
   total: number;
   totalPages: number;
   items: TItems[];
-  facets?: ProductFacets | ServiceFacets;
 };
 
 type ErrorResponse = { error: string };
@@ -220,16 +204,6 @@ function useDebounced<T>(value: T, delay = 300) {
 }
 
 /* ======================
-   Type guards
-   ====================== */
-function isProductFacets(x: ProductFacets | ServiceFacets | undefined): x is ProductFacets {
-  return !!x && (Array.isArray((x as ProductFacets).brands) || Array.isArray((x as ProductFacets).conditions));
-}
-function isServiceFacets(x: ProductFacets | ServiceFacets | undefined): x is ServiceFacets {
-  return !!x && Array.isArray((x as ServiceFacets).subcategories);
-}
-
-/* ======================
    Page (client)
    ====================== */
 export default function HomeClient() {
@@ -257,7 +231,7 @@ export default function HomeClient() {
     return Number.isFinite(n) && n > 0 ? n : 1;
   });
 
-  // --------- Geolocation state (declare BEFORE effects that use it) ---------
+  // --------- Geolocation state ---------
   const [myLoc, setMyLoc] = React.useState<{ lat: number; lng: number } | null>(null);
   const [geoDenied, setGeoDenied] = React.useState<boolean>(false);
 
@@ -305,7 +279,7 @@ export default function HomeClient() {
   }, [mode, brand, condition]);
 
   // Debounced inputs
-  const dmode = useDebounced(mode, DEBOUNCE_MS);
+  const dmode = useDebounced<Mode>(mode, DEBOUNCE_MS);
   const dq = useDebounced(q, DEBOUNCE_MS);
   const dcategory = useDebounced(category, DEBOUNCE_MS);
   const dsubcategory = useDebounced(subcategory, DEBOUNCE_MS);
@@ -319,12 +293,8 @@ export default function HomeClient() {
 
   // Data
   const [res, setRes] = React.useState<PageResponse<AnyItem> | null>(null);
-  const [facets, setFacets] = React.useState<ProductFacets | ServiceFacets | undefined>(undefined);
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
-
-  // Only compute facets on page 1 and when a single mode is selected
-  const includeFacets = dpage === 1 && dmode !== "all";
 
   // Build querystring from (debounced) state
   const queryString = React.useMemo(() => {
@@ -340,7 +310,6 @@ export default function HomeClient() {
     if (dsort && dsort !== "newest") params.set("sort", dsort);
     if (dpage && dpage !== 1) params.set("page", String(dpage));
     params.set("pageSize", String(PAGE_SIZE));
-    if (includeFacets) params.set("facets", "true");
     return params.toString();
   }, [
     dq,
@@ -354,7 +323,6 @@ export default function HomeClient() {
     dsort,
     dpage,
     dmode,
-    includeFacets,
   ]);
 
   // Keep URL in sync (shallow) without spamming history
@@ -368,44 +336,60 @@ export default function HomeClient() {
     }
   }, [router, queryString, dmode]);
 
-  // Fetch from unified home-feed (with abort + small retry)
+  // Fetch from unified home-feed with fallback (products/services → all)
   React.useEffect(() => {
     const ac = new AbortController();
 
-    async function load(attempt = 1) {
+    async function load(attempt = 1, fallbackT?: "all" | "products" | "services") {
       if (attempt === 1) {
         setLoading(true);
         setErr(null);
       }
       try {
+        const tParam = fallbackT ?? dmode;
         const endpoint = "/api/home-feed";
-        const url = `${endpoint}?t=${dmode}${queryString ? `&${queryString}` : ""}`;
+        const url = `${endpoint}?t=${tParam}${queryString ? `&${queryString}` : ""}`;
 
         const r = await fetch(url, {
           cache: "no-store",
           signal: ac.signal,
         });
 
-        const json = (await r.json()) as PageResponse<AnyItem> | ErrorResponse;
+        const json = (await r.json().catch(() => ({}))) as PageResponse<AnyItem> | ErrorResponse;
 
         if (!r.ok || "error" in json) {
+          // Fallback to ALL if specific feed fails
+          if ((dmode === "products" || dmode === "services") && !fallbackT && !ac.signal.aborted) {
+            return load(attempt, "all");
+          }
           const msg = ("error" in json && json.error) || `Request failed (${r.status})`;
-          if (attempt < 2 && !ac.signal.aborted) return load(attempt + 1);
+          if (attempt < 2 && !ac.signal.aborted) return load(attempt + 1, fallbackT);
           setErr(msg);
           setRes(null);
-          setFacets(undefined);
           return;
         }
 
-        const pageJson = json as PageResponse<AnyItem>;
+        let pageJson = json as PageResponse<AnyItem>;
+
+        // If we fetched ALL as a fallback, client-filter by mode
+        if ((dmode === "products" || dmode === "services") && fallbackT === "all") {
+          const want = dmode === "products" ? "product" : "service";
+          const filtered = (pageJson.items || []).filter((x: AnyItem) => x?.type === want);
+          pageJson = {
+            ...pageJson,
+            items: filtered,
+            total: filtered.length,
+            totalPages: 1,
+            page: 1,
+          };
+        }
+
         setRes(pageJson);
-        setFacets(pageJson.facets);
       } catch (e: any) {
         if (e?.name !== "AbortError") {
-          if (attempt < 2 && !ac.signal.aborted) return load(attempt + 1);
+          if (attempt < 2 && !ac.signal.aborted) return load(attempt + 1, fallbackT);
           setErr("Network error. Please try again.");
           setRes(null);
-          setFacets(undefined);
         }
       } finally {
         if (!ac.signal.aborted) setLoading(false);
@@ -420,22 +404,8 @@ export default function HomeClient() {
   const pageNum = res?.page ?? 1;
   const totalPages = res?.totalPages ?? 1;
   const total = res?.total ?? 0;
-  const canPrev = pageNum > 1;
-  const canNext = pageNum < totalPages;
 
   const items = Array.isArray(res?.items) ? (res!.items as AnyItem[]) : [];
-
-  // Facet clicks (mode-aware)
-  const applyFacet = React.useCallback(
-    (type: "category" | "brand" | "condition" | "subcategory", value: string) => {
-      setPage(1);
-      if (type === "category") setCategory(value);
-      if (type === "subcategory") setSubcategory(value);
-      if (type === "brand") setBrand(value);
-      if (type === "condition") setCondition(value);
-    },
-    []
-  );
 
   // Small helpers
   const chip = (label: string) => (
@@ -718,120 +688,9 @@ export default function HomeClient() {
       </section>
 
       {/* =======================
-          Facets (mode-aware)
-          ======================= */}
-      {facets &&
-      dmode !== "all" &&
-      ((isProductFacets(facets) &&
-        ((facets.categories?.length || 0) + (facets.brands?.length || 0) + (facets.conditions?.length || 0) >
-          0)) ||
-        (isServiceFacets(facets) &&
-          ((facets.categories?.length || 0) + (facets.subcategories?.length || 0) > 0))) ? (
-        <section className="card-surface p-4" aria-label="Facets">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Categories */}
-            <div>
-              <div className="text-sm font-semibold mb-2">Top Categories</div>
-              <div className="flex flex-wrap gap-2">
-                {(facets.categories ?? []).map((f) => (
-                  <button
-                    key={`cat-${f.value}`}
-                    onClick={() => applyFacet("category", f.value)}
-                    className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
-                    title={`${f.count} items`}
-                    aria-label={`Filter by category ${f.value}`}
-                  >
-                    {f.value} <span className="opacity-60">({f.count})</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Brands (products) or Subcategories (services) */}
-            <div>
-              <div className="text-sm font-semibold mb-2">
-                {mode === "products" ? "Top Brands" : "Top Subcategories"}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(mode === "products"
-                  ? (isProductFacets(facets) ? facets.brands ?? [] : [])
-                  : (isServiceFacets(facets) ? facets.subcategories ?? [] : [])
-                ).map((f) => (
-                  <button
-                    key={(mode === "products" ? "brand-" : "sub-") + f.value}
-                    onClick={() =>
-                      applyFacet(mode === "products" ? "brand" : "subcategory", f.value)
-                    }
-                    className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
-                    title={`${f.count} items`}
-                    aria-label={`Filter by ${mode === "products" ? "brand" : "subcategory"} ${f.value}`}
-                  >
-                    {f.value} <span className="opacity-60">({f.count})</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Conditions (products only) */}
-            {mode === "products" ? (
-              <div>
-                <div className="text-sm font-semibold mb-2">Condition</div>
-                <div className="flex flex-wrap gap-2">
-                  {(isProductFacets(facets) ? facets.conditions ?? [] : []).map((f) => (
-                    <button
-                      key={`cond-${f.value}`}
-                      onClick={() => applyFacet("condition", f.value)}
-                      className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50 dark:hover:bg-slate-800 transition"
-                      title={`${f.count} items`}
-                      aria-label={`Filter by condition ${f.value}`}
-                    >
-                      {f.value} <span className="opacity-60">({f.count})</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div aria-hidden className="md:block hidden" />
-            )}
-          </div>
-        </section>
-      ) : null}
-
-      {/* =======================
           Results / Grid
           ======================= */}
-      {mode === "products" ? (
-        <ProductGrid
-          pageSize={PAGE_SIZE}
-          prefetchCards
-          filters={{
-            query: q,
-            condition: toConditionKey(condition),
-            minPrice: minPrice ? Number(minPrice) : "",
-            maxPrice: maxPrice ? Number(maxPrice) : "",
-            sort: toSortKey(sort),
-            verifiedOnly: featuredOnly,
-          }}
-          className=""
-          emptyText="No products found. Try adjusting filters."
-        />
-      ) : mode === "services" ? (
-        <ServiceGrid
-          pageSize={PAGE_SIZE}
-          prefetchCards
-          filters={{
-            query: q,
-            // condition/brand ignored by ServiceGrid, but satisfy Filters type
-            condition: toConditionKey(condition),
-            minPrice: minPrice ? Number(minPrice) : "",
-            maxPrice: maxPrice ? Number(maxPrice) : "",
-            sort: toSortKey(sort),
-            verifiedOnly: featuredOnly,
-          }}
-          className=""
-          emptyText="No services found. Try adjusting filters."
-        />
-      ) : loading ? (
+      {loading ? (
         <SkeletonGrid />
       ) : err ? (
         <div className="card-surface p-6 text-red-600">{err}</div>
@@ -843,6 +702,7 @@ export default function HomeClient() {
         <section
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6"
           aria-label="Search results"
+          aria-busy={loading ? "true" : "false"}
         >
           {items.map((it) => {
             const isProduct = it.type === "product";
@@ -859,8 +719,19 @@ export default function HomeClient() {
             const blur = shimmer(800, 440);
             const href = isProduct ? `/product/${it.id}` : `/service/${it.id}`;
 
+            // Accessible label that Playwright tests can target:
+            const priceText = typeof price === "number" && price > 0 ? `KES ${price.toLocaleString()}` : undefined;
+            const ariaLabel =
+              `${isProduct ? "Product" : "Service"}: ${title}` +
+              (priceText ? `, priced at ${priceText}` : "");
+
             return (
-              <Link key={`${it.type}-${it.id}`} href={href} className="relative group">
+              <Link
+                key={`${it.type}-${it.id}`}
+                href={href}
+                className="relative group"
+                aria-label={ariaLabel}
+              >
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800">
                   <div className="relative">
                     {featured && (
@@ -923,46 +794,44 @@ export default function HomeClient() {
         </section>
       )}
 
-      {/* Results footer: show only for "All" (Products/Services use infinite scroll) */}
-      {mode === "all" && (
-        <section className="flex items-center justify-between" aria-live="polite">
-          <p className="text-sm text-gray-600 dark:text-slate-300">
-            {loading
-              ? "Loading…"
-              : err
-              ? "Error loading listings"
-              : `${total} items • page ${pageNum} of ${totalPages}`}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={!canPrev || loading}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className={`rounded-lg px-3 py-1.5 border ${
-                canPrev && !loading
-                  ? "hover:bg-gray-50 dark:hover:bg-slate-800"
-                  : "opacity-50 cursor-not-allowed"
-              }`}
-              aria-label="Previous page"
-            >
-              ← Prev
-            </button>
-            <button
-              type="button"
-              disabled={!canNext || loading}
-              onClick={() => setPage((p) => p + 1)}
-              className={`rounded-lg px-3 py-1.5 border ${
-                canNext && !loading
-                  ? "hover:bg-gray-50 dark:hover:bg-slate-800"
-                  : "opacity-50 cursor-not-allowed"
-              }`}
-              aria-label="Next page"
-            >
-              Next →
-            </button>
-          </div>
-        </section>
-      )}
+      {/* Results footer (pagination for all modes) */}
+      <section className="flex items-center justify-between" aria-live="polite">
+        <p className="text-sm text-gray-600 dark:text-slate-300">
+          {loading
+            ? "Loading…"
+            : err
+            ? "Error loading listings"
+            : `${total} items • page ${pageNum} of ${totalPages}`}
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={!res || res.page <= 1 || loading}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className={`rounded-lg px-3 py-1.5 border ${
+              !!res && res.page > 1 && !loading
+                ? "hover:bg-gray-50 dark:hover:bg-slate-800"
+                : "opacity-50 cursor-not-allowed"
+            }`}
+            aria-label="Previous page"
+          >
+            ← Prev
+          </button>
+          <button
+            type="button"
+            disabled={!res || res.page >= (res.totalPages || 1) || loading}
+            onClick={() => setPage((p) => p + 1)}
+            className={`rounded-lg px-3 py-1.5 border ${
+              !!res && res.page < (res.totalPages || 1) && !loading
+                ? "hover:bg-gray-50 dark:hover:bg-slate-800"
+                : "opacity-50 cursor-not-allowed"
+            }`}
+            aria-label="Next page"
+          >
+            Next →
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 "use client";
 
 import { useCallback, useMemo, useState, useEffect } from "react";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { categoryOptions, subcategoryOptions } from "@/app/data/categories";
 import { normalizeMsisdn } from "@/app/data/products";
 import GalleryUploader from "@/app/components/media/GalleryUploader";
@@ -63,10 +63,10 @@ export default function ServiceForm(props: Props) {
   const startCategory = sv(initial?.category || catOpts[0]?.value);
   const [category, setCategory] = useState<string>(startCategory);
 
-  const firstSubFor = (cat: string): string => {
+  const firstSubFor = useCallback((cat: string): string => {
     const subs = subcategoryOptions(cat) ?? [];
     return sv(subs[0]?.value);
-  };
+  }, []);
 
   const startSubcategory = sv(initial?.subcategory || firstSubFor(startCategory));
   const [subcategory, setSubcategory] = useState<string>(startSubcategory);
@@ -82,6 +82,7 @@ export default function ServiceForm(props: Props) {
   const [availability, setAvailability] = useState<string>(sv(initial?.availability));
   const [location, setLocation] = useState<string>(sv(initial?.location));
   const [description, setDescription] = useState<string>(sv(initial?.description));
+  const [phone, setPhone] = useState("");
 
   // gallery: prefer `gallery`, fall back to `images`
   const initialGallery: string[] =
@@ -94,17 +95,16 @@ export default function ServiceForm(props: Props) {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
   const [busy, setBusy] = useState(false);
-  const [phone, setPhone] = useState("");
 
   const subOpts = useMemo(() => subcategoryOptions(category) ?? [], [category]);
 
-  // Keep subcategory valid when category changes (if changed externally)
+  // Keep subcategory valid when category changes
   useEffect(() => {
     const subs = subcategoryOptions(category) ?? [];
     if (subs.length && !subs.some((o: any) => o?.value === subcategory)) {
       setSubcategory(sv(subs[0]?.value));
     }
-  }, [category]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [category, subcategory]);
 
   const canSubmit =
     name.trim().length > 0 &&
@@ -112,11 +112,13 @@ export default function ServiceForm(props: Props) {
     description.trim().length >= 10 &&
     (price === "" || Number(price) >= 0);
 
-  const onChangeCategory = useCallback((value: string) => {
-    setCategory(value);
-    const first = firstSubFor(value);
-    setSubcategory(first);
-  }, []);
+  const onChangeCategory = useCallback(
+    (value: string) => {
+      setCategory(value);
+      setSubcategory(firstSubFor(value));
+    },
+    [firstSubFor]
+  );
 
   // cache-aware actions
   const { addService, updateService } = useServices();
@@ -134,12 +136,14 @@ export default function ServiceForm(props: Props) {
     return Promise.all(uploads);
   }
 
+  const phoneInvalid = Boolean(phone) && !normalizeMsisdn(phone);
+
   const submit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (busy) return;
 
-      const msisdn = normalizeMsisdn(phone);
+      const msisdn = phone ? normalizeMsisdn(phone) : null;
       if (phone && !msisdn) {
         toast.error("Phone must be Safaricom format (2547XXXXXXXX)");
         return;
@@ -169,10 +173,17 @@ export default function ServiceForm(props: Props) {
         };
 
         if (!isEdit) {
-          const { id } = await addService(payload);
+          const created = await addService(payload);
+          const newId =
+            typeof created === "string"
+              ? created
+              : (created && typeof created === "object" && "id" in created
+                  ? String((created as any).id)
+                  : undefined);
+        if (!newId) throw new Error("Create failed: no id returned");
           toast.success("Service posted");
           (window as any).plausible?.("Service Created", { props: { category, subcategory } });
-          await props.onCreatedAction?.(id);
+          await props.onCreatedAction?.(newId);
           setPendingFiles([]);
           return;
         }
@@ -301,7 +312,11 @@ export default function ServiceForm(props: Props) {
             }
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="Leave empty for “Contact for quote”"
+            aria-describedby="sf-price-help"
           />
+          <p id="sf-price-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            Leave empty to show <em>Contact for quote</em>.
+          </p>
         </div>
 
         <div>
@@ -335,6 +350,27 @@ export default function ServiceForm(props: Props) {
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="e.g. Mon–Sat, 8am–6pm"
           />
+        </div>
+
+        {/* Phone (optional) */}
+        <div>
+          <label className="text-sm font-medium" htmlFor="sf-phone">Seller phone (optional)</label>
+          <input
+            id="sf-phone"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            placeholder="2547XXXXXXXX"
+            inputMode="tel"
+            aria-invalid={phoneInvalid || undefined}
+          />
+          <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            {phone
+              ? phoneInvalid
+                ? "Please use Safaricom format: 2547XXXXXXXX"
+                : `Normalized: ${normalizeMsisdn(phone)}`
+              : "Optional. Buyers can call or WhatsApp."}
+          </div>
         </div>
 
         {/* Photos (reusable uploader) */}
