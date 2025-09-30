@@ -1,34 +1,12 @@
 ﻿// src/app/page.tsx
-export const runtime = "nodejs"; // keep Node runtime for server features
+export const runtime = "nodejs";
+export const revalidate = 300;
 
-import Link from "next/link";
-
-/** Shapes mirrored from /api/home-feed */
-type Mode = "all" | "products" | "services";
-type CombinedItem = {
-  type: "product" | "service";
-  id: string;
-  name: string;
-  category: string | null;
-  subcategory: string | null;
-  price: number | null;
-  image: string | null;
-  location: string | null;
-  featured: boolean;
-  createdAt: string;
-};
-type HomeFeedResponse = {
-  mode: Mode;
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-  items: CombinedItem[];
-};
+import { Suspense } from "react";
+import HomeClientNoSSR from "./_components/HomeClientNoSSR";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 
-<<<<<<< HEAD
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
   const explicit = process.env["NEXT_PUBLIC_APP_URL"];
@@ -43,19 +21,22 @@ function makeApiUrl(path: string) {
 /** Read a query param from URLSearchParams or a plain object */
 async function readParam(
   spPromise: Promise<any> | undefined,
+=======
+/** Read a query param from URLSearchParams or a plain object */
+async function readParam(
+  spMaybe: Promise<RawSearchParams> | RawSearchParams | undefined,
+>>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
   key: string
 ): Promise<string | null> {
-  if (!spPromise) return null;
-  const r: any = await spPromise;
+  if (!spMaybe) return null;
+  const r: any = await spMaybe;
 
   // ReadonlyURLSearchParams / URLSearchParams
   if (resolved && typeof resolved.get === "function") {
     try {
       const v = r.get(key);
+<<<<<<< HEAD
       return v == null ? null : String(v);
-=======
-      return typeof v === "string" ? v : v == null ? null : String(v);
->>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
     } catch {
       /* fall through */
     }
@@ -93,13 +74,18 @@ function labelFor(mode: Mode) {
 }
 
 export default async function HomePage({
-  // Accept MaybePromise or plain object; don't import Next's PageProps
+  // IMPORTANT: Promise<any> keeps Next 15 PageProps checker happy
   searchParams,
 }: {
   searchParams: Promise<any>;
+=======
+  // Accept MaybePromise or plain object; don't import Next's PageProps
+  searchParams,
+}: {
+  searchParams?: Promise<RawSearchParams> | RawSearchParams;
+>>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
 }) {
-  const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
-  const t = rawT === "products" || rawT === "services" ? (rawT as "products" | "services") : "all";
+  const t = normalizeMode(await readParam(searchParams, "t"));
 
   // Always call /api/home-feed for the chosen tab
   const params = new URLSearchParams();
