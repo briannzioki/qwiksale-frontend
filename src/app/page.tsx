@@ -4,10 +4,10 @@ export const revalidate = 300;
 
 import { Suspense } from "react";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
+import { makeApiUrl } from "@/app/lib/url";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 
-<<<<<<< HEAD
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
   const explicit = process.env["NEXT_PUBLIC_APP_URL"];
@@ -22,25 +22,16 @@ function makeApiUrl(path: string) {
 /** Read a query param from URLSearchParams or a plain object */
 async function readParam(
   spPromise: Promise<any> | undefined,
-=======
-/** Read a query param from URLSearchParams or a plain object */
-async function readParam(
-  spMaybe: Promise<RawSearchParams> | RawSearchParams | undefined,
->>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
   key: string
 ): Promise<string | null> {
-  if (!spMaybe) return null;
-  const r: any = await spMaybe;
+  if (!spPromise) return null;
+  const r: any = await spPromise;
 
   // ReadonlyURLSearchParams / URLSearchParams
   if (r && typeof r.get === "function") {
     try {
       const v = r.get(key);
-<<<<<<< HEAD
       return v == null ? null : String(v);
-=======
-      return typeof v === "string" ? v : v == null ? null : String(v);
->>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
     } catch {
       /* fall through */
     }
@@ -78,6 +69,7 @@ function labelFor(mode: Mode) {
 }
 
 export default async function HomePage({
+<<<<<<< HEAD
   // IMPORTANT: must be exactly Promise<any> to satisfy Next 15's PageProps check
   searchParams,
 }: {
@@ -89,9 +81,9 @@ export default async function HomePage({
   searchParams?: Promise<RawSearchParams> | RawSearchParams;
 >>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
 }) {
-  const t = normalizeMode(await readParam(searchParams, "t"));
+  const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
+  const t = rawT === "products" || rawT === "services" ? (rawT as "products" | "services") : "all";
 
-  // Always call /api/home-feed for the chosen tab
   const params = new URLSearchParams();
   params.set("limit", "24");
   params.set("pageSize", "24");
@@ -100,10 +92,8 @@ export default async function HomePage({
 
   let data: HomeFeedResponse | null = null;
   try {
-    const apiUrl = makeApiUrl(`/api/home-feed?${params.toString()}`);
-    const res = await fetch(apiUrl, {
-      cache: "no-store", // dynamic; avoids Playwright flakiness
-      headers: { Accept: "application/json" },
+    await fetch(makeApiUrl(`/api/home-feed?${params.toString()}`), {
+      next: { tags: ["home-feed", `home-feed:${t}`] },
     });
     if (res.ok) {
       data = (await res.json()) as HomeFeedResponse;
