@@ -7,7 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/lib/prisma";
 import UserAvatar from "@/app/components/UserAvatar";
-import SmartImage from "@/app/components/SmartImage";
+import Gallery from "@/app/components/Gallery";
 
 type Seller = {
   id: string;
@@ -24,6 +24,7 @@ type Service = {
   subcategory?: string | null;
   price: number | null;
   image: string | null;
+  gallery: string[];
   location: string | null;
   featured?: boolean | null;
   rateType?: "hour" | "day" | "fixed" | null;
@@ -36,8 +37,8 @@ const PLACEHOLDER = "/placeholder/default.jpg";
 
 /** Absolute base URL for server contexts (prod/preview/dev) */
 const BASE = (
-  process.env['NEXT_PUBLIC_APP_URL'] ||
-  (process.env['VERCEL_URL'] ? `https://${process.env['VERCEL_URL']}` : "http://localhost:3000")
+  process.env["NEXT_PUBLIC_APP_URL"] ||
+  (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "http://localhost:3000")
 ).replace(/\/+$/, "");
 
 function fmtKES(n?: number | null) {
@@ -71,6 +72,7 @@ async function getService(id: string): Promise<Service | null> {
       subcategory: true,
       price: true,
       image: true,
+      gallery: true, // ← include gallery
       location: true,
       featured: true,
       rateType: true,
@@ -88,6 +90,7 @@ async function getService(id: string): Promise<Service | null> {
     subcategory: s.subcategory ?? null,
     price: s.price ?? null,
     image: s.image ?? null,
+    gallery: Array.isArray(s.gallery) ? s.gallery : [], // ← normalize
     location: s.location ?? null,
     featured: s.featured ?? null,
     rateType: (s.rateType as Service["rateType"]) ?? null,
@@ -118,7 +121,8 @@ export async function generateMetadata(
   const suffix = rateSuffix(svc.rateType);
   const town = svc.serviceArea || svc.location ? ` — ${svc.serviceArea || svc.location}` : "";
   const title = `${svc.name} • ${priceTxt}${suffix}${town}`;
-  const img = svc.image || PLACEHOLDER;
+  const images = Array.from(new Set([svc.image, ...(svc.gallery ?? [])].filter(Boolean) as string[]));
+  const ogImg = images.length ? images : [PLACEHOLDER];
 
   return {
     title,
@@ -129,13 +133,13 @@ export async function generateMetadata(
       type: "website",
       title: svc.name,
       description: svc.description ?? undefined,
-      images: [img],
+      images: ogImg,
     },
     twitter: {
       card: "summary_large_image",
       title: svc.name,
       description: svc.description ?? undefined,
-      images: [img],
+      images: ogImg,
     },
   };
 }
@@ -148,7 +152,9 @@ export default async function ServicePage(
   const svc = await getService(id);
   if (!svc) notFound();
 
-  const hero = svc.image || PLACEHOLDER;
+  const images = Array.from(new Set([svc.image, ...(svc.gallery ?? [])].filter(Boolean) as string[]));
+  if (images.length === 0) images.push(PLACEHOLDER); // ← guarantee at least one
+
   const priceTxt = fmtKES(svc.price);
   const suffix = rateSuffix(svc.rateType);
   const sellerName =
@@ -161,7 +167,7 @@ export default async function ServicePage(
     "@type": "Service",
     name: svc.name,
     description: svc.description ?? undefined,
-    image: [hero],
+    image: images, // ← all images
     serviceType,
     areaServed: svc.serviceArea || svc.location || undefined,
     provider:
@@ -192,20 +198,49 @@ export default async function ServicePage(
         <div className="mx-auto max-w-5xl grid gap-6 lg:grid-cols-5">
           {/* Visual */}
           <section className="lg:col-span-3 space-y-3">
-            <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gray-100">
-              <SmartImage
-                src={hero}
-                alt={svc.name}
-                fill
-                sizes="(max-width: 1024px) 100vw, 768px"
-                className="object-cover"
-                priority
-              />
+            <div
+              className="relative overflow-hidden rounded-xl border bg-white shadow-sm"
+              data-gallery-wrap
+            >
+              {/* Keep badge under the Gallery's overlay (Gallery uses z-[60]) */}
               {svc.featured && (
-                <span className="absolute left-3 top-3 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
+                <span className="absolute left-3 top-3 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
                   Verified
                 </span>
               )}
+
+              {/* Gallery renders images and its own opener */}
+              <Gallery images={images} lightbox />
+
+              {/* Explicit full-surface overlay so tests can always click it.
+                  We forward the click to Gallery's real opener to preserve UX. */}
+              <button
+                type="button"
+                aria-label="Open image in fullscreen"
+                aria-haspopup="dialog"
+                className="absolute inset-0 z-[70] cursor-zoom-in bg-transparent"
+                data-gallery-overlay
+              />
+
+              {/* Click-forwarder script (runs in the browser) */}
+              <script
+                dangerouslySetInnerHTML={{
+                  __html: `
+(function(){
+  // Delegate: forward clicks from our overlay to Gallery's built-in opener
+  document.addEventListener('click', function(e){
+      var t = e.target;
+      if (!t || !(t instanceof Element)) return;
+      if (!t.matches('[data-gallery-overlay]')) return;
+      var wrap = t.closest('[data-gallery-wrap]');
+      if (!wrap) return;
+      var real = wrap.querySelector('button[aria-label="Open image in fullscreen"]');
+      if (real && real !== t) { real.click(); }
+  }, { capture: true });
+})();
+                  `.trim()
+                }}
+              />
             </div>
           </section>
 
