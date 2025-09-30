@@ -2,12 +2,33 @@
 export const runtime = "nodejs";
 export const revalidate = 300;
 
-import { Suspense } from "react";
-import HomeClientNoSSR from "./_components/HomeClientNoSSR";
+import Link from "next/link";
+
+/** Shapes mirrored from /api/home-feed */
+type Mode = "all" | "products" | "services";
+type CombinedItem = {
+  type: "product" | "service";
+  id: string;
+  name: string;
+  category: string | null;
+  subcategory: string | null;
+  price: number | null;
+  image: string | null;
+  location: string | null;
+  featured: boolean;
+  createdAt: string;
+};
+type HomeFeedResponse = {
+  mode: Mode;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  items: CombinedItem[];
+};
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 
-<<<<<<< HEAD
 /** Build absolute URL on the server (works in dev and prod) */
 function makeApiUrl(path: string) {
   const explicit = process.env["NEXT_PUBLIC_APP_URL"];
@@ -22,33 +43,24 @@ function makeApiUrl(path: string) {
 /** Read a query param from URLSearchParams or a plain object */
 async function readParam(
   spPromise: Promise<any> | undefined,
-=======
-/** Read a query param from URLSearchParams or a plain object */
-async function readParam(
-  spMaybe: Promise<RawSearchParams> | RawSearchParams | undefined,
->>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
   key: string
 ): Promise<string | null> {
-  if (!spMaybe) return null;
-  const r: any = await spMaybe;
+  if (!spPromise) return null;
+  const r: any = await spPromise;
 
   // ReadonlyURLSearchParams / URLSearchParams
-  if (resolved && typeof resolved.get === "function") {
+  if (r && typeof r.get === "function") {
     try {
       const v = r.get(key);
-<<<<<<< HEAD
       return v == null ? null : String(v);
-=======
-      return typeof v === "string" ? v : v == null ? null : String(v);
->>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
     } catch {
       /* fall through */
     }
   }
 
-  // Plain object (record)
-  if (resolved && typeof resolved === "object") {
-    const v = (resolved as RawSearchParams)[key];
+  // Plain object
+  if (r && typeof r === "object") {
+    const v = (r as RawSearchParams)[key];
     if (typeof v === "string") return v;
     if (Array.isArray(v)) return (v[0] as string) ?? null;
   }
@@ -78,16 +90,10 @@ function labelFor(mode: Mode) {
 }
 
 export default async function HomePage({
-  // IMPORTANT: must be exactly Promise<any> to satisfy Next 15's PageProps check
+  // keep Promise<any> to satisfy Next 15 PageProps checker
   searchParams,
 }: {
   searchParams: Promise<any>;
-=======
-  // Accept MaybePromise or plain object; don't import Next's PageProps
-  searchParams,
-}: {
-  searchParams?: Promise<RawSearchParams> | RawSearchParams;
->>>>>>> f60f7e5 (Fix Next 15 prop types; make placeholder static; unify APP_URL; tighten SEO canonicals; robust JSON-LD; resilient SmartImage)
 }) {
   const t = normalizeMode(await readParam(searchParams, "t"));
 
@@ -102,7 +108,7 @@ export default async function HomePage({
   try {
     const apiUrl = makeApiUrl(`/api/home-feed?${params.toString()}`);
     const res = await fetch(apiUrl, {
-      cache: "no-store", // ensure fresh, avoids Playwright flakiness
+      cache: "no-store", // dynamic fetch; avoids Playwright flakiness
       headers: { Accept: "application/json" },
     });
     if (res.ok) {
@@ -191,7 +197,6 @@ export default async function HomePage({
               >
                 {/* simple image block */}
                 <div className="aspect-[4/3] w-full bg-gray-100">
-                  {/* using background-image avoids next/image config here */}
                   <div
                     className="h-full w-full"
                     style={{
