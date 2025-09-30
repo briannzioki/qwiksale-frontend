@@ -1,3 +1,4 @@
+// src/app/sell/SellProductClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -475,20 +476,24 @@ export default function SellProductClient({ id }: Props) {
         {/* Title & Price */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
-            <label className="label">Title</label>
+            {/* Linked label */}
+            <label className="label" htmlFor="name">Title</label>
             <input
+              id="name"
+              name="name"
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. iPhone 13 Pro 256GB"
               required
               minLength={3}
-              aria-label="Listing title"
             />
           </div>
+
           <div>
-            <label className="label">Price (KES)</label>
+            <label className="label" htmlFor="price">Price (KES)</label>
             <input
+              id="price"
               type="number"
               inputMode="numeric"
               min={0}
@@ -497,21 +502,24 @@ export default function SellProductClient({ id }: Props) {
               onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
               placeholder="e.g. 35000"
               aria-describedby="price-help"
-              aria-label="Price in Kenyan shillings"
             />
             <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
               Leave empty for <em>Contact for price</em>.
             </p>
-            <label className="mt-3 flex items-center gap-2 text-sm text-gray-700 dark:text-slate-200">
+
+            <div className="mt-3 flex items-center gap-2">
               <input
+                id="negotiable"
                 type="checkbox"
                 className="rounded border-gray-300 dark:border-slate-600"
                 checked={negotiable}
                 onChange={(e) => setNegotiable(e.target.checked)}
-                aria-label="Negotiable price"
               />
-              Negotiable price
-            </label>
+              <label htmlFor="negotiable" className="text-sm text-gray-700 dark:text-slate-200">
+                Negotiable price
+              </label>
+            </div>
+
             {typeof price === "number" && price > 0 && (
               <div className="text-xs mt-1 text-gray-600 dark:text-slate-400">
                 You entered: KES {fmtKES(priceNum)}
@@ -523,24 +531,25 @@ export default function SellProductClient({ id }: Props) {
         {/* Condition, Category, Subcategory */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="label">Condition</label>
+            <label className="label" htmlFor="condition">Condition</label>
             <select
+              id="condition"
               className="select"
               value={condition}
               onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
-              aria-label="Item condition"
             >
               <option value="brand new">Brand New</option>
               <option value="pre-owned">Pre-Owned</option>
             </select>
           </div>
+
           <div>
-            <label className="label">Category</label>
+            <label className="label" htmlFor="category">Category</label>
             <select
+              id="category"
               className="select"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              aria-label="Category"
             >
               {cats.map((c) => (
                 <option key={c.name} value={c.name}>
@@ -549,13 +558,14 @@ export default function SellProductClient({ id }: Props) {
               ))}
             </select>
           </div>
+
           <div>
-            <label className="label">Subcategory</label>
+            <label className="label" htmlFor="subcategory">Subcategory</label>
             <select
+              id="subcategory"
               className="select"
               value={subcategory}
               onChange={(e) => setSubcategory(e.target.value)}
-              aria-label="Subcategory"
             >
               {subcats.map((s) => (
                 <option key={s.name} value={s.name}>
@@ -569,36 +579,39 @@ export default function SellProductClient({ id }: Props) {
         {/* Brand, Location, Phone (optional) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="label">Brand (optional)</label>
+            <label className="label" htmlFor="brand">Brand (optional)</label>
             <input
+              id="brand"
               className="input"
               value={brand}
               onChange={(e) => setBrand(e.target.value)}
               placeholder="e.g. Samsung"
-              aria-label="Brand"
             />
           </div>
+
           <div>
-            <label className="label">Location</label>
+            <label className="label" htmlFor="location">Location</label>
             <input
+              id="location"
               className="input"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="e.g. Nairobi"
-              aria-label="Location"
             />
           </div>
+
           <div>
-            <label className="label">Phone (WhatsApp, optional)</label>
+            <label className="label" htmlFor="phone">Phone (WhatsApp, optional)</label>
             <input
+              id="phone"
               className="input"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="07XXXXXXXX or +2547XXXXXXXX"
               aria-invalid={!!phone && !phoneOk}
-              aria-label="WhatsApp phone number (optional)"
+              aria-describedby="phone-help"
             />
-            <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+            <div id="phone-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
               {phone
                 ? phoneOk
                   ? <>Normalized: <code className="font-mono">{normalizedPhone}</code></>
@@ -610,8 +623,9 @@ export default function SellProductClient({ id }: Props) {
 
         {/* Description */}
         <div>
-          <label className="label">Description</label>
+          <label className="label" htmlFor="description">Description</label>
           <textarea
+            id="description"
             className="textarea"
             rows={5}
             value={description}
@@ -619,7 +633,6 @@ export default function SellProductClient({ id }: Props) {
             placeholder="Describe the item, condition, accessories, warranty, etc."
             required
             minLength={10}
-            aria-label="Listing description"
           />
         </div>
 

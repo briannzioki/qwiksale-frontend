@@ -2,7 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { categoryOptions, subcategoryOptions } from "@/app/data/categories";
 import { normalizeMsisdn } from "@/app/data/products";
 import { useProducts } from "@/app/lib/productsStore";
@@ -81,7 +81,10 @@ export default function ProductForm(props: Props) {
     []
   );
 
-  const firstSubOf = (cat: string) => subOptsFor(cat)[0]?.value ?? "";
+  const firstSubOf = useCallback(
+    (cat: string) => subOptsFor(cat)[0]?.value ?? "",
+    [subOptsFor]
+  );
   const startSubcategory = s(initial?.subcategory, firstSubOf(startCategory));
 
   // fields
@@ -102,17 +105,18 @@ export default function ProductForm(props: Props) {
   const [phone, setPhone] = useState<string>("");
 
   // gallery state + pending local files (to be uploaded on submit)
-  const initialGallery: string[] = Array.isArray(initial?.gallery) && initial?.gallery?.length
-    ? (initial!.gallery as string[]).filter(Boolean).map(String)
-    : Array.isArray((initial as any)?.images)
-    ? ((initial as any).images as string[]).filter(Boolean).map(String)
-    : [];
+  const initialGallery: string[] =
+    Array.isArray(initial?.gallery) && initial?.gallery?.length
+      ? (initial!.gallery as string[]).filter(Boolean).map(String)
+      : Array.isArray((initial as any)?.images)
+      ? ((initial as any).images as string[]).filter(Boolean).map(String)
+      : [];
   const [gallery, setGallery] = useState<string[]>(initialGallery);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
   const [busy, setBusy] = useState(false);
 
-  // pull cache-aware actions
+  // cache-aware actions
   const { addProduct, updateProduct } = useProducts();
 
   // Keep subcategory valid when category changes
@@ -145,18 +149,21 @@ export default function ProductForm(props: Props) {
     return Promise.all(uploads);
   }
 
-  const onChangeCategory = useCallback((value: string) => {
-    const nextCat = s(value);
-    setCategory(nextCat);
-    setSubcategory(firstSubOf(nextCat));
-  }, []);
+  const onChangeCategory = useCallback(
+    (value: string) => {
+      const nextCat = s(value);
+      setCategory(nextCat);
+      setSubcategory(firstSubOf(nextCat));
+    },
+    [firstSubOf]
+  );
 
   const submit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (busy) return;
 
-      const msisdn = normalizeMsisdn(phone);
+      const msisdn = phone ? normalizeMsisdn(phone) : null;
       if (phone && !msisdn) {
         toast.error("Phone must be Safaricom format (2547XXXXXXXX)");
         return;
@@ -186,10 +193,19 @@ export default function ProductForm(props: Props) {
         };
 
         if (!isEdit) {
-          const { id } = await addProduct(payload);
+          const created = await addProduct(payload);
+          const newId =
+            typeof created === "string"
+              ? created
+              : (created && typeof created === "object" && "id" in created
+                  ? String((created as any).id)
+                  : undefined);
+          if (!newId) {
+            throw new Error("Create failed: no id returned");
+          }
           toast.success("Listing created");
           (window as any).plausible?.("Listing Created", { props: { category, subcategory } });
-          await props.onCreatedAction?.(id);
+          await props.onCreatedAction?.(newId);
           setPendingFiles([]);
           return;
         }
@@ -224,6 +240,8 @@ export default function ProductForm(props: Props) {
     ]
   );
 
+  const phoneInvalid = Boolean(phone) && !normalizeMsisdn(phone);
+
   return (
     <form
       onSubmit={submit}
@@ -248,6 +266,7 @@ export default function ProductForm(props: Props) {
             onChange={(e) => setName(e.target.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             required
+            minLength={3}
           />
         </div>
 
@@ -323,8 +342,12 @@ export default function ProductForm(props: Props) {
               setPrice(v === "" ? "" : Math.max(0, Math.floor(Number(v) || 0)));
             }}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            placeholder="Leave empty for “Contact for price”"
+            placeholder='Leave empty for "Contact for price"'
+            aria-describedby="pf-price-help"
           />
+          <p id="pf-price-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            Leave empty to show <em>Contact for price</em>.
+          </p>
         </div>
 
         {/* Location */}
@@ -349,7 +372,15 @@ export default function ProductForm(props: Props) {
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="2547XXXXXXXX"
             inputMode="tel"
+            aria-invalid={phoneInvalid || undefined}
           />
+          <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            {phone
+              ? phoneInvalid
+                ? "Please use Safaricom format: 2547XXXXXXXX"
+                : `Normalized: ${normalizeMsisdn(phone)}`
+              : "Optional. Buyers can call or WhatsApp."}
+          </div>
         </div>
 
         {/* Description */}
@@ -375,7 +406,9 @@ export default function ProductForm(props: Props) {
             max={10}
           />
           <div className="mt-2 text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
-            {pendingFiles.length ? `${pendingFiles.length} new selected (to upload on save)` : "No new files selected"}
+            {pendingFiles.length
+              ? `${pendingFiles.length} new selected (to upload on save)`
+              : "No new files selected"}
           </div>
         </div>
       </div>
@@ -385,7 +418,9 @@ export default function ProductForm(props: Props) {
         <button
           type="submit"
           disabled={!canSubmit || busy}
-          className={`rounded-xl px-4 py-2 text-white ${!canSubmit || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"}`}
+          className={`rounded-xl px-4 py-2 text-white ${
+            !canSubmit || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"
+          }`}
           aria-busy={busy ? "true" : "false"}
         >
           {busy ? (isEdit ? "Saving…" : "Posting…") : isEdit ? "Save changes" : "Post product"}

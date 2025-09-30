@@ -91,7 +91,9 @@ type PriceClause = { gte?: number; lte?: number };
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
-    console.log("[/api/products GET]", PRODUCTS_VER, url.toString());
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[/api/products GET]", PRODUCTS_VER, url.toString());
+    }
 
     // Clamp q to avoid expensive scans on huge strings
     const rawQ = (url.searchParams.get("q") || "").trim();
@@ -149,8 +151,13 @@ export async function GET(req: NextRequest) {
     if (sellerId) and.push({ sellerId });
     if (sellerUsername)
       and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
-    if (typeof featured === "boolean") and.push({ featured });
-    if (verifiedOnly === true) and.push({ featured: true });
+
+    // verifiedOnly should override featured to avoid contradictory filters
+    if (verifiedOnly === true) {
+      and.push({ featured: true });
+    } else if (typeof featured === "boolean") {
+      and.push({ featured });
+    }
 
     // Price filter:
     // - Apply ONLY if minPrice or maxPrice is provided
@@ -191,9 +198,11 @@ export async function GET(req: NextRequest) {
         ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
         : [{ createdAt: "desc" as const }, { id: "desc" as const }];
 
-    console.log("[/api/products WHERE]", safe(where));
-    console.log("[/api/products ORDER]", safe(orderBy));
-    console.log("[/api/products page/pageSize]", page, pageSize);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[/api/products WHERE]", safe(where));
+      console.log("[/api/products ORDER]", safe(orderBy));
+      console.log("[/api/products page/pageSize]", page, pageSize);
+    }
 
     // Resolve user only if caller explicitly wants personal favorite flag
     let userId: string | null = null;
@@ -230,7 +239,7 @@ export async function GET(req: NextRequest) {
             page,
             pageSize,
             total: 0,
-            totalPages: 0,
+            totalPages: 1, // keep UI stable
             sort,
             items: [],
             facets: wantFacets ? { categories: [], brands: [], conditions: [] } : undefined,
@@ -241,6 +250,7 @@ export async function GET(req: NextRequest) {
         );
         attachVersion(res.headers);
         res.headers.set("X-Total-Count", "0");
+        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
         return res;
       }
     }
@@ -293,12 +303,14 @@ export async function GET(req: NextRequest) {
     const res = userId ? jsonPrivate(payload) : jsonPublic(payload, 60);
     attachVersion(res.headers);
     res.headers.set("X-Total-Count", String(total));
+    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
     return res;
   } catch (e: any) {
     // eslint-disable-next-line no-console
     console.warn("[/api/products GET] ERROR:", e?.message, e);
     const res = jsonPrivate({ error: "Server error" }, { status: 500 });
     attachVersion(res.headers);
+    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
     return res;
   }
 }
@@ -354,11 +366,13 @@ async function computeFacets(where: any) {
 export async function HEAD() {
   const res = jsonPublic(null, 60, { status: 204 });
   attachVersion(res.headers);
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 
 export async function OPTIONS() {
   const res = jsonPublic({ ok: true }, 60, { status: 200 });
   attachVersion(res.headers);
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }

@@ -31,7 +31,7 @@ function NavLink({
         "px-2 py-1 rounded-md transition",
         isActive
           ? "text-[#161748] dark:text-white bg-black/5 dark:bg-white/10"
-          : "text-gray-700 hover:bg-black/5 dark:text-slate-200 dark:hover:bg:white/10 dark:hover:bg-white/10",
+          : "text-gray-700 hover:bg-black/5 dark:text-slate-200 dark:hover:bg-white/10",
         className,
       ].join(" ")}
       aria-current={isActive ? "page" : undefined}
@@ -56,7 +56,7 @@ export default function Header() {
 
   // Pinned inline search
   const [inlineOpen, setInlineOpen] = useState(false);
-  const inlineWrapRef = useRef<HTMLDivElement | null>(null); // correct typing
+  const inlineWrapRef = useRef<HTMLDivElement | null>(null);
   const inlineBtnId = useId();
   useOutsideClick(inlineWrapRef, () => setInlineOpen(false));
 

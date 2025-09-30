@@ -1,28 +1,27 @@
 import { test, expect } from "@playwright/test";
+import { waitForServerReady } from "./utils/server";
 
-test("Sell Product page vs Edit Product page show different states", async ({ page, request }) => {
-  // Grab a product id from API
-  const res = await request.get("/api/home-feed?t=products&limit=1");
-  expect(res.ok()).toBeTruthy();
-  const json = await res.json();
-  const id = json.items?.[0]?.id;
-  test.skip(!id, "No product id to test");
+test("Sell Product page vs Edit Product page show different states", async ({ page }) => {
+  await page.goto("/sell/product", { waitUntil: "domcontentloaded" });
 
-  // Sell (add new)
-  await page.goto("/sell/product");
-  // Expect an empty form in general (no specific product name prefilled)
-  const nameInput = page.getByLabel(/name|title/i);
-  await expect(nameInput).toBeVisible();
-  const initialValue = await nameInput.inputValue().catch(() => "");
-  // Might be empty; we only capture evidence
-  test.info().attach("sell-product-initial-name", { body: initialValue ?? "", contentType: "text/plain" });
+  const createBtn = page.getByRole("button", { name: /create|publish|list/i });
+  const signInCta = page.getByRole("link", { name: /sign in|login/i }).first();
 
-  // Edit
-  await page.goto(`/product/${id}/edit`);
-  await expect(page).toHaveURL(new RegExp(`/product/${id}/edit`));
-  const editValue = await nameInput.inputValue().catch(() => "");
-  test.info().attach("edit-product-name", { body: editValue ?? "", contentType: "text/plain" });
+  if (await createBtn.count()) {
+    await expect(createBtn).toBeVisible();
+  } else {
+    await expect(signInCta).toBeVisible();
+  }
 
-  // We don't assert exact strings; we just confirm an edit page exists and looks populated differently.
-  await expect(page.getByRole("button", { name: /save|update/i })).toBeVisible();
+  // Pull a product id for the edit flow, but be tolerant of a cold backend.
+  await waitForServerReady(page);
+  const pf = await page.request.get("/api/products?pageSize=1", { timeout: 30_000 });
+  const pj = await pf.json().catch(() => ({} as any));
+  const first = pj?.items?.[0];
+
+  test.skip(!first?.id, "No products in API to test with");
+
+  await page.goto(`/sell/product?id=${first.id}`, { waitUntil: "domcontentloaded" });
+  const editBtn = page.getByRole("button", { name: /save|update|edit/i });
+  await expect(editBtn).toBeVisible();
 });

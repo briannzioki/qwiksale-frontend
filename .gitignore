@@ -51,3 +51,5 @@ bypass.txt
 playwright-report/
 test-results/
 
+
+prisma.config.ts

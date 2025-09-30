@@ -1,11 +1,12 @@
 // src/app/search/InfiniteClient.tsx
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ProductCard from "@/app/components/ProductCard";
-import ServiceCard from "@/app/components/ServiceCard";
 import InfiniteLoader from "@/app/components/InfiniteLoader";
 import type { Sort } from "./SearchClient";
+
+/* ------------------------------ Types ------------------------------ */
 
 type Envelope<T> = {
   page: number;
@@ -46,26 +47,21 @@ type BaseParams = {
   subcategory?: string;
   brand?: string;
   condition?: string;
-  /** matches your page param name */
   featured?: boolean;
   minPrice?: number;
   maxPrice?: number;
-  /** 🔒 use unified sort enum */
   sort: Sort;
   pageSize: number;
   type: "product" | "service";
 };
 
 type Props = {
-  /** "/api/products" or "/api/services" (already consistent with your page) */
-  endpoint: string;
-  /** Initial page rendered by the server (page 1) */
+  endpoint: string; // "/api/products" or "/api/services"
   initial: Envelope<ProductHit> | Envelope<ServiceHit>;
-  /** Filter params to reuse when fetching more pages */
   params: BaseParams;
 };
 
-/* ------------------------------ util ------------------------------ */
+/* ------------------------------ Util ------------------------------ */
 
 function buildQS(params: Record<string, unknown>) {
   const q = new URLSearchParams();
@@ -77,7 +73,7 @@ function buildQS(params: Record<string, unknown>) {
   return q.toString();
 }
 
-/* ---------------------------- component --------------------------- */
+/* ---------------------------- Component --------------------------- */
 
 export function InfiniteClient({ endpoint, initial, params }: Props) {
   const isProduct = params.type === "product";
@@ -86,7 +82,7 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
   const idsRef = useRef<Set<string>>(new Set(initial.items.map((i: any) => String(i.id))));
 
   // list state
-  const [pages, setPages] = useState<Array<ProductHit[] | ServiceHit[]>>([initial.items]);
+  const [pages, setPages] = useState<Array<ProductHit[] | ServiceHit[]>>([initial.items as any]);
   const [page, setPage] = useState<number>(initial.page);
   const [totalPages, setTotalPages] = useState<number>(initial.totalPages);
   const [loading, setLoading] = useState<boolean>(false);
@@ -160,24 +156,23 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
         return true;
       });
 
-      setPages((prev) => (fresh.length ? [...prev, fresh] : prev));
+      setPages((prev) => (fresh.length ? [...prev, fresh as any] : prev));
       setPage(data.page);
       setTotalPages(data.totalPages);
       if (data.page >= data.totalPages) setDone(true);
     } catch (e: any) {
-      if (e?.name === "AbortError") return; // ignore aborted
-      setError("Network error. Please retry.");
+      if (e?.name !== "AbortError") setError("Network error. Please retry.");
     } finally {
       setLoading(false);
     }
   }, [endpoint, page, totalPages, params, loading, done]);
 
-  // Setup IntersectionObserver (with debounced trigger & proper cleanup)
+  // Setup IntersectionObserver
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
 
-    if (ioRef.current) ioRef.current.disconnect();
+    ioRef.current?.disconnect();
 
     ioRef.current = new IntersectionObserver(
       (entries) => {
@@ -220,38 +215,76 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
       {/* Pages 2+ render here (page 1 was SSR in the server page) */}
       {items.length > 0 && (
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-          {items.map((it) =>
-            isProduct ? (
-              <ProductCard
-                key={(it as ProductHit).id}
-                id={(it as ProductHit).id}
-                name={(it as ProductHit).name}
-                image={(it as ProductHit).image ?? null}
-                price={(it as ProductHit).price === 0 ? null : (it as ProductHit).price ?? null}
-                {...(typeof (it as ProductHit).featured === "boolean"
-                  ? { featured: (it as ProductHit).featured }
-                  : {})}
-              />
-            ) : (
-              <ServiceCard
-                key={(it as ServiceHit).id}
-                id={(it as ServiceHit).id}
-                name={(it as ServiceHit).name ?? (it as ServiceHit).title ?? "Service"}
-                image={(it as ServiceHit).image ?? null}
-                price={(it as ServiceHit).price ?? null}
-                {...((it as ServiceHit).rateType ? { rateType: (it as ServiceHit).rateType } : {})}
-                {...(((it as ServiceHit).serviceArea != null)
-                  ? { serviceArea: (it as ServiceHit).serviceArea }
-                  : {})}
-                {...(((it as ServiceHit).availability != null)
-                  ? { availability: (it as ServiceHit).availability }
-                  : {})}
-                {...(typeof (it as ServiceHit).featured === "boolean"
-                  ? { featured: (it as ServiceHit).featured }
-                  : {})}
-              />
-            )
-          )}
+          {items.map((it) => {
+            if (isProduct) {
+              const p = it as ProductHit;
+              const href = `/product/${p.id}`;
+              const hasPrice = typeof p.price === "number" && p.price > 0;
+              const aria = hasPrice
+                ? `Product: ${p.name} — priced at KSh ${p.price!.toLocaleString()}`
+                : `Product: ${p.name}`;
+              return (
+                <Link
+                  key={p.id}
+                  href={href}
+                  aria-label={aria}
+                  className="group block overflow-hidden rounded-xl border bg-white shadow-sm hover:shadow-md focus:outline-none focus:ring dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="aspect-[4/3] w-full bg-gray-100 dark:bg-slate-800">
+                    <div
+                      className="h-full w-full"
+                      style={{
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                        backgroundImage: p.image ? `url(${p.image})` : "none",
+                      }}
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <div className="p-3">
+                    <div className="line-clamp-1 text-sm font-medium">{p.name}</div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-gray-600 dark:text-slate-400">
+                      <span className="line-clamp-1">{p.category || p.subcategory || "—"}</span>
+                      <span>{hasPrice ? `KSh ${p.price!.toLocaleString()}` : "—"}</span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            }
+
+            const s = it as ServiceHit;
+            const name = s.name ?? s.title ?? "Service";
+            const href = `/service/${s.id}`;
+            const hasPrice = typeof s.price === "number" && s.price > 0;
+            const aria = `Service: ${name}`;
+            return (
+              <Link
+                key={s.id}
+                href={href}
+                aria-label={aria}
+                className="group block overflow-hidden rounded-xl border bg-white shadow-sm hover:shadow-md focus:outline-none focus:ring dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div className="aspect-[4/3] w-full bg-gray-100 dark:bg-slate-800">
+                  <div
+                    className="h-full w-full"
+                    style={{
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                      backgroundImage: s.image ? `url(${s.image})` : "none",
+                    }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="p-3">
+                  <div className="line-clamp-1 text-sm font-medium">{name}</div>
+                  <div className="mt-1 flex items-center justify-between text-xs text-gray-600 dark:text-slate-400">
+                    <span className="line-clamp-1">{s.serviceArea || s.availability || "—"}</span>
+                    <span>{hasPrice ? `KSh ${s.price!.toLocaleString()}` : "—"}</span>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
 

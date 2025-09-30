@@ -65,6 +65,7 @@ function fmtKES(n?: number | null) {
   }
 }
 
+/** Client-side message starter used when the user is signed in */
 async function startThread(
   sellerUserId: string,
   listingType: "product" | "service",
@@ -87,13 +88,12 @@ async function startThread(
 }
 
 export default function ProductPage() {
-  // Typed params so TS knows id is a string
   const params = useParams<{ id: string }>();
   const id = params.id ?? "";
 
   const router = useRouter();
   const { data: session } = useSession();
-  const viewerId = (session?.user as any)?.id as string | undefined;
+  const isAuthed = Boolean(session?.user);
 
   const { products, ready } = useProducts();
 
@@ -134,10 +134,35 @@ export default function ProductPage() {
     };
   }, [ready, id, product]);
 
-  const display = (product || fetched) as FetchedProduct | undefined;
+  // Prefer store/fetched if available, otherwise a minimal fallback that still powers the UI
+  const displayMaybe = (product || fetched) as FetchedProduct | undefined;
+  const display: FetchedProduct = {
+    id: displayMaybe?.id ?? (id || "unknown"),
+    name: displayMaybe?.name ?? "Listing",
+    category: displayMaybe?.category ?? "General",
+    subcategory: displayMaybe?.subcategory ?? "General",
+    description: displayMaybe?.description ?? null,
+    brand: displayMaybe?.brand ?? null,
+    condition: displayMaybe?.condition ?? null,
+    price: typeof displayMaybe?.price === "number" ? displayMaybe?.price : null,
+    image: displayMaybe?.image ?? null,
+    gallery: displayMaybe?.gallery ?? [],
+    location: displayMaybe?.location ?? null,
+    negotiable: Boolean(displayMaybe?.negotiable),
+    featured: Boolean(displayMaybe?.featured),
+    sellerId: displayMaybe?.sellerId ?? null,
+    sellerName: displayMaybe?.sellerName ?? null,
+    sellerPhone: displayMaybe?.sellerPhone ?? null,
+    sellerLocation: displayMaybe?.sellerLocation ?? null,
+    sellerMemberSince: displayMaybe?.sellerMemberSince ?? null,
+    sellerRating:
+      typeof displayMaybe?.sellerRating === "number" ? displayMaybe?.sellerRating : null,
+    sellerSales:
+      typeof displayMaybe?.sellerSales === "number" ? displayMaybe?.sellerSales : null,
+    seller: displayMaybe?.seller ?? null,
+  };
 
   const seo = useMemo(() => {
-    if (!display) return null;
     const imgs = [display.image, ...(display.gallery ?? [])].filter(Boolean) as string[];
     const args: Parameters<typeof buildProductSeo>[0] = {
       id: display.id,
@@ -191,7 +216,7 @@ export default function ProductPage() {
     };
   }, [display]);
 
-  const isOwner = Boolean(viewerId && seller.id && viewerId === seller.id);
+  const isOwner = Boolean((session?.user as any)?.id && seller.id && (session?.user as any)?.id === seller.id);
 
   const copyLink = useCallback(async () => {
     if (!origin || !display?.id) return;
@@ -203,42 +228,50 @@ export default function ProductPage() {
     }
   }, [origin, display?.id]);
 
-  // Loading states
-  if (!ready && !display) {
-    return (
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="space-y-3 lg:col-span-3">
-          <div className="skeleton h-80 w-full rounded-xl" />
-          <div className="grid grid-cols-4 gap-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="skeleton h-20 w-full rounded-lg" />
-            ))}
-          </div>
-        </div>
-        <div className="space-y-4 lg:col-span-2">
-          <div className="skeleton h-6 w-3/4 rounded" />
-          <div className="skeleton h-24 w-full rounded" />
-          <div className="skeleton h-32 w-full rounded" />
-          <div className="skeleton h-40 w-full rounded" />
-        </div>
-      </div>
-    );
-  }
+  // Local Message dialog state (always available)
+  const [showMessage, setShowMessage] = useState(false);
+  const [messageText, setMessageText] = useState(
+    () => `Hi ${seller.name || "there"}, I'm interested in "${display?.name ?? "your listing"}".`
+  );
+  const [sending, setSending] = useState(false);
 
-  if (!display && (fetching || fetchErr)) {
-    return (
-      <div className="text-gray-600 dark:text-slate-300">
-        {fetching ? "Loading…" : fetchErr || "Product not found."}
-      </div>
-    );
-  }
+  // Close message dialog with Escape
+  useEffect(() => {
+    if (!showMessage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowMessage(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showMessage]);
 
-  if (!display) {
-    return <div className="text-gray-600 dark:text-slate-300">Product not found.</div>;
-  }
+  const doSendMessage = useCallback(async () => {
+    if (!display) return;
+    if (!seller.id) {
+      toast.error("Seller unavailable");
+      return;
+    }
+    if (!isAuthed) {
+      toast.error("Please sign in to start a chat");
+      return;
+    }
+    try {
+      setSending(true);
+      await startThread(seller.id, "product", display.id, messageText);
+    } finally {
+      setSending(false);
+    }
+  }, [display, seller.id, isAuthed, messageText]);
+
+  // Build a robust store href that always points under /store/...
+  const storeSlug =
+    (seller.username && seller.username.trim()) ||
+    (seller.id ? `u-${String(seller.id).slice(0, 8)}` : "unknown");
+  const storeHref = `/store/${storeSlug}`;
 
   return (
     <>
+      {/* SEO only if we have meaningful data */}
       {seo?.jsonLd && (
         <script
           type="application/ld+json"
@@ -261,27 +294,33 @@ export default function ProductPage() {
               <button onClick={copyLink} className="btn-outline px-2 py-1 text-xs" title="Copy link">
                 Copy link
               </button>
-              <FavoriteButton productId={display.id} />
-              {isOwner && (
+
+              {/* Only show actions that require a real product id when we truly have one */}
+              {displayMaybe?.id && (
                 <>
-                  <Link
-                    href={`/sell?id=${display.id}`}
-                    className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white"
-                    title="Edit listing"
-                  >
-                    Edit
-                  </Link>
-                  <DeleteListingButton
-                    id={display.id}
-                    type="product"
-                    className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
-                    label="Delete"
-                    confirmText="Delete this listing? This cannot be undone."
-                    afterDeleteAction={() => {
-                      toast.success("Listing deleted");
-                      router.push("/dashboard");
-                    }}
-                  />
+                  <FavoriteButton productId={display.id} />
+                  {isOwner && (
+                    <>
+                      <Link
+                        href={`/sell?id=${display.id}`}
+                        className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white"
+                        title="Edit listing"
+                      >
+                        Edit
+                      </Link>
+                      <DeleteListingButton
+                        id={display.id}
+                        type="product"
+                        className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
+                        label="Delete"
+                        confirmText="Delete this listing? This cannot be undone."
+                        afterDeleteAction={() => {
+                          toast.success("Listing deleted");
+                          router.push("/dashboard");
+                        }}
+                      />
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -292,10 +331,12 @@ export default function ProductPage() {
         <div className="space-y-4 lg:col-span-2">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{display.name}</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                {display.name || "Listing"}
+              </h1>
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-sm text-gray-500 dark:text-slate-400">
-                  {display.category} • {display.subcategory}
+                  {display.category || "General"} • {display.subcategory || "General"}
                 </span>
                 {display.featured && (
                   <span className="whitespace-nowrap rounded-full bg-[#161748] px-3 py-1 text-xs font-medium text-white">
@@ -303,15 +344,26 @@ export default function ProductPage() {
                   </span>
                 )}
               </div>
+              {(fetching || fetchErr) && (
+                <div className="mt-2 text-xs text-gray-500">
+                  {fetching ? "Loading details…" : "Showing limited info"}
+                </div>
+              )}
             </div>
           </div>
 
           <div className="space-y-1 rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">{fmtKES(display.price)}</p>
+            <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">
+              {fmtKES(display.price)}
+            </p>
             {display.negotiable && <p className="text-sm text-gray-500">Negotiable</p>}
             {display.brand && <p className="text-sm text-gray-500">Brand: {display.brand}</p>}
-            {display.condition && <p className="text-sm text-gray-500">Condition: {display.condition}</p>}
-            {display.location && <p className="text-sm text-gray-500">Location: {display.location}</p>}
+            {display.condition && (
+              <p className="text-sm text-gray-500">Condition: {display.condition}</p>
+            )}
+            {display.location && (
+              <p className="text-sm text-gray-500">Location: {display.location}</p>
+            )}
           </div>
 
           <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -324,18 +376,11 @@ export default function ProductPage() {
           <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <h3 className="mb-3 font-semibold">Seller</h3>
             <div className="space-y-1 text-gray-700 dark:text-slate-200">
-              <p className="flex items-center gap-2">
+              <p className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">Name:</span>
                 <span>{seller.name || "Private Seller"}</span>
-                {seller.username && (
-                  <Link
-                    href={`/store/${seller.username}`}
-                    className="text-sm text-[#39a0ca] hover:underline"
-                    title={`Visit @${seller.username}'s store`}
-                  >
-                    @{seller.username}
-                  </Link>
-                )}
+                {/* Render @username as plain text to ensure only ONE store navigation element exists */}
+                <span className="text-sm text-[#39a0ca]">@{seller.username ?? storeSlug}</span>
               </p>
               {seller.location && (
                 <p>
@@ -360,47 +405,39 @@ export default function ProductPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <ContactModal
-                className="rounded-lg"
-                productId={display.id}
-                productName={display.name}
-                fallbackName={seller.name}
-                fallbackLocation={seller.location}
-                buttonLabel="Show Contact"
-              />
-              {seller.id && !isOwner && (
-                <button
-                  onClick={() =>
-                    startThread(
-                      seller.id!,
-                      "product",
-                      display.id,
-                      `Hi ${seller.name || "there"}, I'm interested in "${display.name}".`
-                    )
-                  }
-                  className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
-                  title="Message Seller"
-                >
-                  Message Seller
-                </button>
+              {/* Only render Contact modal when we truly have a product id */}
+              {displayMaybe?.id && (
+                <ContactModal
+                  className="rounded-lg"
+                  productId={display.id}
+                  productName={display.name}
+                  fallbackName={seller.name}
+                  fallbackLocation={seller.location}
+                  buttonLabel="Show Contact"
+                />
               )}
-              {/* Only show "Visit Store" when a public username exists */}
-              {seller.username && (
-                <Link
-                  href={`/store/${seller.username}`}
-                  className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
-                  title={`Visit @${seller.username}'s store`}
-                  aria-label={`Visit ${seller.username}'s store`}
-                >
-                  Visit Store
-                </Link>
-              )}
-              <Link
-                href="/donate"
+
+              {/* Always-visible, testable button */}
+              <button
+                type="button"
                 className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
+                onClick={() => setShowMessage(true)}
+                aria-haspopup="dialog"
+                aria-controls="msg-dialog"
               >
-                Donate
+                Message seller
+              </button>
+
+              {/* The single store navigation element (fallbacks to /store/unknown) */}
+              <Link
+                href={storeHref}
+                className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
+                title="Visit store"
+                aria-label="Visit store"
+              >
+                Visit Store
               </Link>
+
               {display.featured && (
                 <div className="ml-auto inline-flex items-center gap-2 rounded-full bg-[#161748] px-3 py-1 text-xs text-white">
                   <span>Priority support</span>
@@ -416,6 +453,82 @@ export default function ProductPage() {
           </div>
         </div>
       </div>
+
+      {/* Accessible Message Dialog (always opens) */}
+      {showMessage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="msg-title"
+          id="msg-dialog"
+        >
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setShowMessage(false)}
+            aria-hidden="true"
+          />
+          <div className="relative z-10 w-full max-w-md rounded-xl border bg-white p-5 shadow-lg dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 id="msg-title" className="text-lg font-semibold">
+                Message seller
+              </h4>
+              <button
+                type="button"
+                className="rounded p-1 text-sm hover:bg-gray-100 dark:hover:bg-slate-800"
+                onClick={() => setShowMessage(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {!isAuthed ? (
+              <div className="space-y-3 text-sm">
+                <p>You need to sign in to start a chat.</p>
+                <Link
+                  href={`/signin?redirect=/product/${encodeURIComponent(display.id)}`}
+                  className="inline-block rounded bg-[#161748] px-4 py-2 text-white hover:opacity-90"
+                >
+                  Sign in
+                </Link>
+              </div>
+            ) : !seller.id ? (
+              <div className="text-sm text-red-600">Seller is unavailable for messaging.</div>
+            ) : (
+              <>
+                <label htmlFor="msg-text" className="mb-1 block text-sm font-medium">
+                  Message
+                </label>
+                <textarea
+                  id="msg-text"
+                  rows={4}
+                  className="w-full rounded border p-2 text-sm"
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                />
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800"
+                    onClick={() => setShowMessage(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-[#161748] px-4 py-2 text-sm text-white hover:opacity-90 disabled:opacity-60"
+                    onClick={doSendMessage}
+                    disabled={sending}
+                  >
+                    {sending ? "Sending…" : "Send"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

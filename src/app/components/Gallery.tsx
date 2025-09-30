@@ -5,11 +5,11 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import SmartImage from "@/app/components/SmartImage";
 
 type Props = {
-  images: string[];                // array of Cloudinary IDs or absolute URLs
-  initialIndex?: number;           // default 0
+  images: string[];
+  initialIndex?: number;
   className?: string;
-  onCloseAction?: () => void;      // renamed for client component prop-serializability rule
-  /** If true, renders a fullscreen lightbox dialog overlay; if false, inline gallery only */
+  onCloseAction?: () => void;
+  /** When false, Gallery will NOT render its own fullscreen opener and will NOT open a lightbox. */
   lightbox?: boolean;
 };
 
@@ -20,10 +20,7 @@ export default function Gallery({
   onCloseAction,
   lightbox = true,
 }: Props) {
-  const safeImages = useMemo(
-    () => (Array.isArray(images) ? images.filter(Boolean) : []),
-    [images]
-  );
+  const safeImages = useMemo(() => (Array.isArray(images) ? images.filter(Boolean) : []), [images]);
 
   const [idx, setIdx] = useState(
     Math.min(Math.max(0, initialIndex), Math.max(0, safeImages.length - 1))
@@ -32,9 +29,12 @@ export default function Gallery({
   const uid = useId();
   const dialogId = `gallery-${uid}`;
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const thumbsRef = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const [suppressInlineOpener, setSuppressInlineOpener] = useState<boolean>(!lightbox);
 
   const hasPrev = idx > 0;
   const hasNext = idx < safeImages.length - 1;
@@ -59,7 +59,6 @@ export default function Gallery({
     setIdx((i) => Math.min(safeImages.length - 1, i + 1));
   }, [hasNext, safeImages.length]);
 
-  // Clamp idx if images/initialIndex change (prevents out-of-bounds)
   useEffect(() => {
     const len = safeImages.length;
     if (len === 0) return;
@@ -70,12 +69,11 @@ export default function Gallery({
     });
   }, [safeImages, initialIndex]);
 
-  // Reset thumb refs when images change
   useEffect(() => {
     thumbsRef.current = [];
   }, [safeImages]);
 
-  // Keyboard support (←/→/Esc) when modal is open
+  // Keyboard: arrows + Escape to close
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -85,9 +83,9 @@ export default function Gallery({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, goPrev, goNext]);
+  }, [open, goPrev, goNext, closeLightbox]);
 
-  // Focus trap when modal open
+  // Basic focus trap when open
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -111,14 +109,13 @@ export default function Gallery({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // autofocus close button when opened
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => closeBtnRef.current?.focus(), 20);
     return () => clearTimeout(t);
   }, [open]);
 
-  // Prevent background scroll when lightbox is open
+  // Prevent body scroll when lightbox is open
   useEffect(() => {
     if (!lightbox) return;
     if (open) {
@@ -130,6 +127,89 @@ export default function Gallery({
     }
   }, [open, lightbox]);
 
+  // --- Robust de-duplication of openers + external overlay wiring ---
+  const overlayRef = useRef<HTMLElement | null>(null);
+  const overlayHandlerRef = useRef<(e: Event) => void>(() => {});
+  const openRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    // keep the latest open action
+    openRef.current = () => openLightbox();
+  });
+
+  useEffect(() => {
+    if (!lightbox) {
+      setSuppressInlineOpener(true);
+      // cleanup any prior overlay listener
+      if (overlayRef.current && overlayHandlerRef.current) {
+        overlayRef.current.removeEventListener("click", overlayHandlerRef.current, true);
+      }
+      overlayRef.current = null;
+      return;
+    }
+    const node = rootRef.current;
+    if (!node) return;
+
+    const getWrap = (): HTMLElement => {
+      const wrap =
+        (node.closest("[data-gallery-wrap]") as HTMLElement | null) ??
+        node.parentElement ??
+        document.body;
+      return wrap;
+    };
+
+    const refresh = () => {
+      const wrap = getWrap();
+
+      const externalOverlay = wrap.querySelector<HTMLElement>("[data-gallery-overlay]");
+      const anotherOpener = wrap.querySelector<HTMLButtonElement>(
+        'button[aria-label="Open image in fullscreen"]:not([data-gallery-internal])'
+      );
+
+      const shouldSuppress = !!(externalOverlay || anotherOpener);
+      setSuppressInlineOpener(shouldSuppress);
+
+      // Manage overlay listener: attach only if an external overlay exists.
+      // Detach from any previous overlay if it changed.
+      if (overlayRef.current && overlayRef.current !== externalOverlay && overlayHandlerRef.current) {
+        overlayRef.current.removeEventListener("click", overlayHandlerRef.current, true);
+        overlayRef.current = null;
+      }
+
+      if (externalOverlay && overlayRef.current !== externalOverlay) {
+        overlayRef.current = externalOverlay;
+        const handler = (e: Event) => {
+          // Don't fight any page-level forwarders; just ensure our lightbox opens.
+          // Avoid calling with an index; open at current idx.
+          openRef.current();
+        };
+        overlayHandlerRef.current = handler;
+        externalOverlay.addEventListener("click", handler, true);
+      }
+    };
+
+    // Initial run
+    refresh();
+
+    // Observe DOM changes around the wrap to re-run refresh if overlays/buttons are injected/removed
+    const wrap = getWrap();
+    const mo = new MutationObserver(() => refresh());
+    mo.observe(wrap, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "aria-label", "data-gallery-overlay"],
+    });
+
+    // Cleanup
+    return () => {
+      mo.disconnect();
+      if (overlayRef.current && overlayHandlerRef.current) {
+        overlayRef.current.removeEventListener("click", overlayHandlerRef.current, true);
+      }
+      overlayRef.current = null;
+    };
+  }, [lightbox]);
+
   if (!safeImages.length) {
     return (
       <div className="rounded-xl border p-4 text-sm text-gray-500 dark:border-slate-800 dark:text-slate-300">
@@ -139,26 +219,33 @@ export default function Gallery({
   }
 
   return (
-    <div className={["w-full", className].join(" ")}>
+    <div ref={rootRef} className={["w-full", className].join(" ")}>
       {/* Inline main image */}
       <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
-        <button
-          type="button"
-          className="absolute inset-0"
-          onClick={() => openLightbox(idx)}
-          aria-label="Open image in fullscreen"
-        />
         <SmartImage
           src={safeImages[idx]}
           alt={`Image ${idx + 1} of ${safeImages.length}`}
           fill
           sizes="(max-width: 768px) 100vw, 800px"
-          className="object-cover"
+          className="object-cover pointer-events-none"
           priority={false}
         />
+
+        {/* Only render our own opener when lightbox is enabled AND no external overlay exists */}
+        {lightbox && !suppressInlineOpener && (
+          <button
+            type="button"
+            className="absolute inset-0 z-[60]"
+            onClick={() => openLightbox(idx)}
+            aria-label="Open image in fullscreen"
+            aria-haspopup="dialog"
+            aria-controls={dialogId}
+            data-gallery-internal
+          />
+        )}
       </div>
 
-      {/* Thumbs */}
+      {/* Thumbnails */}
       <div className="mt-2 grid grid-cols-5 gap-2 md:grid-cols-8">
         {safeImages.map((src, i) => (
           <button
@@ -232,7 +319,7 @@ export default function Gallery({
                   alt={`Image ${idx + 1} of ${safeImages.length}`}
                   fill
                   sizes="100vw"
-                  className="object-contain"
+                  className="object-contain pointer-events-none"
                 />
                 {/* Prev/Next */}
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-between">

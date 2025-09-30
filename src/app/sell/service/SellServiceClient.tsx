@@ -450,85 +450,89 @@ export default function SellServiceClient({ editId }: Props) {
       <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
         {/* Name & Price */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2">
-            <label className="label">Service Name</label>
-            <SuggestInput
-              endpoint="/api/services/suggest"
-              value={name}
-              onChangeAction={async (next) => setName(next)}
-              onPickAction={async (item) => {
-                if (item.type === "service" || item.type === "name") {
-                  setName(item.value);
-                } else if (item.type === "subcategory") {
-                  const parts = item.value.split("•").map((s) => s.trim());
-                  if (parts.length === 2) {
-                    setCategory(parts[0] || category);
-                    setSubcategory(parts[1] || subcategory);
-                  } else {
-                    setSubcategory(item.value);
-                  }
-                } else if (item.type === "category") {
-                  setCategory(item.value);
-                }
-              }}
-              placeholder="e.g. Deep Cleaning for Apartments"
-              typesAllowed={["service", "name", "subcategory", "category"]}
-              inputClassName="input"
-            />
-          </div>
-          <div>
-            <label className="label">Base Price (KES)</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              className="input"
-              value={price}
-              onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
-              placeholder="e.g. 1500 (leave blank for quote)"
-              aria-describedby="price-help"
-              aria-label="Price in Kenyan shillings"
-            />
-            <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              Leave empty for <em>Contact for quote</em>.
-            </p>
-            <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="fixed"
-                  checked={rateType === "fixed"}
-                  onChange={() => setRateType("fixed")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
-                Fixed
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="hour"
-                  checked={rateType === "hour"}
-                  onChange={() => setRateType("hour")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
-                /hour
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="day"
-                  checked={rateType === "day"}
-                  onChange={() => setRateType("day")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
-                /day
-              </label>
-            </div>
-          </div>
-        </div>
+  <div className="md:col-span-2">
+    {/* ✅ Wrap the SuggestInput with the label so the input is labeled */}
+    <label className="label block">
+      Service Name
+      <SuggestInput
+        endpoint="/api/services/suggest"
+        value={name}
+        onChangeAction={async (next) => setName(next)}
+        onPickAction={async (item) => {
+          if (item.type === "service" || item.type === "name") {
+            setName(item.value);
+          } else if (item.type === "subcategory") {
+            const parts = item.value.split("•").map((s) => s.trim());
+            if (parts.length === 2) {
+              setCategory(parts[0] || category);
+              setSubcategory(parts[1] || subcategory);
+            } else {
+              setSubcategory(item.value);
+            }
+          } else if (item.type === "category") {
+            setCategory(item.value);
+          }
+        }}
+        placeholder="e.g. Deep Cleaning for Apartments"
+        typesAllowed={["service", "name", "subcategory", "category"]}
+        inputClassName="input mt-1"
+      />
+    </label>
+  </div>
+
+  <div>
+    <label className="label">Base Price (KES)</label>
+    <input
+      type="number"
+      inputMode="numeric"
+      min={0}
+      className="input"
+      value={price}
+      onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
+      placeholder="e.g. 1500 (leave blank for quote)"
+      aria-describedby="price-help"
+      aria-label="Price in Kenyan shillings"
+    />
+    <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+      Leave empty for <em>Contact for quote</em>.
+    </p>
+    <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+      <label className="inline-flex items-center gap-2">
+        <input
+          type="radio"
+          name="rateType"
+          value="fixed"
+          checked={rateType === "fixed"}
+          onChange={() => setRateType("fixed")}
+          className="rounded border-gray-300 dark:border-slate-600"
+        />
+        Fixed
+      </label>
+      <label className="inline-flex items-center gap-2">
+        <input
+          type="radio"
+          name="rateType"
+          value="hour"
+          checked={rateType === "hour"}
+          onChange={() => setRateType("hour")}
+          className="rounded border-gray-300 dark:border-slate-600"
+        />
+        /hour
+      </label>
+      <label className="inline-flex items-center gap-2">
+        <input
+          type="radio"
+          name="rateType"
+          value="day"
+          checked={rateType === "day"}
+          onChange={() => setRateType("day")}
+          className="rounded border-gray-300 dark:border-slate-600"
+        />
+        /day
+      </label>
+    </div>
+  </div>
+</div>
 
         {/* Category, Subcategory, Area */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
