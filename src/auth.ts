@@ -1,6 +1,7 @@
 // src/auth.ts
 import "server-only";
 
+import { cache } from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
@@ -16,10 +17,11 @@ export interface SessionUser {
   subscription?: SubscriptionTier | null;
 }
 
-/** Canonical server-side session fetcher. Returns `Session | null`. */
-export async function auth() {
-  return getServerSession(authOptions);
-}
+/**
+ * Canonical server-side session fetcher.
+ * Wrapped in `cache()` so multiple calls in the same request only hit NextAuth once.
+ */
+export const auth = cache(async () => getServerSession(authOptions));
 export type Session = Awaited<ReturnType<typeof auth>>;
 
 /** Get the typed `session.user` or `null`. */
@@ -28,13 +30,22 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   return (s?.user as SessionUser | undefined) ?? null;
 }
 
+/** Convenience: boolean check for authentication. */
+export async function isAuthenticated(): Promise<boolean> {
+  return !!(await getSessionUser());
+}
+
+/** Return just the user id or null. */
+export async function requireUserIdOrNull(): Promise<string | null> {
+  const u = await getSessionUser();
+  return u?.id ?? null;
+}
+
 /**
  * Require a session; if missing, redirect to sign-in (with callback).
  * After the redirect guard, we assert the session is non-null for TS.
  */
-export async function requireAuth(
-  callbackUrl?: string
-): Promise<NonNullable<Session>> {
+export async function requireAuth(callbackUrl?: string): Promise<NonNullable<Session>> {
   const s = await auth();
   if (!s?.user?.id) {
     const to = callbackUrl ?? "/";
@@ -55,3 +66,17 @@ export async function requireUser(callbackUrl?: string): Promise<SessionUser> {
   }
   return u as SessionUser;
 }
+
+/* -------------------- Runtime sanity (non-fatal) -------------------- */
+/* Helpful warning in dev/preview if NEXTAUTH_URL is missing/mismatched */
+(() => {
+  if (process.env.NODE_ENV !== "production") {
+    const url = process.env.NEXTAUTH_URL;
+    if (!url) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[auth] NEXTAUTH_URL is not set. Set it in .env for consistent callbacks (e.g. http://localhost:3000)."
+      );
+    }
+  }
+})();

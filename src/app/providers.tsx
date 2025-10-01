@@ -19,10 +19,11 @@ type Props = {
   children: React.ReactNode;
   session?: Session | null;
 
-  /** NextAuth session refetch */
+  /** NextAuth session refetch (seconds). Defaults to 0 to avoid thrash. */
   refetchIntervalSec?: number;
+  /** Avoid refetch on focus by default to prevent churn during nav. */
   refetchOnWindowFocus?: boolean;
-  /** Remount subtree when the signed-in user changes (helps reset client state) */
+  /** Remount subtree when the signed-in user changes (helps reset client state). */
   remountOnUserChange?: boolean;
 
   /** Theme defaults */
@@ -61,8 +62,10 @@ const AnalyticsContext = createContext<AnalyticsContextValue | null>(null);
 
 function useAnalyticsInternal(): AnalyticsContextValue {
   const track = useCallback((event: AnalyticsEvent, payload: AnalyticsPayload = {}) => {
-    // eslint-disable-next-line no-console
-    console.log("[analytics.track]", event, payload);
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.log("[analytics.track]", event, payload);
+    }
   }, []);
   return useMemo(() => ({ track }), [track]);
 }
@@ -152,9 +155,16 @@ function useThemeInternal({
         applyHtmlClass(sys);
       }
     };
-    // Safari < 14 fallback not strictly necessary; optional
-    mql.addEventListener?.("change", onChange);
-    return () => mql.removeEventListener?.("change", onChange);
+    // Cross-browser support (older Safari)
+    if ("addEventListener" in mql) {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    } else {
+      // @ts-expect-error - fallback for older browsers
+      mql.addListener(onChange);
+      // @ts-expect-error - fallback for older browsers
+      return () => mql.removeListener(onChange);
+    }
   }, [enableSystemTheme, theme]);
 
   // Track initial resolved (avoid extra writes)
@@ -207,8 +217,9 @@ export function useTheme(): ThemeContextValue {
 export default function Providers({
   children,
   session = null,
-  refetchIntervalSec = 120,
-  refetchOnWindowFocus = true,
+  // Defaults tuned to avoid session refetch thrashing
+  refetchIntervalSec = 0,
+  refetchOnWindowFocus = false,
   remountOnUserChange = true,
   defaultTheme = "system",
   enableSystemTheme = true,
@@ -226,12 +237,15 @@ export default function Providers({
 
   const analytics = useAnalyticsInternal();
 
+  // Clamp to non-negative integer; SessionProvider treats 0 as "off".
+  const safeInterval = Math.max(0, Math.floor(refetchIntervalSec));
+
   return (
     <SessionProvider
       key={identityKey}
       session={(session ?? null) as Session | null}
-      refetchInterval={Math.max(0, refetchIntervalSec)}
-      refetchOnWindowFocus={refetchOnWindowFocus}
+      refetchInterval={safeInterval}
+      refetchOnWindowFocus={!!refetchOnWindowFocus}
     >
       <ThemeProviderInline
         defaultTheme={defaultTheme}

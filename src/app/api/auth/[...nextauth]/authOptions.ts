@@ -1,3 +1,4 @@
+// src/app/api/auth/[...nextauth]/authOptions.ts
 import { createTransport } from "nodemailer";
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
@@ -5,42 +6,44 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import EmailProvider from "next-auth/providers/email";
 
-import { prisma } from "@/lib/db"; // centralized prisma client
+import { prisma } from "@/lib/db";
 import { verifyPassword, hashPassword } from "@/server/auth";
 
 const isProd = process.env.NODE_ENV === "production";
 
-// Optional: allow auto-signup for new credentials users
+// Allow auto-signup for credentials users (env override-able)
 const ALLOW_CREDS_AUTO_SIGNUP = (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
 
-// Where users are allowed to land after auth (within same origin)
+// Safe in-origin post-auth landings
 const ALLOWED_CALLBACK_PATHS = new Set<string>([
   "/",
   "/sell",
   "/saved",
   "/account/profile",
   "/account/complete-profile",
-  "/admin", // ✅ allow landing on admin after sign-in
+  "/admin",
 ]);
 
 export const authOptions: NextAuthOptions = {
   debug: process.env["NEXTAUTH_DEBUG"] === "1",
 
-  // Let NextAuth manage secure cookies; provide secret via env.
+  // Rely on env for secret (do not hard-code)
   ...(process.env["NEXTAUTH_SECRET"] ? { secret: process.env["NEXTAUTH_SECRET"]! } : {}),
 
   adapter: PrismaAdapter(prisma),
 
+  // Use JWT sessions for edge-friendly serialization and fewer DB hits
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30d
-    updateAge: 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,   // refresh JWT claims daily
   },
 
+  // Friendly sign-in page
   pages: { signIn: "/signin" },
 
   providers: [
-    // Email magic-link provider
+    // Email magic link (optional; enabled only if configured)
     ...(process.env["EMAIL_SERVER"] && process.env["EMAIL_FROM"]
       ? [
           EmailProvider({
@@ -74,6 +77,7 @@ export const authOptions: NextAuthOptions = {
         ]
       : []),
 
+    // Email + Password (Credentials)
     Credentials({
       name: "Email & Password",
       credentials: {
@@ -86,6 +90,7 @@ export const authOptions: NextAuthOptions = {
 
         const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!EMAIL_RE.test(email) || password.length < 6) {
+          // tiny delay to discourage brute-forcing
           await new Promise((r) => setTimeout(r, 250));
           return null;
         }
@@ -101,7 +106,7 @@ export const authOptions: NextAuthOptions = {
             subscription: true,
             username: true,
             referralCode: true,
-            role: true, // (optional here; authoritative fetch happens in jwt callback)
+            role: true,
           },
         });
 
@@ -138,6 +143,7 @@ export const authOptions: NextAuthOptions = {
       },
     }),
 
+    // Google OAuth (optional; enabled only if configured)
     ...(process.env["GOOGLE_CLIENT_ID"] && process.env["GOOGLE_CLIENT_SECRET"]
       ? [
           Google({
@@ -152,12 +158,18 @@ export const authOptions: NextAuthOptions = {
     async redirect({ url, baseUrl }) {
       try {
         const u = new URL(url, baseUrl);
+
+        // Never allow cross-origin redirects
         if (u.origin !== baseUrl) return baseUrl;
+
+        // Don't bounce users to /signup after auth
         if (u.pathname === "/signup") return baseUrl;
 
         if (ALLOWED_CALLBACK_PATHS.has(u.pathname) || u.pathname === "/") {
           return u.toString();
         }
+
+        // Respect ?callbackUrl= if it's same-origin and allowed
         const cb = u.searchParams.get("callbackUrl");
         if (cb) {
           const cbu = new URL(cb, baseUrl);
@@ -187,14 +199,14 @@ export const authOptions: NextAuthOptions = {
               subscription: true,
               username: true,
               referralCode: true,
-              role: true, // ✅ pull role from DB
+              role: true,
             },
           });
           if (profile) {
             (token as any).subscription = profile.subscription ?? null;
             (token as any).username = profile.username ?? null;
             (token as any).referralCode = profile.referralCode ?? null;
-            (token as any).role = profile.role ?? "USER"; // ✅ keep role on token
+            (token as any).role = profile.role ?? "USER";
           }
         }
       }
@@ -208,7 +220,7 @@ export const authOptions: NextAuthOptions = {
       (session.user as any).subscription = (token as any).subscription ?? null;
       (session.user as any).username = (token as any).username ?? null;
       (session.user as any).referralCode = (token as any).referralCode ?? null;
-      (session.user as any).role = (token as any).role ?? "USER"; // ✅ expose role in session
+      (session.user as any).role = (token as any).role ?? "USER";
       return session;
     },
   },

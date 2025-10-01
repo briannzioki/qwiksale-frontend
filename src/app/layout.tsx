@@ -1,5 +1,4 @@
-﻿// src/app/layout.tsx
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const revalidate = 600;
 
 import "./globals.css";
@@ -166,6 +165,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         data-env={isPreview ? "preview" : "prod"}
       >
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
+          {/* Providers is a CLIENT component that mounts SessionProvider with no refetch thrash */}
           <Providers>
             <AppShell>{children}</AppShell>
             {/* Mount the toaster once for the whole app */}

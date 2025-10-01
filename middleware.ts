@@ -11,6 +11,7 @@ function makeNonce(): string {
 }
 function makeUUID(): string {
   // Random device id for host-only cookie
+  // randomUUID if available; fallback to time + nonce
   return (crypto as any)?.randomUUID?.() ?? `${Date.now().toString(36)}-${makeNonce()}`;
 }
 
@@ -119,7 +120,8 @@ export default withAuth(
 
     // Treat as HTML navigation if the client accepts HTML (or */*)
     const accept = (req.headers.get("accept") || "").toLowerCase();
-    const isHtml = accept.includes("text/html") || accept.includes("*/*");
+    const isHtmlLike = accept.includes("text/html") || accept.includes("*/*");
+    const isApi = p.startsWith("/api/");
 
     // JSON guard on specific endpoints only (never on /api/auth/**)
     if (
@@ -131,20 +133,20 @@ export default withAuth(
     }
 
     // Forward nonce to app (only needed for HTML)
-    const nonce = isHtml ? makeNonce() : "";
+    const nonce = isHtmlLike && !isApi ? makeNonce() : "";
     const forwarded = new Headers(req.headers);
-    if (isHtml) forwarded.set("x-nonce", nonce);
+    if (nonce) forwarded.set("x-nonce", nonce);
 
     const res = NextResponse.next({ request: { headers: forwarded } });
 
-    // Security headers only for HTML navigations (avoid touching API responses)
-    if (isHtml) {
+    // Security headers ONLY for document navigations (never for /api/*)
+    if (!isApi && isHtmlLike) {
       const sec = buildSecurityHeaders(nonce, isDev);
       for (const [k, v] of sec.entries()) res.headers.set(k, v);
     }
 
-    // Device cookie (host-only; set on HTML only to avoid noisy Set-Cookie on APIs)
-    if (isHtml && !req.cookies.get("qs_did")?.value) {
+    // Device cookie (host-only; set on HTML only; never on /api/*)
+    if (!isApi && isHtmlLike && !req.cookies.get("qs_did")?.value) {
       const did = makeUUID();
       res.cookies.set({
         name: "qs_did",
@@ -164,7 +166,7 @@ export default withAuth(
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
 
-        // Gate only what truly needs auth
+        // Gate only what truly needs auth (pages)
         const needsAuth =
           p.startsWith("/sell") ||
           p.startsWith("/account") ||
@@ -172,9 +174,13 @@ export default withAuth(
           p.startsWith("/messages") ||
           p.startsWith("/saved");
 
+        // Admin-only zones (including API)
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
 
-        if (needsAdmin) return !!token && (token as any).role === "admin";
+        if (needsAdmin) {
+          const role = (token as any)?.role;
+          return !!token && typeof role === "string" && role.toUpperCase() === "ADMIN";
+        }
         if (needsAuth) return !!token;
         return true;
       },
@@ -186,6 +192,7 @@ export default withAuth(
 // One (and only one) config export
 export const config = {
   matcher: [
+    // Exclude Next internals, static assets, and auth/health APIs entirely
     "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|api/health|_vercel|\\.well-known).*)",
   ],
 };

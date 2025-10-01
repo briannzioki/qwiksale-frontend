@@ -10,6 +10,9 @@ const isPreview = process.env.VERCEL_ENV === "preview";
 const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
 const APEX_DOMAIN = process.env.NEXT_PUBLIC_APEX_DOMAIN || "qwiksale.sale";
 
+// Local helper type to avoid the readonly inference issue
+type HeaderRule = { source: string; headers: { key: string; value: string }[] };
+
 const securityHeaders = (): { key: string; value: string }[] => {
   const connect = [
     "'self'",
@@ -99,7 +102,6 @@ const baseConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
 
-  // Only ship browser source maps when we have Sentry token (so they get uploaded)
   productionBrowserSourceMaps: !!process.env.SENTRY_AUTH_TOKEN,
 
   images: {
@@ -120,13 +122,29 @@ const baseConfig: NextConfig = {
   typescript: { ignoreBuildErrors: isPreview },
 
   async headers() {
-    const rules = [{ source: "/:path*", headers: securityHeaders() }];
+    const rules: HeaderRule[] = [
+      // Global security headers
+      { source: "/:path*", headers: securityHeaders() },
+
+      // Never cache auth endpoints
+      {
+        source: "/api/auth/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
+        ],
+      },
+    ];
+
+    // Preview env: disallow indexing
     if (isPreview) {
       rules.push({
         source: "/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noimageindex, noarchive" }],
       });
     }
+
     return rules;
   },
 
@@ -142,7 +160,7 @@ const baseConfig: NextConfig = {
       missing?: Array<{ type: "header" | "cookie" | "query"; key: string; value?: string }>;
     }> = [];
 
-    // Force apex (non-www)
+    // Force apex (non-www) — e.g. www.qwiksale.sale → qwiksale.sale
     if (APEX_DOMAIN) {
       rules.push({
         source: "/:path*",
@@ -152,7 +170,7 @@ const baseConfig: NextConfig = {
       });
     }
 
-    // Force HTTPS (route http → https apex)
+    // Force HTTPS (http → https on apex)
     rules.push({
       source: "/:path*",
       destination: `https://${APEX_DOMAIN}/:path*`,
@@ -175,12 +193,10 @@ const baseConfig: NextConfig = {
   },
 };
 
-// Compose: analyzer first, then Sentry wrapper
 export default withSentryConfig(withAnalyzer(baseConfig), {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   silent: true,
   widenClientFileUpload: true,
-  // Match our /monitoring rewrite so browsers never hit sentry.io directly
   tunnelRoute: "/monitoring",
 });

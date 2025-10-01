@@ -1,4 +1,6 @@
+// src/app/signup/page.tsx
 "use client";
+
 import { Suspense, useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,35 +10,6 @@ import toast from "react-hot-toast";
 /* ----------------------------- helpers ----------------------------- */
 function isSafePath(p?: string | null): p is string {
   return !!p && /^\/(?!\/)/.test(p);
-}
-
-function clearStaleCallbackCookies() {
-  if (typeof document === "undefined") return;
-
-  const names = [
-    "__Secure-next-auth.callback-url",
-    "next-auth.callback-url",
-  ];
-
-  const host = location.hostname;
-  const domains = new Set<string | undefined>([undefined, host]);
-
-  const parts = host.split(".");
-  if (parts.length >= 2) {
-    const apex = "." + parts.slice(-2).join(".");
-    domains.add(apex);
-    domains.add(".qwiksale.sale");
-  }
-
-  const common = `; Path=/; Max-Age=0; SameSite=Lax${
-    location.protocol === "https:" ? "; Secure" : ""
-  }`;
-
-  for (const name of names) {
-    for (const d of domains) {
-      document.cookie = `${name}=deleted${common}${d ? `; Domain=${d}` : ""}`;
-    }
-  }
 }
 
 function strengthLabel(pw: string) {
@@ -52,7 +25,7 @@ function strengthLabel(pw: string) {
 
 const ERR_COPY: Record<string, string> = {
   CredentialsSignin:
-    "This email may already exist or the credentials are invalid. If you signed up with Google, use â€œContinue with Googleâ€.",
+    'This email may already exist or the credentials are invalid. If you signed up with Google, use “Continue with Google”.',
   OAuthAccountNotLinked:
     "This email is already linked to another login method. Use your original sign-in method.",
 };
@@ -75,10 +48,6 @@ function SignUpPageInner() {
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [working, setWorking] = useState<"creds" | "google" | null>(null);
-
-  useEffect(() => {
-    clearStaleCallbackCookies();
-  }, []);
 
   useEffect(() => {
     if (friendlyError) toast.error(friendlyError);
@@ -108,12 +77,11 @@ function SignUpPageInner() {
       });
       if (!res || res.error) {
         toast.error(
-          res?.error ||
-            "Sign-up failed. Try a different email or use â€œContinue with Googleâ€."
+          res?.error || 'Sign-up failed. Try a different email or use “Continue with Google”.'
         );
         return;
       }
-      toast.success("Welcome to QwikSale! ðŸŽ‰");
+      toast.success("Welcome to QwikSale! 🎉");
       router.replace(returnTo);
     } finally {
       setWorking(null);
@@ -157,10 +125,10 @@ function SignUpPageInner() {
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/85">
-            <Badge icon="ðŸ”’">Secure & private</Badge>
-            <Badge icon="âš¡">Fast posting</Badge>
-            <Badge icon="âœ…">Verified listings</Badge>
-            <Badge icon="ðŸ’¬">Direct chat</Badge>
+            <Badge icon="🔒">Secure & private</Badge>
+            <Badge icon="⚡">Fast posting</Badge>
+            <Badge icon="✅">Verified listings</Badge>
+            <Badge icon="💬">Direct chat</Badge>
           </div>
         </div>
 
@@ -180,10 +148,10 @@ function SignUpPageInner() {
               type="button"
             >
               <GoogleIcon className="h-5 w-5" />
-              {working === "google" ? "Opening Googleâ€¦" : "Continue with Google"}
+              {working === "google" ? "Opening Google…" : "Continue with Google"}
             </button>
             <p className="mt-2 text-center text-xs text-gray-500 dark:text-slate-400">
-              Weâ€™ll never post without your permission.
+              We’ll never post without your permission.
             </p>
           </div>
 
@@ -197,6 +165,7 @@ function SignUpPageInner() {
           <form
             onSubmit={onCreate}
             className="rounded-2xl border bg-white p-6 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+            noValidate
           >
             <div className="space-y-4">
               <label className="block">
@@ -211,7 +180,7 @@ function SignUpPageInner() {
                   required
                 />
                 <span className="mt-1 block text-xs text-gray-500 dark:text-slate-400">
-                  Weâ€™ll send important notifications here.
+                  We’ll send important notifications here.
                 </span>
               </label>
 
@@ -276,16 +245,16 @@ function SignUpPageInner() {
                 disabled={!!working}
                 className="mt-1 w-full rounded-xl bg-[#161748] px-4 py-3 font-semibold text-white shadow-sm transition hover:opacity-95 active:scale-[.99] disabled:opacity-60"
               >
-                {working === "creds" ? "Creating accountâ€¦" : "Create account"}
+                {working === "creds" ? "Creating account…" : "Create account"}
               </button>
 
               <p className="text-xs text-gray-600 dark:text-slate-400">
-                By creating an account, you agree to QwikSaleâ€™s{" "}
-                <Link className="underline underline-offset-2" href="/terms">
+                By creating an account, you agree to QwikSale’s{" "}
+                <Link className="underline underline-offset-2" href="/terms" prefetch={false}>
                   Terms
                 </Link>{" "}
                 and{" "}
-                <Link className="underline underline-offset-2" href="/privacy">
+                <Link className="underline underline-offset-2" href="/privacy" prefetch={false}>
                   Privacy Policy
                 </Link>
                 .
@@ -293,7 +262,7 @@ function SignUpPageInner() {
 
               <p className="text-xs text-gray-600 dark:text-slate-400">
                 Already have an account?{" "}
-                <Link className="underline underline-offset-2" href="/signin">
+                <Link className="underline underline-offset-2" href="/signin" prefetch={false}>
                   Sign in
                 </Link>
               </p>
