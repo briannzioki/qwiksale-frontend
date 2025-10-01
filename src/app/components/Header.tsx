@@ -5,7 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type MouseEventHandler,
+} from "react";
 import UserAvatar from "@/app/components/UserAvatar";
 import SearchBox from "@/app/components/SearchBox";
 import useOutsideClick from "@/app/hooks/useOutsideClick";
@@ -16,17 +23,21 @@ function NavLink({
   children,
   className = "",
   exact = false,
+  onClick,
 }: {
   href: string;
   children: React.ReactNode;
   className?: string;
   exact?: boolean;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 }) {
   const pathname = usePathname();
   const isActive = exact ? pathname === href : pathname.startsWith(href);
   return (
     <Link
       href={href}
+      prefetch={false}
+      {...(onClick ? { onClick } : {})}
       className={[
         "px-2 py-1 rounded-md transition",
         isActive
@@ -122,6 +133,7 @@ export default function Header() {
         {/* Brand */}
         <Link
           href="/"
+          prefetch={false}
           className="tracking-tight font-extrabold text-[#161748] dark:text-white"
           aria-label="QwikSale home"
         >
@@ -210,12 +222,14 @@ export default function Header() {
               </NavLink>
               <Link
                 href="/sell"
+                prefetch={false}
                 className="rounded-lg bg-[#161748] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
               >
                 Post
               </Link>
               <Link
                 href={username ? `/store/${encodeURIComponent(username)}` : "/dashboard"}
+                prefetch={false}
                 className="ml-1"
                 aria-label="Your profile"
                 title={username ? `@${username}` : "Profile"}
@@ -234,6 +248,7 @@ export default function Header() {
               </NavLink>
               <Link
                 href="/signup"
+                prefetch={false}
                 className="rounded-lg bg-[#161748] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
               >
                 Join
@@ -252,25 +267,26 @@ export default function Header() {
       {open && (
         <div className="bg-white/95 dark:bg-slate-900/95 sm:hidden border-t">
           <nav className="mx-auto grid max-w-6xl gap-1 px-4 py-3 text-sm" aria-label="Mobile">
-            <NavLink href="/" exact className="py-2">
+            <NavLink href="/" exact className="py-2" onClick={() => setOpen(false)}>
               Home
             </NavLink>
-            <NavLink href="/sell" className="py-2">
+            <NavLink href="/sell" className="py-2" onClick={() => setOpen(false)}>
               Sell
             </NavLink>
-            <NavLink href="/search" className="py-2">
+            <NavLink href="/search" className="py-2" onClick={() => setOpen(false)}>
               Search
             </NavLink>
-            <NavLink href="/saved" className="py-2">
+            <NavLink href="/saved" className="py-2" onClick={() => setOpen(false)}>
               Saved
             </NavLink>
             {status === "authenticated" ? (
               <>
-                <NavLink href="/dashboard" className="py-2">
+                <NavLink href="/dashboard" className="py-2" onClick={() => setOpen(false)}>
                   Dashboard
                 </NavLink>
                 <Link
                   href={username ? `/store/${encodeURIComponent(username)}` : "/dashboard"}
+                  prefetch={false}
                   className="rounded-md px-2 py-2 hover:bg-black/5 dark:hover:bg-white/10"
                   onClick={() => setOpen(false)}
                 >
@@ -279,11 +295,12 @@ export default function Header() {
               </>
             ) : (
               <>
-                <NavLink href="/signin" className="py-2">
+                <NavLink href="/signin" className="py-2" onClick={() => setOpen(false)}>
                   Sign in
                 </NavLink>
                 <Link
                   href="/signup"
+                  prefetch={false}
                   className="rounded-md bg-[#161748] px-2 py-2 text-center font-medium text-white"
                   onClick={() => setOpen(false)}
                 >

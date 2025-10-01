@@ -153,7 +153,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         "
       >
         <div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2" aria-label="QwikSale — Home">
+          {/* Brand / Home — pure navigation, never signOut */}
+          <Link href="/" className="flex items-center gap-2" aria-label="QwikSale — Home" prefetch={false}>
             <span className="text-lg md:text-xl font-extrabold tracking-tight text-[#161748] dark:text-slate-100">
               QwikSale
             </span>
@@ -168,30 +169,35 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 href="/"
                 className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
+                prefetch={false}
               >
                 Home
               </Link>
               <Link
                 href={categoryHref("Phones & Tablets")}
                 className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
+                prefetch={false}
               >
                 Phones &amp; Tablets
               </Link>
               <Link
                 href={categoryHref("Cars")}
                 className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
+                prefetch={false}
               >
                 Cars
               </Link>
               <Link
                 href={categoryHref("Furniture")}
                 className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
+                prefetch={false}
               >
                 Furniture
               </Link>
               <Link
                 href="/saved"
                 className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
+                prefetch={false}
               >
                 Saved
               </Link>
@@ -207,13 +213,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             ) : session ? (
               <div className="flex items-center gap-2">
+                {/* Dashboard is a plain link — no auth side effect */}
                 <Link
                   href="/dashboard"
-                  className="px-3 py-2 rounded bg-black/5 dark:bg_white/10 text-sm border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
+                  className="px-3 py-2 rounded bg-black/5 dark:bg-white/10 text-sm border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
                   title="Dashboard"
+                  prefetch={false}
                 >
                   Dashboard
                 </Link>
+                {/* The ONLY place that calls signOut */}
                 <button
                   onClick={async () => {
                     if (signingOut) return;
@@ -235,8 +244,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ) : (
               <Link
                 href="/signin"
-                className="px-3 py-2 rounded bg_white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
+                className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
                 title="Sign in"
+                prefetch={false}
                 onClick={() => track("auth_signin_click")}
               >
                 Sign in
@@ -247,6 +257,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               href="/sell"
               className="hidden sm:inline-flex items-center rounded-lg bg-black/5 dark:bg-white/10 px-3 py-2 text-sm font-semibold border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
+              prefetch={false}
               onClick={() => track("nav_sell_click")}
             >
               + Sell
@@ -348,7 +359,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               href="/"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-white/5 hover:bg-white dark:hover:bg_white/10 px-3 py-2 border border-gray-200 dark:border-white/10 shadow-sm transition text-gray-800 dark:text-slate-100"
+              className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 px-3 py-2 border border-gray-200 dark:border-white/10 shadow-sm transition text-gray-800 dark:text-slate-100"
+              prefetch={false}
             >
               <span className="inline-block h-2 w-2 rounded-full bg-[#39a0ca]" />
               All Products
@@ -368,7 +380,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-white/10 shadow-sm"
                     >
                       <details className="group">
-                        <summary className="flex items-center justify_between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
+                        <summary className="flex items-center justify-between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
                           <span className="font-medium">{c.name}</span>
                           <svg
                             width="16"
@@ -389,11 +401,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                               return (
                                 <li key={s.name} className="pl-2">
                                   <details>
-                                    <summary className="flex items-center justify_between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
+                                    <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
                                       <Link
                                         href={categoryHref(s.name)}
                                         onClick={() => setOpen(false)}
                                         className="flex-1"
+                                        prefetch={false}
                                       >
                                         {s.name}
                                       </Link>
@@ -418,6 +431,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                                 href={categoryHref(leaf)}
                                                 onClick={() => setOpen(false)}
                                                 className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-[#39a0ca] transition"
+                                                prefetch={false}
                                               >
                                                 {leaf}
                                               </Link>
@@ -446,6 +460,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 backgroundImage:
                   "linear-gradient(90deg, #161748 0%, #478559 50%, #39a0ca 100%)",
               }}
+              prefetch={false}
             >
               View Saved Items
             </Link>

@@ -1,4 +1,6 @@
+// src/app/signin/page.tsx
 "use client";
+
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -11,7 +13,7 @@ function isSafePath(p?: string | null): p is string {
 
 const ERR_COPY: Record<string, string> = {
   CredentialsSignin:
-    "Email or password is incorrect. If you registered with Google, use â€œContinue with Googleâ€.",
+    'Email or password is incorrect. If you registered with Google, use “Continue with Google”.',
   OAuthSignin: "We couldn't start Google sign-in. Please try again.",
   OAuthCallback: "Google sign-in failed. Please try again.",
   OAuthAccountNotLinked:
@@ -44,24 +46,27 @@ function SignInPageInner() {
     try {
       const saved = localStorage.getItem("auth:lastEmail");
       if (saved) setEmail(saved);
-    } catch {}
+    } catch {
+      /* ignore */
+    }
   }, []);
   useEffect(() => {
     try {
       if (email) localStorage.setItem("auth:lastEmail", email);
-    } catch {}
+    } catch {
+      /* ignore */
+    }
   }, [email]);
 
   useEffect(() => {
     if (friendlyError) toast.error(friendlyError);
   }, [friendlyError]);
 
-  function safeLower(s: string) {
-    return s.trim().toLowerCase();
-  }
+  const safeLower = (s: string) => s.trim().toLowerCase();
 
   async function onCreds(e: React.FormEvent) {
     e.preventDefault();
+    if (working) return;
     if (!email || !password) {
       toast.error("Enter email and password.");
       return;
@@ -71,7 +76,7 @@ function SignInPageInner() {
       const res = await signIn("credentials", {
         email: safeLower(email),
         password,
-        redirect: false,
+        redirect: false, // handle navigation ourselves (safer with custom callbackUrl rules)
       });
       if (!res || res.error) {
         const msg = ERR_COPY[res?.error ?? ""] ?? res?.error ?? "Sign-in failed.";
@@ -86,6 +91,7 @@ function SignInPageInner() {
   }
 
   async function onGoogle() {
+    if (working) return;
     setWorking("google");
     try {
       await signIn("google", { callbackUrl: returnTo });
@@ -117,6 +123,7 @@ function SignInPageInner() {
           <form
             onSubmit={onCreds}
             className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            noValidate
           >
             <div className="space-y-3">
               <div>
@@ -131,8 +138,8 @@ function SignInPageInner() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
-                  required
                   inputMode="email"
+                  required
                 />
               </div>
               <div>
@@ -144,13 +151,13 @@ function SignInPageInner() {
                     id="password"
                     type={showPwd ? "text" : "password"}
                     className="input pr-24"
-                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                    placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyUp={(e) => setCaps(e.getModifierState("CapsLock"))}
                     autoComplete="current-password"
-                    required
                     minLength={6}
+                    required
                     aria-describedby="password-help"
                   />
                   <button
@@ -179,17 +186,17 @@ function SignInPageInner() {
                 aria-busy={working === "creds"}
                 className="btn-gradient-primary mt-2 w-full"
               >
-                {working === "creds" ? "Signing inâ€¦" : "Sign in"}
+                {working === "creds" ? "Signing in…" : "Sign in"}
               </button>
 
               <div className="flex items-center justify-between text-xs text-gray-600 dark:text-slate-400">
                 <span>
                   New here?{" "}
-                  <Link href="/signup" className="underline underline-offset-2">
+                  <Link href="/signup" prefetch={false} className="underline underline-offset-2">
                     Create an account
                   </Link>
                 </span>
-                <Link href="/reset-password" className="underline underline-offset-2">
+                <Link href="/reset-password" prefetch={false} className="underline underline-offset-2">
                   Forgot password?
                 </Link>
               </div>
@@ -205,28 +212,28 @@ function SignInPageInner() {
               aria-label="Continue with Google"
               type="button"
             >
-              {working === "google" ? "Opening Googleâ€¦" : "Continue with Google"}
+              {working === "google" ? "Opening Google…" : "Continue with Google"}
             </button>
             <p className="mt-2 text-[12px] text-gray-500 dark:text-slate-400">
-              By continuing, you agree to QwikSaleâ€™s{" "}
-              <Link className="underline" href="/terms">
+              By continuing, you agree to QwikSale’s{" "}
+              <Link className="underline" href="/terms" prefetch={false}>
                 Terms
               </Link>{" "}
               and{" "}
-              <Link className="underline" href="/privacy">
+              <Link className="underline" href="/privacy" prefetch={false}>
                 Privacy Policy
               </Link>
               .
             </p>
             <div className="mt-3 text-[12px] text-gray-500 dark:text-slate-400">
               <span className="opacity-80">Returning from a protected page?</span>{" "}
-              Youâ€™ll be sent back to <code className="font-mono">{returnTo}</code> after sign-in.
+              You’ll be sent back to <code className="font-mono">{returnTo}</code> after sign-in.
             </div>
           </div>
 
           <div className="text-center text-xs text-gray-600 dark:text-slate-400">
             Prefer to browse first?{" "}
-            <Link href="/" className="underline underline-offset-2">
+            <Link href="/" prefetch={false} className="underline underline-offset-2">
               Continue as guest
             </Link>
           </div>

@@ -9,7 +9,6 @@ import Link from "next/link";
 type Tier = "FREE" | "GOLD" | "PLATINUM";
 
 /* ------------------------- tiny event/analytics ------------------------- */
-
 function emit(name: string, detail?: unknown) {
   // eslint-disable-next-line no-console
   console.log(`[qs:event] ${name}`, detail);
@@ -24,7 +23,6 @@ function track(event: string, payload?: Record<string, unknown>) {
 }
 
 /* ------------------------------- subparts ------------------------------- */
-
 function Initials({ name }: { name?: string | null }) {
   const text =
     (name || "")
@@ -66,7 +64,6 @@ function TierBadge({ tier }: { tier?: Tier }) {
 }
 
 /* --------------------------------- main --------------------------------- */
-
 export default function AuthButtons() {
   const { data: session, status } = useSession();
   const [working, setWorking] = useState<"out" | null>(null);
@@ -79,7 +76,7 @@ export default function AuthButtons() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // close on outside click (details doesn't always close if summary is custom)
+  // close on outside click
   const rootRef = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -95,7 +92,7 @@ export default function AuthButtons() {
 
   // close on Escape + simple menu keyboard nav
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const focusablesRef = useRef<HTMLAnchorElement[] | HTMLButtonElement[] | any[]>([]);
+  const focusablesRef = useRef<HTMLElement[]>([]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!open) return;
@@ -131,6 +128,11 @@ export default function AuthButtons() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  // robust tracking that doesn't rely on native <details> toggle
+  useEffect(() => {
+    if (open) track("auth_dropdown_open");
+  }, [open]);
+
   // ✅ Correct typing for session.user
   const user = (session?.user ?? null) as (Session["user"] & {
     subscription?: Tier;
@@ -144,15 +146,6 @@ export default function AuthButtons() {
     if (user?.email) return user.email.split("@")[0];
     return "User";
   }, [user?.name, user?.email]);
-
-  const onToggle = useCallback(
-    (e: React.SyntheticEvent<HTMLDetailsElement, Event>) => {
-      const isOpen = (e.target as HTMLDetailsElement).open;
-      setOpen(isOpen);
-      if (isOpen) track("auth_dropdown_open");
-    },
-    []
-  );
 
   if (status === "loading") {
     return (
@@ -169,6 +162,7 @@ export default function AuthButtons() {
         className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
         data-testid="auth-signin"
         title="Sign in"
+        prefetch={false}
         onClick={() => track("auth_signin_click")}
       >
         Sign in
@@ -177,12 +171,7 @@ export default function AuthButtons() {
   }
 
   return (
-    <details
-      ref={rootRef}
-      className="relative group"
-      open={open}
-      onToggle={onToggle}
-    >
+    <details ref={rootRef} className="relative group" open={open}>
       <summary
         className="list-none inline-flex items-center gap-2 rounded-lg bg-white/10 px-2.5 py-1.5 text-sm border border-white/30 ring-1 ring-white/20 hover:bg-white/20 transition cursor-pointer select-none"
         aria-haspopup="menu"
@@ -203,11 +192,9 @@ export default function AuthButtons() {
             referrerPolicy="no-referrer"
           />
         ) : (
-          // 👇 coerce undefined to null to satisfy exactOptionalPropertyTypes
           <Initials name={user?.name ?? null} />
         )}
         <span className="hidden sm:inline max-w-[14ch] truncate">{displayName}</span>
-        {/* 👇 pass a definite Tier or omit undefined by coalescing to "FREE" */}
         <TierBadge tier={tier ?? "FREE"} />
         <svg
           width="16"
@@ -237,6 +224,7 @@ export default function AuthButtons() {
             role="menuitem"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            prefetch={false}
           >
             Dashboard
           </Link>
@@ -245,6 +233,7 @@ export default function AuthButtons() {
             role="menuitem"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            prefetch={false}
           >
             Edit profile
           </Link>
@@ -253,6 +242,7 @@ export default function AuthButtons() {
             role="menuitem"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            prefetch={false}
           >
             Saved items
           </Link>
@@ -261,11 +251,13 @@ export default function AuthButtons() {
             role="menuitem"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            prefetch={false}
           >
             {tier && tier !== "FREE" ? "Manage subscription" : "Upgrade subscription"}
           </Link>
         </nav>
 
+        {/* The ONLY action that clears session */}
         <button
           data-testid="auth-signout"
           role="menuitem"
