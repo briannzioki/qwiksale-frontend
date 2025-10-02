@@ -1,36 +1,25 @@
-﻿// src/app/page.tsx
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const revalidate = 300;
 
 import { Suspense } from "react";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
+import { makeApiUrl } from "@/app/lib/url";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 
-/** Build absolute URL on the server (works in dev and prod) */
-function makeApiUrl(path: string) {
-  const explicit = process.env["NEXT_PUBLIC_APP_URL"]; // unified env var
-  const vercel = process.env["VERCEL_URL"];
-  const base =
-    explicit ||
-    (vercel ? (vercel.startsWith("http") ? vercel : `https://${vercel}`) : null) ||
-    "http://127.0.0.1:3000";
-  return new URL(path, base);
-}
-
 /** Read a query param from URLSearchParams or a plain object */
 async function readParam(
-  spPromise: Promise<any> | undefined,
+  spMaybe: Promise<RawSearchParams> | RawSearchParams | undefined,
   key: string
 ): Promise<string | null> {
-  if (!spPromise) return null;
-  const r: any = await spPromise;
+  if (!spMaybe) return null;
+  const r: any = await spMaybe;
 
   // ReadonlyURLSearchParams / URLSearchParams
   if (r && typeof r.get === "function") {
     try {
       const v = r.get(key);
-      return v == null ? null : String(v);
+      return typeof v === "string" ? v : v == null ? null : String(v);
     } catch {
       /* fall through */
     }
@@ -47,18 +36,19 @@ async function readParam(
 }
 
 export default async function HomePage({
-  // IMPORTANT: must be exactly Promise<any> to satisfy Next 15's PageProps check
+  // Accept MaybePromise or plain object; don't import Next's PageProps
   searchParams,
 }: {
-  searchParams: Promise<any>;
+  searchParams?: Promise<RawSearchParams> | RawSearchParams;
 }) {
   const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
-  const t = rawT === "products" || rawT === "services" ? (rawT as "products" | "services") : "all";
+  const isAll = rawT !== "products" && rawT !== "services";
+  const t = (isAll ? "all" : (rawT as "products" | "services"));
 
   const params = new URLSearchParams();
   params.set("limit", "24");
   params.set("pageSize", "24");
-  if (t !== "all") {
+  if (!isAll) {
     params.set("t", t);
     params.set("facets", "true");
   }
