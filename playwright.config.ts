@@ -1,9 +1,9 @@
+// playwright.config.ts (ESM-safe but doesn't use import.meta)
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3000";
+const storageState = path.resolve("tests/e2e/.auth/state.json");
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -19,8 +19,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
-    // read auth state written by globalSetup (empty if no E2E_SESSION_TOKEN)
-    storageState: path.join(__dirname, "tests", "e2e", ".auth", "state.json"),
+    storageState,
   },
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
@@ -31,6 +30,5 @@ export default defineConfig({
         reuseExistingServer: !process.env.CI,
       },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  // writes storage with __Secure-next-auth.session-token when E2E_SESSION_TOKEN is set
   globalSetup: "./tests/e2e/global-setup.ts",
 });
