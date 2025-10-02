@@ -1,4 +1,4 @@
-// src/app/page.tsx
+﻿// src/app/page.tsx
 export const runtime = "nodejs"; // keep Node runtime for server features
 
 import Link from "next/link";
@@ -89,7 +89,7 @@ function labelFor(mode: Mode) {
 }
 
 export default async function HomePage({
-  // IMPORTANT: Promise<any> keeps Next 15 PageProps checker happy
+  // Accept MaybePromise or plain object; don't import Next's PageProps
   searchParams,
 }: {
   searchParams: Promise<any>;
