@@ -1,5 +1,6 @@
 ﻿// src/app/page.tsx
-export const runtime = "nodejs"; // keep Node runtime for server features
+export const runtime = "nodejs";
+export const revalidate = 300;
 
 import Link from "next/link";
 
@@ -39,27 +40,28 @@ function makeApiUrl(path: string) {
   return new URL(path, base);
 }
 
-/** Read a query param from URLSearchParams or a plain object */
-async function readParam(
-  spPromise: Promise<any> | undefined,
-  key: string
-): Promise<string | null> {
-  if (!spPromise) return null;
-  const r: any = await spPromise;
+/** Read a query param from URLSearchParams or a plain object or a Promise of either */
+async function readParam(spOrObj: unknown, key: string): Promise<string | null> {
+  // Await if it's Promise-like
+  const maybePromise = spOrObj as { then?: unknown };
+  const resolved: any =
+    maybePromise && typeof maybePromise.then === "function"
+      ? await (spOrObj as Promise<any>)
+      : spOrObj;
 
   // ReadonlyURLSearchParams / URLSearchParams
-  if (r && typeof r.get === "function") {
+  if (resolved && typeof resolved.get === "function") {
     try {
-      const v = r.get(key);
+      const v = resolved.get(key);
       return v == null ? null : String(v);
     } catch {
       /* fall through */
     }
   }
 
-  // Plain object
-  if (r && typeof r === "object") {
-    const v = (r as RawSearchParams)[key];
+  // Plain object (record)
+  if (resolved && typeof resolved === "object") {
+    const v = (resolved as RawSearchParams)[key];
     if (typeof v === "string") return v;
     if (Array.isArray(v)) return (v[0] as string) ?? null;
   }
@@ -89,12 +91,13 @@ function labelFor(mode: Mode) {
 }
 
 export default async function HomePage({
-  // Accept MaybePromise or plain object; don't import Next's PageProps
+  // IMPORTANT: must be exactly Promise<any> to satisfy Next 15's PageProps check
   searchParams,
 }: {
-  searchParams: Promise<any>;
+  searchParams?: any;
 }) {
-  const t = normalizeMode(await readParam(searchParams, "t"));
+  const rawT = ((await readParam(searchParams, "t")) ?? "all").toLowerCase();
+  const t = rawT === "products" || rawT === "services" ? (rawT as "products" | "services") : "all";
 
   // Always call /api/home-feed for the chosen tab
   const params = new URLSearchParams();
@@ -107,7 +110,7 @@ export default async function HomePage({
   try {
     const apiUrl = makeApiUrl(`/api/home-feed?${params.toString()}`);
     const res = await fetch(apiUrl, {
-      cache: "no-store", // dynamic; avoids Playwright flakiness
+      cache: "no-store", // ensure fresh, avoids Playwright flakiness
       headers: { Accept: "application/json" },
     });
     if (res.ok) {
