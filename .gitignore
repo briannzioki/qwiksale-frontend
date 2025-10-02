@@ -53,3 +53,10 @@ test-results/
 
 
 prisma.config.ts
+
+# Playwright artifacts
+/tests/e2e/.auth/
+/tests/e2e/.setup/
+/playwright-report/
+/test-results/
+/blob-report/

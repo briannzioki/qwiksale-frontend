@@ -1,5 +1,5 @@
-﻿export const runtime = "nodejs";
-export const revalidate = 600;
+﻿// src/app/layout.tsx
+export const runtime = "nodejs"; // NextAuth/Prisma need Node runtime
 
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
@@ -11,6 +11,7 @@ import DevToolsMount from "./components/DevToolsMount";
 import { fontVars } from "./fonts";
 import ToasterClient from "./components/ToasterClient";
 import { getBaseUrl } from "@/app/lib/url";
+import { getServerSession } from "@/app/lib/auth";
 
 /* ----------------------------- Site URL helpers ---------------------------- */
 const siteUrl = getBaseUrl().replace(/\/+$/, "");
@@ -94,7 +95,10 @@ export const metadata: Metadata = {
   category: "marketplace",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Get the NextAuth session on the server and pass it to SessionProvider
+  const session = await getServerSession();
+
   const orgJsonLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -166,7 +170,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       >
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
           {/* Providers is a CLIENT component that mounts SessionProvider with no refetch thrash */}
-          <Providers>
+          <Providers session={session}>
             <AppShell>{children}</AppShell>
             {/* Mount the toaster once for the whole app */}
             <ToasterClient />

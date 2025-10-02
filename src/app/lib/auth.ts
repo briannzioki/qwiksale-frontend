@@ -1,6 +1,5 @@
 // src/app/lib/auth.ts
 import "server-only";
-import { cache } from "react";
 import { auth } from "@/auth";
 
 export { auth };
@@ -8,8 +7,10 @@ export { auth };
 export type Session = Awaited<ReturnType<typeof auth>>;
 export type SessionUser = NonNullable<Session>["user"] & { id?: string };
 
-// Cached per request to avoid duplicate session work
-export const getServerSession = cache(async () => auth());
+// Always resolve per-request. Do NOT memoize with react/cache.
+export async function getServerSession(): Promise<Session> {
+  return auth();
+}
 
 export async function getSessionUser(): Promise<SessionUser | null> {
   const s = await getServerSession();
