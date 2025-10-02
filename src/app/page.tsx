@@ -1,4 +1,4 @@
-﻿// src/app/page.tsx
+// src/app/page.tsx
 export const runtime = "nodejs"; // keep Node runtime for server features
 
 import Link from "next/link";
