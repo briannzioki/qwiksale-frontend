@@ -7,7 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/lib/prisma";
 import UserAvatar from "@/app/components/UserAvatar";
-import Gallery from "@/app/components/Gallery";
+import SmartImage from "@/app/components/SmartImage";
 
 type Seller = {
   id: string;
@@ -134,17 +134,16 @@ export default async function ListingPage(
   const product = await getListing(id);
   if (!product) notFound();
 
-  // Always guarantee at least one image (placeholder fallback)
   const images = Array.from(
     new Set([product.image, ...(product.gallery || [])].filter(Boolean) as string[])
   );
-  const galleryImages = images.length ? images : [PLACEHOLDER];
+  const hero = images[0] ?? PLACEHOLDER;
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
-    image: galleryImages,
+    image: images.length ? images : [PLACEHOLDER],
     description: product.description ?? undefined,
     category:
       [product.category, product.subcategory].filter(Boolean).join(" / ") ||
@@ -168,17 +167,36 @@ export default async function ListingPage(
       />
       <main className="container-page py-6">
         <div className="mx-auto max-w-5xl grid gap-6 lg:grid-cols-5">
-          {/* Gallery (with overlay button & Esc-to-close) */}
+          {/* Gallery */}
           <section className="lg:col-span-3 space-y-3">
-            <div className="relative overflow-hidden rounded-xl border bg-white shadow-sm">
-              {product.featured && (
-                <span className="absolute left-3 top-3 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
-                  Verified seller
-                </span>
-              )}
-              {/* The Gallery provides the full-surface overlay button (aria-label="Open image in fullscreen") */}
-              <Gallery images={galleryImages} lightbox />
+            <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gray-100">
+              <SmartImage
+                src={hero}
+                alt={product.name}
+                fill
+                sizes="(max-width: 1024px) 100vw, 768px"
+                className="object-cover"
+                priority
+              />
             </div>
+            {images.length > 1 && (
+              <div className="grid grid-cols-4 gap-2">
+                {images.slice(1, 5).map((src, i) => (
+                  <div
+                    key={src + i}
+                    className="relative aspect-square overflow-hidden rounded-lg bg-gray-100"
+                  >
+                    <SmartImage
+                      src={src}
+                      alt={`${product.name} ${i + 2}`}
+                      fill
+                      sizes="(max-width: 1024px) 25vw, 180px"
+                      className="object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {/* Details / CTA */}
@@ -191,6 +209,11 @@ export default async function ListingPage(
               )}
               {product.condition && (
                 <div className="text-gray-600">Condition: {product.condition}</div>
+              )}
+              {product.featured && (
+                <div className="mt-2 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                  Verified seller
+                </div>
               )}
 
               <div className="mt-4 flex flex-wrap gap-2">
