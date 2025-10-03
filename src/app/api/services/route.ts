@@ -8,7 +8,7 @@ import { prisma } from "@/app/lib/prisma";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const SERVICES_VER = "vDEBUG-SERVICES-002";
+const SERVICES_VER = "vDEBUG-SERVICES-003";
 function attachVersion(h: Headers) {
   h.set("X-Services-Version", SERVICES_VER);
 }
@@ -97,6 +97,8 @@ export async function GET(req: NextRequest) {
           sort: "newest" as const,
           items: [] as any[],
           facets: undefined,
+          nextCursor: null,
+          hasMore: false,
         },
         60
       );
@@ -130,25 +132,32 @@ export async function GET(req: NextRequest) {
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const pageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
-    // Guard result window (avoid huge DB offsets)
-    const skipEst = (page - 1) * pageSize;
-    if (skipEst > MAX_RESULT_WINDOW) {
-      const res = jsonPublic(
-        {
-          page,
-          pageSize,
-          total: 0,
-          totalPages: 1,
-          sort,
-          items: [],
-          facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
-        },
-        60
-      );
-      attachVersion(res.headers);
-      res.headers.set("X-Total-Count", "0");
-      res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-      return res;
+    // Optional cursor (parity with products API)
+    const cursor = optStr(url.searchParams.get("cursor"));
+
+    // Guard result window (avoid huge DB offsets) — skip when using cursor
+    if (!cursor) {
+      const skipEst = (page - 1) * pageSize;
+      if (skipEst > MAX_RESULT_WINDOW) {
+        const res = jsonPublic(
+          {
+            page,
+            pageSize,
+            total: 0,
+            totalPages: 1,
+            sort,
+            items: [],
+            facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
+            nextCursor: null,
+            hasMore: false,
+          },
+          60
+        );
+        attachVersion(res.headers);
+        res.headers.set("X-Total-Count", "0");
+        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+        return res;
+      }
     }
 
     // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
@@ -231,22 +240,34 @@ export async function GET(req: NextRequest) {
     if (process.env.NODE_ENV !== "production") {
       console.log("[/api/services WHERE]", safe(where));
       console.log("[/api/services ORDER]", safe(orderBy));
-      console.log("[/api/services page/pageSize]", page, pageSize);
+      console.log("[/api/services page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
+    }
+
+    // Fetch: align with products API -> page or cursor, take pageSize+1 for hasMore
+    const listArgs: any = {
+      where,
+      select: serviceListSelect,
+      orderBy,
+      take: pageSize + 1,
+    };
+    if (cursor) {
+      listArgs.cursor = { id: cursor };
+      listArgs.skip = 1;
+    } else {
+      listArgs.skip = (page - 1) * pageSize;
     }
 
     const [total, servicesRaw, facets] = await Promise.all([
       Service.count({ where }),
-      Service.findMany({
-        where,
-        select: serviceListSelect,
-        orderBy,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      wantFacets && page === 1 ? computeFacets(where, Service) : Promise.resolve(undefined),
+      Service.findMany(listArgs),
+      wantFacets && !cursor && page === 1 ? computeFacets(where, Service) : Promise.resolve(undefined),
     ]);
 
-    const items = (servicesRaw as Array<any>).map((s) => ({
+    const hasMore = (servicesRaw as unknown[]).length > pageSize;
+    const data = hasMore ? (servicesRaw as unknown[]).slice(0, pageSize) : (servicesRaw as unknown[]);
+    const nextCursor = hasMore && data.length ? (data[data.length - 1] as any).id : null;
+
+    const items = (data as Array<any>).map((s) => ({
       id: s.id as string,
       name: s.name as string,
       category: s.category as string | null,
@@ -270,6 +291,8 @@ export async function GET(req: NextRequest) {
         sort,
         items,
         facets,
+        nextCursor,
+        hasMore,
       },
       60
     );

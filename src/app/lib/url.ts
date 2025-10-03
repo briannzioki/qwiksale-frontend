@@ -1,5 +1,3 @@
-// src/app/lib/url.ts
-
 /** ----------------------------------------------------------------
  * Base URL utilities
  * ---------------------------------------------------------------- */
@@ -242,4 +240,21 @@ export function buildHomeFeedPath(q: HomeQuery): string {
 /** Convenience for server-side “warming” fetches. */
 export function buildHomeFeedAbsoluteUrl(q: HomeQuery): string {
   return makeApiUrl(buildHomeFeedPath(q));
+}
+
+/** ----------------------------------------------------------------
+ * Search helpers (used by header inline search)
+ * ---------------------------------------------------------------- */
+
+/** Build a clean /search href; trims & omits empty q. */
+export function buildSearchHref(q?: string | null): string {
+  const term = String(q ?? "").trim();
+  if (!term) return "/search";
+  const sp = new URLSearchParams({ q: term });
+  return `/search?${sp.toString()}`;
+}
+
+/** Absolute URL variant, if needed on server/edge. */
+export function buildSearchAbsoluteUrl(q?: string | null): string {
+  return makeAbsoluteUrl(buildSearchHref(q));
 }

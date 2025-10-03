@@ -1,15 +1,43 @@
+// src/app/api/products/suggest/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { products, distinctBrands } from "@/app/data/products";
-import { categories, suggestCategories as suggestCats, slugify } from "@/app/data/categories";
+import {
+  categories,
+  suggestCategories as suggestCats,
+  slugify,
+} from "@/app/data/categories";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
+const SUG_VER = "vPROD-005";
+
 type SuggestionType = "name" | "brand" | "category" | "subcategory" | "service";
-type Suggestion = { label: string; value: string; type: SuggestionType };
+type Suggestion = {
+  label: string;
+  type: SuggestionType;
+  value?: string;
+  category?: string;
+  subcategory?: string;
+};
+
+function withCommonHeaders(res: NextResponse) {
+  res.headers.set("X-Suggest-Version", SUG_VER);
+  return res;
+}
+function ok(json: unknown, cache = "public, max-age=30, stale-while-revalidate=300") {
+  const res = NextResponse.json(json);
+  res.headers.set("Cache-Control", cache);
+  return withCommonHeaders(res);
+}
+function nostore(json: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(json, init);
+  res.headers.set("Cache-Control", "no-store");
+  return withCommonHeaders(res);
+}
 
 function toAscii(s: string) {
   return s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
@@ -27,23 +55,13 @@ function scoreLabel(q: string, label: string) {
   const brevity = Math.max(0, 120 - ls.length);
   return exact + 300 + starts + brevity;
 }
-function ok(json: unknown, cache = "public, max-age=30, stale-while-revalidate=300") {
-  const res = NextResponse.json(json);
-  res.headers.set("Cache-Control", cache);
-  return res;
-}
-function nostore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
-  res.headers.set("Cache-Control", "no-store");
-  return res;
-}
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const q = (url.searchParams.get("q") || "").trim();
     const limitRaw = url.searchParams.get("limit");
-    const limit = Math.max(1, Math.min(20, Number(limitRaw ?? 10) || 10));
+    const limit = Math.max(1, Math.min(20, Number(limitRaw ?? 12) || 12));
 
     if (!q) return ok({ items: [] as Suggestion[] });
 
@@ -60,28 +78,57 @@ export async function GET(request: Request) {
 
     // Product names
     for (const p of products) {
-      if (p?.name) corpus.push({ label: p.name, value: p.name, type: "name" });
-    }
-    // Brands
-    for (const b of distinctBrands()) {
-      corpus.push({ label: b, value: b, type: "brand" });
-    }
-    // Categories + subcategories
-    for (const c of categories) {
-      corpus.push({ label: c.name, value: c.name, type: "category" });
-      for (const s of c.subcategories ?? []) {
-        const combo = `${c.name} • ${s.name}`;
-        corpus.push({ label: combo, value: combo, type: "subcategory" });
-      }
-    }
-    // Services (from taxonomy) so SearchBox can switch mode
-    const services =
-      (categories.find((x) => slugify(x.name) === "services")?.subcategories ?? []).map((s) => s.name);
-    for (const svc of services) {
-      corpus.push({ label: svc, value: svc, type: "service" });
+      const name = (p?.name ?? "").trim();
+      if (name) corpus.push({ label: name, type: "name", value: name });
     }
 
-    // Rank + de-dupe by label (case-insensitive)
+    // Brands
+    for (const b of distinctBrands()) {
+      const brand = (b ?? "").trim();
+      if (brand) corpus.push({ label: brand, type: "brand", value: brand });
+    }
+
+    // Categories + subcategories
+    for (const c of categories) {
+      const cName = (c?.name ?? "").trim();
+      if (!cName) continue;
+      const isServices = slugify(cName) === "services";
+
+      if (!isServices) {
+        corpus.push({
+          label: cName,
+          type: "category",
+          value: cName,
+          category: cName,
+        });
+      }
+
+      for (const s of c.subcategories ?? []) {
+        const sName = (s?.name ?? "").trim();
+        if (!sName) continue;
+
+        if (isServices) {
+          // Map Services subcategories to "service" so SearchBox flips to services mode
+          corpus.push({
+            label: `${cName} • ${sName}`,
+            type: "service",
+            value: sName,
+            category: cName,
+            subcategory: sName,
+          });
+        } else {
+          corpus.push({
+            label: `${cName} • ${sName}`,
+            type: "subcategory",
+            value: sName,
+            category: cName,
+            subcategory: sName,
+          });
+        }
+      }
+    }
+
+    // Rank + de-dupe
     const ranked = corpus
       .map((item) => ({ item, score: scoreLabel(q, item.label) }))
       .filter((x) => x.score >= 0)
@@ -97,14 +144,46 @@ export async function GET(request: Request) {
       if (out.length >= limit) break;
     }
 
-    // Backfill with taxonomy suggestions if needed
+    // Backfill from taxonomy if still short
     if (out.length < limit) {
-      const catBoost = suggestCats(q, limit - out.length);
-      for (const label of catBoost) {
+      const boost = suggestCats(q, limit - out.length);
+      for (const label of boost) {
         const key = label.toLowerCase();
         if (seen.has(key)) continue;
-        const isCombo = label.includes("•");
-        out.push({ label, value: label, type: isCombo ? "subcategory" : "category" });
+
+        if (label.includes("•")) {
+          // Normalize parts to guaranteed strings
+          const parts = label.split("•").map((s) => s.trim()).filter(Boolean);
+          const parent = parts[0] ?? "";
+          const child = parts[1] ?? "";
+          const isServicesLike = slugify(parent) === "services";
+
+          out.push({
+            label,
+            type: isServicesLike ? "service" : "subcategory",
+            ...(child ? { value: child } : {}),
+            ...(parent ? { category: parent } : {}),
+            ...(child ? { subcategory: child } : {}),
+          });
+        } else {
+          const isServicesLike = slugify(label) === "services";
+          if (!isServicesLike) {
+            out.push({
+              label,
+              type: "category",
+              value: label,
+              category: label,
+            });
+          } else {
+            out.push({
+              label,
+              type: "service",
+              value: label,
+              category: label,
+            });
+          }
+        }
+
         seen.add(key);
         if (out.length >= limit) break;
       }
@@ -119,5 +198,7 @@ export async function GET(request: Request) {
 }
 
 export async function HEAD() {
-  return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  return withCommonHeaders(
+    new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } })
+  );
 }

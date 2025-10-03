@@ -1,10 +1,11 @@
-// src/app/api/services/suggest/route.ts
+// src/app/api/suggest/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
+import { products, distinctBrands } from "@/app/data/products";
 import {
   categories,
   suggestCategories as suggestCats,
@@ -13,12 +14,14 @@ import {
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
-const SUG_VER = "vSERV-004";
+const SUG_VER = "vUNIFIED-004";
 
-type SuggestionType = "service";
+type SuggestionType = "name" | "brand" | "category" | "subcategory" | "service";
+
 type Suggestion = {
   label: string;
   type: SuggestionType;
+  /** Optional richer mapping fields used by the SearchBox */
   value?: string;
   category?: string;
   subcategory?: string;
@@ -28,6 +31,7 @@ function withCommonHeaders(res: NextResponse) {
   res.headers.set("X-Suggest-Version", SUG_VER);
   return res;
 }
+
 function ok(json: unknown, cache = "public, max-age=30, stale-while-revalidate=300") {
   const res = NextResponse.json(json);
   res.headers.set("Cache-Control", cache);
@@ -56,7 +60,7 @@ function scoreLabel(q: string, label: string) {
   return exact + 300 + starts + brevity;
 }
 
-/** Access a Service-model compat layer that may not exist in this schema */
+/** Optional Service-model compatibility (schema may vary) */
 function getServiceModel() {
   const anyPrisma = prisma as any;
   const svc =
@@ -79,8 +83,8 @@ export async function GET(request: Request) {
 
     if (typeof checkRateLimit === "function") {
       const rl = await checkRateLimit(request.headers as unknown as Headers, {
-        name: "services_suggest",
-        limit: 30,
+        name: "unified_suggest",
+        limit: 40,
         windowMs: 60_000,
       });
       if (!rl.ok) {
@@ -90,7 +94,59 @@ export async function GET(request: Request) {
 
     const corpus: Suggestion[] = [];
 
-    // 1) Pull recent ACTIVE service names if the model exists
+    // ---- Products: names ----
+    for (const p of products) {
+      const name = (p?.name ?? "").trim();
+      if (name) corpus.push({ label: name, type: "name", value: name });
+    }
+
+    // ---- Products: brands ----
+    for (const b of distinctBrands()) {
+      if (b) corpus.push({ label: b, type: "brand", value: b });
+    }
+
+    // ---- Taxonomy: categories + subcategories (products & services) ----
+    for (const c of categories) {
+      const cName = (c?.name ?? "").trim();
+      if (!cName) continue;
+
+      // Services category will be handled as service-type suggestions
+      const isServices = slugify(cName) === "services";
+      if (!isServices) {
+        corpus.push({
+          label: cName,
+          type: "category",
+          value: cName,
+          category: cName,
+        });
+      }
+
+      for (const s of c.subcategories ?? []) {
+        const sName = (s?.name ?? "").trim();
+        if (!sName) continue;
+        const combo = `${cName} • ${sName}`;
+
+        if (isServices) {
+          corpus.push({
+            label: combo,
+            type: "service",
+            value: sName,
+            category: cName,
+            subcategory: sName,
+          });
+        } else {
+          corpus.push({
+            label: combo,
+            type: "subcategory",
+            value: sName,
+            category: cName,
+            subcategory: sName,
+          });
+        }
+      }
+    }
+
+    // ---- Services: recent names from DB (if model exists) ----
     try {
       const Service = getServiceModel();
       if (Service) {
@@ -113,36 +169,10 @@ export async function GET(request: Request) {
         }
       }
     } catch {
-      /* best-effort DB fetch */
+      /* best-effort */
     }
 
-    // 2) Services category + subcategories as typed "service"
-    const servicesCat = categories.find((x) => slugify(x.name) === "services");
-    if (servicesCat) {
-      const cName = (servicesCat.name ?? "").trim();
-      if (cName) {
-        corpus.push({
-          label: cName,
-          type: "service",
-          value: cName,
-          category: cName,
-        });
-      }
-      for (const s of servicesCat.subcategories ?? []) {
-        const sName = (s?.name ?? "").trim();
-        if (!sName) continue;
-        const combo = `${cName} • ${sName}`;
-        corpus.push({
-          label: combo,
-          type: "service",
-          value: sName,
-          category: cName,
-          subcategory: sName,
-        });
-      }
-    }
-
-    // Rank + de-dupe
+    // ---- Ranking + de-dupe (by label, case-insensitive) ----
     const ranked = corpus
       .map((item) => ({ item, score: scoreLabel(q, item.label) }))
       .filter((x) => x.score >= 0)
@@ -158,23 +188,19 @@ export async function GET(request: Request) {
       if (out.length >= limit) break;
     }
 
-    // 3) Backfill with taxonomy suggestions (only Services-related labels)
-    if (servicesCat && out.length < limit) {
-      const catBoost = suggestCats(q, limit - out.length);
-      for (const label of catBoost) {
-        const keep =
-          label.toLowerCase() === servicesCat.name.toLowerCase() ||
-          label.startsWith(`${servicesCat.name} •`);
-        if (!keep) continue;
-
+    // ---- Backfill from taxonomy helper if still short ----
+    if (out.length < limit) {
+      const boost = suggestCats(q, limit - out.length);
+      for (const label of boost) {
         const key = label.toLowerCase();
         if (seen.has(key)) continue;
 
+        const isServicesLike = label.toLowerCase().startsWith("services");
         if (label.includes("•")) {
           const [parent, child] = label.split("•").map((s) => s.trim());
           out.push({
             label,
-            type: "service",
+            type: isServicesLike ? "service" : "subcategory",
             ...(child ? { value: child } : {}),
             ...(parent ? { category: parent } : {}),
             ...(child ? { subcategory: child } : {}),
@@ -182,7 +208,7 @@ export async function GET(request: Request) {
         } else {
           out.push({
             label,
-            type: "service",
+            type: isServicesLike ? "service" : "category",
             value: label,
             category: label,
           });
@@ -196,7 +222,7 @@ export async function GET(request: Request) {
     return ok({ items: out });
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.warn("[services/suggest GET] error", e);
+    console.warn("[unified/suggest GET] error", e);
     return nostore({ items: [] });
   }
 }

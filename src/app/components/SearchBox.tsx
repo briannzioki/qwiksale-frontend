@@ -6,7 +6,23 @@ import { useRouter } from "next/navigation";
 import SearchCombobox from "@/app/components/SearchCombobox";
 
 type SuggestionType = "name" | "brand" | "category" | "subcategory" | "service";
-type SuggestionMeta = { type: SuggestionType };
+type SuggestionMeta = {
+  type: SuggestionType;
+  /** Normalized machine value for this suggestion (falls back to label if absent) */
+  value?: string;
+  /** Parent category for subcategory suggestions (if API provides it) */
+  category?: string;
+  /** Normalized subcategory (if API provides it separately) */
+  subcategory?: string;
+};
+
+type SuggestItem = {
+  label: string;
+  type: SuggestionType;
+  value?: string;
+  category?: string;
+  subcategory?: string;
+};
 
 type ComboItem<TMeta = unknown> = {
   id: string;
@@ -22,12 +38,17 @@ function classNames(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
 }
 
+/** Where to send the user on submit */
+type Destination = "home" | "search";
+
 type CommonProps = {
   className?: string;
   placeholder?: string;
   autoFocus?: boolean;
   /** Initial text value */
   initial?: string;
+  /** Submit destination; default is "home" */
+  destination?: Destination;
 };
 
 type DefaultVariantProps = CommonProps & {
@@ -50,6 +71,7 @@ export default function SearchBox(props: Props) {
     placeholder = "Search phones, cars, services…",
     autoFocus = false,
     initial = "",
+    destination = "home",
   } = props;
 
   const isInline = props.variant === "inline";
@@ -60,14 +82,14 @@ export default function SearchBox(props: Props) {
   // container ref so we can focus the inner <input> when inline opens
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // Prefetch the home route (grid lives on "/")
+  // Prefetch the destination route
   useEffect(() => {
     try {
-      r.prefetch?.("/");
+      r.prefetch?.(destination === "search" ? "/search" : "/");
     } catch {
       /* noop */
     }
-  }, [r]);
+  }, [r, destination]);
 
   // Small in-memory suggest cache (term -> items)
   const cacheRef = useRef<Map<string, ComboItem<SuggestionMeta>[]>>(new Map());
@@ -83,9 +105,7 @@ export default function SearchBox(props: Props) {
       try {
         const res = await fetch(url, { cache: "no-store", signal });
         if (!res.ok) return null;
-        return (await res.json().catch(() => null)) as
-          | { items?: Array<{ label: string; value: string; type: SuggestionType }> }
-          | null;
+        return (await res.json().catch(() => null)) as { items?: SuggestItem[] } | null;
       } catch {
         return null;
       }
@@ -93,22 +113,28 @@ export default function SearchBox(props: Props) {
     []
   );
 
-  function mergeAndDedupe(
-    lists: Array<{ items?: Array<{ label: string; value: string; type: SuggestionType }> } | null>
-  ): ComboItem<SuggestionMeta>[] {
+  function mergeAndDedupe(lists: Array<{ items?: SuggestItem[] } | null>): ComboItem<SuggestionMeta>[] {
     const seen = new Set<string>();
     const out: ComboItem<SuggestionMeta>[] = [];
     let idx = 0;
     for (const j of lists) {
       const arr = j?.items ?? [];
       for (const s of arr) {
-        const key = `${s.type}:${(s.value || s.label || "").toLowerCase()}`;
+        const norm = (s.value || s.label || "").toLowerCase();
+        const key = `${s.type}:${norm}`;
         if (seen.has(key)) continue;
         seen.add(key);
+
+        // Build meta without undefined fields (fixes exactOptionalPropertyTypes)
+        const meta: SuggestionMeta = { type: s.type };
+        if (typeof s.value === "string") meta.value = s.value;
+        if (typeof s.category === "string" && s.category.trim()) meta.category = s.category;
+        if (typeof s.subcategory === "string" && s.subcategory.trim()) meta.subcategory = s.subcategory;
+
         out.push({
-          id: `${s.type}:${s.value}:${idx++}`,
+          id: `${s.type}:${s.value ?? s.label}:${idx++}`,
           label: s.label,
-          meta: { type: s.type },
+          meta,
         });
       }
     }
@@ -162,8 +188,62 @@ export default function SearchBox(props: Props) {
   const go = useCallback(
     (raw: string, picked?: ComboItem<SuggestionMeta>) => {
       const term = raw.trim();
-      const params = new URLSearchParams();
 
+      // Helper to safely pick normalized value with label fallback
+      const valueOr = (m?: SuggestionMeta) => (m?.value || "").trim();
+      const labelOr = (lbl?: string) => (lbl || "").trim();
+
+      if (destination === "search") {
+        // For the global header search: go to /search with smart mapping
+        const sp = new URLSearchParams();
+
+        const pickedType = picked?.meta?.type;
+
+        if (pickedType === "service") {
+          // Services mode
+          sp.set("type", "service");
+          sp.set("q", valueOr(picked?.meta) || labelOr(picked?.label) || term);
+        } else if (pickedType === "brand") {
+          sp.set("type", "product");
+          sp.set("brand", valueOr(picked?.meta) || labelOr(picked?.label) || term);
+        } else if (pickedType === "category") {
+          sp.set("type", "product");
+          sp.set("category", valueOr(picked?.meta) || labelOr(picked?.label) || term);
+        } else if (pickedType === "subcategory") {
+          sp.set("type", "product");
+          // Prefer explicit parent from API if provided
+          const parent = labelOr(picked?.meta?.category);
+          if (parent) sp.set("category", parent);
+
+          // Use explicit meta.subcategory/value when present, else parse from label
+          const sub =
+            labelOr(picked?.meta?.subcategory) ||
+            valueOr(picked?.meta) ||
+            labelOr(picked?.label);
+          if (sub) sp.set("subcategory", sub);
+
+          // Fallback: parse "Category • Subcategory" if parent missing
+          if (!parent && picked?.label) {
+            const parts = picked.label.split("•").map((s) => s.trim()).filter(Boolean);
+            if (parts.length === 2) {
+              sp.set("category", parts[0]!);
+              sp.set("subcategory", parts[1]!);
+            }
+          }
+        } else {
+          // name / free text, or no picked item
+          const qVal = picked?.label && !term ? picked.label : term || picked?.label || "";
+          if (!qVal) return;
+          sp.set("q", qVal);
+        }
+
+        r.push(`/search?${sp.toString()}`);
+        if (isInline) (props as InlineVariantProps).onCloseAction?.();
+        return;
+      }
+
+      // ---------- Default: Home mode (existing behavior) ----------
+      const params = new URLSearchParams();
       let modeSet = false;
 
       if (picked?.meta?.type) {
@@ -205,10 +285,9 @@ export default function SearchBox(props: Props) {
       }
 
       r.push(`/?${params.toString()}`);
-      // For inline variant, close after navigation
       if (isInline) (props as InlineVariantProps).onCloseAction?.();
     },
-    [r, isInline, props]
+    [r, isInline, props, destination]
   );
 
   const hint = useMemo(() => {
@@ -230,7 +309,7 @@ export default function SearchBox(props: Props) {
     return () => clearTimeout(t);
   }, [isInline, inlineOpen, autoFocus]);
 
-  // ESC to close in inline mode
+  // ESC to close in inline mode (delegate to parent)
   useEffect(() => {
     if (!isInline || !inlineOpen) return;
     const onKey = (e: KeyboardEvent) => {

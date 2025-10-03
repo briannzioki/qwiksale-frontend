@@ -58,6 +58,19 @@ module.exports = {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
       },
+
+      /* ---------- Extra z-index steps + semantic aliases ---------- */
+      zIndex: {
+        60: "60",
+        70: "70",
+        80: "80",
+        header: "40",   // use: z-header
+        backdrop: "45", // use: z-backdrop
+        popover: "50",  // use: z-popover
+        drawer: "60",   // use: z-drawer
+        toast: "70",    // use: z-toast
+        modal: "80",    // use: z-modal
+      },
     },
   },
 
@@ -123,7 +136,7 @@ module.exports = {
         ".hero-surface": {
           borderRadius: theme("borderRadius.2xl"),
           color: "#fff",
-          backgroundImage: `linear-gradient(90deg, ${theme("colors.brandNavy")} 0%, ${theme("colors.brandGreen")} 50%, ${theme("colors.brandBlue")} 100%)`,
+          backgroundImage: `linear-gradient(90deg, ${theme("colors.brandNavy")} 0%, ${theme("colors.brandBlue")} 100%)`,
           boxShadow: theme("boxShadow.soft"),
         },
 
@@ -144,5 +157,5 @@ module.exports = {
   ],
 
   // (Optional) safelist if you ever build class strings dynamically elsewhere:
-  // safelist: ["shadow-soft", "hero-surface", "card-surface", "btn-gradient-primary", "btn-gradient-accent", "btn-gradient-hero"],
+  // safelist: ["shadow-soft", "hero-surface", "card-surface", "btn-gradient-primary", "btn-gradient-accent", "btn-gradient-hero", "z-header", "z-backdrop", "z-popover", "z-drawer", "z-toast", "z-modal"],
 };
