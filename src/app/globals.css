@@ -21,6 +21,14 @@
   --brand-navy-rgb: 22 23 72;
   --brand-green-rgb: 71 133 89;
   --brand-blue-rgb: 57 160 202;
+
+  /* Z-index tokens (optional semantic mapping) */
+  --z-header: 40;
+  --z-backdrop: 45;
+  --z-popover: 50;
+  --z-drawer: 60;
+  --z-toast: 70;
+  --z-modal: 80;
 }
 
 /* Small utility */
@@ -216,6 +224,14 @@
     background-size: 200% 100%;
     animation: skeleton-shimmer 1.2s linear infinite;
   }
+
+  /* --------- Optional semantic z-index helpers (if you prefer CSS names) --------- */
+  .z-header   { z-index: var(--z-header); }
+  .z-backdrop { z-index: var(--z-backdrop); }
+  .z-popover  { z-index: var(--z-popover); }
+  .z-drawer   { z-index: var(--z-drawer); }
+  .z-toast    { z-index: var(--z-toast); }
+  .z-modal    { z-index: var(--z-modal); }
 }
 
 /* stylelint-enable at-rule-no-unknown */

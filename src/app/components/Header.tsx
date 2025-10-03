@@ -5,17 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type MouseEventHandler,
-} from "react";
+import { useEffect, useState, type MouseEventHandler } from "react";
 import UserAvatar from "@/app/components/UserAvatar";
 import SearchBox from "@/app/components/SearchBox";
-import useOutsideClick from "@/app/hooks/useOutsideClick";
+import HeaderInlineSearch from "@/app/components/HeaderInlineSearch";
 
 /** Simple helper for active link classes */
 function NavLink({
@@ -54,6 +47,7 @@ function NavLink({
 
 export default function Header() {
   const { data: session, status, update } = useSession();
+  const pathname = usePathname();
 
   type ExtendedUser = Session["user"] & { username?: string | null };
   const user: ExtendedUser | null = (session?.user as ExtendedUser) ?? null;
@@ -65,27 +59,13 @@ export default function Header() {
   // Mobile menu
   const [open, setOpen] = useState(false);
 
-  // Pinned inline search
-  const [inlineOpen, setInlineOpen] = useState(false);
-  const inlineWrapRef = useRef<HTMLDivElement | null>(null);
-  const inlineBtnId = useId();
-  useOutsideClick(inlineWrapRef, () => setInlineOpen(false));
-
-  const toggleInline = useCallback(() => setInlineOpen((v) => !v), []);
-  const closeInline = useCallback(() => setInlineOpen(false), []);
-
   // Close overlays when route changes
-  const pathname = usePathname();
   useEffect(() => {
     setOpen(false);
-    setInlineOpen(false);
   }, [pathname]);
 
   useEffect(() => {
-    const onHash = () => {
-      setOpen(false);
-      setInlineOpen(false);
-    };
+    const onHash = () => setOpen(false);
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -140,64 +120,50 @@ export default function Header() {
           QwikSale
         </Link>
 
-        {/* Desktop search row (actual search input on md+) */}
-        <div className="hidden md:flex flex-1">
-          <SearchBox className="w-full" placeholder="Search phones, cars, services…" />
-        </div>
+        {/* Desktop search row (hide on Home to avoid duplicate filters) */}
+        {pathname !== "/" && (
+          <div className="hidden md:flex flex-1">
+            <SearchBox
+              className="w-full"
+              placeholder="Search phones, cars, services…"
+              destination="search"
+            />
+          </div>
+        )}
 
         {/* Primary nav (desktop) */}
-        <nav className="ml-4 hidden items-center gap-1 text-sm sm:flex" aria-label="Primary">
+        <nav className="ml-4 hidden items-center gap-2 text-sm sm:flex" aria-label="Primary">
           <NavLink href="/" exact>
             Home
           </NavLink>
           <NavLink href="/sell">Sell</NavLink>
 
+          {/* Optional categories trigger (bridges to AppShell drawer) */}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("qs:categories:open"))}
+            className="px-2 py-1 rounded-md text-gray-700 hover:bg-black/5 dark:text-slate-200 dark:hover:bg-white/10 transition"
+            title="Browse categories"
+          >
+            Categories
+          </button>
+
           {/* Minimal Search link so search is ALWAYS present on desktop */}
           <NavLink href="/search">Search</NavLink>
 
-          {/* Pinned search icon + inline box */}
-          <div
-            ref={inlineWrapRef}
-            className="relative ml-1 hidden sm:flex items-center"
-            aria-label="Pinned search"
-          >
-            <button
-              id={`inline-btn-${inlineBtnId}`}
-              type="button"
-              aria-label="Open quick search"
-              aria-haspopup="true"
-              aria-expanded={inlineOpen ? "true" : "false"}
-              onClick={toggleInline}
-              className={[
-                "rounded-md p-2 transition",
-                inlineOpen
-                  ? "bg-black/5 text-[#161748] dark:bg-white/10 dark:text-white"
-                  : "text-gray-700 hover:bg-black/5 dark:text-slate-200 dark:hover:bg-white/10",
-              ].join(" ")}
-              title="Quick search"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                <path d="M21 20l-5.2-5.2a7 7 0 10-1.4 1.4L20 21l1-1zM5 11a6 6 0 1112 0A6 6 0 015 11z" />
-              </svg>
-            </button>
-
-            <SearchBox
-              variant="inline"
-              open={inlineOpen}
-              onCloseAction={closeInline}
-              autoFocus
-              placeholder="Search quickly…"
-              className="ml-2"
-            />
-          </div>
-
+          {/* Saved (keep as a link in the row) */}
           <NavLink href="/saved">Saved</NavLink>
         </nav>
 
-        {/* Mobile menu button */}
+        {/* Inline header search (between Saved and auth) */}
+        <div className="hidden sm:block">
+          <HeaderInlineSearch />
+        </div>
+
+        {/* Mobile menu button (restored) */}
         <button
           type="button"
-          className="ml-2 rounded-md p-2 sm:hidden hover:bg-black/5 dark:hover:bg-white/10"
+          className="ml-auto rounded-md p-2 sm:hidden hover:bg-black/5 dark:hover:bg-white/10"
           aria-label="Toggle menu"
           aria-expanded={open ? "true" : "false"}
           onClick={() => setOpen((v) => !v)}
@@ -212,7 +178,7 @@ export default function Header() {
         </button>
 
         {/* Right side actions */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto hidden sm:flex items-center gap-3">
           {status === "loading" ? (
             <div className="h-7 w-24 animate-pulse rounded-md bg-black/5 dark:bg-white/10" />
           ) : status === "authenticated" ? (
@@ -260,7 +226,7 @@ export default function Header() {
 
       {/* Mobile search row (always visible on mobile) */}
       <div className="border-t bg-white/90 px-4 py-2 dark:border-slate-800 dark:bg-slate-900/90 md:hidden">
-        <SearchBox placeholder="Search phones, cars, services…" />
+        <SearchBox placeholder="Search phones, cars, services…" destination="search" />
       </div>
 
       {/* Mobile drawer */}
@@ -273,6 +239,16 @@ export default function Header() {
             <NavLink href="/sell" className="py-2" onClick={() => setOpen(false)}>
               Sell
             </NavLink>
+            <button
+              type="button"
+              className="px-2 py-2 text-left rounded-md hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent("qs:categories:open"));
+                setOpen(false);
+              }}
+            >
+              Categories
+            </button>
             <NavLink href="/search" className="py-2" onClick={() => setOpen(false)}>
               Search
             </NavLink>

@@ -1,10 +1,9 @@
-// src/app/components/AppShell.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import Header from "@/app/components/Header";
 
 /* ------------------------ tiny event/analytics ------------------------ */
 function emit(name: string, detail?: unknown) {
@@ -38,10 +37,8 @@ function hasSubsubcategories(
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false); // categories drawer
   const pathname = usePathname();
-  const { data: session, status } = useSession();
-  const [signingOut, setSigningOut] = useState(false);
 
   // 🔹 Lazy categories: only load when drawer opens (smaller initial bundle)
   const [cats, setCats] = useState<ReadonlyArray<Category> | null>(null);
@@ -53,7 +50,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [open, cats]);
 
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const drawerRef = useRef<HTMLElement | null>(null);
   const liveRef = useRef<HTMLSpanElement | null>(null);
@@ -67,7 +63,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }, 1200);
   }, []);
 
-  // Escape to close
+  // Bridge: allow header (or anywhere) to open/close the drawer via events
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    const onClose = () => setOpen(false);
+    window.addEventListener("qs:categories:open", onOpen as EventListener);
+    window.addEventListener("qs:categories:close", onClose as EventListener);
+    return () => {
+      window.removeEventListener("qs:categories:open", onOpen as EventListener);
+      window.removeEventListener("qs:categories:close", onClose as EventListener);
+    };
+  }, []);
+
+  // Escape to close (categories)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     window.addEventListener("keydown", onKey);
@@ -117,7 +125,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         body.style.overflow = prev;
       };
     } else {
-      triggerRef.current?.focus();
       announce("Categories closed");
       track("nav_categories_close");
     }
@@ -143,150 +150,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
 
-      {/* Translucent header */}
-      <header
-        className="
-          sticky top-0 z-40
-          bg-white/70 dark:bg-slate-900/60
-          border-b border-black/5 dark:border-white/10
-          backdrop-blur supports-[backdrop-filter]:backdrop-blur
-        "
-      >
-        <div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between">
-          {/* Brand / Home — pure navigation, never signOut */}
-          <Link href="/" className="flex items-center gap-2" aria-label="QwikSale — Home" prefetch={false}>
-            <span className="text-lg md:text-xl font-extrabold tracking-tight text-[#161748] dark:text-slate-100">
-              QwikSale
-            </span>
-          </Link>
-
-          {/* Right controls */}
-          <div className="flex items-center gap-3">
-            <nav
-              className="hidden md:flex items-center gap-6 text-sm font-medium"
-              aria-label="Primary"
-            >
-              <Link
-                href="/"
-                className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
-                prefetch={false}
-              >
-                Home
-              </Link>
-              <Link
-                href={categoryHref("Phones & Tablets")}
-                className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
-                prefetch={false}
-              >
-                Phones &amp; Tablets
-              </Link>
-              <Link
-                href={categoryHref("Cars")}
-                className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
-                prefetch={false}
-              >
-                Cars
-              </Link>
-              <Link
-                href={categoryHref("Furniture")}
-                className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
-                prefetch={false}
-              >
-                Furniture
-              </Link>
-              <Link
-                href="/saved"
-                className="text-gray-800 dark:text-slate-200 hover:text-[#f95d9b] transition-colors"
-                prefetch={false}
-              >
-                Saved
-              </Link>
-            </nav>
-
-            {/* Auth quick actions */}
-            {status === "loading" ? (
-              <button
-                className="px-3 py-2 rounded border text-sm opacity-70 cursor-default"
-                disabled
-              >
-                Loading…
-              </button>
-            ) : session ? (
-              <div className="flex items-center gap-2">
-                {/* Dashboard is a plain link — no auth side effect */}
-                <Link
-                  href="/dashboard"
-                  className="px-3 py-2 rounded bg-black/5 dark:bg-white/10 text-sm border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
-                  title="Dashboard"
-                  prefetch={false}
-                >
-                  Dashboard
-                </Link>
-                {/* The ONLY place that calls signOut */}
-                <button
-                  onClick={async () => {
-                    if (signingOut) return;
-                    setSigningOut(true);
-                    track("auth_signout_click");
-                    try {
-                      await signOut({ callbackUrl: "/" });
-                    } finally {
-                      setSigningOut(false);
-                    }
-                  }}
-                  className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
-                  disabled={signingOut}
-                  title="Sign out"
-                >
-                  {signingOut ? "Signing out…" : "Sign out"}
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/signin"
-                className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
-                title="Sign in"
-                prefetch={false}
-                onClick={() => track("auth_signin_click")}
-              >
-                Sign in
-              </Link>
-            )}
-
-            {/* Sell */}
-            <Link
-              href="/sell"
-              className="hidden sm:inline-flex items-center rounded-lg bg-black/5 dark:bg-white/10 px-3 py-2 text-sm font-semibold border border-black/10 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition"
-              prefetch={false}
-              onClick={() => track("nav_sell_click")}
-            >
-              + Sell
-            </Link>
-
-            {/* Categories drawer trigger */}
-            <button
-              ref={triggerRef}
-              onClick={() => setOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-black/10 dark:border-white/20 bg-black/5 dark:bg-white/10 px-3 py-2 text-sm backdrop-blur hover:bg-black/10 dark:hover:bg-white/20 transition text-gray-800 dark:text-slate-100"
-              aria-expanded={open}
-              aria-controls={open ? "categories-drawer" : undefined}
-              aria-label="Open categories menu"
-            >
-              <span>Categories</span>
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                className="opacity-90"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </header>
+      {/* Top bar */}
+      <Header />
 
       {/* Main */}
       <main id="main" className="flex-1">
@@ -309,7 +174,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* ===== Backdrop (only when open) ===== */}
       {open && (
         <button
-          className="fixed inset-0 bg-black/40 z-40"
+          className="fixed inset-0 z-40 bg-black/40"
           onClick={() => setOpen(false)}
           aria-label="Close categories overlay"
         />

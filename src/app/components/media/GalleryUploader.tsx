@@ -18,6 +18,11 @@ type Props = {
   label?: string;
   /** If true, allow drag–drop reordering (default true). */
   draggable?: boolean;
+
+  /** NEW: Accept string for file input (default: image/*) */
+  accept?: string;
+  /** NEW: Max size per file in MB (default: 10) */
+  maxSizeMB?: number;
 };
 
 export default function GalleryUploader({
@@ -28,6 +33,8 @@ export default function GalleryUploader({
   className = "",
   label = "Photos (up to 10)",
   draggable = true,
+  accept = "image/*",
+  maxSizeMB = 10,
 }: Props) {
   // Ensure we never render null/undefined entries
   const images = useMemo(
@@ -38,6 +45,8 @@ export default function GalleryUploader({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string>("");
   const uid = useId();
 
   const canAddMore = images.length < max;
@@ -52,7 +61,7 @@ export default function GalleryUploader({
     (i: number) => {
       if (i < 0 || i >= images.length) return;
       const next = images.filter((_, idx) => idx !== i);
-      commit(next);
+      void commit(next);
     },
     [images, commit]
   );
@@ -67,7 +76,7 @@ export default function GalleryUploader({
       const b: string = next[j]!;
       next[i] = b;
       next[j] = a;
-      commit(next);
+      void commit(next);
     },
     [images, commit]
   );
@@ -79,7 +88,7 @@ export default function GalleryUploader({
       const picked: string = next[i]!;
       next.splice(i, 1);
       next.unshift(picked);
-      commit(next);
+      void commit(next);
     },
     [images, commit]
   );
@@ -120,7 +129,7 @@ export default function GalleryUploader({
       const picked: string = next[dragIdx]!;
       next.splice(dragIdx, 1);
       next.splice(i, 0, picked);
-      commit(next);
+      void commit(next);
       onDragEnd();
     },
     [draggable, dragIdx, images, commit, onDragEnd]
@@ -129,20 +138,50 @@ export default function GalleryUploader({
   // ----- file picking -----
   const pickFiles = useCallback(() => inputRef.current?.click(), []);
   const onFiles = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
-      if (!files.length) {
-        e.currentTarget.value = "";
+      e.currentTarget.value = ""; // allow same selection later
+      setErrorMsg("");
+
+      if (!files.length) return;
+
+      const allowed = Math.max(0, max - images.length);
+      if (allowed <= 0) {
+        setErrorMsg(`You can upload up to ${max} photos.`);
         return;
       }
-      // Trim to available space
-      const allowed = Math.max(0, max - images.length);
+
       const chosen = files.slice(0, allowed);
-      void onFilesSelectedAction?.(chosen);
-      // Clear input so same file selection can fire again later
-      e.currentTarget.value = "";
+      // Validate type/size
+      const maxBytes = maxSizeMB * 1024 * 1024;
+      const bad: string[] = [];
+      const ok = chosen.filter((f) => {
+        if (accept.includes("image/") && !f.type.startsWith("image/")) {
+          bad.push(`"${f.name}" is not an image.`);
+          return false;
+        }
+        if (f.size > maxBytes) {
+          const mb = (f.size / (1024 * 1024)).toFixed(1);
+          bad.push(`"${f.name}" is ${mb}MB (max ${maxSizeMB}MB).`);
+          return false;
+        }
+        return true;
+      });
+
+      if (bad.length) setErrorMsg(bad.join(" "));
+
+      if (ok.length === 0) return;
+
+      if (onFilesSelectedAction) {
+        try {
+          setBusy(true);
+          await onFilesSelectedAction(ok);
+        } finally {
+          setBusy(false);
+        }
+      }
     },
-    [images.length, max, onFilesSelectedAction]
+    [images.length, max, onFilesSelectedAction, accept, maxSizeMB]
   );
 
   // ----- UI -----
@@ -227,23 +266,24 @@ export default function GalleryUploader({
         <button
           type="button"
           onClick={pickFiles}
-          className="rounded-xl px-3 py-2 ring-1 ring-gray-300 hover:bg-gray-50 dark:ring-gray-700 dark:hover:bg-gray-900"
-          disabled={!canAddMore}
+          className="rounded-xl px-3 py-2 ring-1 ring-gray-300 hover:bg-gray-50 dark:ring-gray-700 dark:hover:bg-gray-900 disabled:opacity-60"
+          disabled={!canAddMore || busy}
         >
-          {canAddMore ? "Choose files" : "Max reached"}
+          {busy ? "Uploading…" : canAddMore ? "Choose files" : "Max reached"}
         </button>
         <input
           id={`gu-files-${uid}`}
           ref={inputRef}
           type="file"
           multiple
-          accept="image/*"
+          accept={accept}
           className="hidden"
           onChange={onFiles}
         />
         <div className="text-xs text-gray-600 dark:text-gray-400">
           {images.length}/{max} images
         </div>
+        {errorMsg && <div className="ml-2 text-xs text-red-600">{errorMsg}</div>}
       </div>
     </div>
   );

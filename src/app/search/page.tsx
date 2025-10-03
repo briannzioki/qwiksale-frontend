@@ -1,10 +1,10 @@
-﻿// src/app/search/page.tsx
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import ProductCard from "@/app/components/ProductCard";
 import ServiceCard from "@/app/components/ServiceCard";
 import { InfiniteClient } from "./InfiniteClient";
-import type { Sort } from "./SearchClient"; // 
+import type { Sort } from "./SearchClient";
+import { getBaseUrl } from "@/app/lib/url";
 
 /** Always render fresh – results depend on query string. */
 export const dynamic = "force-dynamic";
@@ -61,13 +61,6 @@ function getParam(sp: SearchParams, k: string): string | undefined {
   const v = sp[k];
   return Array.isArray(v) ? v[0] : (v as string | undefined);
 }
-function siteUrl() {
-  const raw =
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "");
-  return (raw || "").replace(/\/+$/, "");
-}
 
 const SORT_OPTIONS: { value: Sort; label: string }[] = [
   { value: "newest", label: "Newest" },
@@ -96,7 +89,10 @@ export default async function SearchPage({
   const minPrice = toNum(getParam(sp, "minPrice"));
   const maxPrice = toNum(getParam(sp, "maxPrice"));
   const page = Math.max(1, toNum(getParam(sp, "page"), 1) || 1);
-  const pageSize = Math.min(96, Math.max(1, toNum(getParam(sp, "pageSize"), 24) || 24));
+
+  // ⚙️ Keep UI pageSize aligned with API cap (1..48)
+  const pageSize = Math.min(48, Math.max(1, toNum(getParam(sp, "pageSize"), 24) || 24));
+
   const sort = ((getParam(sp, "sort") as Sort) || "newest") as Sort;
 
   // Build querystring for API calls
@@ -113,7 +109,7 @@ export default async function SearchPage({
   qs.set("pageSize", String(pageSize));
   qs.set("sort", sort);
 
-  const base = siteUrl();
+  const base = getBaseUrl();
 
   // Endpoints consistent with HomeClient and your API
   const endpoint = type === "product" ? "/api/products" : "/api/services";
@@ -121,12 +117,13 @@ export default async function SearchPage({
 
   // Fetch initial page server-side (SSR fallback)
   const res = await fetch(url, { cache: "no-store" }).catch(() => null);
+  const json = res && res.ok ? await res.json().catch(() => null) : null;
 
   const emptyProducts: Envelope<ProductHit> = { page: 1, pageSize, total: 0, totalPages: 1, items: [] };
   const emptyServices: Envelope<ServiceHit> = { page: 1, pageSize, total: 0, totalPages: 1, items: [] };
 
   const data =
-    (await res?.json().catch(() => null)) ||
+    json ||
     (type === "product" ? emptyProducts : emptyServices);
 
   // If API adjusted page (e.g., asked for page > totalPages), align URL
