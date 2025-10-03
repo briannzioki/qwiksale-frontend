@@ -1,12 +1,10 @@
 // src/app/components/ProductGrid.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import SmartImage from "@/app/components/SmartImage";
 import ProductCard from "@/app/components/ProductCard";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
-import type { Filters } from "@/app/components/FiltersBar";
 
 /* --------------------------------- types --------------------------------- */
 
@@ -21,34 +19,38 @@ type BaseItem = {
   createdAt?: string;
 };
 
-type ApiItem = BaseItem;
+type ProductItem = BaseItem;
+type MixedItem = BaseItem & { type: "product" | "service" };
 
-type ApiResponse = {
-  items: ApiItem[];
-  nextCursor: string | null;
-  hasMore: boolean;
-  total: number;
-  pageSize: number;
-};
-
-type AllItem = BaseItem & { type: "product" | "service" };
-
-type AllResponse = {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-  items: AllItem[];
-};
-
-type Props = {
-  filters: Filters;              // from FiltersBar
-  mode?: Mode;                   // "products" (default) or "all"
-  pageSize?: number;             // defaults to 24
-  prefetchCards?: boolean;       // pass through to <Link prefetch>
-  className?: string;
-  emptyText?: string;
-};
+type Props =
+  | {
+      mode?: "products";
+      items: ProductItem[];
+      loading?: boolean;
+      error?: string | null;
+      hasMore?: boolean;
+      onLoadMoreAction?: () => void | Promise<void>;
+      pageSize?: number;
+      prefetchCards?: boolean;
+      className?: string;
+      emptyText?: string;
+      useSentinel?: boolean;
+      showLoadMoreButton?: boolean;
+    }
+  | {
+      mode: "all";
+      items: MixedItem[];
+      loading?: boolean;
+      error?: string | null;
+      hasMore?: boolean;
+      onLoadMoreAction?: () => void | Promise<void>;
+      pageSize?: number;
+      prefetchCards?: boolean;
+      className?: string;
+      emptyText?: string;
+      useSentinel?: boolean;
+      showLoadMoreButton?: boolean;
+    };
 
 /* --------------------------------- utils --------------------------------- */
 
@@ -70,33 +72,6 @@ function getBlurDataURL(width = 640, height = 360): string {
   return FALLBACK_BLUR;
 }
 
-function buildProductsQuery(filters: Filters, pageSize: number, cursor?: string | null) {
-  const params = new URLSearchParams();
-  if (filters.query?.trim()) params.set("q", filters.query.trim());
-  if (filters.condition && filters.condition !== "all") params.set("condition", filters.condition);
-  if (typeof filters.minPrice === "number") params.set("minPrice", String(filters.minPrice));
-  if (typeof filters.maxPrice === "number") params.set("maxPrice", String(filters.maxPrice));
-  if (filters.sort) params.set("sort", filters.sort);
-  if (filters.verifiedOnly) params.set("featured", "true");
-  params.set("pageSize", String(pageSize));
-  if (cursor) params.set("cursor", cursor);
-  return `/api/products?${params.toString()}`;
-}
-
-function buildAllQuery(filters: Filters, pageSize: number, pageStr?: string | null) {
-  const params = new URLSearchParams();
-  params.set("t", "all");
-  if (filters.query?.trim()) params.set("q", filters.query.trim());
-  // All-tab ignores product-only condition; backend will ignore unknowns anyway.
-  if (typeof filters.minPrice === "number") params.set("minPrice", String(filters.minPrice));
-  if (typeof filters.maxPrice === "number") params.set("maxPrice", String(filters.maxPrice));
-  if (filters.sort) params.set("sort", filters.sort);
-  if (filters.verifiedOnly) params.set("featured", "true");
-  params.set("pageSize", String(pageSize));
-  if (pageStr) params.set("page", pageStr);
-  return `/api/home-feed?${params.toString()}`;
-}
-
 function fmtKES(n: number | null | undefined) {
   if (typeof n !== "number" || n <= 0) return "Contact for price";
   try {
@@ -113,7 +88,7 @@ function MixedTile({
   index,
   prefetch,
 }: {
-  it: AllItem;
+  it: MixedItem;
   index: number;
   prefetch: boolean;
 }) {
@@ -166,119 +141,21 @@ function MixedTile({
 
 /* ---------------------------------- cmp ---------------------------------- */
 
-export default function ProductGrid({
-  filters,
-  mode = "products",
-  pageSize = 24,
-  prefetchCards = true,
-  className = "",
-  emptyText = "No items found. Try adjusting filters.",
-}: Props) {
-  // When mode === "products", we keep the original cursor-based flow.
-  // When mode === "all", we adapt "nextCursor" to be the next page (as string).
-  const [items, setItems] = useState<Array<ApiItem | AllItem>>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null); // cursor OR next page string
-  const [hasMore, setHasMore] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Reset when inputs change
-  useEffect(() => {
-    setItems([]);
-    setNextCursor(null);
-    setHasMore(false);
-    setError(null);
-  }, [filters, pageSize, mode]);
-
-  const fetchPage = useCallback(
-    async (cursorOrPage?: string | null) => {
-      setLoading(true);
-      setError(null);
-
-      const url =
-        mode === "all"
-          ? buildAllQuery(filters, pageSize, cursorOrPage ?? null)
-          : buildProductsQuery(filters, pageSize, cursorOrPage ?? null);
-
-      const ac = new AbortController();
-      try {
-        const r = await fetch(url, { cache: "no-store", signal: ac.signal });
-        const j = await r.json().catch(() => ({}));
-
-        if (!r.ok) {
-          const msg = (j && j.error) || `Failed to load (${r.status})`;
-          throw new Error(msg);
-        }
-
-        if (mode === "all") {
-          const data = j as Partial<AllResponse>;
-          const newItems = Array.isArray(data.items) ? (data.items as AllItem[]) : [];
-          setItems((prev) => {
-            const seen = new Set(prev.map((p) => p.id));
-            return [...prev, ...newItems.filter((it) => !seen.has(it.id))];
-          });
-
-          const page = Number(data.page ?? 1);
-          const totalPages = Number(data.totalPages ?? 1);
-          const more = page < totalPages;
-          setHasMore(more);
-          setNextCursor(more ? String(page + 1) : null);
-        } else {
-          const data = j as Partial<ApiResponse>;
-          const newItems = Array.isArray(data.items) ? (data.items as ApiItem[]) : [];
-          setItems((prev) => {
-            const seen = new Set(prev.map((p) => p.id));
-            return [...prev, ...newItems.filter((it) => !seen.has(it.id))];
-          });
-          setNextCursor((data.nextCursor as string) ?? null);
-          setHasMore(Boolean(data.hasMore));
-        }
-      } catch (e: any) {
-        if (e?.name !== "AbortError") setError(e?.message || "Failed to fetch items");
-      } finally {
-        setLoading(false);
-      }
-
-      return () => ac.abort();
-    },
-    [filters, pageSize, mode]
-  );
-
-  // Initial load
-  useEffect(() => {
-    void fetchPage(null);
-  }, [fetchPage]);
-
-  // Infinite scroll sentinel
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!hasMore || loading) return;
-    const el = sentinelRef.current;
-    if (!el) return;
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && !loading && hasMore) {
-            void fetchPage(nextCursor);
-            break;
-          }
-        }
-      },
-      { rootMargin: "600px 0px" }
-    );
-
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasMore, loading, fetchPage, nextCursor]);
-
-  const content = useMemo(() => {
-    if (error) return <div className="text-sm text-red-600">{error}</div>;
-    if (!loading && items.length === 0) {
-      return <div className="text-sm text-gray-600 dark:text-slate-300">{emptyText}</div>;
-    }
-    return null;
-  }, [error, loading, items.length, emptyText]);
+export default function ProductGrid(props: Props) {
+  const {
+    mode = "products",
+    items,
+    loading = false,
+    error = null,
+    hasMore = false,
+    onLoadMoreAction,
+    pageSize = 24,
+    prefetchCards = true,
+    className = "",
+    emptyText = "No items found. Try adjusting filters.",
+    useSentinel = true,
+    showLoadMoreButton = true,
+  } = props as Required<Props>;
 
   const isAll = mode === "all";
 
@@ -286,11 +163,11 @@ export default function ProductGrid({
     <div className={className}>
       {/* Grid */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {items.map((p, idx) =>
+        {items.map((p: any, idx: number) =>
           isAll ? (
             <MixedTile
-              key={`${(p as AllItem).type}-${p.id}`}
-              it={p as AllItem}
+              key={`${(p as MixedItem).type}-${p.id}`}
+              it={p as MixedItem}
               index={idx}
               prefetch={prefetchCards}
             />
@@ -324,13 +201,19 @@ export default function ProductGrid({
       </div>
 
       {/* Status / errors / empty */}
-      <div className="mt-4">{content}</div>
+      <div className="mt-4">
+        {error ? (
+          <div className="text-sm text-red-600">{error}</div>
+        ) : !loading && items.length === 0 ? (
+          <div className="text-sm text-gray-600 dark:text-slate-300">{emptyText}</div>
+        ) : null}
+      </div>
 
-      {/* Load more button (in addition to auto-sentinel) */}
-      {hasMore && (
+      {/* Load more button */}
+      {showLoadMoreButton && hasMore && (
         <div className="mt-4 flex items-center justify-center">
           <button
-            onClick={() => void fetchPage(nextCursor)}
+            onClick={() => onLoadMoreAction && onLoadMoreAction()}
             disabled={loading}
             className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
           >
@@ -339,8 +222,14 @@ export default function ProductGrid({
         </div>
       )}
 
-      {/* Sentinel for auto-load */}
-      <div ref={sentinelRef} className="h-1 w-full" />
+      {/* Optional sentinel for auto-load (parent controls when to fetch) */}
+      {useSentinel && hasMore && !loading && (
+        <div
+          // Consumers can wrap this div with their own IntersectionObserver if needed
+          data-grid-sentinel
+          className="h-1 w-full"
+        />
+      )}
     </div>
   );
 }

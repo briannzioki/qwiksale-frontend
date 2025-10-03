@@ -1,12 +1,10 @@
 // src/app/components/ServiceGrid.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import type { Filters } from "@/app/components/FiltersBar";
 
-type ApiItem = {
+type ServiceItem = {
   id: string;
   name: string;
   price: number | null;
@@ -18,20 +16,18 @@ type ApiItem = {
   createdAt?: string | null;
 };
 
-type ApiResponse = {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-  items: ApiItem[];
-};
-
 type Props = {
-  filters: Filters;        // we’ll ignore product-only fields like `condition`
-  pageSize?: number;       // defaults to 24
-  prefetchCards?: boolean; // pass through to <Link prefetch>
+  items: ServiceItem[];
+  loading?: boolean;
+  error?: string | null;
+  hasMore?: boolean;
+  onLoadMoreAction?: () => void | Promise<void>;
+  pageSize?: number;
+  prefetchCards?: boolean;
   className?: string;
   emptyText?: string;
+  useSentinel?: boolean;
+  showLoadMoreButton?: boolean;
 };
 
 const FALLBACK_IMG = "/placeholder/default.jpg";
@@ -61,108 +57,19 @@ function shimmer(width: number, height: number) {
   return `data:image/svg+xml;base64,${encode(svg)}`;
 }
 
-function buildQuery(filters: Filters, pageSize: number, page: number) {
-  const params = new URLSearchParams();
-  if (filters.query?.trim()) params.set("q", filters.query.trim());
-  // Services ignore `condition`/`brand` — just price/sort/featured
-  if (typeof filters.minPrice === "number") params.set("minPrice", String(filters.minPrice));
-  if (typeof filters.maxPrice === "number") params.set("maxPrice", String(filters.maxPrice));
-  if (filters.sort) params.set("sort", filters.sort);
-  if (filters.verifiedOnly) params.set("featured", "true");
-  params.set("pageSize", String(pageSize));
-  params.set("page", String(page));
-  return `/api/services?${params.toString()}`;
-}
-
 export default function ServiceGrid({
-  filters,
+  items,
+  loading = false,
+  error = null,
+  hasMore = false,
+  onLoadMoreAction,
   pageSize = 24,
   prefetchCards = true,
   className = "",
   emptyText = "No services found. Try adjusting filters.",
+  useSentinel = true,
+  showLoadMoreButton = true,
 }: Props) {
-  const [items, setItems] = useState<ApiItem[]>([]);
-  const [page, setPage] = useState<number>(1);
-  const [totalPages, setTotalPages] = useState<number>(1);
-  const [hasMore, setHasMore] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Reset when filters change
-  useEffect(() => {
-    setItems([]);
-    setPage(1);
-    setTotalPages(1);
-    setHasMore(false);
-    setError(null);
-  }, [filters, pageSize]);
-
-  const fetchPage = useCallback(
-    async (p: number) => {
-      setLoading(true);
-      setError(null);
-      const url = buildQuery(filters, pageSize, p);
-      const ac = new AbortController();
-      try {
-        const r = await fetch(url, { cache: "no-store", signal: ac.signal });
-        const j = (await r.json().catch(() => ({}))) as Partial<ApiResponse>;
-        if (!r.ok) throw new Error((j as any)?.error || `Failed to load (${r.status})`);
-
-        const newItems = Array.isArray(j.items) ? (j.items as ApiItem[]) : [];
-        setItems((prev) => {
-          const seen = new Set(prev.map((x) => x.id));
-          return [...prev, ...newItems.filter((it) => !seen.has(it.id))];
-        });
-
-        const tp = Number(j.totalPages ?? 1) || 1;
-        setTotalPages(tp);
-        setHasMore(p < tp);
-        setPage(p); // lock in the current page we just fetched
-      } catch (e: any) {
-        if (e?.name !== "AbortError") setError(e?.message || "Failed to fetch services");
-      } finally {
-        setLoading(false);
-      }
-      return () => ac.abort();
-    },
-    [filters, pageSize]
-  );
-
-  // Initial load or on reset
-  useEffect(() => {
-    void fetchPage(1);
-  }, [fetchPage]);
-
-  // Auto-load the next page when sentinel enters viewport
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!hasMore || loading) return;
-    const el = sentinelRef.current;
-    if (!el) return;
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && !loading && hasMore) {
-            void fetchPage(page + 1);
-            break;
-          }
-        }
-      },
-      { rootMargin: "600px 0px" }
-    );
-
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasMore, loading, fetchPage, page]);
-
-  const content = useMemo(() => {
-    if (error) return <div className="text-sm text-red-600">{error}</div>;
-    if (!loading && items.length === 0)
-      return <div className="text-sm text-gray-600 dark:text-slate-300">{emptyText}</div>;
-    return null;
-  }, [error, loading, items.length, emptyText]);
-
   return (
     <div className={className}>
       {/* Grid */}
@@ -231,13 +138,19 @@ export default function ServiceGrid({
       </div>
 
       {/* Status / errors / empty */}
-      <div className="mt-4">{content}</div>
+      <div className="mt-4">
+        {error ? (
+          <div className="text-sm text-red-600">{error}</div>
+        ) : !loading && items.length === 0 ? (
+          <div className="text-sm text-gray-600 dark:text-slate-300">{emptyText}</div>
+        ) : null}
+      </div>
 
-      {/* Load more button (in addition to auto-sentinel) */}
-      {hasMore && (
+      {/* Load more button (optional) */}
+      {showLoadMoreButton && hasMore && (
         <div className="mt-4 flex items-center justify-center">
           <button
-            onClick={() => void fetchPage(page + 1)}
+            onClick={() => onLoadMoreAction && onLoadMoreAction()}
             disabled={loading}
             className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
           >
@@ -246,8 +159,8 @@ export default function ServiceGrid({
         </div>
       )}
 
-      {/* Sentinel for auto-load */}
-      <div ref={sentinelRef} className="h-1 w-full" />
+      {/* Optional sentinel for auto-load (parent can observe this) */}
+      {useSentinel && hasMore && !loading && <div data-grid-sentinel className="h-1 w-full" />}
     </div>
   );
 }
