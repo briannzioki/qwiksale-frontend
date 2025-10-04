@@ -15,13 +15,31 @@ export interface SessionUser {
   image?: string | null;
   username?: string | null;
   subscription?: SubscriptionTier | null;
+  /** True if user email is in ADMIN_EMAILS env list */
+  isAdmin?: boolean;
 }
 
 /**
  * Canonical server-side session fetcher.
  * Wrapped in `cache()` so multiple calls in the same request only hit NextAuth once.
  */
-export const auth = cache(async () => getServerSession(authOptions));
+export const auth = cache(async () => {
+  const session = await getServerSession(authOptions);
+  if (session?.user?.email) {
+    const admins = (process.env['ADMIN_EMAILS'] ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const userEmail = session.user.email.toLowerCase();
+    if (admins.includes(userEmail)) {
+      (session.user as SessionUser).isAdmin = true;
+    } else {
+      (session.user as SessionUser).isAdmin = false;
+    }
+  }
+  return session;
+});
+
 export type Session = Awaited<ReturnType<typeof auth>>;
 
 /** Get the typed `session.user` or `null`. */
@@ -68,7 +86,6 @@ export async function requireUser(callbackUrl?: string): Promise<SessionUser> {
 }
 
 /* -------------------- Runtime sanity (non-fatal) -------------------- */
-/* Helpful warning in dev/preview if NEXTAUTH_URL is missing/mismatched */
 (() => {
   if (process.env.NODE_ENV !== "production") {
     const url = process.env.NEXTAUTH_URL;

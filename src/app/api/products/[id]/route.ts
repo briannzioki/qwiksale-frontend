@@ -369,8 +369,22 @@ export async function DELETE(req: NextRequest) {
     track("product_delete_attempt", { reqId, productId });
 
     const session = await auth();
-    const userId = (session as any)?.user?.id as string | undefined;
-    if (!userId) {
+    const s: any = session?.user ?? {};
+    const userId: string | undefined = s?.id;
+    const email: string | undefined = typeof s?.email === "string" ? s.email : undefined;
+    const role: string | undefined = typeof s?.role === "string" ? s.role : undefined;
+    const isAdminFlag: boolean = s?.isAdmin === true || (role?.toUpperCase?.() === "ADMIN");
+
+    // Admin allow-list fallback via env
+    const adminEmails = (process.env['ADMIN_EMAILS'] ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const emailIsAdmin = !!email && adminEmails.includes(email.toLowerCase());
+
+    const isAdmin = isAdminFlag || emailIsAdmin;
+
+    if (!userId && !isAdmin) {
       track("product_delete_unauthorized", { reqId, productId });
       return noStore({ error: "Unauthorized" }, { status: 401 });
     }
@@ -383,7 +397,10 @@ export async function DELETE(req: NextRequest) {
       track("product_delete_not_found", { reqId, productId, reason: "no_existing" });
       return noStore({ error: "Not found" }, { status: 404 });
     }
-    if (existing.sellerId && existing.sellerId !== userId) {
+
+    // Owner OR Admin can delete
+    const isOwner = !!userId && existing.sellerId === userId;
+    if (!isOwner && !isAdmin) {
       track("product_delete_forbidden", { reqId, productId });
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
@@ -398,7 +415,7 @@ export async function DELETE(req: NextRequest) {
       revalidateTag("home:active");
       revalidateTag("products:latest");
       revalidateTag(`product:${productId}`);
-      revalidateTag(`user:${userId}:listings`);
+      if (userId) revalidateTag(`user:${userId}:listings`);
       revalidatePath("/");
       revalidatePath(`/product/${productId}`);
       revalidatePath(`/listing/${productId}`);

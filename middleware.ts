@@ -166,7 +166,7 @@ export default withAuth(
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
 
-        // Gate only what truly needs auth (pages)
+        // Pages that need a signed-in user
         const needsAuth =
           p.startsWith("/sell") ||
           p.startsWith("/account") ||
@@ -178,9 +178,24 @@ export default withAuth(
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
 
         if (needsAdmin) {
-          const role = (token as any)?.role;
-          return !!token && typeof role === "string" && role.toUpperCase() === "ADMIN";
+          // Accept any of:
+          // 1) token.isAdmin === true (set by NextAuth/JWT callback),
+          // 2) token.role === 'ADMIN' (legacy),
+          // 3) token.email is in ADMIN_EMAILS (env)
+          const t: any = token ?? {};
+          const tokenRole = typeof t.role === "string" ? t.role.toUpperCase() : "";
+          const tokenIsAdmin = t.isAdmin === true || tokenRole === "ADMIN";
+
+          const email = typeof t.email === "string" ? t.email.toLowerCase() : "";
+          const adminList = (process.env.ADMIN_EMAILS ?? "")
+            .split(",")
+            .map((e) => e.trim().toLowerCase())
+            .filter(Boolean);
+          const emailIsAdmin = !!email && adminList.includes(email);
+
+          return !!token && (tokenIsAdmin || emailIsAdmin);
         }
+
         if (needsAuth) return !!token;
         return true;
       },

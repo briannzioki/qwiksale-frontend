@@ -215,25 +215,42 @@ export async function PATCH(req: NextRequest) {
 }
 
 /* ---------------------------- DELETE ---------------------------- */
-/** Soft-delete: mark as HIDDEN (parity with public filtering). */
+/** Soft-delete: mark as HIDDEN (parity with public filtering).
+ *  Owner OR Admin may perform this action.
+ */
 export async function DELETE(req: NextRequest) {
   try {
     const id = getId(req);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     const session = await auth().catch(() => null);
-    const uid = (session?.user as any)?.id as string | undefined;
-    if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
+    const s: any = session?.user ?? {};
+    const uid: string | undefined = s?.id;
+    const email: string | undefined = typeof s?.email === "string" ? s.email : undefined;
+    const role: string | undefined = typeof s?.role === "string" ? s.role : undefined;
+    const isAdminFlag: boolean = s?.isAdmin === true || (role?.toUpperCase?.() === "ADMIN");
+
+    // Admin allow-list via env (same pattern as products route)
+    const adminEmails = (process.env['ADMIN_EMAILS'] ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const emailIsAdmin = !!email && adminEmails.includes(email.toLowerCase());
+
+    const isAdmin = isAdminFlag || emailIsAdmin;
+
+    if (!uid && !isAdmin) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const svc = await db.service.findUnique({
       where: { id },
       select: { sellerId: true, status: true },
     });
-    if (!svc || svc.sellerId !== uid) {
-      return noStore({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!svc) return noStore({ error: "Not found" }, { status: 404 });
 
-    // Soft delete
+    const isOwner = !!uid && svc.sellerId === uid;
+    if (!isOwner && !isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
+
+    // Soft delete (leave hard-deletes to DB maintenance scripts)
     await db.service.update({
       where: { id },
       data: { status: "HIDDEN", featured: false },
@@ -244,7 +261,7 @@ export async function DELETE(req: NextRequest) {
       revalidateTag("home:active");
       revalidateTag("services:latest");
       revalidateTag(`service:${id}`);
-      revalidateTag(`user:${uid}:services`);
+      if (uid) revalidateTag(`user:${uid}:services`);
       revalidatePath("/");
       revalidatePath(`/service/${id}`);
     } catch {

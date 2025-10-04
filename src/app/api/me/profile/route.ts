@@ -17,15 +17,11 @@ function noStore(json: unknown, init?: ResponseInit) {
 }
 
 const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
-function looksLikeValidUsername(u: string) {
-  return USERNAME_RE.test(u);
-}
+function looksLikeValidUsername(u: string) { return USERNAME_RE.test(u); }
 
 const RESERVED = new Set(
   (process.env["RESERVED_USERNAMES"] || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
+    .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
 );
 
 function normalizeName(input: unknown): string | undefined {
@@ -40,7 +36,7 @@ function normalizeImageUrl(input: unknown): string | null | undefined {
   if (typeof input !== "string") return undefined;
   const s = input.trim();
   if (!s) return null;
-  if (!/^https?:\/\//i.test(s)) return null; // treat non-url-ish as clear
+  if (!/^https?:\/\//i.test(s)) return null;
   return s.length > 2048 ? s.slice(0, 2048) : s;
 }
 
@@ -64,40 +60,34 @@ function looksLikeValidKePhone(s?: string) {
 export async function GET() {
   try {
     const session = await auth().catch(() => null);
-    const userId = (session as any)?.user?.id as string | undefined;
+    const sessionUser = (session as any)?.user || null;
+
+    // Resolve user id (prefer id → fallback email)
+    let userId: string | undefined = sessionUser?.id as string | undefined;
+    if (!userId && sessionUser?.email) {
+      try {
+        const u = await prisma.user.findUnique({
+          where: { email: sessionUser.email as string },
+          select: { id: true },
+        });
+        userId = u?.id;
+      } catch { /* ignore */ }
+    }
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
-        id: true,
-        email: true,
-        username: true,
-        name: true,
-        image: true,
-        whatsapp: true,
-        // (Optional) include phone if you want to fall back to it:
-        // phone: true,
-        address: true,
-        postalCode: true,
-        city: true,
-        country: true,
+        id: true, email: true, username: true, name: true, image: true,
+        whatsapp: true, address: true, postalCode: true, city: true, country: true,
       },
     });
     if (!user) return noStore({ error: "Not found" }, { status: 404 });
 
-    // Normalize whatsapp for output
     const normalizedWhatsapp = normalizeKePhone(user.whatsapp ?? "") || null;
-
     const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
 
-    return noStore({
-      user: {
-        ...user,
-        whatsapp: normalizedWhatsapp,
-        profileComplete,
-      },
-    });
+    return noStore({ user: { ...user, whatsapp: normalizedWhatsapp, profileComplete } });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/me/profile GET] error:", e);
@@ -109,7 +99,19 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const session = await auth().catch(() => null);
-    const userId = (session as any)?.user?.id as string | undefined;
+    const sessionUser = (session as any)?.user || null;
+
+    // Resolve user id (prefer id → fallback email)
+    let userId: string | undefined = sessionUser?.id as string | undefined;
+    if (!userId && sessionUser?.email) {
+      try {
+        const u = await prisma.user.findUnique({
+          where: { email: sessionUser.email as string },
+          select: { id: true },
+        });
+        userId = u?.id;
+      } catch { /* ignore */ }
+    }
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const body = (await req.json().catch(() => ({}))) as {
@@ -125,11 +127,9 @@ export async function PATCH(req: Request) {
 
     const data: Record<string, unknown> = {};
 
-    // name (optional; allow clear)
     const normName = normalizeName(body?.name ?? undefined);
     if (normName !== undefined) data["name"] = normName || null;
 
-    // username (optional; disallow clear)
     if (typeof body?.username === "string") {
       const username = body.username.trim();
       if (!looksLikeValidUsername(username)) {
@@ -142,23 +142,16 @@ export async function PATCH(req: Request) {
         return noStore({ error: "That username is reserved." }, { status: 409 });
       }
       const clash = await prisma.user.findFirst({
-        where: {
-          username: { equals: username, mode: "insensitive" },
-          NOT: { id: userId },
-        },
+        where: { username: { equals: username, mode: "insensitive" }, NOT: { id: userId } },
         select: { id: true },
       });
-      if (clash) {
-        return noStore({ error: "Username is already taken." }, { status: 409 });
-      }
+      if (clash) return noStore({ error: "Username is already taken." }, { status: 409 });
       data["username"] = username;
     }
 
-    // image (optional; allow clear)
     const normImage = normalizeImageUrl(body?.image);
     if (normImage !== undefined) data["image"] = normImage;
 
-    // whatsapp (optional; normalize/validate; allow clear)
     if (body?.whatsapp !== undefined) {
       const norm = normalizeKePhone(body.whatsapp);
       if (norm && !looksLikeValidKePhone(norm)) {
@@ -170,15 +163,10 @@ export async function PATCH(req: Request) {
       data["whatsapp"] = norm ? norm : null;
     }
 
-    // address bits (optional; allow clear)
-    if (body?.address !== undefined)
-      data["address"] = body.address?.trim() ? body.address.trim() : null;
-    if (body?.postalCode !== undefined)
-      data["postalCode"] = body.postalCode?.trim() ? body.postalCode.trim() : null;
-    if (body?.city !== undefined)
-      data["city"] = body.city?.trim() ? body.city.trim() : null;
-    if (body?.country !== undefined)
-      data["country"] = body.country?.trim() ? body.country.trim() : null;
+    if (body?.address !== undefined)    data["address"]    = body.address?.trim()    || null;
+    if (body?.postalCode !== undefined) data["postalCode"] = body.postalCode?.trim() || null;
+    if (body?.city !== undefined)       data["city"]       = body.city?.trim()       || null;
+    if (body?.country !== undefined)    data["country"]    = body.country?.trim()    || null;
 
     if (Object.keys(data).length === 0) {
       return noStore({ error: "Nothing to update." }, { status: 400 });
@@ -188,26 +176,15 @@ export async function PATCH(req: Request) {
       where: { id: userId },
       data,
       select: {
-        id: true,
-        email: true,
-        username: true,
-        name: true,
-        image: true,
-        whatsapp: true,
-        address: true,
-        postalCode: true,
-        city: true,
-        country: true,
+        id: true, email: true, username: true, name: true, image: true,
+        whatsapp: true, address: true, postalCode: true, city: true, country: true,
       },
     });
 
     const normalizedWhatsapp = normalizeKePhone(user.whatsapp ?? "") || null;
     const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
 
-    return noStore({
-      ok: true,
-      user: { ...user, whatsapp: normalizedWhatsapp, profileComplete },
-    });
+    return noStore({ ok: true, user: { ...user, whatsapp: normalizedWhatsapp, profileComplete } });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/me/profile PATCH] error:", e);
