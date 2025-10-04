@@ -9,7 +9,7 @@ import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const PRODUCTS_VER = "vDEBUG-PRODUCTS-005";
+const PRODUCTS_VER = "vDEBUG-PRODUCTS-008";
 function attachVersion(h: Headers) {
   h.set("X-Products-Version", PRODUCTS_VER);
 }
@@ -254,6 +254,7 @@ export async function GET(req: NextRequest) {
       select.favorites = { where: { userId }, select: { productId: true }, take: 1 };
     }
 
+    // Guard result window (skip if using cursor)
     if (!cursor) {
       const skipEst = (page - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
@@ -389,12 +390,16 @@ export async function HEAD() {
   const res = jsonPublic(null, 60, { status: 204 });
   attachVersion(res.headers);
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  res.headers.set("Allow", "GET, POST, PATCH, HEAD, OPTIONS");
   return res;
 }
 
 export async function OPTIONS() {
-  const res = jsonPublic({ ok: true }, 60, { status: 200 });
+  const res = jsonPublic({ ok: true }, 60, { status: 204 });
   attachVersion(res.headers);
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  res.headers.set("Allow", "GET, POST, PATCH, HEAD, OPTIONS");
+  res.headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, HEAD, OPTIONS");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   return res;
 }
