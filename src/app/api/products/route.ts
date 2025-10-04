@@ -9,7 +9,7 @@ import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const PRODUCTS_VER = "vDEBUG-PRODUCTS-004";
+const PRODUCTS_VER = "vDEBUG-PRODUCTS-005";
 function attachVersion(h: Headers) {
   h.set("X-Products-Version", PRODUCTS_VER);
 }
@@ -44,7 +44,7 @@ function optStr(v: string | null): string | undefined {
 function hasNumeric(val: string | null) {
   if (val == null) return false;
   const t = val.trim();
-  if (!t) return false; // <-- crucial: ignore blank like "?limit="
+  if (!t) return false;
   return Number.isFinite(Number(t));
 }
 type SortKey = "newest" | "price_asc" | "price_desc" | "featured";
@@ -65,21 +65,19 @@ const productListSelect = {
   brand: true,
   condition: true,
   price: true,
-  image: true, // thumbnail/single cover URL if you have it
+  image: true,
   location: true,
   negotiable: true,
   createdAt: true,
   featured: true,
   sellerId: true,
 
-  // flattened seller snapshot (columns on Product)
   sellerName: true,
   sellerLocation: true,
   sellerMemberSince: true,
   sellerRating: true,
   sellerSales: true,
 
-  // tiny seller relation (for avatar/username)
   seller: {
     select: { id: true, username: true, name: true, image: true, subscription: true },
   },
@@ -90,7 +88,6 @@ const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_RESULT_WINDOW = 10_000;
 
-/** Price clause with known keys (avoids index-signature property warnings) */
 type PriceClause = { gte?: number; lte?: number };
 
 /* ------------------------- GET /api/products ------------------------- */
@@ -102,8 +99,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Clamp q to avoid expensive scans on huge strings
-    const rawQ = (url.searchParams.get("q") || "").trim();
-    const q = rawQ.slice(0, 64);
+    const rawQ = (url.searchParams.get("q") || "").trim().slice(0, 64);
+    const tokens = rawQ.split(/\s+/).map((s) => s.trim()).filter((s) => s.length > 1).slice(0, 5);
 
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
@@ -128,13 +125,12 @@ export async function GET(req: NextRequest) {
         res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
         return res;
       }
-      sellerId = uid; // mine wins
+      sellerId = uid;
     }
 
     const featured = toBool(url.searchParams.get("featured"));
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
 
-    // Only apply price filter if params are present
     const minPriceStr = url.searchParams.get("minPrice");
     const maxPriceStr = url.searchParams.get("maxPrice");
 
@@ -142,7 +138,6 @@ export async function GET(req: NextRequest) {
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
     const includeFav = toBool(url.searchParams.get("includeFav")) === true;
 
-    // pagination (honor limit OR pageSize; ignore blank "limit=")
     const cursor = optStr(url.searchParams.get("cursor"));
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const limitStr = url.searchParams.get("limit");
@@ -153,7 +148,6 @@ export async function GET(req: NextRequest) {
     if (hasLimit) pageSize = toInt(limitStr!, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     else if (hasPageSize) pageSize = toInt(pageSizeStr!, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
-    // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
     const statusParam = optStr(url.searchParams.get("status"));
     const where: Record<string, any> = {};
     if (!statusParam || statusParam.toUpperCase() === "ACTIVE") {
@@ -164,17 +158,21 @@ export async function GET(req: NextRequest) {
 
     const and: any[] = [];
 
-    if (q) {
-      and.push({
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { brand: { contains: q, mode: "insensitive" } },
-          { category: { contains: q, mode: "insensitive" } },
-          { subcategory: { contains: q, mode: "insensitive" } },
-          { sellerName: { contains: q, mode: "insensitive" } },
-        ],
-      });
+    // ✅ Tokenized AND search
+    if (tokens.length) {
+      for (const t of tokens) {
+        and.push({
+          OR: [
+            { name: { contains: t, mode: "insensitive" } },
+            { brand: { contains: t, mode: "insensitive" } },
+            { category: { contains: t, mode: "insensitive" } },
+            { subcategory: { contains: t, mode: "insensitive" } },
+            { sellerName: { contains: t, mode: "insensitive" } },
+          ],
+        });
+      }
     }
+
     if (category) and.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (brand) and.push({ brand: { contains: brand, mode: "insensitive" } });
@@ -183,16 +181,12 @@ export async function GET(req: NextRequest) {
     if (sellerUsername)
       and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
 
-    // verifiedOnly should override featured to avoid contradictory filters
     if (verifiedOnly === true) {
       and.push({ featured: true });
     } else if (typeof featured === "boolean") {
       and.push({ featured });
     }
 
-    // Price filter:
-    // - Apply ONLY if minPrice or maxPrice is provided
-    // - If minPrice is 0 or omitted, include price:null (free/unset) via OR
     if (minPriceStr !== null || maxPriceStr !== null) {
       const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
       const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
@@ -209,27 +203,25 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // When sorting by price, exclude null prices for deterministic ordering
     if (sort === "price_asc" || sort === "price_desc") {
       and.push({ price: { not: null } });
     }
 
     if (and.length) where["AND"] = and;
 
-    const isSearchLike = q.length > 0 || !!category || !!subcategory || !!brand;
+    const isSearchLike = tokens.length > 0 || !!category || !!subcategory || !!brand;
 
-    // Default sort -> tie-break on createdAt then id for stability (matches services)
     let orderBy: any;
     if (sort === "price_asc") {
-      orderBy = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+      orderBy = [{ price: "asc" }, { createdAt: "desc" }, { id: "desc" }];
     } else if (sort === "price_desc") {
-      orderBy = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+      orderBy = [{ price: "desc" }, { createdAt: "desc" }, { id: "desc" }];
     } else if (sort === "featured") {
-      orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+      orderBy = [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }];
     } else {
       orderBy = isSearchLike
-        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
-        : [{ createdAt: "desc" as const }, { id: "desc" as const }];
+        ? [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }]
+        : [{ createdAt: "desc" }, { id: "desc" }];
     }
 
     if (process.env.NODE_ENV !== "production") {
@@ -238,7 +230,6 @@ export async function GET(req: NextRequest) {
       console.log("[/api/products page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
     }
 
-    // Resolve user only if caller explicitly wants personal favorite flag
     let userId: string | null = null;
     if (includeFav) {
       try {
@@ -258,13 +249,11 @@ export async function GET(req: NextRequest) {
     }
 
     const select: any = { ...productListSelect };
-    // counts always useful and cheap
     select._count = { select: { favorites: true } };
     if (userId) {
       select.favorites = { where: { userId }, select: { productId: true }, take: 1 };
     }
 
-    // Guard result window if using page/skip (to avoid huge DB offsets)
     if (!cursor) {
       const skipEst = (page - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
@@ -273,7 +262,7 @@ export async function GET(req: NextRequest) {
             page,
             pageSize,
             total: 0,
-            totalPages: 1, // keep UI stable
+            totalPages: 1,
             sort,
             items: [],
             facets: wantFacets ? { categories: [], brands: [], conditions: [] } : undefined,
@@ -312,9 +301,9 @@ export async function GET(req: NextRequest) {
     const data = hasMore ? (productsRaw as unknown[]).slice(0, pageSize) : (productsRaw as unknown[]);
     const nextCursor = hasMore && data.length ? (data[data.length - 1] as any).id : null;
 
-    const items = (data as Array<any>).map((p) => {
+    const items = data.map((p: any) => {
       const favoritesCount: number = p?._count?.favorites ?? 0;
-      const rel = (p as any)?.favorites;
+      const rel = p?.favorites;
       const isFavoritedByMe: boolean = Array.isArray(rel) && rel.length > 0;
       const createdAt =
         p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
@@ -340,7 +329,6 @@ export async function GET(req: NextRequest) {
     res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
     return res;
   } catch (e: any) {
-    // eslint-disable-next-line no-console
     console.warn("[/api/products GET] ERROR:", e?.message, e);
     const res = jsonPrivate({ error: "Server error" }, { status: 500 });
     attachVersion(res.headers);
@@ -364,7 +352,7 @@ function coalesceCaseInsensitive<T>(
   rows: T[],
   pick: (r: T) => string | null
 ): Array<{ value: string; count: number }> {
-  const map = new Map<string, { value: string; count: number }>(); // key = lowercased
+  const map = new Map<string, { value: string; count: number }>();
   for (const r of rows) {
     const raw = pick(r);
     if (!raw) continue;

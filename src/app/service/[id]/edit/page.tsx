@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import EditMediaClient from "@/app/components/EditMediaClient";
+import DeleteListingButton from "@/app/dashboard/DeleteListingButton";
 
 export const metadata: Metadata = {
   title: "Edit service • QwikSale",
@@ -227,6 +228,8 @@ export default async function EditServicePage(props: any) {
             >
               View live
             </Link>
+            {/* Delete (owner only due to strict gating above) */}
+            <DeleteListingButton serviceId={service.id} productName={serviceName} />
           </div>
         </div>
       </div>

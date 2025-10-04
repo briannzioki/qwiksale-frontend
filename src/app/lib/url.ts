@@ -1,3 +1,4 @@
+// src/app/lib/url.ts
 /** ----------------------------------------------------------------
  * Base URL utilities
  * ---------------------------------------------------------------- */
@@ -246,15 +247,50 @@ export function buildHomeFeedAbsoluteUrl(q: HomeQuery): string {
  * Search helpers (used by header inline search)
  * ---------------------------------------------------------------- */
 
-/** Build a clean /search href; trims & omits empty q. */
-export function buildSearchHref(q?: string | null): string {
-  const term = String(q ?? "").trim();
-  if (!term) return "/search";
-  const sp = new URLSearchParams({ q: term });
-  return `/search?${sp.toString()}`;
+export type SearchHrefOptions = {
+  /** Free text */
+  q?: string | null;
+  /** Force type tab in /search (maps to our UI) */
+  type?: "all" | "product" | "service";
+  /** Optional pre-filter facets (the /search page understands these) */
+  brand?: string;
+  category?: string;
+  subcategory?: string;
+};
+
+/** Build a clean /search href.
+ *  Overloads:
+ *    - buildSearchHref()                -> "/search"
+ *    - buildSearchHref("iphone")        -> "/search?q=iphone"
+ *    - buildSearchHref({ q, type, ...}) -> "/search?..."
+ */
+export function buildSearchHref(): string;
+export function buildSearchHref(q: string | null | undefined): string;
+export function buildSearchHref(opts: SearchHrefOptions): string;
+export function buildSearchHref(arg?: string | null | SearchHrefOptions): string {
+  // Normalize to an options object
+  const opts: SearchHrefOptions =
+    typeof arg === "string" || arg == null ? { q: arg ?? "" } : (arg as SearchHrefOptions);
+
+  const sp = new URLSearchParams();
+
+  const term = String(opts.q ?? "").trim();
+  if (term) sp.set("q", term);
+
+  // keep keys minimal; only set when provided
+  if (opts.type && opts.type !== "all") sp.set("type", opts.type);
+  if (opts.brand?.trim()) sp.set("brand", opts.brand.trim());
+  if (opts.category?.trim()) sp.set("category", opts.category.trim());
+  if (opts.subcategory?.trim()) sp.set("subcategory", opts.subcategory.trim());
+
+  const qs = sp.toString();
+  return qs ? `/search?${qs}` : "/search";
 }
 
-/** Absolute URL variant, if needed on server/edge. */
-export function buildSearchAbsoluteUrl(q?: string | null): string {
-  return makeAbsoluteUrl(buildSearchHref(q));
+/** Absolute URL variant (accepts same overloads). */
+export function buildSearchAbsoluteUrl(): string;
+export function buildSearchAbsoluteUrl(q: string | null | undefined): string;
+export function buildSearchAbsoluteUrl(opts: SearchHrefOptions): string;
+export function buildSearchAbsoluteUrl(arg?: string | null | SearchHrefOptions): string {
+  return makeAbsoluteUrl(buildSearchHref(arg as any));
 }

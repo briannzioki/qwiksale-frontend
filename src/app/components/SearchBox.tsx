@@ -470,40 +470,49 @@ export default function SearchBox(props: Props) {
     >
       {/* Keep combobox mounted for smoothness (hide when closed) */}
       <div className={inlineOpen ? "block" : "hidden"}>
-        <SearchCombobox
-          value={q}
-          onChangeAction={(v: string) => setQ(v)}
-          onSelectAction={(item: ComboItem<SuggestionMeta>) => go(item.label, item)}
-          fetchSuggestionsAction={fetchSuggest}
-          placeholder={placeholder}
-          debounceMs={DEBOUNCE_MS}
-          ariaLabel="Quick search"
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            go(q);
+          }}
+          role="search"
+          aria-label="Quick search"
           className="w-full"
-        />
-        {/* Actions row: clear + icon submit */}
-        <div className="mt-1 flex items-center justify-end gap-1">
-          {!!q && (
+        >
+          <SearchCombobox
+            value={q}
+            onChangeAction={(v: string) => setQ(v)}
+            onSelectAction={(item: ComboItem<SuggestionMeta>) => go(item.label, item)}
+            fetchSuggestionsAction={fetchSuggest}
+            placeholder={placeholder}
+            debounceMs={DEBOUNCE_MS}
+            ariaLabel="Quick search"
+            className="w-full"
+          />
+          {/* Actions row: clear + icon submit */}
+          <div className="mt-1 flex items-center justify-end gap-1">
+            {!!q && (
+              <button
+                type="button"
+                aria-label="Clear"
+                className="rounded-md px-1.5 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                onClick={() => setQ("")}
+              >
+                Clear
+              </button>
+            )}
             <button
-              type="button"
-              aria-label="Clear"
-              className="rounded-md px-1.5 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800"
-              onClick={() => setQ("")}
+              type="submit"
+              aria-label="Search"
+              className="rounded-md p-1.5 text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-800"
+              title="Search"
             >
-              Clear
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M21 20l-5.2-5.2a7 7 0 10-1.4 1.4L20 21l1-1zM5 11a6 6 0 1112 0A6 6 0 015 11z" />
+              </svg>
             </button>
-          )}
-          <button
-            type="button"
-            aria-label="Search"
-            className="rounded-md p-1.5 text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-800"
-            onClick={() => go(q)}
-            title="Search"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <path d="M21 20l-5.2-5.2a7 7 0 10-1.4 1.4L20 21l1-1zM5 11a6 6 0 1112 0A6 6 0 015 11z" />
-            </svg>
-          </button>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   );

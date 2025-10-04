@@ -19,33 +19,41 @@ function noStore(json: unknown, init?: ResponseInit) {
 export async function GET() {
   try {
     const session = await auth().catch(() => null);
-    const userId = (session as any)?.user?.id as string | undefined;
+    const sessionUser = (session as any)?.user || null;
+
+    // Prefer id; fall back to email → id
+    let userId: string | undefined = sessionUser?.id as string | undefined;
+    if (!userId && sessionUser?.email) {
+      try {
+        const u = await prisma.user.findUnique({
+          where: { email: sessionUser.email as string },
+          select: { id: true },
+        });
+        userId = u?.id;
+      } catch {
+        /* ignore */
+      }
+    }
 
     if (!userId) {
       return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Grab everything to avoid prisma select mismatches across schemas
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
+    // Grab everything (tolerant to schema drift)
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return noStore({ error: "Not found" }, { status: 404 });
 
-    if (!user) {
-      return noStore({ error: "Not found" }, { status: 404 });
-    }
-
-    // Some fields may not exist in your schema; read with `as any`
     const username   = (user as any).username ?? null;
     const image      = (user as any).image ?? null;
     const phone      = (user as any).phone ?? null;
-    const whatsapp   = (user as any).whatsapp ?? phone ?? null; // prefer whatsapp, fall back to phone
+    const whatsapp   = (user as any).whatsapp ?? phone ?? null;
     const address    = (user as any).address ?? null;
     const postalCode = (user as any).postalCode ?? null;
     const city       = (user as any).city ?? null;
     const country    = (user as any).country ?? null;
 
-    // Minimal rule: consider profile “complete” if we have an email and a phone/whatsapp.
     const profileComplete = Boolean(user.email) && Boolean(whatsapp);
+    const isAdmin = Boolean((session as any)?.user?.isAdmin);
 
     return noStore({
       user: {
@@ -60,6 +68,7 @@ export async function GET() {
         city,
         country,
         profileComplete,
+        isAdmin,
       },
     });
   } catch (e) {

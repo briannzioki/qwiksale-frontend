@@ -9,7 +9,7 @@ import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const SERVICES_VER = "vDEBUG-SERVICES-006";
+const SERVICES_VER = "vDEBUG-SERVICES-008";
 function attachVersion(h: Headers) {
   h.set("X-Services-Version", SERVICES_VER);
 }
@@ -68,6 +68,33 @@ const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_RESULT_WINDOW = 10_000;
 
+/* ------------------------- search variants ------------------------- */
+type SearchField = "name" | "title" | "description" | "category" | "subcategory";
+
+/** Try richer → safer. */
+const SEARCH_FIELD_VARIANTS: SearchField[][] = [
+  ["name", "title", "description", "category", "subcategory"],
+  ["name", "description", "category", "subcategory"], // no `title`
+  ["name", "category", "subcategory"],
+  ["name", "description"],
+  ["name"],
+];
+
+function buildSearchAND(tokens: string[], rawQ: string, fields: SearchField[]) {
+  const makeOr = (needle: string) =>
+    ({
+      OR: fields.map((f) => ({ [f]: { contains: needle, mode: "insensitive" } })),
+    } as any);
+
+  const AND: any[] = [];
+  if (tokens.length > 0) {
+    for (const t of tokens) AND.push(makeOr(t));
+  } else if (rawQ) {
+    AND.push(makeOr(rawQ));
+  }
+  return AND;
+}
+
 /* -------------------------- GET /api/services -------------------------- */
 export async function GET(req: NextRequest) {
   try {
@@ -98,7 +125,9 @@ export async function GET(req: NextRequest) {
       console.log("[/api/services GET]", SERVICES_VER, url.toString());
     }
 
-    const q = (url.searchParams.get("q") || "").trim().slice(0, 64);
+    const rawQ = (url.searchParams.get("q") || "").trim().slice(0, 64);
+    const tokens = rawQ.split(/\s+/).map((s) => s.trim()).filter((s) => s.length > 1).slice(0, 5);
+
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
 
@@ -124,7 +153,7 @@ export async function GET(req: NextRequest) {
       sellerId = uid;
     }
 
-    // If a username is provided, resolve to id (avoids relying on relation inside where)
+    // If a username is provided, resolve to id
     if (!sellerId && sellerUsername) {
       try {
         const u = await prisma.user.findUnique({
@@ -147,7 +176,7 @@ export async function GET(req: NextRequest) {
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
 
-    // Pagination (honor limit over pageSize; ignore blank values)
+    // Pagination
     const cursor = optStr(url.searchParams.get("cursor"));
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const limitStr = url.searchParams.get("limit");
@@ -161,37 +190,22 @@ export async function GET(req: NextRequest) {
     if (hasLimit) pageSize = toInt(limitStr!, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     else if (hasPageSize) pageSize = toInt(pageSizeStr!, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
-    // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
+    // -------------------- build non-search filters --------------------
     const statusParam = optStr(url.searchParams.get("status"));
-    const where: Record<string, any> = {};
-    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") {
-      where["status"] = "ACTIVE";
-    } else if (statusParam.toUpperCase() !== "ALL") {
-      where["status"] = statusParam.toUpperCase();
-    }
+    const whereBase: Record<string, any> = {};
+    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") whereBase['status'] = "ACTIVE";
+    else if (statusParam.toUpperCase() !== "ALL") whereBase['status'] = statusParam.toUpperCase();
 
-    const AND: any[] = [];
-
-    if (q) {
-      AND.push({
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { title: { contains: q, mode: "insensitive" } },
-          { description: { contains: q, mode: "insensitive" } },
-          { category: { contains: q, mode: "insensitive" } },
-          { subcategory: { contains: q, mode: "insensitive" } },
-        ],
-      });
-    }
-    if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
-    if (subcategory) AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
-    if (sellerId) AND.push({ sellerId });
+    const ANDExtra: any[] = [];
+    if (category) ANDExtra.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory) ANDExtra.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (sellerId) ANDExtra.push({ sellerId });
 
     // verifiedOnly overrides featured
     if (verifiedOnly === true) {
-      AND.push({ featured: true });
+      ANDExtra.push({ featured: true });
     } else if (typeof featured === "boolean") {
-      AND.push({ featured });
+      ANDExtra.push({ featured });
     }
 
     // Price filter logic
@@ -204,25 +218,64 @@ export async function GET(req: NextRequest) {
       if (typeof maxPrice === "number") priceClause.lte = maxPrice;
 
       if (!minPrice || minPrice === 0) {
-        AND.push({ OR: [{ price: null }, { price: priceClause }] });
+        ANDExtra.push({ OR: [{ price: null }, { price: priceClause }] });
       } else {
-        AND.push({ price: priceClause });
+        ANDExtra.push({ price: priceClause });
       }
     }
 
     // When sorting by price, exclude nulls for stable ordering
     if (sort === "price_asc" || sort === "price_desc") {
-      AND.push({ price: { not: null } });
+      ANDExtra.push({ price: { not: null } });
     }
 
-    if (AND.length) where["AND"] = AND;
+    // -------------------- choose a working search WHERE --------------------
+    const isSearchRequested = !!rawQ;
+    let chosenWhere: Record<string, any> | null = null;
+    let chosenFields: SearchField[] = [];
 
-    const isSearchLike = q.length > 0 || !!category || !!subcategory;
+    if (isSearchRequested) {
+      for (const fields of SEARCH_FIELD_VARIANTS) {
+        const ANDsearch = buildSearchAND(tokens, rawQ, fields);
+        const candidate: Record<string, any> = { ...whereBase };
+        const AND: any[] = [];
+        if (ANDsearch.length) AND.push(...ANDsearch);
+        if (ANDExtra.length) AND.push(...ANDExtra);
+        if (AND.length) candidate['AND'] = AND;
 
-    // Primary orderBy + fallbacks if fields are missing in schema
+        try {
+          // Probe via count to ensure Prisma accepts these fields in this schema
+          await Service.count({ where: candidate });
+          chosenWhere = candidate;
+          chosenFields = fields;
+          break;
+        } catch (e) {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn(
+              "[/api/services] search variant failed; trying next:",
+              fields,
+              (e as any)?.message ?? e
+            );
+          }
+        }
+      }
+    }
+
+    // Fallback: no search or no variant worked → only non-search filters
+    if (!chosenWhere) {
+      const candidate: Record<string, any> = { ...whereBase };
+      if (ANDExtra.length) candidate['AND'] = ANDExtra;
+      chosenWhere = candidate;
+    }
+
+    const isSearchLike = !!rawQ || !!category || !!subcategory;
+
+    // Primary orderBy + fallbacks
     let primaryOrder: any;
-    if (sort === "price_asc") primaryOrder = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
-    else if (sort === "price_desc") primaryOrder = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    if (sort === "price_asc")
+      primaryOrder = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    else if (sort === "price_desc")
+      primaryOrder = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
     else if (sort === "featured")
       primaryOrder = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
     else
@@ -238,9 +291,10 @@ export async function GET(req: NextRequest) {
     ];
 
     if (process.env.NODE_ENV !== "production") {
-      console.log("[/api/services WHERE]", safe(where));
+      console.log("[/api/services WHERE]", safe(chosenWhere));
       console.log("[/api/services ORDER primary]", safe(primaryOrder));
       console.log("[/api/services page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
+      if (chosenFields.length) console.log("[/api/services SEARCH FIELDS]", chosenFields.join(", "));
     }
 
     // Guard result window (skip if using cursor)
@@ -286,7 +340,7 @@ export async function GET(req: NextRequest) {
 
     // Build list args with pagination
     const baseListArgs: any = {
-      where,
+      where: chosenWhere,
       take: pageSize + 1,
     };
     if (cursor) {
@@ -297,12 +351,11 @@ export async function GET(req: NextRequest) {
     }
 
     // total first (cheap & robust)
-    const total = await Service.count({ where });
+    const total = await Service.count({ where: chosenWhere });
 
     // findMany with tolerant select + orderBy fallbacks
     let rowsRaw: any[] = [];
-    outer:
-    for (const select of selectCandidates) {
+    outer: for (const select of selectCandidates) {
       for (const orderBy of orderByCandidates) {
         try {
           rowsRaw = await Service.findMany({ ...baseListArgs, select, orderBy });
@@ -338,7 +391,7 @@ export async function GET(req: NextRequest) {
     // facets (first page only, no cursor)
     let facets: any | undefined = undefined;
     if (wantFacets && !cursor && page === 1) {
-      facets = await computeFacets(where, Service);
+      facets = await computeFacets(chosenWhere, Service);
     }
 
     const res = jsonPublic(
@@ -412,16 +465,37 @@ async function computeFacets(where: any, Service: any) {
 }
 
 /* ----------------------------- misc verbs ----------------------------- */
-export async function HEAD() {
-  const res = jsonPublic(null, 60, { status: 204 });
-  attachVersion(res.headers);
-  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-  return res;
+export async function HEAD(_req: Request) {
+  const h = new Headers();
+  h.set("X-Services-Version", SERVICES_VER);
+  h.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  h.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  h.set("Pragma", "no-cache");
+  h.set("Expires", "0");
+  // no body on 204
+  return new Response(null, { status: 204, headers: h });
 }
 
-export async function OPTIONS() {
-  const res = jsonPublic({ ok: true }, 60, { status: 204 });
-  attachVersion(res.headers);
-  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-  return res;
+export async function OPTIONS(req: Request) {
+  const originHeader =
+    req.headers.get("origin") ||
+    process.env['NEXT_PUBLIC_APP_URL'] ||
+    "*";
+
+  const h = new Headers();
+  h.set("X-Services-Version", SERVICES_VER);
+  h.set("Vary", "Origin, Authorization, Cookie, Accept-Encoding");
+
+  // CORS
+  h.set("Access-Control-Allow-Origin", originHeader);
+  h.set("Access-Control-Allow-Methods", "GET, POST, PATCH, HEAD, OPTIONS");
+  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  h.set("Access-Control-Max-Age", "86400");
+
+  // no-store for preflight
+  h.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  h.set("Pragma", "no-cache");
+  h.set("Expires", "0");
+
+  return new Response(null, { status: 204, headers: h });
 }

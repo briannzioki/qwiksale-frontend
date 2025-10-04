@@ -9,6 +9,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import SellProductClient from "@/app/sell/product/SellProductClient";
 import EditMediaClient from "@/app/components/EditMediaClient";
+import DeleteListingButton from "@/app/dashboard/DeleteListingButton";
 
 export const metadata: Metadata = {
   title: "Edit listing • QwikSale",
@@ -137,6 +138,7 @@ export default async function EditListingPage(props: any) {
     session = null;
   }
   const userId = session?.user?.id as string | undefined;
+  const isAdmin = Boolean(session?.user?.isAdmin);
 
   // Load product with tolerant shape; never throw the page
   let product: any = null;
@@ -199,6 +201,7 @@ export default async function EditListingPage(props: any) {
   }
 
   const isOwner = Boolean(userId && product.sellerId === userId);
+  const canDelete = isOwner || isAdmin;
   const images = normalizeImages(product);
   const lastUpdated = product?.updatedAt ?? product?.createdAt ?? null;
 
@@ -227,6 +230,12 @@ export default async function EditListingPage(props: any) {
             >
               View live
             </Link>
+            {canDelete ? (
+              <DeleteListingButton
+                productId={product.id}
+                productName={product?.name ?? "listing"}
+              />
+            ) : null}
           </div>
         </div>
       </div>

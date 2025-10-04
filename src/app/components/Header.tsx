@@ -252,7 +252,7 @@ export default function Header() {
             ) : (
               <>
                 <NavLink href="/signin" className="py-2" onClick={() => setOpen(false)}>
-                  Sign in
+                Sign in
                 </NavLink>
                 <Link
                   href="/signup"

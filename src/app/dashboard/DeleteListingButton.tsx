@@ -5,8 +5,18 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
+type Kind = "product" | "service";
+
 type Props = {
-  productId: string;
+  /** Generic id (preferred). If omitted, falls back to productId/serviceId. */
+  id?: string;
+  /** Back-compat: product id (still supported). */
+  productId?: string;
+  /** For service edit pages. */
+  serviceId?: string;
+  /** Explicit kind. If omitted, inferred from which id prop is present (serviceId wins). */
+  kind?: Kind;
+
   /** Optional friendlier confirm like: “Delete ‘MacBook Pro’?” */
   productName?: string;
   /** Parent can optimistically remove the card, etc. */
@@ -16,7 +26,10 @@ type Props = {
 };
 
 export default function DeleteListingButton({
+  id,
   productId,
+  serviceId,
+  kind,
   productName,
   onDeletedAction,
   holdMs = 1000,
@@ -24,6 +37,17 @@ export default function DeleteListingButton({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
+
+  // --------- Resolve target ---------
+  const resolvedKind: Kind =
+    kind ??
+    (serviceId ? "service" : "product");
+  const targetId =
+    id ??
+    (resolvedKind === "service" ? serviceId : productId);
+
+  // If we somehow weren't given any id, render a disabled button to be safe.
+  const targetMissing = !targetId;
 
   // Long-press state (uses Pointer Events to cover mouse/touch/pen)
   const [progress, setProgress] = useState(0); // 0..1
@@ -41,7 +65,7 @@ export default function DeleteListingButton({
   const minHold = Math.max(400, holdMs || 1000); // soft floor for UX
 
   function beginHold() {
-    if (busy || pending) return;
+    if (busy || pending || targetMissing) return;
     holdingRef.current = true;
     startRef.current = performance.now();
 
@@ -71,7 +95,7 @@ export default function DeleteListingButton({
   }
 
   async function fallbackConfirmAndDelete() {
-    if (busy || pending) return;
+    if (busy || pending || targetMissing) return;
     const label = productName ? `“${productName}”` : "this listing";
     const ok = window.confirm(`Delete ${label}? This cannot be undone.`);
     if (!ok) return;
@@ -79,14 +103,15 @@ export default function DeleteListingButton({
   }
 
   async function actuallyDelete() {
-    if (busy || pending) return;
+    if (busy || pending || targetMissing) return;
     setBusy(true);
 
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const r = await fetch(`/api/products/${encodeURIComponent(productId)}`, {
+      const base = resolvedKind === "service" ? "/api/services" : "/api/products";
+      const r = await fetch(`${base}/${encodeURIComponent(String(targetId))}`, {
         method: "DELETE",
         cache: "no-store",
         headers: { accept: "application/json" },
@@ -129,8 +154,8 @@ export default function DeleteListingButton({
     }
   }
 
-  const disabled = busy || pending;
-  const tipId = `delete-tip-${productId}`;
+  const disabled = busy || pending || targetMissing;
+  const tipId = `delete-tip-${(targetId ?? "unknown").toString()}`;
 
   return (
     <div className="relative inline-flex items-center">
@@ -160,7 +185,11 @@ export default function DeleteListingButton({
         aria-disabled={disabled}
         aria-busy={disabled}
         aria-describedby={tipId}
-        aria-label={productName ? `Delete ${productName}` : "Delete listing"}
+        aria-label={
+          productName
+            ? `Delete ${productName}`
+            : `Delete ${resolvedKind === "service" ? "service" : "listing"}`
+        }
         title="Delete listing"
       >
         <span
