@@ -8,7 +8,7 @@ import { prisma } from "@/app/lib/prisma";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const SERVICES_VER = "vDEBUG-SERVICES-004";
+const SERVICES_VER = "vDEBUG-SERVICES-005";
 function attachVersion(h: Headers) {
   h.set("X-Services-Version", SERVICES_VER);
 }
@@ -406,3 +406,4 @@ export async function OPTIONS() {
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
+
