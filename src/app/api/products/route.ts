@@ -254,7 +254,6 @@ export async function GET(req: NextRequest) {
       select.favorites = { where: { userId }, select: { productId: true }, take: 1 };
     }
 
-    // Guard result window (skip if using cursor)
     if (!cursor) {
       const skipEst = (page - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
@@ -386,20 +385,26 @@ async function computeFacets(where: any) {
 }
 
 /* ----------------------------- misc verbs ----------------------------- */
+function baseHeaders() {
+  const h = new Headers();
+  attachVersion(h);
+  h.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  return h;
+}
+
 export async function HEAD() {
-  const res = jsonPublic(null, 60, { status: 204 });
-  attachVersion(res.headers);
-  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-  res.headers.set("Allow", "GET, POST, PATCH, HEAD, OPTIONS");
-  return res;
+  // NOTE: use a bare Response for 204 to avoid body-related platform quirks.
+  const h = baseHeaders();
+  h.set("Allow", "GET, POST, PATCH, HEAD, OPTIONS");
+  return new Response(null, { status: 204, headers: h });
 }
 
 export async function OPTIONS() {
-  const res = jsonPublic({ ok: true }, 60, { status: 204 });
-  attachVersion(res.headers);
-  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-  res.headers.set("Allow", "GET, POST, PATCH, HEAD, OPTIONS");
-  res.headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, HEAD, OPTIONS");
-  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  return res;
+  // NOTE: also bare Response with CORS + Allow. Mirrors /api/services behavior.
+  const h = baseHeaders();
+  h.set("Allow", "GET, POST, PATCH, HEAD, OPTIONS");
+  h.set("Access-Control-Allow-Methods", "GET, POST, PATCH, HEAD, OPTIONS");
+  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  h.set("Access-Control-Allow-Origin", "*");
+  return new Response(null, { status: 204, headers: h });
 }
