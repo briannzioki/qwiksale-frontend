@@ -115,11 +115,18 @@ async function uploadCloudinary(file: File, opts: UploadOpts): Promise<UploadRes
 }
 
 async function deleteCloudinary(id: string): Promise<void> {
-  if (!cloudinary?.uploader) return;
-  await cloudinary.uploader.destroy(id, { resource_type: "image" });
+  if (!cloudinary?.uploader?.destroy) {
+    throw new Error("Cloudinary SDK not available. Install `cloudinary` and set env.");
+  }
+  const res: any = await cloudinary.uploader.destroy(id, { resource_type: "image" });
+  const resultStr = String(res?.result ?? "");
+  // Cloudinary typical: { result: "ok" } | { result: "not found" }
+  if (resultStr !== "ok") {
+    throw new Error(`Cloudinary delete failed (${resultStr || "unknown"})`);
+  }
 }
 
-/** ------------------------------ S3 ------------------------------ */
+/** ------------------------------ S3 (kept for future) ------------------------------ */
 let s3Client: any = null;
 if (PROVIDER === "s3") {
   try {
@@ -142,7 +149,6 @@ if (PROVIDER === "s3") {
 }
 
 function buildS3PublicUrl(key: string): string {
-  // Prefer an explicit CDN/public base if provided
   const base = process.env["AWS_S3_PUBLIC_URL"];
   if (base) return `${base.replace(/\/+$/, "")}/${key}`;
   const bucket = process.env["AWS_S3_BUCKET"] as string;
@@ -173,28 +179,25 @@ async function uploadS3(file: File, opts: UploadOpts): Promise<UploadResult> {
       Key: key,
       Body: bytes,
       ContentType: contentType,
-      ACL: process.env["AWS_S3_ACL"] || "public-read", // ensure public unless you proxy
+      ACL: process.env["AWS_S3_ACL"] || "public-read",
     })
   );
 
   return {
-    id: key, // we return the key so deleteById can use it
+    id: key,
     url: buildS3PublicUrl(key),
     contentType,
   };
 }
 
 async function deleteS3(idOrKey: string): Promise<void> {
-  if (!s3Client) return;
+  if (!s3Client) {
+    throw new Error("S3 client not available.");
+  }
   const bucket = process.env["AWS_S3_BUCKET"] as string;
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
-  await s3Client.send(
-    new DeleteObjectCommand({
-      Bucket: bucket,
-      Key: idOrKey,
-    })
-  );
+  await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: idOrKey }));
 }
 
 /** ------------------------------ Public API ------------------------------ */
@@ -209,17 +212,21 @@ export async function uploadFile(file: File, opts: UploadOpts = {}): Promise<Upl
   }
   if (PROVIDER === "cloudinary") return uploadCloudinary(file, opts);
   if (PROVIDER === "s3") return uploadS3(file, opts);
-  // Fallback (dev): fake a URL using a data URI (NOT persistent!)
-  const url = `data:${(file as any).type};base64,`;
-  return { id: `local-${Date.now()}-${rand(4)}`, url, contentType: (file as any).type };
+
+  // Fallback (dev): inline *actual* bytes (NOT persistent!)
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const b64 = bytes.toString("base64");
+  const mime = (file as any).type || "application/octet-stream";
+  const url = `data:${mime};base64,${b64}`;
+  return { id: `local-${Date.now()}-${rand(4)}`, url, contentType: mime };
 }
 
 /** Delete by provider id (Cloudinary public_id or S3 key) */
 export async function deleteById(id: string): Promise<void> {
-  if (!id) return;
+  if (!id) throw new Error("Missing provider id");
   if (PROVIDER === "cloudinary") return deleteCloudinary(id);
   if (PROVIDER === "s3") return deleteS3(id);
-  return;
+  throw new Error("No media provider configured");
 }
 
 /** ------------------------------ Local reorder helpers ------------------------------ */
@@ -303,7 +310,6 @@ export function deriveProviderIdFromUrlOrId(input: string): string {
 
     // S3 / generic public bucket or CDN heuristics
     let key = u.pathname.replace(/^\/+/, "");
-    // If you configured a public base, strip it
     const publicBase = process.env["AWS_S3_PUBLIC_URL"];
     if (publicBase) {
       try {
@@ -336,6 +342,7 @@ export function deriveProviderIdFromUrlOrId(input: string): string {
 /** Convenience: accept either a raw id/key or a full URL, then delete. */
 export async function deleteByUrlOrId(idOrUrl: string): Promise<void> {
   const provId = deriveProviderIdFromUrlOrId(idOrUrl);
+  if (!provId) throw new Error("Missing provider id");
   await deleteById(provId);
 }
 

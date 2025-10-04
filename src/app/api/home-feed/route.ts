@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 
 /* -------------------- debug -------------------- */
-const HF_VER = "vDEBUG-003";
+const HF_VER = "v1.0.1";
 
 /* -------------------- helpers -------------------- */
 
@@ -16,7 +16,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
-  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
   return res;
 }
 function respond(payload: unknown, init?: ResponseInit) {
@@ -57,16 +57,16 @@ function toSort(v: string | null): SortKey {
 
 /** Typed rows */
 type ProductRow = {
-  id: string; name: string;
-  category: string | null; subcategory: string | null;
-  price: number | null; image: string | null; location: string | null;
-  featured: boolean | null; createdAt: Date | string | null;
+  id: string; name?: string; title?: string;
+  category?: string | null; subcategory?: string | null;
+  price?: number | null; image?: string | null; location?: string | null;
+  featured?: boolean | null; createdAt?: Date | string | null;
 };
 type ServiceRow = {
-  id: string; name: string;
-  category: string | null; subcategory: string | null;
-  price: number | null; image: string | null; location: string | null;
-  featured: boolean | null; createdAt: Date | string | null;
+  id: string; name?: string; title?: string;
+  category?: string | null; subcategory?: string | null;
+  price?: number | null; image?: string | null; location?: string | null;
+  featured?: boolean | null; createdAt?: Date | string | null;
 };
 type PriceClause = { gte?: number; lte?: number };
 
@@ -80,7 +80,7 @@ type CombinedItem = {
   image: string | null;
   location: string | null;
   featured: boolean;
-  createdAt: string;
+  createdAt: string; // ISO
 };
 
 function parseQuery(req: NextRequest): {
@@ -111,9 +111,11 @@ function parseQuery(req: NextRequest): {
   const sort = toSort(sp.get("sort"));
   const facets = (sp.get("facets") || "").toLowerCase() === "true";
 
+  // ⚠️ Fix: Only treat limit/pageSize as provided if not null/empty
+  const hasLimit = limitStr !== null && limitStr !== "" && Number.isFinite(Number(limitStr));
+  const hasPageSize = pageSizeStr !== null && pageSizeStr !== "" && Number.isFinite(Number(pageSizeStr));
+
   let pageSize = 24;
-  const hasLimit = Number.isFinite(Number(limitStr));
-  const hasPageSize = Number.isFinite(Number(pageSizeStr));
   if (hasLimit) pageSize = toInt(limitStr, 24, 1, 48);
   else if (hasPageSize) pageSize = toInt(pageSizeStr, 24, 1, 48);
 
@@ -181,276 +183,434 @@ interface WhereBase {
   AND?: any[];
 }
 
+/* -------------------- tolerant builders & safety nets -------------------- */
+
+function buildProductWhere(parsed: ReturnType<typeof parseQuery>, stage = 0): WhereBase {
+  const {
+    q, category, subcategory, brand, condition, featuredOnly,
+    minPriceStr, maxPriceStr, sort, status
+  } = parsed;
+
+  const where: WhereBase = {};
+  const s = status?.toUpperCase();
+  if (!s || s === "ACTIVE") where.status = "ACTIVE";
+  else if (s !== "ALL") where.status = s;
+
+  const AND: any[] = [];
+
+  if (stage <= 0 && q) {
+    AND.push({
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { brand: { contains: q, mode: "insensitive" } },
+        { category: { contains: q, mode: "insensitive" } },
+        { subcategory: { contains: q, mode: "insensitive" } },
+        { sellerName: { contains: q, mode: "insensitive" } },
+      ],
+    });
+  } else if (stage >= 1 && q) {
+    AND.push({
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { category: { contains: q, mode: "insensitive" } },
+        { subcategory: { contains: q, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  if (stage <= 1) {
+    if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory) AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (brand) AND.push({ brand: { contains: brand, mode: "insensitive" } });
+    if (condition) AND.push({ condition: { equals: condition, mode: "insensitive" } });
+  } else if (stage === 2) {
+    if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory) AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+  }
+
+  if (featuredOnly) AND.push({ featured: true });
+
+  if (stage <= 1 && (minPriceStr !== null || maxPriceStr !== null)) {
+    const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
+    const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
+    const priceClause: PriceClause = {};
+    if (typeof minPrice === "number") priceClause.gte = minPrice;
+    if (typeof maxPrice === "number") priceClause.lte = maxPrice;
+    if (!minPrice || minPrice === 0) {
+      AND.push({ OR: [{ price: null }, { price: priceClause }] });
+    } else {
+      AND.push({ price: priceClause });
+    }
+  }
+  if (sort === "price_asc" || sort === "price_desc") AND.push({ price: { not: null } });
+
+  if (AND.length) where.AND = AND;
+  return where;
+}
+
+function buildServiceWhere(parsed: ReturnType<typeof parseQuery>, stage = 0): WhereBase {
+  const {
+    q, category, subcategory, featuredOnly,
+    minPriceStr, maxPriceStr, sort, status
+  } = parsed;
+
+  const where: WhereBase = {};
+  const s = status?.toUpperCase();
+  if (!s || s === "ACTIVE") where.status = "ACTIVE";
+  else if (s !== "ALL") where.status = s;
+
+  const AND: any[] = [];
+
+  if (q) {
+    AND.push({
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { category: { contains: q, mode: "insensitive" } },
+        { subcategory: { contains: q, mode: "insensitive" } },
+      ],
+    });
+  }
+  if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
+  if (subcategory) AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+  if (featuredOnly) AND.push({ featured: true });
+
+  if (stage <= 1 && (minPriceStr !== null || maxPriceStr !== null)) {
+    const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
+    const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
+    const clause: PriceClause = {};
+    if (typeof minPrice === "number") clause.gte = minPrice;
+    if (typeof maxPrice === "number") clause.lte = maxPrice;
+    if (!minPrice || minPrice === 0) {
+      AND.push({ OR: [{ price: null }, { price: clause }] });
+    } else {
+      AND.push({ price: clause });
+    }
+  }
+  if (sort === "price_asc" || sort === "price_desc") AND.push({ price: { not: null } });
+
+  if (AND.length) where.AND = AND;
+  return where;
+}
+
+function buildOrderByCandidates(sort: SortKey) {
+  const priceAsc = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+  const priceDesc = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+  const featured = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+  const newest = [{ createdAt: "desc" as const }, { id: "desc" as const }];
+
+  const primary =
+    sort === "price_asc" ? priceAsc :
+    sort === "price_desc" ? priceDesc :
+    sort === "featured" ? featured :
+    newest;
+
+  return [
+    primary,
+    [{ createdAt: "desc" as const }, { id: "desc" as const }],
+    [{ id: "desc" as const }],
+    undefined,
+  ];
+}
+
+function pickName(row: { name?: string; title?: string }) {
+  return (row.name ?? row.title ?? "").toString().trim() || "Item";
+}
+
+function toIso(d?: Date | string | null) {
+  if (!d) return "";
+  if (d instanceof Date) return isNaN(d.getTime()) ? "" : d.toISOString();
+  const ms = Date.parse(d);
+  return isNaN(ms) ? "" : new Date(ms).toISOString();
+}
+
+function mapRowToItem<T extends ProductRow | ServiceRow>(
+  type: CombinedItem["type"],
+  r: T
+): CombinedItem {
+  return {
+    type,
+    id: String((r as any).id),
+    name: pickName(r),
+    category: (r.category ?? null) as any,
+    subcategory: (r.subcategory ?? null) as any,
+    price: (typeof r.price === "number" ? r.price : null),
+    image: (r.image ?? null) as any,
+    location: (r.location ?? null) as any,
+    featured: Boolean(r.featured),
+    createdAt: toIso(r.createdAt) || "1970-01-01T00:00:00.000Z",
+  };
+}
+
 /* -------------------- GET -------------------- */
 
 export async function GET(req: NextRequest) {
   try {
     const parsed = parseQuery(req);
-    const sp = req.nextUrl.searchParams;
 
-    console.log(`[HF ${HF_VER}]`, req.nextUrl.toString(), parsed);
+    console.log(`[HF ${HF_VER}]`, req.nextUrl.pathname, Object.fromEntries(req.nextUrl.searchParams));
 
-    const {
-      mode, page, q, category, subcategory, brand, condition,
-      featuredOnly, minPriceStr, maxPriceStr, sort, pageSize, facets, status,
-    } = parsed;
-
+    const { mode, page, sort, pageSize, facets } = parsed;
     const skip = (page - 1) * pageSize;
-
-    // ---------- Build WHEREs ----------
-    const prodWhere: WhereBase = {};
-    if (!status || status.toUpperCase() === "ACTIVE") prodWhere.status = "ACTIVE";
-    else if (status.toUpperCase() !== "ALL") prodWhere.status = status.toUpperCase();
-
-    const prodAnd: any[] = [];
-    if (q) {
-      prodAnd.push({
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { brand: { contains: q, mode: "insensitive" } },
-          { category: { contains: q, mode: "insensitive" } },
-          { subcategory: { contains: q, mode: "insensitive" } },
-          { sellerName: { contains: q, mode: "insensitive" } },
-        ],
-      });
-    }
-    if (category) prodAnd.push({ category: { equals: category, mode: "insensitive" } });
-    if (subcategory) prodAnd.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
-    if (brand) prodAnd.push({ brand: { contains: brand, mode: "insensitive" } });
-    if (condition) prodAnd.push({ condition: { equals: condition, mode: "insensitive" } });
-    if (featuredOnly) prodAnd.push({ featured: true });
-
-    if (sp.has("minPrice") || sp.has("maxPrice")) {
-      const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
-      const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
-      const priceClause: PriceClause = {};
-      if (typeof minPrice === "number") priceClause.gte = minPrice;
-      if (typeof maxPrice === "number") priceClause.lte = maxPrice;
-      if (!minPrice || minPrice === 0) {
-        prodAnd.push({ OR: [{ price: null }, { price: priceClause }] });
-      } else {
-        prodAnd.push({ price: priceClause });
-      }
-    }
-    if (sort === "price_asc" || sort === "price_desc") prodAnd.push({ price: { not: null } });
-    if (prodAnd.length) prodWhere.AND = prodAnd;
-
-    // Services WHERE
-    const svcWhere: WhereBase = {};
-    if (!status || status.toUpperCase() === "ACTIVE") svcWhere.status = "ACTIVE";
-    else if (status.toUpperCase() !== "ALL") svcWhere.status = status.toUpperCase();
-
-    const svcAnd: any[] = [];
-    if (q) {
-      svcAnd.push({
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { description: { contains: q, mode: "insensitive" } },
-          { category: { contains: q, mode: "insensitive" } },
-          { subcategory: { contains: q, mode: "insensitive" } },
-          { seller: { is: { name: { contains: q, mode: "insensitive" } } } },
-        ],
-      });
-    }
-    if (category) svcAnd.push({ category: { equals: category, mode: "insensitive" } });
-    if (subcategory) svcAnd.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
-    if (featuredOnly) svcAnd.push({ featured: true });
-    if (sp.has("minPrice") || sp.has("maxPrice")) {
-      const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
-      const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
-      const clause: PriceClause = {};
-      if (typeof minPrice === "number") clause.gte = minPrice;
-      if (typeof maxPrice === "number") clause.lte = maxPrice;
-      if (!minPrice || minPrice === 0) {
-        svcAnd.push({ OR: [{ price: null }, { price: clause }] });
-      } else {
-        svcAnd.push({ price: clause });
-      }
-    }
-    if (sort === "price_asc" || sort === "price_desc") svcAnd.push({ price: { not: null } });
-    if (svcAnd.length) svcWhere.AND = svcAnd;
-
-    // ---------- Sort ----------
-    const isSearchLike = !!(q || category || subcategory || brand);
-    const prodOrderBy =
-      sort === "price_asc" ? [{ price: "asc" as const }, { id: "desc" as const }] :
-      sort === "price_desc" ? [{ price: "desc" as const }, { id: "desc" as const }] :
-      sort === "featured" ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }] :
-      isSearchLike ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }] :
-                     [{ createdAt: "desc" as const }, { id: "desc" as const }];
-    const svcOrderBy = prodOrderBy;
 
     const Service = getServiceModel();
 
     /* -------------------- t=products -------------------- */
     if (mode === "products") {
-      const total = await prisma.product.count({ where: prodWhere as any });
-      const rowsRaw = await prisma.product.findMany({
-        where: prodWhere as any,
-        select: {
-          id: true, name: true, category: true, subcategory: true,
-          price: true, image: true, location: true, featured: true, createdAt: true
-        },
-        orderBy: prodOrderBy,
-        skip,
-        take: pageSize,
-      });
-      const rows = rowsRaw as unknown as ProductRow[];
+      const prodWhereCandidates = [
+        buildProductWhere(parsed, 0),
+        buildProductWhere(parsed, 1),
+        buildProductWhere(parsed, 2),
+        {} as WhereBase,
+      ];
 
-      const items: CombinedItem[] = rows.map((p): CombinedItem => ({
-        type: "product",
-        id: p.id,
-        name: p.name,
-        category: p.category ?? null,
-        subcategory: p.subcategory ?? null,
-        price: p.price ?? null,
-        image: p.image ?? null,
-        location: p.location ?? null,
-        featured: !!p.featured,
-        createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt ?? ""),
-      }));
+      let workingProdWhere: any = prodWhereCandidates[prodWhereCandidates.length - 1];
+      for (const w of prodWhereCandidates) {
+        try {
+          await prisma.product.count({ where: w as any });
+          workingProdWhere = w;
+          break;
+        } catch {}
+      }
+
+      const productSelectCandidates: any[] = [
+        { id: true, name: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true },
+        { id: true, title: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true },
+        { id: true, name: true, price: true, image: true, featured: true, createdAt: true },
+        { id: true, title: true, price: true, image: true, featured: true, createdAt: true },
+        { id: true, name: true, createdAt: true },
+        { id: true, title: true, createdAt: true },
+        { id: true, name: true },
+        { id: true, title: true },
+        { id: true },
+      ];
+
+      const orderByCandidates = buildOrderByCandidates(sort);
+
+      let rowsRaw: any[] = [];
+      let total = 0;
+
+      try {
+        total = await prisma.product.count({ where: workingProdWhere as any });
+      } catch { total = 0; }
+
+      outerProducts:
+      for (const select of productSelectCandidates) {
+        for (const orderBy of orderByCandidates) {
+          try {
+            rowsRaw = await (prisma as any).product.findMany({
+              where: workingProdWhere,
+              select,
+              orderBy,
+              skip,
+              take: pageSize,
+            });
+            break outerProducts;
+          } catch {}
+        }
+      }
+
+      const rows = rowsRaw as ProductRow[];
+      const items: CombinedItem[] = rows.map((p) => mapRowToItem("product", p));
 
       let outFacets: any | undefined = undefined;
       if (facets) {
         try {
           const [catsRaw, brandsRaw, condsRaw] = await Promise.all([
-            prisma.product.groupBy({ by: ["category"], where: prodWhere as any, _count: { _all: true } }),
-            prisma.product.groupBy({ by: ["brand"], where: prodWhere as any, _count: { _all: true } }),
-            prisma.product.groupBy({ by: ["condition"], where: prodWhere as any, _count: { _all: true } }),
+            (prisma as any).product.groupBy({ by: ["category"], where: workingProdWhere as any, _count: { _all: true } }),
+            (prisma as any).product.groupBy({ by: ["brand"], where: workingProdWhere as any, _count: { _all: true } }),
+            (prisma as any).product.groupBy({ by: ["condition"], where: workingProdWhere as any, _count: { _all: true } }),
           ]);
           outFacets = {
             categories: coalesceCaseInsensitive<CatRow>(catsRaw as any, (x: any) => x.category),
             brands: coalesceCaseInsensitive<BrandRow>(brandsRaw as any, (x: any) => x.brand),
             conditions: coalesceCaseInsensitive<CondRow>(condsRaw as any, (x: any) => x.condition),
           };
-        } catch {/* ignore */}
+        } catch {}
       }
 
       return respond({
         mode, page, pageSize, total,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
         items, facets: outFacets
       });
     }
 
     /* -------------------- t=services -------------------- */
     if (mode === "services") {
-      if (!Service) return respond({ mode, page, pageSize, total: 0, totalPages: 1, items: [] });
+      if (!Service) {
+        return respond({ mode, page, pageSize, total: 0, totalPages: 1, items: [] });
+      }
 
-      const total = await Service.count({ where: svcWhere as any });
-      const rowsRaw = await Service.findMany({
-        where: svcWhere as any,
-        select: {
-          id: true, name: true, category: true, subcategory: true,
-          price: true, image: true, location: true, featured: true, createdAt: true
-        },
-        orderBy: svcOrderBy,
-        skip,
-        take: pageSize,
-      });
-      const rows = rowsRaw as unknown as ServiceRow[];
-      const items: CombinedItem[] = rows.map((s): CombinedItem => ({
-        type: "service",
-        id: s.id,
-        name: s.name,
-        category: s.category ?? null,
-        subcategory: s.subcategory ?? null,
-        price: s.price ?? null,
-        image: s.image ?? null,
-        location: s.location ?? null,
-        featured: !!s.featured,
-        createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : String(s.createdAt ?? ""),
-      }));
+      const svcWhereCandidates = [
+        buildServiceWhere(parsed, 0),
+        buildServiceWhere(parsed, 1),
+        {} as WhereBase,
+      ];
+
+      let workingSvcWhere: any = svcWhereCandidates[svcWhereCandidates.length - 1];
+      for (const w of svcWhereCandidates) {
+        try {
+          await Service.count({ where: w as any });
+          workingSvcWhere = w;
+          break;
+        } catch {}
+      }
+
+      const serviceSelectCandidates: any[] = [
+        { id: true, name: true, title: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true },
+        { id: true, name: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true },
+        { id: true, title: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true },
+        { id: true, name: true, price: true, image: true, featured: true, createdAt: true },
+        { id: true, title: true, price: true, image: true, featured: true, createdAt: true },
+        { id: true, name: true, createdAt: true },
+        { id: true, title: true, createdAt: true },
+        { id: true, name: true },
+        { id: true, title: true },
+        { id: true },
+      ];
+
+      const orderByCandidates = buildOrderByCandidates(sort);
+
+      let rowsRaw: any[] = [];
+      let total = 0;
+
+      try {
+        total = await Service.count({ where: workingSvcWhere as any });
+      } catch { total = 0; }
+
+      outerServices:
+      for (const select of serviceSelectCandidates) {
+        for (const orderBy of orderByCandidates) {
+          try {
+            rowsRaw = await Service.findMany({
+              where: workingSvcWhere as any,
+              select,
+              orderBy,
+              skip,
+              take: pageSize,
+            });
+            break outerServices;
+          } catch {}
+        }
+      }
+
+      const rows = rowsRaw as ServiceRow[];
+      const items: CombinedItem[] = rows.map((s) => mapRowToItem("service", s));
 
       let outFacets: any | undefined = undefined;
       if (facets) {
         try {
           const [catsRaw, subsRaw] = await Promise.all([
-            Service.groupBy({ by: ["category"], where: svcWhere as any, _count: { _all: true } }),
-            Service.groupBy({ by: ["subcategory"], where: svcWhere as any, _count: { _all: true } }),
+            Service.groupBy({ by: ["category"], where: workingSvcWhere as any, _count: { _all: true } }),
+            Service.groupBy({ by: ["subcategory"], where: workingSvcWhere as any, _count: { _all: true } }),
           ]);
           outFacets = {
             categories: coalesceCaseInsensitive<CatRow>(catsRaw as any, (x: any) => x.category ?? null),
             subcategories: coalesceCaseInsensitive<SubcatRow>(subsRaw as any, (x: any) => x.subcategory ?? null),
           };
-        } catch {/* ignore */}
+        } catch {}
       }
 
       return respond({
         mode, page, pageSize, total,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
         items, facets: outFacets
       });
     }
 
-    /* -------------------- t=all (merged, real pagination) -------------------- */
-    const ServiceForAll = getServiceModel();
+    /* -------------------- t=all (merged) -------------------- */
+    const ServiceForAll = Service;
+
+    const prodWhereForAll = buildProductWhere(parsed, 1);
+    const svcWhereForAll = buildServiceWhere(parsed, 1);
 
     const [prodTotal, svcTotal] = await Promise.all([
-      prisma.product.count({ where: prodWhere as any }),
-      ServiceForAll ? ServiceForAll.count({ where: svcWhere as any }) : Promise.resolve(0),
+      (async () => { try { return await prisma.product.count({ where: prodWhereForAll as any }); } catch { return 0; } })(),
+      (async () => { try { return ServiceForAll ? await ServiceForAll.count({ where: svcWhereForAll as any }) : 0; } catch { return 0; } })(),
     ]);
     const total = prodTotal + svcTotal;
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const totalPages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
 
-    // Fetch up to the *end* of the requested page from each, then merge/slice
     const takeForMerge = page * pageSize;
-    const [prodRowsRaw, svcRowsRaw] = await Promise.all([
-      prisma.product.findMany({
-        where: prodWhere as any,
-        select: {
-          id: true, name: true, category: true, subcategory: true,
-          price: true, image: true, location: true, featured: true, createdAt: true
-        },
-        orderBy: prodOrderBy,
-        take: takeForMerge,
-      }),
-      (ServiceForAll
-        ? ServiceForAll.findMany({
-            where: svcWhere as any,
-            select: {
-              id: true, name: true, category: true, subcategory: true,
-              price: true, image: true, location: true, featured: true, createdAt: true
-            },
-            orderBy: svcOrderBy,
+
+    const productSelectForAll: any[] = [
+      { id: true, name: true, title: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true },
+      { id: true, name: true, price: true, image: true, featured: true, createdAt: true },
+      { id: true, title: true, price: true, image: true, featured: true, createdAt: true },
+      { id: true, name: true, createdAt: true },
+      { id: true, title: true, createdAt: true },
+      { id: true },
+    ];
+    const serviceSelectForAll: any[] = [
+      { id: true, name: true, title: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true },
+      { id: true, name: true, price: true, image: true, featured: true, createdAt: true },
+      { id: true, title: true, price: true, image: true, featured: true, createdAt: true },
+      { id: true, name: true, createdAt: true },
+      { id: true, title: true, createdAt: true },
+      { id: true },
+    ];
+
+    const orderByCandidates = buildOrderByCandidates(sort);
+
+    let prodRowsRaw: any[] = [];
+    let svcRowsRaw: any[] = [];
+
+    outerProdAll:
+    for (const select of productSelectForAll) {
+      for (const orderBy of orderByCandidates) {
+        try {
+          prodRowsRaw = await (prisma as any).product.findMany({
+            where: prodWhereForAll as any,
+            select,
+            orderBy,
             take: takeForMerge,
-          })
-        : Promise.resolve([] as ServiceRow[])
-      ),
-    ]);
+          });
+          break outerProdAll;
+        } catch {}
+      }
+    }
 
-    const prodItems: CombinedItem[] = (prodRowsRaw as ProductRow[]).map((p) => ({
-      type: "product",
-      id: p.id,
-      name: p.name,
-      category: p.category ?? null,
-      subcategory: p.subcategory ?? null,
-      price: p.price ?? null,
-      image: p.image ?? null,
-      location: p.location ?? null,
-      featured: !!p.featured,
-      createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt ?? ""),
-    }));
-    const svcItems: CombinedItem[] = (svcRowsRaw as ServiceRow[]).map((s) => ({
-      type: "service",
-      id: s.id,
-      name: s.name,
-      category: s.category ?? null,
-      subcategory: s.subcategory ?? null,
-      price: s.price ?? null,
-      image: s.image ?? null,
-      location: s.location ?? null,
-      featured: !!s.featured,
-      createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : String(s.createdAt ?? ""),
-    }));
+    if (ServiceForAll) {
+      outerSvcAll:
+      for (const select of serviceSelectForAll) {
+        for (const orderBy of orderByCandidates) {
+          try {
+            svcRowsRaw = await ServiceForAll.findMany({
+              where: svcWhereForAll as any,
+              select,
+              orderBy,
+              take: takeForMerge,
+            });
+            break outerSvcAll;
+          } catch {}
+        }
+      }
+    }
 
-    const mergedSorted = [...prodItems, ...svcItems].sort((a, b) => {
+    const prodItems: CombinedItem[] = (prodRowsRaw as ProductRow[]).map((p) => mapRowToItem("product", p));
+    const svcItems: CombinedItem[] = (svcRowsRaw as ServiceRow[]).map((s) => mapRowToItem("service", s));
+
+    const merged = [...prodItems, ...svcItems];
+    const cmp = (a: CombinedItem, b: CombinedItem) => {
+      if (sort === "price_asc" || sort === "price_desc") {
+        const av = a.price ?? (sort === "price_asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+        const bv = b.price ?? (sort === "price_asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+        if (av !== bv) return sort === "price_asc" ? av - bv : bv - av;
+        const af = (a.featured ? 1 : 0) - (b.featured ? 1 : 0);
+        if (af !== 0) return -af;
+      } else if (sort === "featured") {
+        const af = (a.featured ? 1 : 0) - (b.featured ? 1 : 0);
+        if (af !== 0) return -af;
+      }
       const at = Date.parse(a.createdAt) || 0;
       const bt = Date.parse(b.createdAt) || 0;
       if (bt !== at) return bt - at;
       return String(b.id).localeCompare(String(a.id));
-    });
+    };
 
+    const mergedSorted = merged.sort(cmp);
     const start = (page - 1) * pageSize;
     const end = page * pageSize;
     const items = mergedSorted.slice(start, end);
@@ -467,8 +627,9 @@ export async function GET(req: NextRequest) {
 export function OPTIONS() {
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["APP_ORIGIN"] ??
     "*";
+
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
   res.headers.set("Vary", "Origin");

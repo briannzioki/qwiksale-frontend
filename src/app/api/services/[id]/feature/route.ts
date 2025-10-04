@@ -15,13 +15,27 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
   return res;
 }
 
-function getId(req: NextRequest): string {
+/** Resolve id from promised route params, with URL fallback. */
+async function getId(
+  req: NextRequest,
+  paramsPromise?: Promise<{ id: string }>
+) {
+  // Try the (promised) route params first
   try {
-    const pathname = req.nextUrl?.pathname ?? "";
-    const segs = pathname.split("/");
+    const p = await paramsPromise;
+    const idFromParams = (p?.id ?? "").trim();
+    if (idFromParams) return idFromParams;
+  } catch {
+    /* ignore and fall back to URL parse */
+  }
+
+  // Fall back to parsing the URL path
+  try {
+    const segs = req.nextUrl?.pathname?.split("/") ?? [];
     const i = segs.findIndex((s) => s === "services");
     return (segs[i + 1] ?? "").trim();
   } catch {
@@ -53,8 +67,11 @@ function parseBoolean(v: unknown): boolean | undefined {
 }
 
 /* ---------------- GET /api/services/[id]/feature ---------------- */
-export async function GET(req: NextRequest) {
-  const id = getId(req);
+export async function GET(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const id = await getId(req, context?.params);
   if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
   try {
@@ -73,13 +90,21 @@ export async function GET(req: NextRequest) {
 }
 
 /* --------------- PATCH /api/services/[id]/feature --------------- */
-export async function PATCH(req: NextRequest) {
+export async function PATCH(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   // --- authN / authZ ---
-  const session = await auth();
-  const user = (session as any)?.user;
+  let session: any = null;
+  try {
+    session = await auth();
+  } catch {
+    /* ignore */
+  }
+  const user = session?.user;
   if (!user?.id || !user?.email) return noStore({ error: "Unauthorized" }, { status: 401 });
 
   let isAdmin = isAdminEmail(user.email);
@@ -93,13 +118,13 @@ export async function PATCH(req: NextRequest) {
   if (!isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
 
   // --- params ---
-  const id = getId(req);
+  const id = await getId(req, context?.params);
   if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
   // --- body / query ---
   let body: any = null;
-  const ctype = req.headers.get("content-type") || "";
-  if (ctype && ctype.toLowerCase().includes("application/json")) {
+  const ctype = (req.headers.get("content-type") || "").toLowerCase();
+  if (ctype.includes("application/json")) {
     body = await req.json().catch(() => ({}));
   } else {
     body = {};
@@ -149,7 +174,7 @@ export async function PATCH(req: NextRequest) {
 
     // Optional audit (only if model exists)
     try {
-      (prisma as any).adminAuditLog?.create?.({
+      await (prisma as any).adminAuditLog?.create?.({
         data: {
           actorId: user.id,
           action: "SERVICE_FEATURE_TOGGLE",
@@ -177,7 +202,7 @@ export async function PATCH(req: NextRequest) {
 export function OPTIONS() {
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["APP_ORIGIN"] ??
     "*";
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
