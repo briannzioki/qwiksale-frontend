@@ -5,10 +5,11 @@ export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
+import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const SERVICES_VER = "vDEBUG-SERVICES-005";
+const SERVICES_VER = "vDEBUG-SERVICES-006";
 function attachVersion(h: Headers) {
   h.set("X-Services-Version", SERVICES_VER);
 }
@@ -21,7 +22,8 @@ function safe(obj: unknown) {
 }
 
 /* ----------------------------- tiny helpers ----------------------------- */
-function toInt(v: string | null, def: number, min: number, max: number) {
+function toInt(v: string | null | undefined, def: number, min: number, max: number) {
+  if (v == null || v.trim() === "") return def; // treat null/blank as unset
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
   return Math.max(min, Math.min(max, Math.trunc(n)));
@@ -101,6 +103,7 @@ export async function GET(req: NextRequest) {
     const subcategory = optStr(url.searchParams.get("subcategory"));
 
     // Ownership filters
+    const mine = toBool(url.searchParams.get("mine")) === true;
     let sellerId =
       optStr(url.searchParams.get("sellerId")) ||
       optStr(url.searchParams.get("userId"));
@@ -108,7 +111,20 @@ export async function GET(req: NextRequest) {
       optStr(url.searchParams.get("seller")) ||
       optStr(url.searchParams.get("user"));
 
-    // If a username is provided, resolve to id to avoid relying on a relation in where
+    // If caller requested "mine", force sellerId from session
+    if (mine) {
+      const session = await auth().catch(() => null);
+      const uid = (session as any)?.user?.id as string | undefined;
+      if (!uid) {
+        const res = jsonPrivate({ error: "Unauthorized" }, { status: 401 });
+        attachVersion(res.headers);
+        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+        return res;
+      }
+      sellerId = uid;
+    }
+
+    // If a username is provided, resolve to id (avoids relying on relation inside where)
     if (!sellerId && sellerUsername) {
       try {
         const u = await prisma.user.findUnique({
@@ -131,16 +147,19 @@ export async function GET(req: NextRequest) {
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
 
-    // Pagination (honor limit over pageSize)
+    // Pagination (honor limit over pageSize; ignore blank values)
     const cursor = optStr(url.searchParams.get("cursor"));
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const limitStr = url.searchParams.get("limit");
     const pageSizeStr = url.searchParams.get("pageSize");
-    const hasLimit = Number.isFinite(Number(limitStr));
-    const hasPageSize = Number.isFinite(Number(pageSizeStr));
+    const hasLimit =
+      typeof limitStr === "string" && limitStr.trim() !== "" && Number.isFinite(Number(limitStr));
+    const hasPageSize =
+      typeof pageSizeStr === "string" && pageSizeStr.trim() !== "" && Number.isFinite(Number(pageSizeStr));
+
     let pageSize = DEFAULT_PAGE_SIZE;
-    if (hasLimit) pageSize = toInt(limitStr, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
-    else if (hasPageSize) pageSize = toInt(pageSizeStr, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+    if (hasLimit) pageSize = toInt(limitStr!, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+    else if (hasPageSize) pageSize = toInt(pageSizeStr!, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
     // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
     const statusParam = optStr(url.searchParams.get("status"));
@@ -288,7 +307,7 @@ export async function GET(req: NextRequest) {
         try {
           rowsRaw = await Service.findMany({ ...baseListArgs, select, orderBy });
           break outer;
-        } catch (e) {
+        } catch {
           /* try next combo */
         }
       }
@@ -406,4 +425,3 @@ export async function OPTIONS() {
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
-
