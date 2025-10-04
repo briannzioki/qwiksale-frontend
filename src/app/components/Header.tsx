@@ -6,9 +6,10 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
 import { useEffect, useState, type MouseEventHandler } from "react";
-import UserAvatar from "@/app/components/UserAvatar";
 import SearchBox from "@/app/components/SearchBox";
 import HeaderInlineSearch from "@/app/components/HeaderInlineSearch";
+import AuthButtons from "@/app/components/AuthButtons";
+import { signOut } from "next-auth/react";
 
 /** Simple helper for active link classes */
 function NavLink({
@@ -49,21 +50,15 @@ export default function Header() {
   const { data: session, status, update } = useSession();
   const pathname = usePathname();
 
-  type ExtendedUser = Session["user"] & { username?: string | null };
+  type ExtendedUser = Session["user"] & { username?: string | null; image?: string | null };
   const user: ExtendedUser | null = (session?.user as ExtendedUser) ?? null;
   const username = user?.username ?? undefined;
-
-  // Optimistic avatar (updates instantly after upload)
-  const [avatarOverride, setAvatarOverride] = useState<string | null>(null);
 
   // Mobile menu
   const [open, setOpen] = useState(false);
 
-  // Close overlays when route changes
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
+  // Close overlays when route/hash changes or Esc
+  useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
     const onHash = () => setOpen(false);
     window.addEventListener("hashchange", onHash);
@@ -78,34 +73,21 @@ export default function Header() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Listen for profile photo changes from the uploader
+  // Keep session fresh when profile photo changes (so AuthButtons avatar updates)
   useEffect(() => {
-    const onUpdated = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { avatar?: string; url?: string } | undefined;
-      const next = detail?.avatar || detail?.url || null;
-      setAvatarOverride(next ?? null);
+    const onUpdated = () => {
       try {
         // ts-expect-error: update is available in next-auth/react
         update?.();
       } catch {}
     };
-    const onRemoved = () => {
-      setAvatarOverride(null);
-      try {
-        // ts-expect-error: update is available in next-auth/react
-        update?.();
-      } catch {}
-    };
-
     window.addEventListener("qs:profile:photo:updated", onUpdated as EventListener);
-    window.addEventListener("qs:profile:photo:removed", onRemoved as EventListener);
+    window.addEventListener("qs:profile:photo:removed", onUpdated as EventListener);
     return () => {
       window.removeEventListener("qs:profile:photo:updated", onUpdated as EventListener);
-      window.removeEventListener("qs:profile:photo:removed", onRemoved as EventListener);
+      window.removeEventListener("qs:profile:photo:removed", onUpdated as EventListener);
     };
   }, [update]);
-
-  const avatarSrc = avatarOverride ?? (user?.image ?? null);
 
   return (
     <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur dark:bg-slate-900/80">
@@ -160,7 +142,7 @@ export default function Header() {
           <HeaderInlineSearch />
         </div>
 
-        {/* Mobile menu button (restored) */}
+        {/* Mobile menu button */}
         <button
           type="button"
           className="ml-auto rounded-md p-2 sm:hidden hover:bg-black/5 dark:hover:bg-white/10"
@@ -169,15 +151,11 @@ export default function Header() {
           onClick={() => setOpen((v) => !v)}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            {open ? (
-              <path d="M18 6L6 18M6 6l12 12" />
-            ) : (
-              <path d="M3 6h18M3 12h18M3 18h18" />
-            )}
+            {open ? <path d="M18 6L6 18M6 6l12 12" /> : <path d="M3 6h18M3 12h18M3 18h18" />}
           </svg>
         </button>
 
-        {/* Right side actions */}
+        {/* Right side actions (desktop) */}
         <div className="ml-auto hidden sm:flex items-center gap-3">
           {status === "loading" ? (
             <div className="h-7 w-24 animate-pulse rounded-md bg-black/5 dark:bg-white/10" />
@@ -193,19 +171,8 @@ export default function Header() {
               >
                 Post
               </Link>
-              <Link
-                href={username ? `/store/${encodeURIComponent(username)}` : "/dashboard"}
-                prefetch={false}
-                className="ml-1"
-                aria-label="Your profile"
-                title={username ? `@${username}` : "Profile"}
-              >
-                <UserAvatar
-                  src={avatarSrc}
-                  alt={user?.name || user?.email || "Me"}
-                  size={32}
-                />
-              </Link>
+              {/* ✅ Restored signed-in user dropdown with Sign out */}
+              <AuthButtons />
             </>
           ) : (
             <>
@@ -255,6 +222,7 @@ export default function Header() {
             <NavLink href="/saved" className="py-2" onClick={() => setOpen(false)}>
               Saved
             </NavLink>
+
             {status === "authenticated" ? (
               <>
                 <NavLink href="/dashboard" className="py-2" onClick={() => setOpen(false)}>
@@ -268,6 +236,18 @@ export default function Header() {
                 >
                   Your store/profile
                 </Link>
+
+                {/* ✅ Mobile Sign out */}
+                <button
+                  type="button"
+                  className="mt-2 w-full text-left rounded-md px-2 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 border-t border-gray-200 dark:border-gray-700"
+                  onClick={async () => {
+                    setOpen(false);
+                    await signOut({ callbackUrl: "/" });
+                  }}
+                >
+                  Sign out
+                </button>
               </>
             ) : (
               <>

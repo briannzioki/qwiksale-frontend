@@ -15,23 +15,29 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/** Access a Service-model compat layer that may not exist or may be named differently */
+/** ----------------------------------------------------------------
+ *  Model compat: tolerate different Service model names or absence
+ *  ---------------------------------------------------------------- */
 function getServiceModel() {
-  const anyPrisma = prisma as any;
-  const svc =
-    anyPrisma.service ??
-    anyPrisma.services ??
-    anyPrisma.Service ??
-    anyPrisma.Services ??
+  const any = prisma as any;
+  const candidate =
+    any.service ??
+    any.services ??
+    any.Service ??
+    any.Services ??
     null;
-  return svc && typeof svc.findUnique === "function" ? svc : null;
+  return candidate && typeof candidate.findUnique === "function" ? candidate : null;
 }
 
-// -------- helpers: tolerant image normalization (schema-agnostic) --------
+/** ----------------------------------------------------------------
+ *  Helpers
+ *  ---------------------------------------------------------------- */
 type Img = { id: string; url: string; isCover?: boolean; sort?: number };
 
 function normalizeImages(p: any): Img[] {
   const out: Img[] = [];
+  const seen = new Set<string>();
+
   const push = (x: any, i: number) => {
     const id = String(
       x?.id ??
@@ -42,6 +48,7 @@ function normalizeImages(p: any): Img[] {
         (typeof x === "string" ? x : undefined) ??
         `img-${i}`
     );
+
     const url = String(
       x?.url ??
         x?.secureUrl ??
@@ -51,7 +58,9 @@ function normalizeImages(p: any): Img[] {
         (typeof x === "string" ? x : "") ??
         ""
     ).trim();
-    if (!url) return;
+
+    if (!url || seen.has(url)) return;
+    seen.add(url);
 
     const isCover =
       Boolean(x?.isCover) ||
@@ -69,7 +78,6 @@ function normalizeImages(p: any): Img[] {
     out.push({ id, url, isCover, sort });
   };
 
-  // Prefer arrays; support gallery[] & bare string arrays
   const arr =
     Array.isArray(p?.images) ? p.images :
     Array.isArray(p?.photos) ? p.photos :
@@ -80,12 +88,10 @@ function normalizeImages(p: any): Img[] {
 
   arr.forEach((x: any, i: number) => push(x, i));
 
-  // If no array entries but a single cover string exists, seed it
   if (out.length === 0 && typeof p?.image === "string" && p.image.trim()) {
     push(p.image, 0);
   }
 
-  // Ensure a cover: prefer Service.image / cover*; otherwise fall back to first item
   if (!out.some((x) => x.isCover) && out.length > 0) {
     const preferred =
       (typeof p?.image === "string" && p.image) ||
@@ -94,12 +100,13 @@ function normalizeImages(p: any): Img[] {
       null;
 
     let idx = preferred ? out.findIndex((x) => x.url === preferred) : 0;
-    if (idx < 0) idx = 0; // fallback if preferred not found
+    if (idx < 0) idx = 0;
     out[idx]!.isCover = true;
   }
 
-  // Stable sort
-  return out.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id));
+  return out
+    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id))
+    .slice(0, 50); // safety cap
 }
 
 function briefStatus(p: any): string {
@@ -117,20 +124,29 @@ function fmtDate(d?: Date | string | null) {
   return dd.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** ----------------------------------------------------------------
+ *  Page
+ *  ---------------------------------------------------------------- */
 export default async function EditServicePage(props: any) {
-  // Accept `any` to satisfy Next's PageProps checker
-  const id = String(props?.params?.id ?? "");
+  const idRaw = props?.params?.id;
+  const id = typeof idRaw === "string" ? idRaw.trim() : "";
   if (!id) notFound();
 
-  // Require auth and ownership (preserves your previous behavior)
-  const session = await auth().catch(() => null);
-  const userId = (session as any)?.user?.id as string | undefined;
+  // Require auth & ownership (strict gate for services editor)
+  let session: any = null;
+  try {
+    session = await auth();
+  } catch {
+    /* ignore */
+  }
+  const userId = session?.user?.id as string | undefined;
   if (!userId) notFound();
 
+  // Resolve model (tolerant to schema drift)
   const Service = getServiceModel();
   if (!Service) notFound();
 
-  // Try to fetch with images included; fall back to narrower shape
+  // Fetch record with tolerant shapes; never throw
   let service: any = null;
   try {
     service = await Service.findUnique({
@@ -138,7 +154,7 @@ export default async function EditServicePage(props: any) {
       include: { images: true },
     });
   } catch {
-    // ignore; try narrower shape below
+    // ignore
   }
 
   if (!service) {
@@ -153,8 +169,8 @@ export default async function EditServicePage(props: any) {
           updatedAt: true,
           createdAt: true,
           status: true,
-          image: true,       // cover
-          gallery: true,     // ordered list
+          image: true,
+          gallery: true,
           coverImage: true,
           coverImageUrl: true,
           imageUrls: true,
@@ -162,10 +178,14 @@ export default async function EditServicePage(props: any) {
         },
       });
     } catch {
-      service = await Service.findUnique({
-        where: { id },
-        select: { id: true, name: true, title: true, sellerId: true },
-      });
+      try {
+        service = await Service.findUnique({
+          where: { id },
+          select: { id: true, name: true, title: true, sellerId: true },
+        });
+      } catch {
+        service = null;
+      }
     }
   }
 
@@ -176,10 +196,9 @@ export default async function EditServicePage(props: any) {
   const lastUpdated = service?.updatedAt ?? service?.createdAt ?? null;
   const serviceName = service?.name ?? service?.title ?? "Service";
 
-  // Optional: render your full editor if it exists
+  // Try to load a full editor if your repo has it; otherwise we’ll show a CTA
   let SellServiceClient: any = null;
   try {
-    // Will succeed only if you have this file in your repo
     SellServiceClient = (await import("@/app/sell/service/SellServiceClient")).default;
   } catch {
     SellServiceClient = null;
@@ -187,7 +206,7 @@ export default async function EditServicePage(props: any) {
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-6">
-      {/* Edit-mode header */}
+      {/* Header */}
       <div className="rounded-xl p-4 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -212,7 +231,7 @@ export default async function EditServicePage(props: any) {
         </div>
       </div>
 
-      {/* Quick fields (kept for testability) */}
+      {/* Quick fields (owner only due to gating) */}
       <form
         aria-label="Edit service quick fields"
         className="mt-4 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
@@ -232,8 +251,6 @@ export default async function EditServicePage(props: any) {
               type="text"
               defaultValue={serviceName}
               className="w-full rounded-md border px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
-              readOnly
-              aria-readonly="true"
               placeholder="e.g. House Cleaning, M-Pesa Agent…"
             />
             <p className="mt-2 text-xs text-gray-500">
@@ -252,7 +269,7 @@ export default async function EditServicePage(props: any) {
         </div>
       </form>
 
-      {/* Media section (wired to MediaManager) */}
+      {/* Media (owner only due to gating) */}
       <section className="mt-6 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <EditMediaClient
           entity="service"
@@ -262,16 +279,14 @@ export default async function EditServicePage(props: any) {
         />
       </section>
 
-      {/* Full editor — render if present, otherwise show a CTA to the Sell flow */}
+      {/* Full editor */}
       {SellServiceClient ? (
         <div className="mt-6">
           <SellServiceClient id={service.id} />
         </div>
       ) : (
         <div className="mt-6 rounded-lg border p-4 text-sm text-gray-700 dark:border-slate-800 dark:text-slate-200">
-          <p>
-            For full editing, continue in the Sell flow. It’ll prefill this service automatically.
-          </p>
+          <p>The full service editor isn’t available here yet.</p>
           <div className="mt-3">
             <Link
               href={`/sell/service?id=${encodeURIComponent(service.id)}`}

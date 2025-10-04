@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import SearchCombobox from "@/app/components/SearchCombobox";
 
 type SuggestionType = "name" | "brand" | "category" | "subcategory" | "service";
+
 type SuggestionMeta = {
   type: SuggestionType;
   /** Normalized machine value for this suggestion (falls back to label if absent) */
@@ -79,17 +80,29 @@ export default function SearchBox(props: Props) {
 
   const [q, setQ] = useState(initial);
 
+  // keep q in sync if `initial` changes after mount (rare but safe)
+  useEffect(() => {
+    setQ(initial ?? "");
+  }, [initial]);
+
   // container ref so we can focus the inner <input> when inline opens
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // Prefetch the destination route
+  // Prefetch the destination route (safe wrapper)
+  const safePrefetch = useCallback(
+    (href: string) => {
+      try {
+        r.prefetch?.(href);
+      } catch {
+        /* noop */
+      }
+    },
+    [r]
+  );
+
   useEffect(() => {
-    try {
-      r.prefetch?.(destination === "search" ? "/search" : "/");
-    } catch {
-      /* noop */
-    }
-  }, [r, destination]);
+    safePrefetch(destination === "search" ? "/search" : "/");
+  }, [safePrefetch, destination]);
 
   // Small in-memory suggest cache (term -> items)
   const cacheRef = useRef<Map<string, ComboItem<SuggestionMeta>[]>>(new Map());
@@ -105,7 +118,8 @@ export default function SearchBox(props: Props) {
       try {
         const res = await fetch(url, { cache: "no-store", signal });
         if (!res.ok) return null;
-        return (await res.json().catch(() => null)) as { items?: SuggestItem[] } | null;
+        const json = (await res.json().catch(() => null)) as { items?: SuggestItem[] } | null;
+        return json;
       } catch {
         return null;
       }
@@ -117,28 +131,33 @@ export default function SearchBox(props: Props) {
     const seen = new Set<string>();
     const out: ComboItem<SuggestionMeta>[] = [];
     let idx = 0;
+
     for (const j of lists) {
       const arr = j?.items ?? [];
       for (const s of arr) {
-        const norm = (s.value || s.label || "").toLowerCase();
-        const key = `${s.type}:${norm}`;
+        const rawLabel = (s.label ?? "").trim();
+        const normVal = (s.value ?? rawLabel).toLowerCase();
+        if (!rawLabel) continue;
+
+        const key = `${s.type}:${normVal}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
         // Build meta without undefined fields (fixes exactOptionalPropertyTypes)
         const meta: SuggestionMeta = { type: s.type };
-        if (typeof s.value === "string") meta.value = s.value;
-        if (typeof s.category === "string" && s.category.trim()) meta.category = s.category;
-        if (typeof s.subcategory === "string" && s.subcategory.trim()) meta.subcategory = s.subcategory;
+        if (typeof s.value === "string" && s.value.trim()) meta.value = s.value.trim();
+        if (typeof s.category === "string" && s.category.trim()) meta.category = s.category.trim();
+        if (typeof s.subcategory === "string" && s.subcategory.trim()) meta.subcategory = s.subcategory.trim();
 
         out.push({
-          id: `${s.type}:${s.value ?? s.label}:${idx++}`,
-          label: s.label,
+          id: `${s.type}:${normVal}:${idx++}`,
+          label: rawLabel,
           meta,
         });
       }
     }
-    return out.slice(0, SUGGEST_LIMIT);
+    // enforce limit after dedupe to keep top results
+    return out.slice(0, Math.max(1, Math.min(SUGGEST_LIMIT, 50)));
   }
 
   const fetchSuggest = useCallback(
@@ -153,11 +172,12 @@ export default function SearchBox(props: Props) {
 
       // Abort any in-flight request
       abortRef.current?.abort();
-      abortRef.current = new AbortController();
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       // Try unified suggest first; if unavailable, fall back to products + services
       const unifiedUrl = `/api/suggest?q=${encodeURIComponent(t)}&limit=${SUGGEST_LIMIT}`;
-      const unified = await fetchJson(unifiedUrl, abortRef.current.signal);
+      const unified = await fetchJson(unifiedUrl, controller.signal);
 
       let items: ComboItem<SuggestionMeta>[];
       if (unified && Array.isArray(unified.items)) {
@@ -167,8 +187,8 @@ export default function SearchBox(props: Props) {
         const prodUrl = `/api/products/suggest?q=${encodeURIComponent(t)}&limit=${per}`;
         const svcUrl = `/api/services/suggest?q=${encodeURIComponent(t)}&limit=${per}`;
         const [p, s] = await Promise.all([
-          fetchJson(prodUrl, abortRef.current.signal),
-          fetchJson(svcUrl, abortRef.current.signal),
+          fetchJson(prodUrl, controller.signal),
+          fetchJson(svcUrl, controller.signal),
         ]);
         items = mergeAndDedupe([p, s]);
       }
@@ -185,13 +205,32 @@ export default function SearchBox(props: Props) {
     [fetchJson]
   );
 
+  // Router push with safety; also closes inline if needed
+  const safePush = useCallback(
+    (href: string) => {
+      try {
+        r.push(href);
+      } catch {
+        // If router blows up, fallback to hard nav
+        try {
+          window.location.assign(href);
+        } catch {
+          /* noop */
+        }
+      } finally {
+        if (isInline) (props as InlineVariantProps).onCloseAction?.();
+      }
+    },
+    [r, isInline, props]
+  );
+
+  // Helpers to pick normalized/meta values safely
+  const valueOr = (m?: SuggestionMeta) => (m?.value || "").trim();
+  const labelOr = (lbl?: string) => (lbl || "").trim();
+
   const go = useCallback(
     (raw: string, picked?: ComboItem<SuggestionMeta>) => {
       const term = raw.trim();
-
-      // Helper to safely pick normalized value with label fallback
-      const valueOr = (m?: SuggestionMeta) => (m?.value || "").trim();
-      const labelOr = (lbl?: string) => (lbl || "").trim();
 
       if (destination === "search") {
         // For the global header search: go to /search with smart mapping
@@ -237,38 +276,50 @@ export default function SearchBox(props: Props) {
           sp.set("q", qVal);
         }
 
-        r.push(`/search?${sp.toString()}`);
-        if (isInline) (props as InlineVariantProps).onCloseAction?.();
+        safePush(`/search?${sp.toString()}`);
         return;
       }
 
-      // ---------- Default: Home mode (existing behavior) ----------
+      // ---------- Default: Home mode ----------
       const params = new URLSearchParams();
       let modeSet = false;
 
       if (picked?.meta?.type) {
         const t = picked.meta.type;
-        const label = picked.label;
+        const lbl = picked.label;
 
         if (t === "brand") {
-          params.set("brand", label);
+          params.set("brand", valueOr(picked.meta) || lbl);
         } else if (t === "category") {
-          params.set("category", label);
+          params.set("category", valueOr(picked.meta) || lbl);
         } else if (t === "subcategory") {
-          // Expect "Category • Subcategory" but handle plain "Subcategory" too
-          const parts = label.split("•").map((s) => s.trim()).filter(Boolean);
-          if (parts.length === 2) {
-            params.set("category", parts[0]!);
-            params.set("subcategory", parts[1]!);
+          // Prefer explicit parent/subcategory from meta when available
+          const parent = labelOr(picked.meta.category);
+          const sub =
+            labelOr(picked.meta.subcategory) ||
+            valueOr(picked.meta) ||
+            lbl;
+
+          if (parent) params.set("category", parent);
+
+          if (sub) {
+            params.set("subcategory", sub);
           } else {
-            params.set("subcategory", label);
+            // Fallback: Expect "Category • Subcategory" but handle plain "Subcategory" too
+            const parts = lbl.split("•").map((s) => s.trim()).filter(Boolean);
+            if (parts.length === 2) {
+              params.set("category", parts[0]!);
+              params.set("subcategory", parts[1]!);
+            } else if (parts.length === 1) {
+              params.set("subcategory", parts[0]!);
+            }
           }
         } else if (t === "service") {
           params.set("t", "services");
-          params.set("q", label);
+          params.set("q", valueOr(picked.meta) || lbl || term);
           modeSet = true;
         } else if (t === "name") {
-          params.set("q", label);
+          params.set("q", valueOr(picked.meta) || lbl || term);
         }
       } else if (term) {
         params.set("q", term);
@@ -284,10 +335,9 @@ export default function SearchBox(props: Props) {
         params.set("q", term);
       }
 
-      r.push(`/?${params.toString()}`);
-      if (isInline) (props as InlineVariantProps).onCloseAction?.();
+      safePush(`/?${params.toString()}`);
     },
-    [r, isInline, props, destination]
+    [destination, safePush]
   );
 
   const hint = useMemo(() => {
@@ -321,10 +371,18 @@ export default function SearchBox(props: Props) {
 
   // ---- Renders ----
   if (!isInline) {
-    // Default wide search row
+    // Default wide search row (wrapped in a form so Enter submits reliably)
     return (
       <div className={classNames("relative w-full max-w-2xl", className)}>
-        <div className="flex items-center gap-2 rounded-2xl border border-gray-300 bg-white px-3 py-2 shadow-sm transition focus-within:ring-2 focus-within:ring-brandBlue dark:border-slate-700 dark:bg-slate-900">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            go(q);
+          }}
+          className="flex items-center gap-2 rounded-2xl border border-gray-300 bg-white px-3 py-2 shadow-sm transition focus-within:ring-2 focus-within:ring-brandBlue dark:border-slate-700 dark:bg-slate-900"
+          role="search"
+          aria-label="Search products, brands, categories or services"
+        >
           <SearchIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
 
           {/* hidden focus proxy so you can still use autoFocus on mount */}
@@ -380,14 +438,13 @@ export default function SearchBox(props: Props) {
             </button>
           )}
           <button
-            type="button"
+            type="submit"
             className="rounded-lg bg-brandNavy px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
-            onClick={() => go(q)}
             aria-label="Search"
           >
             Search
           </button>
-        </div>
+        </form>
 
         {hint && (
           <div className="mt-1 text-xs text-gray-500 dark:text-slate-400" aria-live="polite">

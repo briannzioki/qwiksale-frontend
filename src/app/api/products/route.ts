@@ -9,7 +9,7 @@ import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const PRODUCTS_VER = "vDEBUG-PRODUCTS-002";
+const PRODUCTS_VER = "vDEBUG-PRODUCTS-004";
 function attachVersion(h: Headers) {
   h.set("X-Products-Version", PRODUCTS_VER);
 }
@@ -30,8 +30,8 @@ function toInt(v: string | null, def: number, min: number, max: number) {
 function toBool(v: string | null): boolean | undefined {
   if (v == null) return undefined;
   const t = v.trim().toLowerCase();
-  if (["1", "true", "yes"].includes(t)) return true;
-  if (["0", "false", "no"].includes(t)) return false;
+  if (["1", "true", "yes", "on"].includes(t)) return true;
+  if (["0", "false", "no", "off"].includes(t)) return false;
   return undefined;
 }
 function optStr(v: string | null): string | undefined {
@@ -40,6 +40,12 @@ function optStr(v: string | null): string | undefined {
   const l = t.toLowerCase();
   if (l === "any" || l === "all" || l === "*") return undefined;
   return t;
+}
+function hasNumeric(val: string | null) {
+  if (val == null) return false;
+  const t = val.trim();
+  if (!t) return false; // <-- crucial: ignore blank like "?limit="
+  return Number.isFinite(Number(t));
 }
 type SortKey = "newest" | "price_asc" | "price_desc" | "featured";
 function toSort(v: string | null): SortKey {
@@ -103,8 +109,27 @@ export async function GET(req: NextRequest) {
     const subcategory = optStr(url.searchParams.get("subcategory"));
     const brand = optStr(url.searchParams.get("brand"));
     const condition = optStr(url.searchParams.get("condition"));
-    const sellerId = optStr(url.searchParams.get("sellerId"));
-    const sellerUsername = optStr(url.searchParams.get("seller"));
+
+    // owner filters
+    const mine = toBool(url.searchParams.get("mine")) === true;
+    let sellerId =
+      optStr(url.searchParams.get("sellerId")) ||
+      optStr(url.searchParams.get("userId"));
+    const sellerUsername =
+      optStr(url.searchParams.get("seller")) ||
+      optStr(url.searchParams.get("user"));
+
+    if (mine) {
+      const session = await auth().catch(() => null);
+      const uid = (session as any)?.user?.id as string | undefined;
+      if (!uid) {
+        const res = jsonPrivate({ error: "Unauthorized" }, { status: 401 });
+        attachVersion(res.headers);
+        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+        return res;
+      }
+      sellerId = uid; // mine wins
+    }
 
     const featured = toBool(url.searchParams.get("featured"));
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
@@ -117,10 +142,16 @@ export async function GET(req: NextRequest) {
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
     const includeFav = toBool(url.searchParams.get("includeFav")) === true;
 
-    // pagination
+    // pagination (honor limit OR pageSize; ignore blank "limit=")
     const cursor = optStr(url.searchParams.get("cursor"));
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
-    const pageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+    const limitStr = url.searchParams.get("limit");
+    const pageSizeStr = url.searchParams.get("pageSize");
+    const hasLimit = hasNumeric(limitStr);
+    const hasPageSize = hasNumeric(pageSizeStr);
+    let pageSize = DEFAULT_PAGE_SIZE;
+    if (hasLimit) pageSize = toInt(limitStr!, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+    else if (hasPageSize) pageSize = toInt(pageSizeStr!, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
     // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
     const statusParam = optStr(url.searchParams.get("status"));
@@ -187,21 +218,24 @@ export async function GET(req: NextRequest) {
 
     const isSearchLike = q.length > 0 || !!category || !!subcategory || !!brand;
 
-    // Default sort -> tie-break on id for stable ordering
+    // Default sort -> tie-break on createdAt then id for stability (matches services)
     let orderBy: any;
-    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { id: "desc" as const }];
-    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { id: "desc" as const }];
-    else if (sort === "featured")
+    if (sort === "price_asc") {
+      orderBy = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    } else if (sort === "price_desc") {
+      orderBy = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    } else if (sort === "featured") {
       orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
-    else
+    } else {
       orderBy = isSearchLike
         ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
         : [{ createdAt: "desc" as const }, { id: "desc" as const }];
+    }
 
     if (process.env.NODE_ENV !== "production") {
       console.log("[/api/products WHERE]", safe(where));
       console.log("[/api/products ORDER]", safe(orderBy));
-      console.log("[/api/products page/pageSize]", page, pageSize);
+      console.log("[/api/products page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
     }
 
     // Resolve user only if caller explicitly wants personal favorite flag
@@ -292,7 +326,7 @@ export async function GET(req: NextRequest) {
       page,
       pageSize,
       total,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
       sort,
       items,
       facets,

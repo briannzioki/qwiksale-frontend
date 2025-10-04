@@ -15,11 +15,15 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-// -------- helpers: tolerant image normalization (schema-agnostic) --------
+/** ----------------------------------------------------------------
+ *  Helpers
+ *  ---------------------------------------------------------------- */
 type Img = { id: string; url: string; isCover?: boolean; sort?: number };
 
 function normalizeImages(p: any): Img[] {
   const out: Img[] = [];
+  const seenByUrl = new Set<string>();
+
   const push = (x: any, i: number) => {
     const id = String(
       x?.id ??
@@ -30,6 +34,7 @@ function normalizeImages(p: any): Img[] {
         (typeof x === "string" ? x : undefined) ??
         `img-${i}`
     );
+
     const url = String(
       x?.url ??
         x?.secureUrl ??
@@ -39,14 +44,16 @@ function normalizeImages(p: any): Img[] {
         (typeof x === "string" ? x : "") ??
         ""
     ).trim();
-    if (!url) return;
+
+    if (!url || seenByUrl.has(url)) return;
+    seenByUrl.add(url);
 
     const isCover =
       Boolean(x?.isCover) ||
       Boolean(p?.coverImageId && x?.id && p.coverImageId === x.id) ||
       Boolean(typeof p?.coverImage === "string" && url === p.coverImage) ||
       Boolean(typeof p?.coverImageUrl === "string" && url === p.coverImageUrl) ||
-      Boolean(typeof p?.image === "string" && url === p.image); // Product.image
+      Boolean(typeof p?.image === "string" && url === p.image);
 
     const sort =
       Number.isFinite(x?.sortOrder) ? Number(x.sortOrder) :
@@ -57,7 +64,7 @@ function normalizeImages(p: any): Img[] {
     out.push({ id, url, isCover, sort });
   };
 
-  // Prefer arrays; support gallery[] & bare string arrays
+  // Prefer arrays; support many shapes, including bare string arrays
   const arr =
     Array.isArray(p?.images) ? p.images :
     Array.isArray(p?.photos) ? p.photos :
@@ -68,12 +75,12 @@ function normalizeImages(p: any): Img[] {
 
   arr.forEach((x: any, i: number) => push(x, i));
 
-  // If no array entries but a single cover string exists, seed it
+  // If nothing but a single cover/legacy string exists, seed it
   if (out.length === 0 && typeof p?.image === "string" && p.image.trim()) {
     push(p.image, 0);
   }
 
-  // Ensure a cover: prefer Product.image / cover*; otherwise fall back to first item
+  // Ensure a cover
   if (!out.some((x) => x.isCover) && out.length > 0) {
     const preferred =
       (typeof p?.image === "string" && p.image) ||
@@ -82,18 +89,19 @@ function normalizeImages(p: any): Img[] {
       null;
 
     let idx = preferred ? out.findIndex((x) => x.url === preferred) : 0;
-    if (idx < 0) idx = 0; // fallback if preferred not found
+    if (idx < 0) idx = 0;
     out[idx]!.isCover = true;
   }
 
   // Stable sort
-  return out.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id));
+  return out
+    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id))
+    .slice(0, 50); // hard cap to keep UI snappy if a listing has huge media
 }
 
 function briefStatus(p: any): string {
   const s = String(p?.status ?? "").toUpperCase();
   if (["ACTIVE", "DRAFT", "PAUSED", "ARCHIVED"].includes(s)) return s;
-  // fallbacks
   if (p?.published === true || p?.isActive === true) return "ACTIVE";
   if (p?.published === false) return "DRAFT";
   return "—";
@@ -106,9 +114,13 @@ function fmtDate(d?: Date | string | null) {
   return dd.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** ----------------------------------------------------------------
+ *  Page
+ *  ---------------------------------------------------------------- */
 export default async function EditListingPage(props: any) {
-  // Accept `any` to satisfy Next's PageProps checker
-  const id = String(props?.params?.id ?? "");
+  // Be tolerant with params
+  const idRaw = props?.params?.id;
+  const id = typeof idRaw === "string" ? idRaw.trim() : "";
   if (!id) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-6">
@@ -117,23 +129,34 @@ export default async function EditListingPage(props: any) {
     );
   }
 
-  // Load session (best-effort) and product w/ images
-  const session = await auth().catch(() => null);
-  const userId = (session as any)?.user?.id as string | undefined;
-
-  // We access prisma in a tolerant "any" way so we don't fight schema variance
-  let product: any = null;
+  // Server-side session; never throw if auth provider glitches
+  let session: any = null;
   try {
-    product = await (prisma as any).product.findUnique({
-      where: { id },
-      include: {
-        images: true, // if relation exists
-      },
-    });
+    session = await auth();
   } catch {
-    // ignore and try a narrower shape
+    session = null;
   }
-  if (!product) {
+  const userId = session?.user?.id as string | undefined;
+
+  // Load product with tolerant shape; never throw the page
+  let product: any = null;
+  const canQuery =
+    prisma &&
+    (prisma as any).product &&
+    typeof (prisma as any).product.findUnique === "function";
+
+  if (canQuery) {
+    try {
+      product = await (prisma as any).product.findUnique({
+        where: { id },
+        include: { images: true },
+      });
+    } catch {
+      // ignore; try narrower shapes below
+    }
+  }
+
+  if (!product && canQuery) {
     try {
       product = await (prisma as any).product.findUnique({
         where: { id },
@@ -144,19 +167,26 @@ export default async function EditListingPage(props: any) {
           updatedAt: true,
           createdAt: true,
           status: true,
-          image: true,    // cover
-          gallery: true,  // ordered list
+          image: true,
+          gallery: true,
           coverImage: true,
           coverImageUrl: true,
           imageUrls: true,
         },
       });
     } catch {
-      // last attempt minimal shape
+      // ignore; last minimal shape
+    }
+  }
+
+  if (!product && canQuery) {
+    try {
       product = await (prisma as any).product.findUnique({
         where: { id },
         select: { id: true, name: true, sellerId: true },
       });
+    } catch {
+      product = null;
     }
   }
 
@@ -174,7 +204,7 @@ export default async function EditListingPage(props: any) {
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-6">
-      {/* Edit-mode header */}
+      {/* Header */}
       <div className="rounded-xl p-4 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -201,7 +231,7 @@ export default async function EditListingPage(props: any) {
         </div>
       </div>
 
-      {/* Quick fields (kept for testability) */}
+      {/* Quick fields (read-only when not owner) */}
       <form
         aria-label="Edit product quick fields"
         className="mt-4 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
@@ -232,11 +262,11 @@ export default async function EditListingPage(props: any) {
             )}
           </div>
           <div className="flex items-end">
-            {/* This button simply exists (keeps tests stable); real saving is inside the full editor below */}
             <button
               type="button"
               className="rounded-lg bg-[#161748] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
               aria-label="Update"
+              // real saving handled in the full editor below; this keeps tests & layout stable
             >
               Save changes
             </button>
@@ -244,7 +274,7 @@ export default async function EditListingPage(props: any) {
         </div>
       </form>
 
-      {/* Media section (wired to MediaManager) */}
+      {/* Media section */}
       <section className="mt-6 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         {isOwner ? (
           <EditMediaClient
@@ -269,10 +299,16 @@ export default async function EditListingPage(props: any) {
               <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                 {images.map((img) => (
                   <li
-                    key={img.id}
+                    key={`${img.id}-${img.url}`}
                     className="relative overflow-hidden rounded-lg border bg-white dark:border-slate-700 dark:bg-slate-950"
                   >
-                    <img src={img.url} alt="" className="h-40 w-full object-cover" />
+                    <img
+                      src={img.url}
+                      alt={img.isCover ? "Cover photo" : "Photo"}
+                      className="h-40 w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/60 to-transparent p-2 text-xs text-white">
                       <span className="font-medium truncate">
                         {img.isCover ? "Cover photo" : "Photo"}
@@ -287,7 +323,7 @@ export default async function EditListingPage(props: any) {
         )}
       </section>
 
-      {/* Full editor – continue to reuse your existing client for parity with Sell flow */}
+      {/* Full editor (owner only) */}
       {isOwner ? (
         <div className="mt-6">
           <SellProductClient id={product.id} />

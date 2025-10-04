@@ -6,9 +6,10 @@ export const revalidate = 0;
 import type { NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
+import { auth } from "@/auth";
 
 /* ----------------------------- debug ----------------------------- */
-const SERVICES_VER = "vDEBUG-SERVICES-003";
+const SERVICES_VER = "vDEBUG-SERVICES-004";
 function attachVersion(h: Headers) {
   h.set("X-Services-Version", SERVICES_VER);
 }
@@ -29,8 +30,8 @@ function toInt(v: string | null, def: number, min: number, max: number) {
 function toBool(v: string | null): boolean | undefined {
   if (v == null) return undefined;
   const t = v.trim().toLowerCase();
-  if (["1", "true", "yes"].includes(t)) return true;
-  if (["0", "false", "no"].includes(t)) return false;
+  if (["1", "true", "yes", "on"].includes(t)) return true;
+  if (["0", "false", "no", "off"].includes(t)) return false;
   return undefined;
 }
 function optStr(v: string | null): string | undefined {
@@ -53,6 +54,7 @@ function toSort(v: string | null): SortKey {
 const serviceListSelect = {
   id: true,
   name: true,
+  title: true,
   category: true,
   subcategory: true,
   price: true,
@@ -116,10 +118,28 @@ export async function GET(req: NextRequest) {
     const q = (url.searchParams.get("q") || "").trim();
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
-    const sellerId =
-      optStr(url.searchParams.get("sellerId")) || optStr(url.searchParams.get("userId"));
+
+    // owner filters
+    const mine = toBool(url.searchParams.get("mine")) === true;
+    let sellerId =
+      optStr(url.searchParams.get("sellerId")) ||
+      optStr(url.searchParams.get("userId"));
     const sellerUsername =
-      optStr(url.searchParams.get("seller")) || optStr(url.searchParams.get("user"));
+      optStr(url.searchParams.get("seller")) ||
+      optStr(url.searchParams.get("user"));
+
+    if (mine) {
+      const session = await auth().catch(() => null);
+      const uid = (session as any)?.user?.id as string | undefined;
+      if (!uid) {
+        const res = jsonPrivate({ error: "Unauthorized" }, { status: 401 });
+        attachVersion(res.headers);
+        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+        return res;
+      }
+      sellerId = uid; // mine wins
+    }
+
     const featured = toBool(url.searchParams.get("featured"));
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
 
@@ -129,8 +149,16 @@ export async function GET(req: NextRequest) {
 
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
+
+    // pagination (honor limit OR pageSize)
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
-    const pageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+    const limitStr = url.searchParams.get("limit");
+    const pageSizeStr = url.searchParams.get("pageSize");
+    const hasLimit = Number.isFinite(Number(limitStr));
+    const hasPageSize = Number.isFinite(Number(pageSizeStr));
+    let pageSize = DEFAULT_PAGE_SIZE;
+    if (hasLimit) pageSize = toInt(limitStr, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
+    else if (hasPageSize) pageSize = toInt(pageSizeStr, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
     // Optional cursor (parity with products API)
     const cursor = optStr(url.searchParams.get("cursor"));
@@ -175,9 +203,11 @@ export async function GET(req: NextRequest) {
       and.push({
         OR: [
           { name: { contains: q, mode: "insensitive" } },
+          { title: { contains: q, mode: "insensitive" } },
           { description: { contains: q, mode: "insensitive" } },
           { category: { contains: q, mode: "insensitive" } },
           { subcategory: { contains: q, mode: "insensitive" } },
+          // keep relation optional/tolerant
           { seller: { is: { name: { contains: q, mode: "insensitive" } } } },
         ],
       });
@@ -224,14 +254,10 @@ export async function GET(req: NextRequest) {
 
     const isSearchLike = q.length > 0 || !!category || !!subcategory;
     let orderBy: any;
-    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { id: "desc" as const }];
-    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { id: "desc" as const }];
+    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
     else if (sort === "featured")
-      orderBy = [
-        { featured: "desc" as const },
-        { createdAt: "desc" as const },
-        { id: "desc" as const },
-      ];
+      orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
     else
       orderBy = isSearchLike
         ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
@@ -243,7 +269,7 @@ export async function GET(req: NextRequest) {
       console.log("[/api/services page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
     }
 
-    // Fetch: align with products API -> page or cursor, take pageSize+1 for hasMore
+    // Fetch: page or cursor, take pageSize+1 for hasMore
     const listArgs: any = {
       where,
       select: serviceListSelect,
@@ -268,16 +294,15 @@ export async function GET(req: NextRequest) {
     const nextCursor = hasMore && data.length ? (data[data.length - 1] as any).id : null;
 
     const items = (data as Array<any>).map((s) => ({
-      id: s.id as string,
-      name: s.name as string,
-      category: s.category as string | null,
-      subcategory: s.subcategory as string | null,
+      id: String(s.id),
+      name: String(s.name ?? s.title ?? "Service"),
+      category: (s.category as string | null) ?? null,
+      subcategory: (s.subcategory as string | null) ?? null,
       price: typeof s.price === "number" ? (s.price as number) : null,
       image: (s.image as string | null) ?? null,
       featured: Boolean(s.featured),
       location: (s.location as string | null) ?? null,
-      createdAt:
-        s?.createdAt instanceof Date ? s.createdAt.toISOString() : String(s?.createdAt ?? ""),
+      createdAt: s?.createdAt instanceof Date ? s.createdAt.toISOString() : String(s?.createdAt ?? ""),
       sellerId: s.sellerId as string,
       seller: s.seller ?? null,
     }));
@@ -287,7 +312,7 @@ export async function GET(req: NextRequest) {
         page,
         pageSize,
         total,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
         sort,
         items,
         facets,
