@@ -6,10 +6,9 @@ export const revalidate = 0;
 import type { NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
-import { auth } from "@/auth";
 
 /* ----------------------------- debug ----------------------------- */
-const SERVICES_VER = "vDEBUG-SERVICES-004";
+const SERVICES_VER = "vDEBUG-SERVICES-005";
 function attachVersion(h: Headers) {
   h.set("X-Services-Version", SERVICES_VER);
 }
@@ -49,24 +48,6 @@ function toSort(v: string | null): SortKey {
   if (t === "featured") return "featured";
   return "newest";
 }
-
-/** minimal select for cards */
-const serviceListSelect = {
-  id: true,
-  name: true,
-  title: true,
-  category: true,
-  subcategory: true,
-  price: true,
-  image: true,
-  location: true,
-  featured: true,
-  createdAt: true,
-  sellerId: true,
-  seller: {
-    select: { id: true, username: true, name: true, image: true, subscription: true },
-  },
-} as const;
 
 /** Access a Service-model compat layer that may not exist in this schema */
 function getServiceModel() {
@@ -115,12 +96,11 @@ export async function GET(req: NextRequest) {
       console.log("[/api/services GET]", SERVICES_VER, url.toString());
     }
 
-    const q = (url.searchParams.get("q") || "").trim();
+    const q = (url.searchParams.get("q") || "").trim().slice(0, 64);
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
 
-    // owner filters
-    const mine = toBool(url.searchParams.get("mine")) === true;
+    // Ownership filters
     let sellerId =
       optStr(url.searchParams.get("sellerId")) ||
       optStr(url.searchParams.get("userId"));
@@ -128,29 +108,31 @@ export async function GET(req: NextRequest) {
       optStr(url.searchParams.get("seller")) ||
       optStr(url.searchParams.get("user"));
 
-    if (mine) {
-      const session = await auth().catch(() => null);
-      const uid = (session as any)?.user?.id as string | undefined;
-      if (!uid) {
-        const res = jsonPrivate({ error: "Unauthorized" }, { status: 401 });
-        attachVersion(res.headers);
-        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-        return res;
+    // If a username is provided, resolve to id to avoid relying on a relation in where
+    if (!sellerId && sellerUsername) {
+      try {
+        const u = await prisma.user.findUnique({
+          where: { username: sellerUsername },
+          select: { id: true },
+        });
+        sellerId = u?.id ?? sellerId;
+      } catch {
+        /* ignore user lookup errors */
       }
-      sellerId = uid; // mine wins
     }
 
     const featured = toBool(url.searchParams.get("featured"));
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
 
-    // Only apply price filter if params are present
+    // Price filters (apply only if present)
     const minPriceStr = url.searchParams.get("minPrice");
     const maxPriceStr = url.searchParams.get("maxPrice");
 
     const sort = toSort(url.searchParams.get("sort"));
     const wantFacets = (url.searchParams.get("facets") || "").toLowerCase() === "true";
 
-    // pagination (honor limit OR pageSize)
+    // Pagination (honor limit over pageSize)
+    const cursor = optStr(url.searchParams.get("cursor"));
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
     const limitStr = url.searchParams.get("limit");
     const pageSizeStr = url.searchParams.get("pageSize");
@@ -160,10 +142,89 @@ export async function GET(req: NextRequest) {
     if (hasLimit) pageSize = toInt(limitStr, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     else if (hasPageSize) pageSize = toInt(pageSizeStr, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
 
-    // Optional cursor (parity with products API)
-    const cursor = optStr(url.searchParams.get("cursor"));
+    // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
+    const statusParam = optStr(url.searchParams.get("status"));
+    const where: Record<string, any> = {};
+    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") {
+      where["status"] = "ACTIVE";
+    } else if (statusParam.toUpperCase() !== "ALL") {
+      where["status"] = statusParam.toUpperCase();
+    }
 
-    // Guard result window (avoid huge DB offsets) — skip when using cursor
+    const AND: any[] = [];
+
+    if (q) {
+      AND.push({
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { title: { contains: q, mode: "insensitive" } },
+          { description: { contains: q, mode: "insensitive" } },
+          { category: { contains: q, mode: "insensitive" } },
+          { subcategory: { contains: q, mode: "insensitive" } },
+        ],
+      });
+    }
+    if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory) AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (sellerId) AND.push({ sellerId });
+
+    // verifiedOnly overrides featured
+    if (verifiedOnly === true) {
+      AND.push({ featured: true });
+    } else if (typeof featured === "boolean") {
+      AND.push({ featured });
+    }
+
+    // Price filter logic
+    if (minPriceStr !== null || maxPriceStr !== null) {
+      const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
+      const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
+
+      const priceClause: { gte?: number; lte?: number } = {};
+      if (typeof minPrice === "number") priceClause.gte = minPrice;
+      if (typeof maxPrice === "number") priceClause.lte = maxPrice;
+
+      if (!minPrice || minPrice === 0) {
+        AND.push({ OR: [{ price: null }, { price: priceClause }] });
+      } else {
+        AND.push({ price: priceClause });
+      }
+    }
+
+    // When sorting by price, exclude nulls for stable ordering
+    if (sort === "price_asc" || sort === "price_desc") {
+      AND.push({ price: { not: null } });
+    }
+
+    if (AND.length) where["AND"] = AND;
+
+    const isSearchLike = q.length > 0 || !!category || !!subcategory;
+
+    // Primary orderBy + fallbacks if fields are missing in schema
+    let primaryOrder: any;
+    if (sort === "price_asc") primaryOrder = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    else if (sort === "price_desc") primaryOrder = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    else if (sort === "featured")
+      primaryOrder = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+    else
+      primaryOrder = isSearchLike
+        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
+        : [{ createdAt: "desc" as const }, { id: "desc" as const }];
+
+    const orderByCandidates = [
+      primaryOrder,
+      [{ createdAt: "desc" as const }, { id: "desc" as const }],
+      [{ id: "desc" as const }],
+      undefined,
+    ];
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[/api/services WHERE]", safe(where));
+      console.log("[/api/services ORDER primary]", safe(primaryOrder));
+      console.log("[/api/services page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
+    }
+
+    // Guard result window (skip if using cursor)
     if (!cursor) {
       const skipEst = (page - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
@@ -188,124 +249,78 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // status override: ?status=ACTIVE|DRAFT|ALL (default ACTIVE)
-    const statusParam = optStr(url.searchParams.get("status"));
-    const where: Record<string, any> = {};
-    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") {
-      where["status"] = "ACTIVE";
-    } else if (statusParam.toUpperCase() !== "ALL") {
-      where["status"] = statusParam.toUpperCase();
-    }
+    // Select candidates (schema tolerant)
+    const selectCandidates: any[] = [
+      // rich (with location & featured)
+      { id: true, name: true, title: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true, sellerId: true },
+      { id: true, name: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true, sellerId: true },
+      // without location
+      { id: true, name: true, title: true, category: true, subcategory: true, price: true, image: true, featured: true, createdAt: true, sellerId: true },
+      { id: true, name: true, category: true, subcategory: true, price: true, image: true, featured: true, createdAt: true, sellerId: true },
+      // minimal
+      { id: true, name: true, createdAt: true, featured: true },
+      { id: true, title: true, createdAt: true, featured: true },
+      { id: true, name: true, createdAt: true },
+      { id: true, title: true, createdAt: true },
+      { id: true },
+    ];
 
-    const and: any[] = [];
-
-    if (q) {
-      and.push({
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { title: { contains: q, mode: "insensitive" } },
-          { description: { contains: q, mode: "insensitive" } },
-          { category: { contains: q, mode: "insensitive" } },
-          { subcategory: { contains: q, mode: "insensitive" } },
-          // keep relation optional/tolerant
-          { seller: { is: { name: { contains: q, mode: "insensitive" } } } },
-        ],
-      });
-    }
-    if (category) and.push({ category: { equals: category, mode: "insensitive" } });
-    if (subcategory) and.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
-    if (sellerId) and.push({ sellerId });
-    if (sellerUsername)
-      and.push({
-        seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } },
-      });
-
-    // verifiedOnly should override a conflicting featured filter
-    if (verifiedOnly === true) {
-      and.push({ featured: true });
-    } else if (typeof featured === "boolean") {
-      and.push({ featured });
-    }
-
-    // Price filter logic:
-    // - Apply ONLY if minPrice or maxPrice is provided
-    // - When minPrice is 0 (or absent), include price:null to allow "unset/free"
-    if (minPriceStr !== null || maxPriceStr !== null) {
-      const minPrice = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
-      const maxPrice = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
-
-      const priceClause: any = {};
-      if (typeof minPrice === "number") priceClause.gte = minPrice;
-      if (typeof maxPrice === "number") priceClause.lte = maxPrice;
-
-      if (!minPrice || minPrice === 0) {
-        and.push({ OR: [{ price: null }, { price: priceClause }] });
-      } else {
-        and.push({ price: priceClause });
-      }
-    }
-
-    // When sorting by price, exclude null prices for deterministic ordering
-    if (sort === "price_asc" || sort === "price_desc") {
-      and.push({ price: { not: null } });
-    }
-
-    if (and.length) where["AND"] = and;
-
-    const isSearchLike = q.length > 0 || !!category || !!subcategory;
-    let orderBy: any;
-    if (sort === "price_asc") orderBy = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
-    else if (sort === "price_desc") orderBy = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
-    else if (sort === "featured")
-      orderBy = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
-    else
-      orderBy = isSearchLike
-        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
-        : [{ createdAt: "desc" as const }, { id: "desc" as const }];
-
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[/api/services WHERE]", safe(where));
-      console.log("[/api/services ORDER]", safe(orderBy));
-      console.log("[/api/services page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
-    }
-
-    // Fetch: page or cursor, take pageSize+1 for hasMore
-    const listArgs: any = {
+    // Build list args with pagination
+    const baseListArgs: any = {
       where,
-      select: serviceListSelect,
-      orderBy,
       take: pageSize + 1,
     };
     if (cursor) {
-      listArgs.cursor = { id: cursor };
-      listArgs.skip = 1;
+      baseListArgs.cursor = { id: cursor };
+      baseListArgs.skip = 1;
     } else {
-      listArgs.skip = (page - 1) * pageSize;
+      baseListArgs.skip = (page - 1) * pageSize;
     }
 
-    const [total, servicesRaw, facets] = await Promise.all([
-      Service.count({ where }),
-      Service.findMany(listArgs),
-      wantFacets && !cursor && page === 1 ? computeFacets(where, Service) : Promise.resolve(undefined),
-    ]);
+    // total first (cheap & robust)
+    const total = await Service.count({ where });
 
-    const hasMore = (servicesRaw as unknown[]).length > pageSize;
-    const data = hasMore ? (servicesRaw as unknown[]).slice(0, pageSize) : (servicesRaw as unknown[]);
-    const nextCursor = hasMore && data.length ? (data[data.length - 1] as any).id : null;
+    // findMany with tolerant select + orderBy fallbacks
+    let rowsRaw: any[] = [];
+    outer:
+    for (const select of selectCandidates) {
+      for (const orderBy of orderByCandidates) {
+        try {
+          rowsRaw = await Service.findMany({ ...baseListArgs, select, orderBy });
+          break outer;
+        } catch (e) {
+          /* try next combo */
+        }
+      }
+    }
+
+    const hasMore = rowsRaw.length > pageSize;
+    const data = hasMore ? rowsRaw.slice(0, pageSize) : rowsRaw;
+    const nextCursor = hasMore && data.length ? data[data.length - 1]!.id : null;
 
     const items = (data as Array<any>).map((s) => ({
       id: String(s.id),
       name: String(s.name ?? s.title ?? "Service"),
-      category: (s.category as string | null) ?? null,
-      subcategory: (s.subcategory as string | null) ?? null,
-      price: typeof s.price === "number" ? (s.price as number) : null,
-      image: (s.image as string | null) ?? null,
+      category: (s.category ?? null) as string | null,
+      subcategory: (s.subcategory ?? null) as string | null,
+      price: typeof s.price === "number" ? s.price : null,
+      image: (s.image ?? null) as string | null,
       featured: Boolean(s.featured),
-      location: (s.location as string | null) ?? null,
-      createdAt: s?.createdAt instanceof Date ? s.createdAt.toISOString() : String(s?.createdAt ?? ""),
-      sellerId: s.sellerId as string,
-      seller: s.seller ?? null,
+      location: (s.location ?? null) as string | null,
+      createdAt:
+        s?.createdAt instanceof Date
+          ? s.createdAt.toISOString()
+          : typeof s?.createdAt === "string"
+          ? s.createdAt
+          : "",
+      sellerId: s?.sellerId ? String(s.sellerId) : undefined,
     }));
+
+    // facets (first page only, no cursor)
+    let facets: any | undefined = undefined;
+    if (wantFacets && !cursor && page === 1) {
+      facets = await computeFacets(where, Service);
+    }
 
     const res = jsonPublic(
       {
@@ -391,3 +406,4 @@ export async function OPTIONS() {
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
+
