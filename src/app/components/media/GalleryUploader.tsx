@@ -14,16 +14,48 @@ type Props = {
   /** Max images allowed (default 10). */
   max?: number;
   className?: string;
-  /** Optional label override */
+  /** Optional label override (default reflects max). */
   label?: string;
   /** If true, allow drag–drop reordering (default true). */
   draggable?: boolean;
 
-  /** NEW: Accept string for file input (default: image/*) */
+  /** Accept string for file input (default: "image/*"; supports ".jpg,.png", etc.) */
   accept?: string;
-  /** NEW: Max size per file in MB (default: 10) */
+  /** Max size per file in MB (default: 10) */
   maxSizeMB?: number;
 };
+
+function splitAccept(accept: string): string[] {
+  return accept
+    .split(",")
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isAcceptedByToken(file: File, token: string): boolean {
+  const name = file.name.toLowerCase();
+  const type = (file.type || "").toLowerCase();
+
+  // Extension like ".jpg"
+  if (token.startsWith(".")) return name.endsWith(token);
+
+  // Wildcard like "image/*"
+  if (token.endsWith("/*")) {
+    const prefix = token.slice(0, -1); // keep trailing slash
+    return type.startsWith(prefix);
+  }
+
+  // Exact MIME like "image/png"
+  return type === token;
+}
+
+function isAccepted(file: File, accept: string): boolean {
+  // If accept is empty, allow everything
+  if (!accept || !accept.trim()) return true;
+  const tokens = splitAccept(accept);
+  if (tokens.length === 0) return true;
+  return tokens.some((t) => isAcceptedByToken(file, t));
+}
 
 export default function GalleryUploader({
   value,
@@ -31,7 +63,7 @@ export default function GalleryUploader({
   onFilesSelectedAction,
   max = 10,
   className = "",
-  label = "Photos (up to 10)",
+  label,
   draggable = true,
   accept = "image/*",
   maxSizeMB = 10,
@@ -47,9 +79,17 @@ export default function GalleryUploader({
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
+  const [liveMsg, setLiveMsg] = useState<string>("");
   const uid = useId();
 
   const canAddMore = images.length < max;
+  const labelText = label ?? `Photos (up to ${max})`;
+
+  // ----- announce helper (SR) -----
+  const announce = useCallback((msg: string) => {
+    setLiveMsg(msg);
+    setTimeout(() => setLiveMsg(""), 1200);
+  }, []);
 
   // ----- mutations -----
   const commit = useCallback(
@@ -62,8 +102,9 @@ export default function GalleryUploader({
       if (i < 0 || i >= images.length) return;
       const next = images.filter((_, idx) => idx !== i);
       void commit(next);
+      announce(`Removed photo ${i + 1}`);
     },
-    [images, commit]
+    [images, commit, announce]
   );
 
   const move = useCallback(
@@ -72,13 +113,14 @@ export default function GalleryUploader({
       if (i < 0 || i >= images.length) return;
       if (j < 0 || j >= images.length) return;
       const next: string[] = [...images];
-      const a: string = next[i]!;
-      const b: string = next[j]!;
+      const a = next[i]!;
+      const b = next[j]!;
       next[i] = b;
       next[j] = a;
       void commit(next);
+      announce(`Moved photo ${i + 1} ${dir < 0 ? "left" : "right"}`);
     },
-    [images, commit]
+    [images, commit, announce]
   );
 
   const makeCover = useCallback(
@@ -89,8 +131,9 @@ export default function GalleryUploader({
       next.splice(i, 1);
       next.unshift(picked);
       void commit(next);
+      announce(`Photo ${i + 1} set as cover`);
     },
-    [images, commit]
+    [images, commit, announce]
   );
 
   // ----- drag & drop -----
@@ -130,9 +173,10 @@ export default function GalleryUploader({
       next.splice(dragIdx, 1);
       next.splice(i, 0, picked);
       void commit(next);
+      announce(`Moved photo ${dragIdx + 1} to position ${i + 1}`);
       onDragEnd();
     },
-    [draggable, dragIdx, images, commit, onDragEnd]
+    [draggable, dragIdx, images, commit, onDragEnd, announce]
   );
 
   // ----- file picking -----
@@ -152,12 +196,12 @@ export default function GalleryUploader({
       }
 
       const chosen = files.slice(0, allowed);
-      // Validate type/size
-      const maxBytes = maxSizeMB * 1024 * 1024;
+      const maxBytes = Math.max(1, maxSizeMB) * 1024 * 1024;
+
       const bad: string[] = [];
       const ok = chosen.filter((f) => {
-        if (accept.includes("image/") && !f.type.startsWith("image/")) {
-          bad.push(`"${f.name}" is not an image.`);
+        if (!isAccepted(f, accept)) {
+          bad.push(`"${f.name}" is not an accepted file type.`);
           return false;
         }
         if (f.size > maxBytes) {
@@ -176,23 +220,31 @@ export default function GalleryUploader({
         try {
           setBusy(true);
           await onFilesSelectedAction(ok);
+          announce(ok.length === 1 ? "1 file selected" : `${ok.length} files selected`);
         } finally {
           setBusy(false);
         }
       }
     },
-    [images.length, max, onFilesSelectedAction, accept, maxSizeMB]
+    [images.length, max, onFilesSelectedAction, accept, maxSizeMB, announce]
   );
 
   // ----- UI -----
   return (
-    <div className={["w-full", className].join(" ")}>
+    <div className={["w-full", className].join(" ")} aria-busy={busy ? "true" : "false"}>
+      <span className="sr-only" aria-live="polite">
+        {liveMsg}
+      </span>
+
       <label className="text-sm font-medium" htmlFor={`gu-files-${uid}`}>
-        {label}
+        {labelText}
       </label>
 
       {images.length > 0 && (
-        <ul className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <ul
+          className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+          aria-label="Gallery images"
+        >
           {images.map((url, i) => {
             const isOver = dragOverIdx === i;
             return (
@@ -208,7 +260,7 @@ export default function GalleryUploader({
                 onDragEnd={onDragEnd}
                 onDrop={onDrop(i)}
                 aria-roledescription="Draggable gallery item"
-                aria-grabbed={dragIdx === i ? "true" : "false"}
+                aria-grabbed={dragIdx === i}
               >
                 <div className="relative h-28 w-full overflow-hidden rounded-md bg-slate-100 dark:bg-slate-900">
                   <SmartImage src={url} alt={`Photo ${i + 1}`} fill className="object-cover" />
@@ -283,7 +335,7 @@ export default function GalleryUploader({
         <div className="text-xs text-gray-600 dark:text-gray-400">
           {images.length}/{max} images
         </div>
-        {errorMsg && <div className="ml-2 text-xs text-red-600">{errorMsg}</div>}
+        {errorMsg && <div className="ml-2 text-xs text-red-600" role="alert">{errorMsg}</div>}
       </div>
     </div>
   );

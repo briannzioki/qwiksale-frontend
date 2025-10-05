@@ -39,12 +39,8 @@ export default function DeleteListingButton({
   const [busy, setBusy] = useState(false);
 
   // --------- Resolve target ---------
-  const resolvedKind: Kind =
-    kind ??
-    (serviceId ? "service" : "product");
-  const targetId =
-    id ??
-    (resolvedKind === "service" ? serviceId : productId);
+  const resolvedKind: Kind = kind ?? (serviceId ? "service" : "product");
+  const targetId = id ?? (resolvedKind === "service" ? serviceId : productId);
 
   // If we somehow weren't given any id, render a disabled button to be safe.
   const targetMissing = !targetId;

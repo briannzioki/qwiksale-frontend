@@ -136,7 +136,7 @@ export default function DeleteListingButton(props: Props) {
       const r = await fetch(endpoint, {
         method: "DELETE",
         signal: ac.signal,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
       });
 
       let j: any = null;

@@ -1,4 +1,3 @@
-// src/app/api/account/delete/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -205,7 +204,7 @@ async function handle(req: NextRequest) {
       /* ignore */
     }
 
-    // 5) OAuth Accounts (NextAuth) — detach first to avoid FK surprises
+    // 5) OAuth Accounts (NextAuth)
     try {
       if ((prisma as any).account?.deleteMany) {
         ops.push((prisma as any).account.deleteMany({ where: { userId } }));
@@ -214,7 +213,7 @@ async function handle(req: NextRequest) {
       /* ignore */
     }
 
-    // 6) Verification tokens (cleanup)
+    // 6) Verification tokens
     try {
       if ((prisma as any).verificationToken?.deleteMany) {
         ops.push(
@@ -278,12 +277,27 @@ export async function GET() {
   return noStore({ ok: true, method: "GET" }, { status: 200 });
 }
 
+// HEAD for health
+export async function HEAD() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Vary": "Cookie",
+      "Allow": "GET, POST, DELETE, HEAD, OPTIONS",
+    },
+  });
+}
+
 // CORS-preflight convenience
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
-    headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Vary": "Cookie",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, HEAD, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
   });
 }
-
-

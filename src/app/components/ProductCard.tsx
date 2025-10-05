@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
+import DeleteListingButton from "@/app/components/DeleteListingButton";
 
 type Props = {
   id: string;
@@ -19,6 +20,13 @@ type Props = {
   /** Allow route prefetching (default true) */
   prefetch?: boolean;
   className?: string;
+
+  /** Dashboard mode: show Edit/Delete controls */
+  ownerControls?: boolean;
+  /** Optional custom edit href (fallback shown below) */
+  editHref?: string;
+  /** Called after a successful delete (e.g., remove from list) */
+  onDeletedAction?: () => void;
 };
 
 /* ----------------------- Utils ----------------------- */
@@ -70,9 +78,14 @@ function ProductCardImpl({
   position,
   prefetch = true,
   className = "",
+  ownerControls = false,
+  editHref,
+  onDeletedAction,
 }: Props) {
   const router = useRouter();
   const href = useMemo(() => `/product/${encodeURIComponent(id)}`, [id]);
+  // Sensible default for editing products. Override via `editHref` if your app uses a different route.
+  const hrefEdit = editHref ?? `/product/${encodeURIComponent(id)}/edit`;
 
   const url = image || "/placeholder/default.jpg";
   const anchorRef = useRef<HTMLAnchorElement | null>(null);
@@ -157,22 +170,36 @@ function ProductCardImpl({
   );
 
   return (
-    <Link
-      href={href}
-      prefetch={prefetch}
-      onMouseEnter={hoverPrefetch}
-      onFocus={hoverPrefetch}
-      onClick={onClick}
-      ref={anchorRef}
+    <div
       className={[
         "group relative block rounded-xl border bg-white p-3 shadow-sm will-change-transform",
         "border-black/5 hover:border-black/10 hover:shadow-md",
         "dark:bg-gray-900 dark:border-white/10 dark:hover:border-white/15",
         className,
       ].join(" ")}
-      title={name}
       data-product-id={id}
     >
+      {/* Action overlay (owner mode) */}
+      {ownerControls && (
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
+          <Link
+            href={hrefEdit}
+            className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:bg-gray-900"
+            title="Edit product"
+            aria-label="Edit product"
+          >
+            Edit
+          </Link>
+
+          {/* exactOptionalPropertyTypes safe: only pass when defined */}
+          <DeleteListingButton
+            productId={id}
+            label="Delete"
+            {...(onDeletedAction ? { afterDeleteAction: onDeletedAction } : {})}
+          />
+        </div>
+      )}
+
       {/* Featured badge */}
       {featured && (
         <span
@@ -183,30 +210,37 @@ function ProductCardImpl({
         </span>
       )}
 
-      {/* Image (Cloudinary via SmartImage) */}
-      <div className="relative h-40 w-full overflow-hidden rounded-lg border border-white/10 dark:border-white/10">
-        <SmartImage
-          src={url}
-          alt={name || "Product image"}
-          fill
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-          className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-          priority={priority}
-          {...blurProps}
-        />
-      </div>
-
-      {/* Meta */}
-      <div className="mt-2 space-y-1">
-        <div className="line-clamp-1 font-medium text-gray-900 dark:text-gray-100" title={name}>
-          {name}
+      {/* Clickable media/title area */}
+      <Link
+        href={href}
+        prefetch={prefetch}
+        onMouseEnter={hoverPrefetch}
+        onFocus={hoverPrefetch}
+        onClick={onClick}
+        ref={anchorRef}
+        title={name}
+      >
+        <div className="relative h-40 w-full overflow-hidden rounded-lg border border-white/10 dark:border-white/10">
+          <SmartImage
+            src={url}
+            alt={name || "Product image"}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            priority={priority}
+            {...blurProps}
+          />
         </div>
-        {subtitle ? (
-          <div className="line-clamp-1 text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
-        ) : null}
-        <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{priceText}</div>
-      </div>
-    </Link>
+
+        <div className="mt-2 space-y-1">
+          <div className="line-clamp-1 font-medium text-gray-900 dark:text-gray-100">{name}</div>
+          {subtitle ? (
+            <div className="line-clamp-1 text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
+          ) : null}
+          <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{priceText}</div>
+        </div>
+      </Link>
+    </div>
   );
 }
 

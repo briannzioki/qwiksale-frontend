@@ -1,3 +1,4 @@
+// src/app/sell/service/SellServiceClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
@@ -316,6 +317,13 @@ export default function SellServiceClient({ editId }: Props) {
     e.preventDefault();
     if (!canSubmit) {
       toast.error("Please fill all required fields.");
+      return;
+    }
+    // ✅ Guard: avoid blob: URLs in payload when Cloudinary isn’t configured
+    if (previews.length && !CLOUD_NAME) {
+      toast.error(
+        "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
+      );
       return;
     }
     if (submitting) return;

@@ -2,14 +2,14 @@
 "use client";
 
 import type React from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFavorite } from "@/app/hooks/useFavorite";
 
 /**
  * Lightweight, hook-driven Favorite button with count.
  * - Safe inside clickable cards (prevents unintended navigation)
  * - Cooldown to avoid spam clicks
- * - A11y: aria-pressed, dynamic title/label, live updates via sr-only
+ * - A11y: aria-pressed, dynamic aria-label, live updates via sr-only
  * - Emits client events + analytics: "qs:favorite:toggle", "qs:track"
  */
 type Props = {
@@ -60,12 +60,26 @@ export default function FavoriteButton({
 
   const [live, setLive] = useState<string>("");
   const cooldownUntilRef = useRef<number>(0);
+  const liveTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (liveTimeoutRef.current) {
+        clearTimeout(liveTimeoutRef.current);
+        liveTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const title = useMemo(
     () =>
       isFavorited
         ? `Remove ${labelPrefix} from favorites`
         : `Add ${labelPrefix} to favorites`,
+    [isFavorited, labelPrefix]
+  );
+  const ariaLabel = useMemo(
+    () => (isFavorited ? `Unsave ${labelPrefix}` : `Save ${labelPrefix}`),
     [isFavorited, labelPrefix]
   );
 
@@ -75,26 +89,35 @@ export default function FavoriteButton({
       e.preventDefault();
       e.stopPropagation();
 
+      if (!productId) return;
+
       // Cooldown: avoid rapid double toggles
       const now = Date.now();
       if (now < cooldownUntilRef.current) return;
       cooldownUntilRef.current = now + 600;
 
+      // Predict next state BEFORE calling toggle (prevents inverted analytics)
+      const next = !isFavorited;
+
       try {
         await toggle(); // hook manages state/optimism internally
-        const next = !isFavorited;
+
         track(next ? "favorite_add" : "favorite_remove", { productId });
         emit("qs:favorite:toggle", { productId, favorited: next });
-        setLive(
-          next
-            ? `${labelPrefix} saved to favorites`
-            : `${labelPrefix} removed from favorites`
-        );
-        setTimeout(() => setLive(""), 1200);
+
+        if (liveTimeoutRef.current) clearTimeout(liveTimeoutRef.current);
+        setLive(next ? `${labelPrefix} saved to favorites` : `${labelPrefix} removed from favorites`);
+        liveTimeoutRef.current = window.setTimeout(() => {
+          setLive("");
+          liveTimeoutRef.current = null;
+        }, 1200);
       } catch {
-        // Hook may surface error separately; provide SR feedback anyway
+        if (liveTimeoutRef.current) clearTimeout(liveTimeoutRef.current);
         setLive("Failed to update favorites");
-        setTimeout(() => setLive(""), 1200);
+        liveTimeoutRef.current = window.setTimeout(() => {
+          setLive("");
+          liveTimeoutRef.current = null;
+        }, 1200);
       }
     },
     [isFavorited, labelPrefix, productId, toggle]
@@ -113,19 +136,16 @@ export default function FavoriteButton({
       className="transition-all"
       aria-hidden="true"
     >
-      {/* Heart path (Lucide-like) */}
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" />
     </svg>
   );
 
   const baseClasses =
     "inline-flex items-center gap-1 rounded-full text-sm transition select-none";
-  // Softer, on-theme accent when favorited (brand-ish blue)
   const colorClasses = isFavorited
     ? "text-[#39a0ca] dark:text-[#39a0ca]"
     : "text-gray-700 dark:text-slate-200";
   const stateClasses = loading ? "opacity-60 cursor-wait" : "hover:opacity-90";
-
   const shapeClasses =
     variant === "icon"
       ? "p-1.5"
@@ -141,9 +161,12 @@ export default function FavoriteButton({
       <button
         type="button"
         onClick={onClick}
-        disabled={loading}
+        disabled={loading || !productId}
         aria-pressed={isFavorited}
+        aria-busy={loading}
+        aria-label={ariaLabel}
         title={title}
+        data-state={isFavorited ? "on" : "off"}
         className={[baseClasses, colorClasses, stateClasses, shapeClasses, className].join(" ")}
       >
         {Icon}

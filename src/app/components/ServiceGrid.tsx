@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import DeleteListingButton from "@/app/components/DeleteListingButton";
 
 type ServiceItem = {
   id: string;
@@ -28,6 +29,23 @@ type Props = {
   emptyText?: string;
   useSentinel?: boolean;
   showLoadMoreButton?: boolean;
+
+  /** Dashboard mode: show Edit/Delete per item */
+  ownerControls?: boolean;
+
+  /**
+   * Serialisable edit href prefix (instead of a function).
+   * Final edit link is `${editHrefPrefix}${encodeURIComponent(id)}`.
+   * Default: "/sell/service?id="
+   */
+  editHrefPrefix?: string;
+
+  /**
+   * Optional Server Action called after a delete completes.
+   * If you pass this from a Server Component, define it with `"use server"`
+   * and keep the name as *Action so Next will allow it.
+   */
+  onItemDeletedAction?: (id: string) => void | Promise<void>;
 };
 
 const FALLBACK_IMG = "/placeholder/default.jpg";
@@ -69,56 +87,89 @@ export default function ServiceGrid({
   emptyText = "No services found. Try adjusting filters.",
   useSentinel = true,
   showLoadMoreButton = true,
+  ownerControls = false,
+  editHrefPrefix = "/sell/service?id=",
+  onItemDeletedAction,
 }: Props) {
   return (
     <div className={className}>
       {/* Grid */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {items.map((s, idx) => {
+        {items.map((s) => {
           const blur = shimmer(800, 440);
-          const categoryText = [s.category ?? "", s.subcategory ?? ""]
-            .filter(Boolean)
-            .join(" • ") || "—";
+          const categoryText =
+            [s.category ?? "", s.subcategory ?? ""].filter(Boolean).join(" • ") || "—";
+
+          const editHref = `${editHrefPrefix}${encodeURIComponent(s.id)}`;
 
           return (
-            <Link key={s.id} href={`/service/${s.id}`} prefetch={prefetchCards} className="group">
-              <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-                {s.featured ? (
-                  <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
-                    Featured
-                  </span>
-                ) : null}
-                <div className="relative">
-                  <Image
-                    alt={s.name || "Service image"}
-                    src={s.image || FALLBACK_IMG}
-                    width={800}
-                    height={440}
-                    className="h-44 w-full object-cover bg-gray-100 dark:bg-slate-800"
-                    placeholder="blur"
-                    blurDataURL={blur}
-                    priority={false}
-                    unoptimized={Boolean((s.image as string | null)?.endsWith?.(".svg"))}
-                    onError={(e) => {
-                      const img = e.currentTarget as HTMLImageElement;
-                      if (img && img.src !== FALLBACK_IMG) img.src = FALLBACK_IMG;
-                    }}
-                    loading="lazy"
-                  />
+            <div key={s.id} className="group relative">
+              {/* Card */}
+              <Link href={`/service/${s.id}`} prefetch={prefetchCards} className="block">
+                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                  {s.featured ? (
+                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
+                      Featured
+                    </span>
+                  ) : null}
+
+                  {/* Owner actions overlay */}
+                  {ownerControls && (
+                    <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
+                      <Link
+                        href={editHref}
+                        className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:bg-gray-900"
+                        onClick={(e) => e.stopPropagation()}
+                        title="Edit service"
+                        aria-label="Edit service"
+                      >
+                        Edit
+                      </Link>
+
+                      {/* Only pass afterDeleteAction when we actually have an action */}
+                      <DeleteListingButton
+                        serviceId={s.id}
+                        label="Delete"
+                        className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
+                        {...(onItemDeletedAction
+                          ? { afterDeleteAction: () => onItemDeletedAction(s.id) }
+                          : {})}
+                      />
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <Image
+                      alt={s.name || "Service image"}
+                      src={s.image || FALLBACK_IMG}
+                      width={800}
+                      height={440}
+                      className="h-44 w-full object-cover bg-gray-100 dark:bg-slate-800"
+                      placeholder="blur"
+                      blurDataURL={blur}
+                      priority={false}
+                      unoptimized={Boolean((s.image as string | null)?.endsWith?.(".svg"))}
+                      onError={(e) => {
+                        const img = e.currentTarget as HTMLImageElement;
+                        if (img && img.src !== FALLBACK_IMG) img.src = FALLBACK_IMG;
+                      }}
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="p-4">
+                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
+                      {s.name || "Unnamed service"}
+                    </h3>
+                    <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
+                      {categoryText}
+                    </p>
+                    <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
+                      {fmtKES(s.price)}
+                    </p>
+                  </div>
                 </div>
-                <div className="p-4">
-                  <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
-                    {s.name || "Unnamed service"}
-                  </h3>
-                  <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
-                    {categoryText}
-                  </p>
-                  <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
-                    {fmtKES(s.price)}
-                  </p>
-                </div>
-              </div>
-            </Link>
+              </Link>
+            </div>
           );
         })}
 

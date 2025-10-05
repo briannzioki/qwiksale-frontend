@@ -29,6 +29,7 @@ export default function DeleteAccountButton({
   const [err, setErr] = useState<string | null>(null);
 
   const liveRef = useRef<HTMLSpanElement | null>(null);
+  const liveTimerRef = useRef<number | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -48,13 +49,28 @@ export default function DeleteAccountButton({
   const announce = useCallback((msg: string) => {
     const el = liveRef.current;
     if (!el) return;
+    // Clear any previous timeout so messages don’t overlap
+    if (liveTimerRef.current) {
+      window.clearTimeout(liveTimerRef.current);
+      liveTimerRef.current = null;
+    }
     el.textContent = msg;
-    const t = setTimeout(() => (el.textContent = ""), 1200);
-    return () => clearTimeout(t);
+    liveTimerRef.current = window.setTimeout(() => {
+      if (el) el.textContent = "";
+      liveTimerRef.current = null;
+    }, 1200);
   }, []);
 
   // abort any in-flight request on unmount
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (liveTimerRef.current) {
+        window.clearTimeout(liveTimerRef.current);
+        liveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   /* --------------------------- open/close effects --------------------------- */
   useEffect(() => {
@@ -126,7 +142,7 @@ export default function DeleteAccountButton({
     try {
       const res = await fetch("/api/account/delete", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         signal: ac.signal,
         body: JSON.stringify({ confirm: true, email: userEmail }),
       });
@@ -181,10 +197,10 @@ export default function DeleteAccountButton({
 
       {open && (
         <>
-          <button
-            type="button"
+          {/* Backdrop: non-focusable, just a click target */}
+          <div
+            role="presentation"
             className="fixed inset-0 z-50 bg-black/40"
-            aria-label="Close delete account dialog"
             onClick={() => {
               setOpen(false);
               emit("qs:account:delete:cancel", { email: userEmail });
