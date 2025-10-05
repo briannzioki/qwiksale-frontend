@@ -52,31 +52,70 @@ export default function FavoriteButton(props: Props) {
   } = props as BaseProps;
 
   // Your favourites API (non-selector style)
-  const store = useFavourites(); // returns an object with ids/isFavourite/toggle etc.
+  const store = useFavourites() as any;
 
   const callIsFav = useCallback(
     (id: string): boolean => {
-      if (typeof store?.isFavourite === "function") return !!store.isFavourite(id);
-      const ids: string[] = Array.isArray((store as any)?.ids) ? (store as any).ids.map(String) : [];
-      return ids.includes(id);
+      try {
+        const fn =
+          typeof store?.isFavourite === "function"
+            ? store.isFavourite
+            : typeof store?.isFavorite === "function"
+            ? store.isFavorite
+            : typeof store?.isFav === "function"
+            ? store.isFav
+            : null;
+
+        if (fn) {
+          // Prefer (id, type) if supported; extra args are ignored otherwise.
+          return !!fn.call(store, id, targetType);
+        }
+
+        // Map/array fallbacks
+        if (store?.idsByType && Array.isArray(store.idsByType[targetType])) {
+          return store.idsByType[targetType].map(String).includes(id);
+        }
+        if (targetType === "product" && Array.isArray(store?.productIds)) {
+          return store.productIds.map(String).includes(id);
+        }
+        if (targetType === "service" && Array.isArray(store?.serviceIds)) {
+          return store.serviceIds.map(String).includes(id);
+        }
+        if (Array.isArray(store?.ids)) {
+          return store.ids.map(String).includes(id);
+        }
+      } catch {
+        /* ignore */
+      }
+      return false;
     },
-    [store]
+    [store, targetType]
   );
 
   const callToggle = useCallback(
     async (id: string): Promise<boolean> => {
-      if (typeof store?.toggle === "function") {
-        try {
-          const res = await store.toggle(id);
-          if (typeof res === "boolean") return res;
-          return callIsFav(id);
-        } catch {
-          return callIsFav(id);
-        }
+      const fn =
+        typeof store?.toggle === "function"
+          ? store.toggle
+          : typeof store?.toggleFavourite === "function"
+          ? store.toggleFavourite
+          : typeof store?.toggleFavorite === "function"
+          ? store.toggleFavorite
+          : null;
+
+      if (!fn) throw new Error("Favorites not available");
+
+      try {
+        // Call with (id, type). If the implementation ignores the 2nd arg, that's fine.
+        const res = await fn.call(store, id, targetType);
+        if (typeof res === "boolean") return res;
+        return callIsFav(id);
+      } catch {
+        // If the store threw, reflect current store state
+        return callIsFav(id);
       }
-      throw new Error("Favorites not available");
     },
-    [store, callIsFav]
+    [store, targetType, callIsFav]
   );
 
   // Local state mirrors store with optimistic updates
@@ -100,7 +139,7 @@ export default function FavoriteButton(props: Props) {
     }, 1200);
   }, []);
 
-  // Initial sync + on id change
+  // Initial sync + on id/type change
   useEffect(() => {
     setFav(callIsFav(targetId));
   }, [callIsFav, targetId]);

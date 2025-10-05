@@ -291,3 +291,6 @@ export function primeServicesCache(list: Service[]) {
   cacheListToMemory(list);
   safeSessionSet(LIST_KEY, list);
 }
+
+/* ---- Compatibility alias (keep named + allow default imports) ---- */
+export default useServices;

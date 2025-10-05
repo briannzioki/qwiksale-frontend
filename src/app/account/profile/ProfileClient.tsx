@@ -1,4 +1,3 @@
-// src/app/account/profile/ProfileClient.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -7,6 +6,7 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { normalizeKenyanPhone } from "@/app/lib/phone";
 import ProfilePhotoUploader from "@/app/components/account/ProfilePhotoUploader";
+import DeleteAccountButton from "@/app/account/DeleteAccountButton";
 
 type Profile = {
   id: string;
@@ -163,7 +163,7 @@ export default function ProfileClient() {
         </div>
       </div>
 
-      {/* 👇 New: native file uploader for profile photo */}
+      {/* 👇 Profile photo */}
       <div className="card p-5">
         <h2 className="text-base font-semibold mb-3">Profile photo</h2>
         <ProfilePhotoUploader initialImage={image} />
@@ -262,6 +262,15 @@ export default function ProfileClient() {
         <Link href="/dashboard" className="btn-outline">
           Cancel
         </Link>
+      </div>
+
+      {/* 🔥 Danger zone */}
+      <div className="card p-5 border border-red-200/60 dark:border-red-800/40">
+        <h2 className="text-base font-semibold mb-2 text-red-600">Danger zone</h2>
+        <p className="text-sm text-gray-600 dark:text-slate-400 mb-3">
+          This will permanently delete your account and all your listings. This action cannot be undone.
+        </p>
+        <DeleteAccountButton email={email} />
       </div>
     </form>
   );

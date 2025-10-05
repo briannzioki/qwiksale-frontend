@@ -277,8 +277,8 @@ export default function ServicePage() {
               Copy link
             </button>
 
-            {/* If your FavoriteButton supports services, swap to serviceId=. */}
-            <FavoriteButton productId={display.id} />
+            {/* FavoriteButton now explicitly targets a service */}
+            <FavoriteButton serviceId={display.id} />
 
             {isOwner && (
               <>

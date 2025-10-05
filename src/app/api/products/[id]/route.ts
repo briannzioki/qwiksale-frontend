@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/server/prisma";
+import { prisma } from "@/app/lib/prisma"; // ⬅️ align with the rest of the app
 import { auth } from "@/auth";
 import { revalidatePath, revalidateTag } from "next/cache";
 
@@ -64,7 +64,7 @@ function getId(req: NextRequest): string {
 export function OPTIONS() {
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["APP_ORIGIN"] ??
     "*";
 
   const res = new NextResponse(null, { status: 204 });
@@ -106,7 +106,7 @@ const productBaseSelect = {
   seller: {
     select: {
       id: true,
-      username: true, // <- ensure username is included
+      username: true,
       name: true,
       image: true,
     },
@@ -376,7 +376,7 @@ export async function DELETE(req: NextRequest) {
     const isAdminFlag: boolean = s?.isAdmin === true || (role?.toUpperCase?.() === "ADMIN");
 
     // Admin allow-list fallback via env
-    const adminEmails = (process.env['ADMIN_EMAILS'] ?? "")
+    const adminEmails = (process.env["ADMIN_EMAILS"] ?? "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);

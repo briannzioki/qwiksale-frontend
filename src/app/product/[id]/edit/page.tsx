@@ -275,7 +275,6 @@ export default async function EditListingPage(props: any) {
               type="button"
               className="rounded-lg bg-[#161748] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
               aria-label="Update"
-              // real saving handled in the full editor below; this keeps tests & layout stable
             >
               Save changes
             </button>

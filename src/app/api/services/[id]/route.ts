@@ -231,7 +231,7 @@ export async function DELETE(req: NextRequest) {
     const isAdminFlag: boolean = s?.isAdmin === true || (role?.toUpperCase?.() === "ADMIN");
 
     // Admin allow-list via env (same pattern as products route)
-    const adminEmails = (process.env['ADMIN_EMAILS'] ?? "")
+    const adminEmails = (process.env["ADMIN_EMAILS"] ?? "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
@@ -280,7 +280,7 @@ export async function DELETE(req: NextRequest) {
 export function OPTIONS() {
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["APP_ORIGIN"] ??
     "*";
 
   const res = new NextResponse(null, { status: 204 });

@@ -265,7 +265,8 @@ export default async function DashboardPage() {
     const h = await headers();
     const origin = originFrom(h);
     const cookie = h.get("cookie") ?? "";
-    const qs = `sellerId=${encodeURIComponent(userId)}&pageSize=6&sort=newest`;
+    // IMPORTANT: ask the API to resolve owner from auth, not a caller-supplied id.
+    const qs = `mine=true&pageSize=6&sort=newest`;
 
     const [{ data: prods }, { data: svcs }] = await Promise.all([
       fetchJsonSafe<ApiListResp<ProductItem>>(`${origin}/api/products?${qs}`, {
@@ -397,7 +398,7 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
-        {recentListings.length === 0 ? (
+          {recentListings.length === 0 ? (
             <div className="text-gray-600 dark:text-slate-300">
               No listings yet. Post your first item.
             </div>
@@ -434,7 +435,9 @@ export default async function DashboardPage() {
                         <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
                           {[item.category, item.subcategory].filter(Boolean).join(" • ") || "—"}
                         </p>
-                        <p className="mt-1 font-bold text-[#161748] dark:text-white">{fmtKES(item.price)}</p>
+                        <p className="mt-1 font-bold text-[#161748] dark:text-white">
+                          {fmtKES(item.price)}
+                        </p>
                         <p className="mt-1 text-[11px] text-gray-400">
                           {item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-KE") : ""}
                         </p>
@@ -452,9 +455,16 @@ export default async function DashboardPage() {
                           >
                             Edit
                           </Link>
+
                           {item.type === "product" ? (
                             <DeleteListingButton productId={item.id} productName={item.name} />
-                          ) : null}
+                          ) : (
+                            <DeleteListingButton
+                              kind="service"
+                              serviceId={item.id}
+                              productName={item.name}
+                            />
+                          )}
                         </div>
                       </div>
                     </div>

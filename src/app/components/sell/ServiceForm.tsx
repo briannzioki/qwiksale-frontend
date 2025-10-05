@@ -51,6 +51,9 @@ type RateType = "hour" | "day" | "fixed";
 const s = (v: unknown): string => (typeof v === "string" ? v : String(v ?? ""));
 const sv = (v: unknown): string => (v == null ? "" : s(v));
 
+// ✅ Public guard (matches your client pages)
+const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
+
 export default function ServiceForm(props: Props) {
   const { className = "" } = props;
   const isEdit = props.mode === "edit";
@@ -149,6 +152,14 @@ export default function ServiceForm(props: Props) {
         return;
       }
 
+      // ✅ Guard: avoid trying to upload if image uploads aren’t configured
+      if (pendingFiles.length > 0 && !CLOUD_NAME) {
+        toast.error(
+          "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
+        );
+        return;
+      }
+
       setBusy(true);
       try {
         const uploaded = await uploadPending();
@@ -180,7 +191,7 @@ export default function ServiceForm(props: Props) {
               : (created && typeof created === "object" && "id" in created
                   ? String((created as any).id)
                   : undefined);
-        if (!newId) throw new Error("Create failed: no id returned");
+          if (!newId) throw new Error("Create failed: no id returned");
           toast.success("Service posted");
           (window as any).plausible?.("Service Created", { props: { category, subcategory } });
           await props.onCreatedAction?.(newId);
@@ -209,6 +220,7 @@ export default function ServiceForm(props: Props) {
       isEdit,
       location,
       name,
+      pendingFiles.length,
       phone,
       price,
       props,
@@ -306,10 +318,12 @@ export default function ServiceForm(props: Props) {
             id="sf-price"
             type="number"
             min={0}
+            inputMode="numeric"
             value={price === "" ? "" : price}
             onChange={(e) =>
               setPrice(e.target.value === "" ? "" : Math.max(0, Math.floor(Number(e.target.value) || 0)))
             }
+            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="Leave empty for “Contact for quote”"
             aria-describedby="sf-price-help"
@@ -382,6 +396,8 @@ export default function ServiceForm(props: Props) {
               setPendingFiles((cur) => [...cur, ...files].slice(0, 10))
             }
             max={10}
+            accept="image/*,.jpg,.jpeg,.png,.webp"
+            maxSizeMB={10}
           />
           <div className="mt-2 text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
             {pendingFiles.length ? `${pendingFiles.length} new selected (to upload on save)` : "No new files selected"}

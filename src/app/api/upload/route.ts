@@ -22,26 +22,38 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-// Very lightweight magic-number sniff (best-effort; not a full validator)
-async function sniffLooksLikeImage(file: File, mime: string) {
+// --- byte sniffers (best-effort; not a full validator) ---
+async function readMagic(file: File): Promise<Uint8Array> {
+  return new Uint8Array(await file.slice(0, 16).arrayBuffer());
+}
+
+async function sniffLooksLikeImage(file: File): Promise<boolean> {
   try {
-    const buf = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+    const b = await readMagic(file);
     // JPEG FF D8
-    if (mime === "image/jpeg" && buf[0] === 0xff && buf[1] === 0xd8) return true;
+    if (b[0] === 0xff && b[1] === 0xd8) return true;
     // PNG 89 50 4E 47
-    if (mime === "image/png" && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
-      return true;
-    }
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return true;
     // GIF 47 49 46
-    if (mime === "image/gif" && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return true;
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return true;
     // WebP "RIFF"
-    if (mime === "image/webp" && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) {
-      return true;
-    }
-    // If unknown or short, allow if declared MIME is in ALLOWED (provider may transcode)
-    return ALLOWED.has(mime);
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return true;
+    return false;
   } catch {
     return false;
+  }
+}
+
+async function detectMimeFromBytes(file: File): Promise<string | null> {
+  try {
+    const b = await readMagic(file);
+    if (b[0] === 0xff && b[1] === 0xd8) return "image/jpeg";
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "image/gif";
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return "image/webp";
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -68,40 +80,66 @@ export async function POST(req: Request) {
     return noStore({ error: "No file provided (field name must be `file`)." }, { status: 400 });
   }
 
-  const mime = (file as File).type || "";
-  if (!ALLOWED.has(mime)) {
-    return noStore({ error: `Unsupported file type (${mime || "unknown"})` }, { status: 415 });
-  }
+  const f = file as File;
+  const declaredMime = f.type || ""; // PowerShell often sends application/octet-stream or empty
 
   const maxEnv = Number(process.env["UPLOAD_MAX_BYTES"]);
   const max = Number.isFinite(maxEnv) && maxEnv > 0 ? maxEnv : DEFAULT_MAX_BYTES;
-  if ((file as File).size > max) {
+  if (f.size > max) {
     return noStore(
       { error: `File too large. Max ${(max / 1024 / 1024).toFixed(1)}MB` },
       { status: 413 }
     );
   }
 
-  // Quick magic-number sniff
-  const looksOk = await sniffLooksLikeImage(file as File, mime);
-  if (!looksOk) {
-    return noStore({ error: "File failed basic validation." }, { status: 415 });
+  // Accept if either:
+  //  - declared MIME is allowed, OR
+  //  - bytes sniff to a known image (handles octet-stream uploads from PowerShell)
+  const looksImage = await sniffLooksLikeImage(f);
+  if (!ALLOWED.has(declaredMime) && !looksImage) {
+    return noStore({ error: `Unsupported file type (${declaredMime || "unknown"})` }, { status: 415 });
   }
 
   // Optional hints for where to place the file in your provider
   const folder = String(form.get("folder") || "").trim() || undefined;
   const keyPrefix = String(form.get("keyPrefix") || "").trim() || undefined;
 
+  // Pick best content-type for provider
+  const guessedMime = ALLOWED.has(declaredMime) ? declaredMime : (await detectMimeFromBytes(f)) || declaredMime || "application/octet-stream";
+
   // Upload via our provider-agnostic helper (with clean error handling)
   try {
-    const out = await uploadFile(file as File, {
+    const out = await uploadFile(f, {
       ...(folder ? { folder } : {}),
       ...(keyPrefix ? { keyPrefix } : {}),
-      contentType: mime,
+      contentType: guessedMime,
     });
 
-    // Minimal shape as requested
-    return noStore({ id: out.id, url: out.url }, { status: 201 });
+    // Provide both url and secure_url for client compatibility
+    const url =
+      (out as any)?.url ||
+      (out as any)?.secure_url ||
+      (out as any)?.secureUrl ||
+      null;
+
+    const secure_url =
+      (out as any)?.secure_url ||
+      (out as any)?.secureUrl ||
+      (out as any)?.url ||
+      null;
+
+    if (!url) {
+      return noStore({ error: "Upload failed: no URL returned" }, { status: 500 });
+    }
+
+    return noStore(
+      {
+        id: (out as any)?.id || (out as any)?.public_id || null,
+        url,
+        secure_url,
+      },
+      { status: 201 }
+    );
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[upload POST] error", e);
@@ -129,7 +167,7 @@ export async function HEAD() {
     status: 204,
     headers: {
       "Cache-Control": "no-store, no-cache, must-revalidate",
-      "Vary": "Origin",
+      Vary: "Origin",
     },
   });
 }

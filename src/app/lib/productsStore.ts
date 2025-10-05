@@ -416,7 +416,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
       // Optimistic candidate
       const prev = memory.map.get(pid) || null;
       const optimistic: Product | null = prev
-        ? { ...prev, ...patch, id: prev.id } as Product
+        ? ({ ...prev, ...patch, id: prev.id } as Product)
         : null;
 
       if (optimistic) {
@@ -535,3 +535,6 @@ export function primeProductsCache(list: Product[]) {
   cacheListToMemory(deduped);
   safeSessionSet(LIST_KEY, deduped);
 }
+
+/* ---- Compatibility alias (keep named + allow default imports) ---- */
+export default useProducts;

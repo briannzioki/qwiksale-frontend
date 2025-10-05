@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
+import DeleteListingButton from "@/app/components/DeleteListingButton";
 
 type Props = {
   id: string;
@@ -20,6 +21,13 @@ type Props = {
   /** Next.js Link prefetch (default true) */
   prefetch?: boolean;
   className?: string;
+
+  /** Dashboard mode: show Edit/Delete controls */
+  ownerControls?: boolean;
+  /** Optional custom edit href (defaults to /sell/service?id=:id) */
+  editHref?: string;
+  /** Called after a successful delete */
+  onDeletedAction?: () => void;
 };
 
 /* ----------------------- Utils ----------------------- */
@@ -81,9 +89,13 @@ function ServiceCardImpl({
   position,
   prefetch = true,
   className = "",
+  ownerControls = false,
+  editHref,
+  onDeletedAction,
 }: Props) {
   const router = useRouter();
   const href = useMemo(() => `/service/${encodeURIComponent(id)}`, [id]);
+  const hrefEdit = editHref ?? `/sell/service?id=${encodeURIComponent(id)}`;
 
   const anchorRef = useRef<HTMLAnchorElement | null>(null);
   const seenRef = useRef(false);
@@ -172,50 +184,71 @@ function ServiceCardImpl({
     : { placeholder: "empty" as const };
 
   return (
-    <Link
-      href={href}
-      prefetch={prefetch}
-      onMouseEnter={hoverPrefetch}
-      onFocus={hoverPrefetch}
-      onClick={onClick}
-      ref={anchorRef}
+    <div
       className={[
         "group relative overflow-hidden rounded-xl border bg-white shadow-sm transition will-change-transform",
         "hover:-translate-y-0.5 hover:shadow-md",
         "border-black/5 dark:border-slate-800 dark:bg-slate-900",
         className,
       ].join(" ")}
-      title={name}
       data-service-id={id}
     >
-      {/* Image */}
-      <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-        <SmartImage
-          src={src}
-          alt={name || "Service image"}
-          fill
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          priority={priority}
-          {...blurProps}
-        />
-
-        {featured && (
-          <span className="absolute left-2 top-2 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
-            Featured
-          </span>
-        )}
-      </div>
-
-      {/* Body */}
-      <div className="p-3">
-        <div className="line-clamp-1 font-semibold text-gray-900 dark:text-gray-100" title={name}>
-          {name}
+      {/* Owner actions overlay */}
+      {ownerControls && (
+        <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
+          <Link
+            href={hrefEdit}
+            className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:bg-gray-900"
+            title="Edit service"
+            aria-label="Edit service"
+          >
+            Edit
+          </Link>
+          {/* exactOptionalPropertyTypes safe: only pass when defined */}
+          <DeleteListingButton
+            serviceId={id}
+            label="Delete"
+            {...(onDeletedAction ? { afterDeleteAction: onDeletedAction } : {})}
+          />
         </div>
-        <div className="mt-0.5 text-sm text-gray-600 dark:text-slate-300">{subText}</div>
-        <div className="mt-1 text-[15px] font-bold text-[#161748] dark:text-white">{priceText}</div>
-      </div>
-    </Link>
+      )}
+
+      {/* Clickable image + body */}
+      <Link
+        href={href}
+        prefetch={prefetch}
+        onMouseEnter={hoverPrefetch}
+        onFocus={hoverPrefetch}
+        onClick={onClick}
+        ref={anchorRef}
+        title={name}
+        className="block"
+      >
+        <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+          <SmartImage
+            src={src}
+            alt={name || "Service image"}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            priority={priority}
+            {...blurProps}
+          />
+
+          {featured && (
+            <span className="absolute left-2 top-2 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
+              Featured
+            </span>
+          )}
+        </div>
+
+        <div className="p-3">
+          <div className="line-clamp-1 font-semibold text-gray-900 dark:text-gray-100">{name}</div>
+          <div className="mt-0.5 text-sm text-gray-600 dark:text-slate-300">{subText}</div>
+          <div className="mt-1 text-[15px] font-bold text-[#161748] dark:text-white">{priceText}</div>
+        </div>
+      </Link>
+    </div>
   );
 }
 
