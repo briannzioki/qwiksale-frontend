@@ -8,7 +8,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
-import { revalidateTag } from "next/cache";
+import { revalidateTag, revalidatePath } from "next/cache";
 
 /* ---------------- analytics (console-only for now) ---------------- */
 type AnalyticsEvent =
@@ -30,7 +30,6 @@ function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
 }
 
 /* ------------------------ helpers & validation ------------------------ */
-
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -39,22 +38,20 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
+function withReqId(res: NextResponse, id: string) {
+  res.headers.set("x-request-id", id);
+  return res;
+}
 
 function normalizeKenyanPhone(raw?: string | null): string | null {
   const s0 = (raw || "").trim();
   if (!s0) return null;
-  // strip non-digits
   let s = s0.replace(/\D+/g, "");
-  // +2547/ +2541… -> 254…
   if (/^\+?254(7|1)\d{8}$/.test(s0)) s = s.replace(/^\+/, "");
-  // 07XXXXXXXX / 01XXXXXXXX -> 2547XXXXXXXX / 2541XXXXXXXX
   if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
   if (/^01\d{8}$/.test(s)) s = "254" + s.slice(1);
-  // 7XXXXXXXX / 1XXXXXXXX -> 2547XXXXXXXX / 2541XXXXXXXX
   if (/^(7|1)\d{8}$/.test(s)) s = "254" + s;
-  // final validation
-  if (/^254(7|1)\d{8}$/.test(s)) return s;
-  return null;
+  return /^254(7|1)\d{8}$/.test(s) ? s : null;
 }
 
 // Built-ins + extend via env (comma-separated)
@@ -88,7 +85,6 @@ const RESERVED_USERNAMES = new Set(
 
 function looksLikeValidUsername(u: string) {
   // 3–24 chars, letters/numbers/dot/underscore; must start/end alnum; no double dots/underscores
-  // Matches what we used elsewhere in your app.
   return /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/.test(u);
 }
 
@@ -100,7 +96,6 @@ function normStr(input: unknown, max = 120): string | null {
 }
 
 /* ------------------------------ CORS (opt) ------------------------------ */
-
 export function OPTIONS() {
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", process.env["NEXT_PUBLIC_APP_URL"] || "*");
@@ -112,7 +107,6 @@ export function OPTIONS() {
 }
 
 /* --------------------------------- POST --------------------------------- */
-
 export async function POST(req: NextRequest) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ??
@@ -124,28 +118,30 @@ export async function POST(req: NextRequest) {
     const uid = (session as any)?.user?.id as string | undefined;
     if (!uid) {
       track("profile_setup_unauthorized", { reqId });
-      return noStore({ error: "Unauthorized" }, { status: 401 });
+      return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId);
     }
 
     // --- Rate limit (per IP + user) ---
     const rl = await checkRateLimit(req.headers, {
       name: "profile_setup",
-      limit: 12, // pretty generous; tweak as needed
+      limit: 12,
       windowMs: 10 * 60_000,
       extraKey: uid,
     });
     if (!rl.ok) {
-      return tooMany("Too many attempts. Please slow down.", rl.retryAfterSec);
+      const r = tooMany("Too many attempts. Please slow down.", rl.retryAfterSec);
+      r.headers.set("x-request-id", reqId);
+      return r;
     }
 
     // --- Content-Type & tiny body-size guard ---
     const ctype = (req.headers.get("content-type") || "").toLowerCase();
     if (!ctype.includes("application/json")) {
-      return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
+      return withReqId(noStore({ error: "Content-Type must be application/json" }, { status: 415 }), reqId);
     }
     const clen = Number(req.headers.get("content-length") || "0");
     if (Number.isFinite(clen) && clen > 32_000) {
-      return noStore({ error: "Payload too large" }, { status: 413 });
+      return withReqId(noStore({ error: "Payload too large" }, { status: 413 }), reqId);
     }
 
     // --- Parse body ---
@@ -156,45 +152,12 @@ export async function POST(req: NextRequest) {
       country?: unknown;
       postalCode?: unknown;
       address?: unknown;
-      name?: unknown; // allow setting name here too (optional)
+      name?: unknown;
     };
 
     const usernameRaw = typeof body.username === "string" ? body.username.trim() : "";
 
-    track("profile_setup_attempt", {
-      reqId,
-      userId: uid,
-      hasUsername: !!usernameRaw,
-      hasWhatsapp: typeof body.whatsapp === "string" && !!body.whatsapp.trim(),
-      hasCity: typeof body.city === "string" && !!body.city.trim(),
-      hasCountry: typeof body.country === "string" && !!body.country.trim(),
-      hasPostal: typeof body.postalCode === "string" && !!body.postalCode.trim(),
-      hasAddress: typeof body.address === "string" && !!body.address.trim(),
-      hasName: typeof body.name === "string" && !!body.name.trim(),
-    });
-
-    // --- Validate username ---
-    if (!looksLikeValidUsername(usernameRaw)) {
-      track("profile_setup_invalid_username", { reqId, userId: uid, usernameRaw });
-      return noStore(
-        { error: "Username must be 3–24 chars (letters, numbers, dot, underscore), no leading/trailing symbol, no repeats." },
-        { status: 400 }
-      );
-    }
-    if (RESERVED_USERNAMES.has(usernameRaw.toLowerCase())) {
-      track("profile_setup_invalid_username", { reqId, userId: uid, reason: "reserved" });
-      return noStore({ error: "This username is reserved" }, { status: 400 });
-    }
-
-    // --- Normalize other fields ---
-    const whatsapp = normalizeKenyanPhone(typeof body.whatsapp === "string" ? body.whatsapp : null);
-    const city = normStr(body.city, 60);
-    const country = normStr(body.country, 60);
-    const postalCode = normStr(body.postalCode, 20);
-    const address = normStr(body.address, 160);
-    const name = normStr(body.name, 80);
-
-    // --- Fetch current profile to short-circuit if no changes ---
+    // Get current profile FIRST so username can be optional
     const current = await prisma.user.findUnique({
       where: { id: uid },
       select: {
@@ -210,25 +173,65 @@ export async function POST(req: NextRequest) {
       },
     });
     if (!current) {
-      return noStore({ error: "User not found" }, { status: 404 });
+      return withReqId(noStore({ error: "User not found" }, { status: 404 }), reqId);
     }
 
-    // Case-insensitive uniqueness check (exclude self)
-    const clash = await prisma.user.findFirst({
-      where: {
-        username: { equals: usernameRaw, mode: "insensitive" },
-        NOT: { id: uid },
-      },
-      select: { id: true },
+    track("profile_setup_attempt", {
+      reqId,
+      userId: uid,
+      hasUsername: !!usernameRaw,
+      hasWhatsapp: typeof body.whatsapp === "string" && !!body.whatsapp.trim(),
+      hasCity: typeof body.city === "string" && !!body.city.trim(),
+      hasCountry: typeof body.country === "string" && !!body.country.trim(),
+      hasPostal: typeof body.postalCode === "string" && !!body.postalCode.trim(),
+      hasAddress: typeof body.address === "string" && !!body.address.trim(),
+      hasName: typeof body.name === "string" && !!body.name.trim(),
     });
-    if (clash) {
-      track("profile_setup_username_taken", { reqId, userId: uid });
-      return noStore({ error: "Username already taken" }, { status: 409 });
+
+    // --- Normalize other fields ---
+    const whatsapp = normalizeKenyanPhone(typeof body.whatsapp === "string" ? body.whatsapp : null);
+    const city = normStr(body.city, 60);
+    const country = normStr(body.country, 60);
+    const postalCode = normStr(body.postalCode, 20);
+    const address = normStr(body.address, 160);
+    const name = normStr(body.name, 80);
+
+    // Decide whether we're changing username (optional)
+    const wantsUsernameChange = !!usernameRaw && usernameRaw.toLowerCase() !== (current.username || "").toLowerCase();
+
+    // Validate username ONLY if provided and changing
+    if (wantsUsernameChange) {
+      if (!looksLikeValidUsername(usernameRaw)) {
+        track("profile_setup_invalid_username", { reqId, userId: uid, usernameRaw });
+        return withReqId(
+          noStore(
+            { error: "Username must be 3–24 chars (letters, numbers, dot, underscore), no leading/trailing symbol, no repeats." },
+            { status: 400 }
+          ),
+          reqId
+        );
+      }
+      if (RESERVED_USERNAMES.has(usernameRaw.toLowerCase())) {
+        track("profile_setup_invalid_username", { reqId, userId: uid, reason: "reserved" });
+        return withReqId(noStore({ error: "This username is reserved" }, { status: 400 }), reqId);
+      }
+      // Case-insensitive uniqueness check (exclude self)
+      const clash = await prisma.user.findFirst({
+        where: {
+          username: { equals: usernameRaw, mode: "insensitive" },
+          NOT: { id: uid },
+        },
+        select: { id: true },
+      });
+      if (clash) {
+        track("profile_setup_username_taken", { reqId, userId: uid });
+        return withReqId(noStore({ error: "Username already taken" }, { status: 409 }), reqId);
+      }
     }
 
     // Determine if any actual change
     const noChanges =
-      (current.username || "") === usernameRaw &&
+      !wantsUsernameChange &&
       (current.name || null) === (name ?? current.name ?? null) &&
       (current.whatsapp || null) === (whatsapp || null) &&
       (current.city || null) === (city || null) &&
@@ -238,24 +241,29 @@ export async function POST(req: NextRequest) {
 
     if (noChanges) {
       track("profile_setup_nop", { reqId, userId: uid });
-      return noStore({
-        ok: true,
-        user: { ...current },
-        profileComplete: true,
-      });
+      return withReqId(
+        noStore({
+          ok: true,
+          user: { ...current },
+          profileComplete: true,
+        }),
+        reqId
+      );
     }
+
+    const oldUsername = current.username || null;
 
     // --- Update ---
     const updated = await prisma.user.update({
       where: { id: uid },
       data: {
-        username: usernameRaw,
+        ...(wantsUsernameChange ? { username: usernameRaw } : {}),
+        ...(name !== null ? { name } : {}),
         whatsapp: whatsapp || null,
         city,
         country,
         postalCode,
         address,
-        ...(name !== null ? { name } : {}),
       },
       select: {
         id: true,
@@ -271,24 +279,34 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Best-effort revalidate any user-profile tagged data
+    // Best-effort revalidate any user-profile tagged data + store pages
     try {
       revalidateTag(`user:${uid}:profile`);
+      if (oldUsername && oldUsername !== updated.username) {
+        revalidatePath(`/store/${oldUsername}`);
+      }
+      if (updated.username) {
+        revalidatePath(`/store/${updated.username}`);
+      }
     } catch {
       /* ignore */
     }
 
     track("profile_setup_success", { reqId, userId: uid });
 
-    return noStore({ ok: true, user: updated, profileComplete: true });
+    const res = noStore({ ok: true, user: updated, profileComplete: true });
+    if (updated.username) {
+      res.headers.set("Location", `/store/${updated.username}`);
+    }
+    return withReqId(res, reqId);
   } catch (e: any) {
     if (e?.code === "P2002") {
       track("profile_setup_username_taken", { reqId });
-      return noStore({ error: "Username already taken" }, { status: 409 });
+      return withReqId(noStore({ error: "Username already taken" }, { status: 409 }), reqId);
     }
     // eslint-disable-next-line no-console
     console.error("[profile/setup POST] error", e);
     track("profile_setup_error", { reqId, message: e?.message ?? String(e) });
-    return noStore({ error: "Failed to save profile" }, { status: 500 });
+    return withReqId(noStore({ error: "Failed to save profile" }, { status: 500 }), reqId);
   }
 }

@@ -1,17 +1,19 @@
-﻿// src/app/sitemap.ts
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 // dynamic here doesn't stop Next from evaluating at build time for sitemap,
 // but we keep it for consistency.
 export const dynamic = "force-dynamic";
 
 import type { MetadataRoute } from "next";
 
+/** Resolve a canonical absolute base URL (no trailing slash). */
 function siteUrl(): string {
-  return (
+  const raw =
     process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    "https://qwiksale.sale"
-  ).replace(/\/+$/, "");
+    process.env["APP_ORIGIN"] ||
+    process.env["NEXTAUTH_URL"] ||
+    "https://qwiksale.sale";
+  const trimmed = String(raw).trim().replace(/\/+$/, "");
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.sale";
 }
 
 function hasValidDbUrl(): boolean {
@@ -32,11 +34,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();
   const now = new Date();
 
+  // Static, always-present URLs
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: `${base}/`, lastModified: now, changeFrequency: "daily", priority: 1 },
+    { url: `${base}/search`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${base}/sell`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
-    { url: `${base}/browse`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
-    { url: `${base}/account/billing`, lastModified: now, changeFrequency: "monthly", priority: 0.4 },
+    // Legal pages (indexable)
+    { url: `${base}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${base}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
+    // Low-priority account subpage (kept, but search engines may de-prioritize)
+    { url: `${base}/account/billing`, lastModified: now, changeFrequency: "monthly", priority: 0.2 },
   ];
 
   // Hard skip if requested (useful for tight-memory builds)
@@ -60,7 +67,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }) as Promise<Array<{ id: string; updatedAt: Date }>>,
       (async () => {
         try {
-          // ts-expect-error: service model might not exist
+          // service model might not exist on some deployments
+          // ts-expect-error – tolerate missing model at runtime
           return (await prisma.service.findMany({
             where: { status: "ACTIVE" },
             select: { id: true, updatedAt: true },
@@ -88,6 +96,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }));
 
     const all = [...staticRoutes, ...productUrls, ...serviceUrls];
+
+    // Deduplicate & cap
     const seen = new Set<string>();
     const deduped: MetadataRoute.Sitemap = [];
     for (const item of all) {
@@ -97,8 +107,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         if (deduped.length >= MAX_LINKS) break;
       }
     }
+
     return deduped;
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("[sitemap.ts] error:", e);
     return staticRoutes;
   }

@@ -7,7 +7,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { useProducts } from "@/app/lib/productsStore";
-import FavoriteButton from "@/app/components/FavoriteButton";
+import FavoriteButton from "@/app/components/favorites/FavoriteButton";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
 import { buildProductSeo } from "@/app/lib/seo";
 import Gallery from "@/app/components/Gallery";
@@ -55,6 +55,10 @@ type FetchedProduct = Partial<ProductFromStore> & {
 };
 
 const PLACEHOLDER = "/placeholder/default.jpg";
+
+// Hint for next/image when using `fill` inside the Gallery.
+const GALLERY_SIZES =
+  "(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px";
 
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || n <= 0) return "Contact for price";
@@ -275,6 +279,7 @@ export default function ProductPage() {
       {seo?.jsonLd && (
         <script
           type="application/ld+json"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: JSON.stringify(seo.jsonLd) }}
         />
       )}
@@ -283,14 +288,22 @@ export default function ProductPage() {
         {/* Media */}
         <div className="lg:col-span-3">
           <div className="relative overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            {display.featured && (
-              <span className="absolute left-3 top-3 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
-                Featured
-              </span>
-            )}
+            {/* Aspect wrapper ensures height > 0 for <Image fill> */}
+            <div className="relative aspect-[4/3] sm:aspect-[16/10]">
+              {display.featured && (
+                <span className="absolute left-3 top-3 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
+                  Featured
+                </span>
+              )}
 
-            <Gallery images={images} lightbox />
-            <div className="absolute right-3 top-3 z-10 flex gap-2">
+              {/* Single, canonical viewer */}
+              <Gallery images={images} lightbox sizes={GALLERY_SIZES} />
+
+              <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-black/5 dark:ring-white/10" />
+            </div>
+
+            {/* Action buttons overlay */}
+            <div className="absolute right-3 top-3 z-20 flex gap-2">
               <button onClick={copyLink} className="btn-outline px-2 py-1 text-xs" title="Copy link">
                 Copy link
               </button>
@@ -309,12 +322,11 @@ export default function ProductPage() {
                         Edit
                       </Link>
                       <DeleteListingButton
-                        id={display.id}
-                        type="product"
+                        productId={display.id}
+                        productName={display.name}
                         className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
                         label="Delete"
-                        confirmText="Delete this listing? This cannot be undone."
-                        afterDeleteAction={() => {
+                        onDeletedAction={() => {
                           toast.success("Listing deleted");
                           router.push("/dashboard");
                         }}
@@ -487,7 +499,7 @@ export default function ProductPage() {
               <div className="space-y-3 text-sm">
                 <p>You need to sign in to start a chat.</p>
                 <Link
-                  href={`/signin?redirect=/product/${encodeURIComponent(display.id)}`}
+                  href={`/signin?callbackUrl=${encodeURIComponent(`/product/${display.id}`)}`}
                   className="inline-block rounded bg-[#161748] px-4 py-2 text-white hover:opacity-90"
                 >
                   Sign in

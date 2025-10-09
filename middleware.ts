@@ -10,8 +10,6 @@ function makeNonce(): string {
   return btoa(binary);
 }
 function makeUUID(): string {
-  // Random device id for host-only cookie
-  // randomUUID if available; fallback to time + nonce
   return (crypto as any)?.randomUUID?.() ?? `${Date.now().toString(36)}-${makeNonce()}`;
 }
 
@@ -23,6 +21,8 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
     "blob:",
     "https://res.cloudinary.com",
     "https://images.unsplash.com",
+    "https://plus.unsplash.com",
+    "https://lh3.googleusercontent.com",
     "https://www.google-analytics.com",
   ].join(" ");
 
@@ -37,12 +37,13 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
     "https://plausible.io",
     "https://www.google-analytics.com",
     "https://region1.google-analytics.com",
+    "https://accounts.google.com",
+    "https://www.googleapis.com",
   ].join(" ");
 
   const styleSrc = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"].join(" ");
   const fontSrc = ["'self'", "data:", "https://fonts.gstatic.com"].join(" ");
 
-  // Allow Next inline bootstrap via nonce; strict-dynamic lets nonce'd scripts load others.
   const scriptSrc = [
     "'self'",
     `'nonce-${nonce}'`,
@@ -52,6 +53,9 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
   ].join(" ");
+
+  const frameSrc = ["'self'", "https://accounts.google.com"].join(" ");
+  const formAction = ["'self'", "https://accounts.google.com"].join(" ");
 
   const csp =
     [
@@ -64,6 +68,8 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
       `font-src ${fontSrc}`,
       `connect-src ${connectSrc}`,
       `script-src ${scriptSrc}`,
+      `frame-src ${frameSrc}`,
+      `form-action ${formAction}`,
     ].join("; ") + ";";
 
   const headers = new Headers();
@@ -80,7 +86,7 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
 
 /* -------------------- JSON body guard (select POSTs) -------------------- */
 function mustBeJson(req: NextRequest) {
-  if (req.method !== "POST") return null;
+  if (!["POST", "PUT", "PATCH"].includes(req.method)) return null;
   const ct = (req.headers.get("content-type") || "").toLowerCase();
   if (!ct.includes("application/json")) {
     return new NextResponse(JSON.stringify({ error: "Bad request" }), {
@@ -91,7 +97,36 @@ function mustBeJson(req: NextRequest) {
   return null;
 }
 
-/* --------------------- Main middleware body --------------------- */
+/* -------------------- Optional Origin allow-list -------------------- */
+function isAllowedOrigin(req: NextRequest): boolean {
+  const origin = req.headers.get("origin");
+  if (!origin) return true; // non-CORS or same-origin fetches may omit Origin
+
+  // Same-origin always allowed
+  try {
+    const o = new URL(origin);
+    if (o.host === req.nextUrl.host) return true;
+  } catch {
+    return false;
+  }
+
+  // Build allow-list
+  const raw = process.env.CORS_ALLOW_ORIGINS || process.env.NEXT_PUBLIC_APP_URL || "";
+  const list = raw
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  // Match against exact origin (scheme+host+port)
+  return list.some(entry => {
+    try {
+      return new URL(entry).origin === new URL(origin).origin;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export default withAuth(
   function middleware(req: NextRequest) {
     const p = req.nextUrl.pathname;
@@ -99,7 +134,7 @@ export default withAuth(
     // Allow preflight
     if (req.method === "OPTIONS") return NextResponse.next();
 
-    // Hard opt-out: never touch NextAuth or common infra/static/health
+    // Skip infra/static/auth/health
     if (
       p.startsWith("/api/auth") ||
       p.startsWith("/api/health") ||
@@ -118,12 +153,11 @@ export default withAuth(
     const isPreview = process.env.VERCEL_ENV === "preview";
     const isDev = process.env.NODE_ENV !== "production" || isPreview;
 
-    // Treat as HTML navigation if the client accepts HTML (or */*)
     const accept = (req.headers.get("accept") || "").toLowerCase();
     const isHtmlLike = accept.includes("text/html") || accept.includes("*/*");
     const isApi = p.startsWith("/api/");
 
-    // JSON guard on specific endpoints only (never on /api/auth/**)
+    // JSON guard on select endpoints (never /api/auth/**)
     if (
       (p === "/api/billing/upgrade" && req.method === "POST") ||
       (p.startsWith("/api/products/") && p.endsWith("/promote") && req.method === "POST")
@@ -132,20 +166,30 @@ export default withAuth(
       if (bad) return bad;
     }
 
-    // Forward nonce to app (only needed for HTML)
+    // Origin allow-list for mutating methods (optional; set CORS_ALLOW_ORIGINS)
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+      if (!isAllowedOrigin(req)) {
+        return new NextResponse(JSON.stringify({ error: "Origin not allowed" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
+      }
+    }
+
+    // Pass CSP nonce to app on HTML navigations
     const nonce = isHtmlLike && !isApi ? makeNonce() : "";
     const forwarded = new Headers(req.headers);
     if (nonce) forwarded.set("x-nonce", nonce);
 
     const res = NextResponse.next({ request: { headers: forwarded } });
 
-    // Security headers ONLY for document navigations (never for /api/*)
+    // Security headers for documents only
     if (!isApi && isHtmlLike) {
       const sec = buildSecurityHeaders(nonce, isDev);
       for (const [k, v] of sec.entries()) res.headers.set(k, v);
     }
 
-    // Device cookie (host-only; set on HTML only; never on /api/*)
+    // Device cookie (host-only) on HTML docs
     if (!isApi && isHtmlLike && !req.cookies.get("qs_did")?.value) {
       const did = makeUUID();
       res.cookies.set({
@@ -165,8 +209,6 @@ export default withAuth(
     callbacks: {
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
-
-        // Pages that need a signed-in user
         const needsAuth =
           p.startsWith("/sell") ||
           p.startsWith("/account") ||
@@ -174,14 +216,9 @@ export default withAuth(
           p.startsWith("/messages") ||
           p.startsWith("/saved");
 
-        // Admin-only zones (including API)
         const needsAdmin = p.startsWith("/admin") || p.startsWith("/api/admin");
 
         if (needsAdmin) {
-          // Accept any of:
-          // 1) token.isAdmin === true (set by NextAuth/JWT callback),
-          // 2) token.role === 'ADMIN' (legacy),
-          // 3) token.email is in ADMIN_EMAILS (env)
           const t: any = token ?? {};
           const tokenRole = typeof t.role === "string" ? t.role.toUpperCase() : "";
           const tokenIsAdmin = t.isAdmin === true || tokenRole === "ADMIN";
@@ -189,7 +226,7 @@ export default withAuth(
           const email = typeof t.email === "string" ? t.email.toLowerCase() : "";
           const adminList = (process.env.ADMIN_EMAILS ?? "")
             .split(",")
-            .map((e) => e.trim().toLowerCase())
+            .map(e => e.trim().toLowerCase())
             .filter(Boolean);
           const emailIsAdmin = !!email && adminList.includes(email);
 
@@ -203,11 +240,8 @@ export default withAuth(
   }
 );
 
-/* ----------------------------- Matcher ----------------------------- */
-// One (and only one) config export
 export const config = {
   matcher: [
-    // Exclude Next internals, static assets, and auth/health APIs entirely
     "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|api/health|_vercel|\\.well-known).*)",
   ],
 };

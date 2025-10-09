@@ -1,250 +1,53 @@
-// src/app/api/admin/products/[id]/feature/route.ts
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// src/app/api/auth/otp/_store.ts
+// Helper module (NOT a route): simple in-memory OTP store with TTL.
 
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
-import { auth } from "@/auth";
+type OtpRecord = { code: string; expiresAt: number; meta?: Record<string, unknown> };
 
-/* ---------------- analytics (console-only for now) ---------------- */
-type AnalyticsEvent =
-  | "admin_product_feature_attempt"
-  | "admin_product_feature_unauthorized"
-  | "admin_product_feature_forbidden"
-  | "admin_product_feature_invalid_id"
-  | "admin_product_feature_invalid_body"
-  | "admin_product_feature_not_found"
-  | "admin_product_feature_not_active_conflict"
-  | "admin_product_feature_no_change"
-  | "admin_product_feature_success"
-  | "admin_product_feature_error";
+const STORE = new Map<string, OtpRecord>();
+const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
-  try {
-    // eslint-disable-next-line no-console
-    console.log(`[track] ${event}`, { ts: new Date().toISOString(), ...props });
-  } catch {
-    /* noop */
+function now() {
+  return Date.now();
+}
+
+export function putOtp(
+  key: string,
+  code: string,
+  ttlMs: number = DEFAULT_TTL_MS,
+  meta?: Record<string, unknown>
+) {
+  const expiresAt = now() + Math.max(1_000, ttlMs);
+  const rec: OtpRecord = meta !== undefined
+    ? { code, expiresAt, meta }
+    : { code, expiresAt }; // <-- omit meta instead of setting undefined
+  STORE.set(key, rec);
+}
+
+export function getOtp(key: string): OtpRecord | undefined {
+  const rec = STORE.get(key);
+  if (!rec) return undefined;
+  if (rec.expiresAt <= now()) {
+    STORE.delete(key);
+    return undefined;
+  }
+  return rec;
+}
+
+export function consumeOtp(key: string, code: string): boolean {
+  const rec = getOtp(key);
+  if (!rec) return false;
+  const ok = rec.code === code;
+  if (ok) STORE.delete(key);
+  return ok;
+}
+
+export function purgeExpired() {
+  const t = now();
+  for (const [k, v] of STORE.entries()) {
+    if (v.expiresAt <= t) STORE.delete(k);
   }
 }
 
-/* --------------------------------- utils --------------------------------- */
-
-function noStore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
-  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.headers.set("Pragma", "no-cache");
-  res.headers.set("Expires", "0");
-  return res;
-}
-
-function isAdminEmail(email?: string | null) {
-  const raw = process.env["ADMIN_EMAILS"] || "";
-  const set = new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  return !!email && set.has(email.toLowerCase());
-}
-
-// Next 15: params may be object or Promise
-type CtxLike =
-  | { params?: { id: string } | Promise<{ id: string }> }
-  | Record<string, unknown>
-  | undefined;
-
-async function getId(ctx: CtxLike): Promise<string> {
-  const p: any = (ctx as any)?.params;
-  const v = p && typeof p.then === "function" ? await p : p;
-  return String(v?.id ?? "").trim();
-}
-
-function looksLikeId(id: string) {
-  // Keep permissive unless you enforce cuid/uuid. Non-empty is fine here.
-  return id.length > 0;
-}
-
-function parseBoolean(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    const t = value.trim().toLowerCase();
-    if (["1", "true", "yes", "on"].includes(t)) return true;
-    if (["0", "false", "no", "off"].includes(t)) return false;
-  }
-  return undefined;
-}
-
-/* ----------------- PATCH /api/admin/products/[id]/feature ----------------- */
-// body: { featured: boolean; force?: boolean }
-// Also accepts query overrides: ?featured=true&force=1 (handy for quick tests)
-export async function PATCH(req: NextRequest, ctx: CtxLike) {
-  const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
-
-  try {
-    // --- authN / authZ: admin only (env whitelist OR DB role === ADMIN) ---
-    const session = await auth();
-    const user = (session as any)?.user;
-
-    if (!user?.id || !user?.email) {
-      track("admin_product_feature_unauthorized", { reqId });
-      return noStore({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    let isAdmin = isAdminEmail(user.email);
-    if (!isAdmin) {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: user.id },
-        select: { role: true },
-      });
-      isAdmin = dbUser?.role === "ADMIN";
-    }
-    if (!isAdmin) {
-      track("admin_product_feature_forbidden", { reqId, userId: user.id });
-      return noStore({ error: "Forbidden" }, { status: 403 });
-    }
-
-    // --- params ---
-    const id = await getId(ctx);
-    if (!looksLikeId(id)) {
-      track("admin_product_feature_invalid_id", { reqId });
-      return noStore({ error: "Missing or invalid id" }, { status: 400 });
-    }
-
-    // --- body / query ---
-    // Accept input both from JSON body and query string for convenience
-    let body: unknown = null;
-    try {
-      body = await req.json();
-    } catch {
-      /* Allow empty/invalid JSON when using query params */
-    }
-
-    const q = req.nextUrl.searchParams;
-    const featuredQ = q.get("featured");
-    const forceQ = q.get("force");
-
-    const featuredBody = (body as any)?.featured as unknown;
-    const forceBody = (body as any)?.force as unknown;
-
-    const featuredParsed = parseBoolean(featuredBody ?? featuredQ);
-    const forceParsed = parseBoolean(forceBody ?? forceQ) === true; // default false
-
-    if (typeof featuredParsed !== "boolean") {
-      track("admin_product_feature_invalid_body", {
-        reqId,
-        reason: "featured_not_boolean",
-      });
-      return noStore({ error: "featured:boolean required" }, { status: 400 });
-    }
-
-    track("admin_product_feature_attempt", {
-      reqId,
-      userId: user.id,
-      productId: id,
-      featured: featuredParsed,
-      force: forceParsed,
-    });
-
-    // --- load product (validate existence & status) ---
-    const prod = await prisma.product.findUnique({
-      where: { id },
-      select: { id: true, status: true, featured: true, updatedAt: true },
-    });
-    if (!prod) {
-      track("admin_product_feature_not_found", { reqId, productId: id });
-      return noStore({ error: "Not found" }, { status: 404 });
-    }
-
-    // By default, only ACTIVE products can be toggled
-    if (!forceParsed && prod.status !== "ACTIVE") {
-      track("admin_product_feature_not_active_conflict", {
-        reqId,
-        productId: id,
-        status: prod.status,
-      });
-      return noStore(
-        {
-          error: "Only ACTIVE products can be toggled. Pass force:true to override.",
-          status: prod.status,
-        },
-        { status: 409 }
-      );
-    }
-
-    // No-op: already in requested state
-    if (prod.featured === featuredParsed) {
-      track("admin_product_feature_no_change", {
-        reqId,
-        productId: id,
-        featured: featuredParsed,
-      });
-      return noStore({
-        ok: true,
-        noChange: true,
-        product: { id: prod.id, featured: prod.featured, status: prod.status },
-      });
-    }
-
-    // --- update ---
-    const updated = await prisma.product.update({
-      where: { id },
-      data: { featured: featuredParsed },
-      select: { id: true, featured: true, status: true, updatedAt: true },
-    });
-
-    // Optional: write an audit log row if your schema supports it
-    try {
-      // Avoid //@ts-expect-error by narrowing prisma to a shape that MAY have adminAuditLog
-      const anyPrisma = prisma as unknown as {
-        adminAuditLog?: { create: (args: any) => Promise<any> };
-      };
-      if (anyPrisma.adminAuditLog?.create) {
-        await anyPrisma.adminAuditLog.create({
-          data: {
-            actorId: user.id,
-            action: "PRODUCT_FEATURE_TOGGLE",
-            meta: {
-              productId: id,
-              before: { featured: prod.featured, status: prod.status },
-              after: { featured: updated.featured, status: updated.status },
-              reqId,
-            },
-          },
-        });
-      }
-    } catch {
-      /* ignore if table not present */
-    }
-
-    track("admin_product_feature_success", {
-      reqId,
-      productId: id,
-      featured: updated.featured,
-      status: updated.status,
-    });
-
-    return noStore({ ok: true, product: updated });
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn("[admin/products/:id/feature PATCH] error:", e);
-    track("admin_product_feature_error", {
-      reqId,
-      message: (e as any)?.message ?? String(e),
-    });
-    return noStore({ error: "Server error" }, { status: 500 });
-  }
-}
-
-/* ----------- Minimal CORS/health helpers (optional but handy) ----------- */
-export async function OPTIONS() {
-  return noStore({ ok: true }, { status: 204 });
-}
-export async function GET() {
-  return noStore({ ok: true, method: "GET" }, { status: 200 });
+export function clearAll() {
+  STORE.clear();
 }

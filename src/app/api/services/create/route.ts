@@ -1,8 +1,6 @@
-﻿// src/app/api/services/create/route.ts
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-// export const preferredRegion = "fra1"; // <- optional if you're pinning region
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -11,6 +9,7 @@ import { auth } from "@/auth";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { getIdempotencyKey, withIdempotency } from "@/app/lib/idempotency";
 
 /* ------------------------- tiny helpers ------------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
@@ -21,8 +20,9 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
-function withReqId(res: NextResponse, id: string) {
+function withReqId(res: NextResponse, id: string, idemKey?: string | null) {
   res.headers.set("x-request-id", id);
+  if (idemKey) res.headers.set("x-idempotency-key", idemKey);
   return res;
 }
 const RATE_TYPES = new Set(["hour", "day", "fixed"]);
@@ -40,15 +40,14 @@ function s(v: unknown, max?: number): string | undefined {
   return typeof max === "number" ? clampLen(t, max) : t;
 }
 function nPrice(v: unknown): number | null | undefined {
-  // null/"" => “contact for quote”
   if (v === null || v === "") return null;
   if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.round(v));
   if (typeof v === "string" && v.trim() !== "") {
     const n = Number(v);
     if (Number.isFinite(n)) return nPrice(n);
-    return undefined; // explicit invalid string like "abc"
+    return undefined;
   }
-  return undefined; // absent
+  return undefined;
 }
 function nRateType(v: unknown): "hour" | "day" | "fixed" | undefined {
   const rt = s(v)?.toLowerCase();
@@ -56,8 +55,9 @@ function nRateType(v: unknown): "hour" | "day" | "fixed" | undefined {
   return RATE_TYPES.has(rt) ? (rt as any) : undefined;
 }
 function nGallery(v: unknown, maxUrl: number, maxCount: number): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const cleaned = v
+  const arr = Array.isArray(v) ? v : typeof v === "string" ? [v] : [];
+  if (!arr.length) return undefined;
+  const cleaned = arr
     .map((x) => (typeof x === "string" ? x.trim() : ""))
     .filter(Boolean)
     .map((x) => clampLen(x, maxUrl)!)
@@ -103,7 +103,7 @@ const MAX = {
   availability: 160,
   description: 5000,
   imageUrl: 2048,
-  galleryCount: 20,
+  galleryCount: 6,
 } as const;
 
 /* ----------------------------- analytics ----------------------------- */
@@ -119,12 +119,11 @@ function track(ev: AnalyticsEvent, props?: Record<string, unknown>) {
   } catch {}
 }
 
-/** Lenient handle if your Prisma model name differs */
+/** Lenient alias so this compiles even if model is evolving. */
 const db: any = prisma as any;
 
-/* ------------- robust create (handles missing `publishedAt`) ------------- */
+/* ------------- robust create (drops unknown `publishedAt`) ------------- */
 async function createServiceSafe(data: any) {
-  // Try with `publishedAt`; if Prisma schema lacks it, retry without.
   try {
     return await db.service.create({ data, select: { id: true } });
   } catch (e: any) {
@@ -134,12 +133,8 @@ async function createServiceSafe(data: any) {
       msg.includes("Unknown argument") ||
       msg.includes("Argument `publishedAt`")
     ) {
-      try {
-        const { publishedAt, ...without } = data ?? {};
-        return await db.service.create({ data: without, select: { id: true } });
-      } catch {
-        throw e;
-      }
+      const { publishedAt, ...without } = data ?? {};
+      return await db.service.create({ data: without, select: { id: true } });
     }
     throw e;
   }
@@ -151,182 +146,188 @@ export async function POST(req: NextRequest) {
     (globalThis as any).crypto?.randomUUID?.() ??
     Math.random().toString(36).slice(2);
 
-  try {
-    const session = await auth().catch(() => null);
-    const userId = (session?.user as any)?.id as string | undefined;
-    if (!userId) return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId);
+  // Use shared helper to read the key (await it!)
+  const idemKey = await getIdempotencyKey(req);
 
-    // Per-IP + user throttle
-    const rl = await checkRateLimit(req.headers, {
-      name: "services_create",
-      limit: 6,
-      windowMs: 10 * 60_000,
-      extraKey: userId,
-    });
-    if (!rl.ok) {
-      return withReqId(tooMany("Too many create attempts. Try again later.", rl.retryAfterSec), reqId);
-    }
+  return withIdempotency(idemKey, async () => {
+    try {
+      const session = await auth().catch(() => null);
+      const userId = (session?.user as any)?.id as string | undefined;
+      if (!userId) return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId, idemKey);
 
-    // Reject non-JSON early
-    const ctype = req.headers.get("content-type") || "";
-    if (!ctype.toLowerCase().includes("application/json")) {
-      return withReqId(noStore({ error: "Content-Type must be application/json" }, { status: 415 }), reqId);
-    }
+      // Per-IP + user throttle
+      const rl = await checkRateLimit(req.headers, {
+        name: "services_create",
+        limit: 6,
+        windowMs: 10 * 60_000,
+        extraKey: userId,
+      });
+      if (!rl.ok) {
+        return withReqId(tooMany("Too many create attempts. Try again later.", rl.retryAfterSec), reqId, idemKey);
+      }
 
-    // Snapshot seller (for tier/phone fallback)
-    const me = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        createdAt: true,
-        subscription: true,
-        whatsapp: true,
-        city: true,
-        country: true,
-      },
-    });
-    if (!me) return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId);
+      // Reject non-JSON early
+      const ctype = req.headers.get("content-type") || "";
+      if (!ctype.toLowerCase().includes("application/json")) {
+        return withReqId(noStore({ error: "Content-Type must be application/json" }, { status: 415 }), reqId, idemKey);
+      }
 
-    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+      // Snapshot seller
+      const me = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          createdAt: true,
+          subscription: true,
+          whatsapp: true,
+          city: true,
+          country: true,
+        },
+      });
+      if (!me) return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId, idemKey);
 
-    track("service_create_attempt", { reqId, userId: me.id, tier: toTier(me.subscription) });
+      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-    // Accept product-like and service-like payload keys
-    const name = s(body["name"], MAX.name) ?? s(body["title"], MAX.name);
-    const description = clip(s(body["description"]), MAX.description);
-    const category = s(body["category"], MAX.category) ?? "Services";
-    const subcategory = s(body["subcategory"], MAX.subcategory);
-    const image = s(body["image"], MAX.imageUrl) ?? s(body["thumbnailUrl"], MAX.imageUrl);
-    const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
+      track("service_create_attempt", { reqId, userId: me.id, tier: toTier(me.subscription) });
 
-    // Rate type: default to "fixed" if not provided; if provided but invalid, error
-    const hasRateTypeKey = Object.prototype.hasOwnProperty.call(body, "rateType");
-    const parsedRateType = nRateType(body["rateType"]);
-    const rateType: "hour" | "day" | "fixed" = parsedRateType ?? "fixed";
-    if (hasRateTypeKey && !parsedRateType) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "rateType", reason: "invalid" });
-      return withReqId(noStore({ error: "Invalid rateType (use hour, day, or fixed)" }, { status: 400 }), reqId);
-    }
+      // Accept product-like & service-like keys
+      const name = s(body["name"], MAX.name) ?? s(body["title"], MAX.name);
+      const description = clip(s(body["description"]), MAX.description);
+      const category = s(body["category"], MAX.category) ?? "Services";
+      const subcategory = s(body["subcategory"], MAX.subcategory);
+      const image = s(body["image"], MAX.imageUrl) ?? s(body["thumbnailUrl"], MAX.imageUrl);
+      const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
 
-    const serviceArea = s(body["serviceArea"], MAX.serviceArea);
-    const availability = s(body["availability"], MAX.availability);
-    const location = s(body["location"], MAX.location) ?? serviceArea;
+      // Rate type
+      const hasRateTypeKey = Object.prototype.hasOwnProperty.call(body, "rateType");
+      const parsedRateType = nRateType(body["rateType"]);
+      const rateType: "hour" | "day" | "fixed" = parsedRateType ?? "fixed";
+      if (hasRateTypeKey && !parsedRateType) {
+        track("service_create_validation_error", { reqId, userId: me.id, field: "rateType", reason: "invalid" });
+        return withReqId(noStore({ error: "Invalid rateType (use hour, day, or fixed)" }, { status: 400 }), reqId, idemKey);
+      }
 
-    const price = nPrice(body["price"]); // null => “contact for quote”; undefined => absent
-    const hasPriceKey = Object.prototype.hasOwnProperty.call(body, "price");
+      const serviceArea = s(body["serviceArea"], MAX.serviceArea);
+      const availability = s(body["availability"], MAX.availability);
+      const location = s(body["location"], MAX.location) ?? serviceArea;
 
-    let sellerPhone = normalizeMsisdn(s(body["sellerPhone"]));
-    if (!sellerPhone && me.whatsapp) sellerPhone = normalizeMsisdn(me.whatsapp);
+      const price = nPrice(body["price"]);
+      const hasPriceKey = Object.prototype.hasOwnProperty.call(body, "price");
 
-    // Validation
-    if (!name || name.length < 3) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "name" });
-      return withReqId(noStore({ error: "Name is required (min 3 chars)" }, { status: 400 }), reqId);
-    }
-    if (!description || description.length < 10) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "description" });
-      return withReqId(noStore({ error: "Description is required (min 10 chars)" }, { status: 400 }), reqId);
-    }
-    if (hasPriceKey && price === undefined) {
-      // user attempted price but it's invalid (e.g. "abc")
-      track("service_create_validation_error", { reqId, userId: me.id, field: "price", reason: "invalid" });
-      return withReqId(noStore({ error: "Invalid price" }, { status: 400 }), reqId);
-    }
-    if (typeof body["sellerPhone"] === "string" && !normalizeMsisdn(body["sellerPhone"] as string)) {
-      track("service_create_validation_error", { reqId, userId: me.id, field: "sellerPhone", reason: "invalid" });
-      return withReqId(
-        noStore({ error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." }, { status: 400 }),
-        reqId
-      );
-    }
+      let sellerPhone = normalizeMsisdn(s(body["sellerPhone"]));
+      if (!sellerPhone && me.whatsapp) sellerPhone = normalizeMsisdn(me.whatsapp);
 
-    // Tier enforcement (count only ACTIVE services)
-    const tier = toTier(me.subscription);
-    const limits = LIMITS[tier];
-    const myActiveCount = await db.service.count({
-      where: { sellerId: me.id, status: "ACTIVE" },
-    });
-    if (myActiveCount >= limits.listingLimit) {
-      track("service_create_limit_reached", {
+      // Validation
+      if (!name || name.length < 3) {
+        track("service_create_validation_error", { reqId, userId: me.id, field: "name" });
+        return withReqId(noStore({ error: "Name is required (min 3 chars)" }, { status: 400 }), reqId, idemKey);
+      }
+      if (!description || description.length < 10) {
+        track("service_create_validation_error", { reqId, userId: me.id, field: "description" });
+        return withReqId(noStore({ error: "Description is required (min 10 chars)" }, { status: 400 }), reqId, idemKey);
+      }
+      if (hasPriceKey && price === undefined) {
+        track("service_create_validation_error", { reqId, userId: me.id, field: "price", reason: "invalid" });
+        return withReqId(noStore({ error: "Invalid price" }, { status: 400 }), reqId, idemKey);
+      }
+      if (typeof body["sellerPhone"] === "string" && !normalizeMsisdn(body["sellerPhone"] as string)) {
+        track("service_create_validation_error", { reqId, userId: me.id, field: "sellerPhone", reason: "invalid" });
+        return withReqId(
+          noStore({ error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." }, { status: 400 }),
+          reqId,
+          idemKey
+        );
+      }
+
+      // Tier enforcement (count only ACTIVE services)
+      const tier = toTier(me.subscription);
+      const limits = LIMITS[tier];
+      const myActiveCount = await db.service.count({
+        where: { sellerId: me.id, status: "ACTIVE" },
+      });
+      if (myActiveCount >= limits.listingLimit) {
+        track("service_create_limit_reached", {
+          reqId,
+          userId: me.id,
+          tier,
+          limit: limits.listingLimit,
+        });
+        return withReqId(noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 }), reqId, idemKey);
+      }
+
+      // Create
+      const created = await createServiceSafe({
+        name,
+        description,
+        category,
+        subcategory: subcategory ?? null,
+        price: price ?? null,
+        rateType,
+        serviceArea: serviceArea ?? null,
+        availability: availability ?? null,
+        image: image ?? null,
+        gallery: gallery ?? [],
+        location: location ?? null,
+
+        status: "ACTIVE",
+        featured: false,
+        publishedAt: new Date(), // dropped automatically if column doesn't exist
+
+        sellerId: me.id,
+        sellerName: me.name ?? null,
+        sellerLocation:
+          me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
+        sellerMemberSince: me.createdAt ? me.createdAt.toISOString().slice(0, 10) : null,
+        sellerRating: null,
+        sellerSales: null,
+        sellerPhone: sellerPhone ?? null,
+      });
+
+      // Revalidate caches/tags
+      try {
+        revalidateTag("home:active");
+        revalidateTag("services:latest");
+        revalidateTag(`user:${userId}:services`);
+        revalidateTag(`service:${created.id}`);
+        revalidatePath("/");
+        revalidatePath("/services");
+        if (me.username) revalidatePath(`/store/${me.username}`);
+        revalidatePath("/dashboard");
+        revalidatePath(`/service/${created.id}`);
+      } catch {}
+
+      track("service_create_success", {
         reqId,
         userId: me.id,
         tier,
-        limit: limits.listingLimit,
+        serviceId: created.id,
+        hasPrice: price != null,
+        gallerySize: (gallery ?? []).length,
       });
-      return withReqId(noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 }), reqId);
+
+      const res = noStore({ ok: true, serviceId: created.id }, { status: 201 });
+      res.headers.set("Location", `/service/${created.id}`);
+      return withReqId(res, reqId, idemKey);
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error("[services/create POST] error", e);
+      track("service_create_error", { reqId, message: e?.message ?? String(e) });
+
+      if (e?.code === "P2002") {
+        return withReqId(noStore({ error: "Duplicate value not allowed" }, { status: 409 }), reqId, idemKey);
+      }
+      return withReqId(noStore({ error: "Server error" }, { status: 500 }), reqId, idemKey);
     }
-
-    // Compose write
-    const created = await createServiceSafe({
-      name,
-      description,
-      category,
-      subcategory: subcategory ?? null,
-      price: price ?? null, // null => “contact for quote”
-      rateType,
-      serviceArea: serviceArea ?? null,
-      availability: availability ?? null,
-      image: image ?? null,
-      gallery: gallery ?? [],
-      location: location ?? null,
-
-      status: "ACTIVE",
-      featured: false, // tier check above; expand later if you want featured services
-      publishedAt: new Date(), // will be dropped automatically if column doesn't exist
-
-      sellerId: me.id,
-      sellerName: me.name ?? null,
-      sellerLocation:
-        me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
-      sellerMemberSince: me.createdAt ? me.createdAt.toISOString().slice(0, 10) : null,
-      sellerRating: null,
-      sellerSales: null,
-      sellerPhone: sellerPhone ?? null,
-    });
-
-    // Revalidate caches/tags so service appears immediately
-    try {
-      revalidateTag("home:active");
-      revalidateTag("services:latest");
-      revalidateTag(`user:${userId}:services`);
-      revalidatePath("/");
-      revalidatePath("/services");
-      if (me.username) revalidatePath(`/store/${me.username}`);
-      revalidatePath("/dashboard");
-      revalidatePath(`/service/${created.id}`);
-    } catch {
-      /* best-effort */
-    }
-
-    track("service_create_success", {
-      reqId,
-      userId: me.id,
-      tier,
-      serviceId: created.id,
-      hasPrice: price != null,
-      gallerySize: (gallery ?? []).length,
-    });
-
-    return withReqId(noStore({ ok: true, serviceId: created.id }, { status: 201 }), reqId);
-  } catch (e: any) {
-    // eslint-disable-next-line no-console
-    console.error("[services/create POST] error", e);
-    track("service_create_error", { reqId, message: e?.message ?? String(e) });
-
-    if (e?.code === "P2002") {
-      return withReqId(noStore({ error: "Duplicate value not allowed" }, { status: 409 }), reqId);
-    }
-    return withReqId(noStore({ error: "Server error" }, { status: 500 }), reqId);
-  }
+  });
 }
 
 /* ----------------------------- CORS (optional) ----------------------------- */
 export function OPTIONS() {
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["APP_ORIGIN"] ??
     "*";
 
   const res = new NextResponse(null, { status: 204 });

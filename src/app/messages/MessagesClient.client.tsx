@@ -57,8 +57,8 @@ export default function MessagesClient({ meId }: Props) {
 
   const fetchJSON = useCallback(async (url: string, ac?: AbortController | null) => {
     try {
-      // exactOptionalPropertyTypes-safe: pass null when absent
-      const init: RequestInit = { cache: "no-store", signal: ac?.signal ?? null };
+      // Avoid passing null to RequestInit.signal under stricter lib dom typings
+      const init: RequestInit = ac ? { cache: "no-store", signal: ac.signal } : { cache: "no-store" };
       const r = await fetch(url, init);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error((j as any)?.error || `HTTP ${r.status}`);
@@ -271,6 +271,7 @@ export default function MessagesClient({ meId }: Props) {
               return (
                 <button
                   key={t.id}
+                  type="button"
                   onClick={() => handleSelect(t.id)}
                   className={[
                     "w-full text-left py-2 px-2 rounded-lg transition",
@@ -363,6 +364,7 @@ export default function MessagesClient({ meId }: Props) {
                 disabled={!current || sending}
               />
               <button
+                type="button"
                 onClick={send}
                 disabled={!current || sending || !body.trim()}
                 className="rounded bg-[#161748] text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-60"

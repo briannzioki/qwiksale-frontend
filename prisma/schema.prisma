@@ -32,11 +32,12 @@ enum PaymentStatus {
   FAILED
 }
 
-enum ProductStatus {
+/** Unified status for both Product and Service (matches UI/API: ACTIVE/DRAFT/PAUSED/ARCHIVED) */
+enum ListingStatus {
   ACTIVE
-  SOLD
-  HIDDEN
   DRAFT
+  PAUSED
+  ARCHIVED
 }
 
 enum PaymentMethod {
@@ -184,22 +185,22 @@ model Referral {
 }
 
 model Product {
-  id          String        @id @default(uuid())
+  id          String         @id @default(uuid())
   name        String
-  description String?       @db.Text
+  description String?        @db.Text
   category    String
   subcategory String
   brand       String?
   condition   String?
   price       Int?
   image       String?
-  gallery     String[]      @default([])
+  gallery     String[]       @default([])
   location    String?
-  negotiable  Boolean       @default(false)
-  status      ProductStatus @default(ACTIVE)
+  negotiable  Boolean        @default(false)
+  status      ListingStatus  @default(ACTIVE)
   soldAt      DateTime?
 
-  /// New: when the listing becomes visible (set on create)
+  /// When the listing becomes visible (set on create)
   publishedAt DateTime? @default(now())
 
   /// Optional dedupe key (sha256 hex) used by create endpoint
@@ -233,32 +234,34 @@ model Product {
   @@index([status, price])
   @@index([sellerId, status, createdAt(sort: Desc)])
   @@index([status, brand])
-  /// New indexes for published ordering (kept alongside createdAt for safety)
+
+  /// Published ordering
   @@index([status, featured, publishedAt(sort: Desc)])
   @@index([status, publishedAt(sort: Desc)])
   @@index([status, category, subcategory, publishedAt(sort: Desc)])
   @@index([sellerId, status, publishedAt(sort: Desc)])
-  /// Helpful for quick duplicate checks per-seller
+
+  /// Per-seller duplicate checks
   @@index([sellerId, dedupeKey, createdAt(sort: Desc)])
 }
 
 model Service {
-  id           String        @id @default(uuid())
+  id           String         @id @default(uuid())
   name         String
-  description  String?       @db.Text
+  description  String?        @db.Text
   category     String
   subcategory  String?
-  price        Int? // null => “contact for quote”
-  rateType     RateType      @default(fixed)
+  price        Int?           // null => “contact for quote”
+  rateType     RateType       @default(fixed)
   serviceArea  String?
   availability String?
   image        String?
-  gallery      String[]      @default([])
+  gallery      String[]       @default([])
   location     String?
-  status       ProductStatus @default(ACTIVE) // reuse
-  featured     Boolean       @default(false)
+  status       ListingStatus  @default(ACTIVE)
+  featured     Boolean        @default(false)
 
-  /// New: visible-from timestamp (set on create)
+  /// Visible-from timestamp (set on create)
   publishedAt DateTime? @default(now())
 
   createdAt DateTime @default(now())
@@ -281,7 +284,8 @@ model Service {
   @@index([status, category, subcategory, createdAt(sort: Desc)])
   @@index([status, price])
   @@index([sellerId, status, createdAt(sort: Desc)])
-  /// New indexes for published ordering
+
+  /// Published ordering
   @@index([status, featured, publishedAt(sort: Desc)])
   @@index([status, publishedAt(sort: Desc)])
   @@index([status, category, subcategory, publishedAt(sort: Desc)])

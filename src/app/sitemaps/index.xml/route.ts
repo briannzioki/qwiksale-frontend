@@ -6,11 +6,12 @@ import { NextResponse } from "next/server";
 
 function getBaseUrl(): string {
   const raw =
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    "https://qwiksale.sale";
+    process.env['NEXT_PUBLIC_APP_URL'] ||
+    process.env['APP_ORIGIN'] ||
+    process.env.NEXTAUTH_URL ||
+    "https://qwiksale.co";
   const trimmed = String(raw).trim().replace(/\/+$/, "");
-  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.sale";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.co";
 }
 
 function xmlEscape(s: string): string {
@@ -45,6 +46,7 @@ export async function GET() {
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
         "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
+        Vary: "Accept-Encoding",
       },
     });
   } catch (e) {

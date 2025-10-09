@@ -14,6 +14,12 @@ type CloudinaryUploadOk = {
   bytes?: number;
 };
 
+type Variants = {
+  avatarUrl: string;
+  previewUrl: string;
+  placeholderUrl: string;
+};
+
 type ApiOk = {
   ok: true;
   user: {
@@ -23,11 +29,7 @@ type ApiOk = {
     username: string | null;
     email: string | null;
   };
-  variants?: {
-    avatarUrl: string;
-    previewUrl: string;
-    placeholderUrl: string;
-  } | null;
+  variants?: Variants | null;
 };
 type ApiErr = { error: string };
 
@@ -48,7 +50,7 @@ export type UploadOptions = {
   retries?: number;
 };
 
-/* ------------------------------- Utilities -------------------------------- */
+/* ------------------------------- ENV + Consts ----------------------------- */
 
 const DEFAULT_ALLOWED: readonly string[] = [
   "image/jpeg",
@@ -57,6 +59,22 @@ const DEFAULT_ALLOWED: readonly string[] = [
   "image/avif",
   "image/gif",
 ];
+
+const CLOUD = (process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] || "").trim();
+const PRESET = (
+  process.env["NEXT_PUBLIC_CLOUDINARY_PRESET_AVATARS"] ||
+  process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ||
+  ""
+).trim();
+const DEFAULT_FOLDER = (
+  process.env["NEXT_PUBLIC_CLOUDINARY_AVATAR_FOLDER"] || "qwiksale/avatars"
+).trim();
+
+const CLOUD_ENDPOINT = CLOUD
+  ? `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUD)}/auto/upload`
+  : "";
+
+/* ------------------------------- Utilities -------------------------------- */
 
 function bytesToMB(n: number) {
   return n / (1024 * 1024);
@@ -93,7 +111,7 @@ function withJitter(ms: number) {
 /** Extract Cloudinary public_id from a secure URL (best-effort). */
 function publicIdFromUrl(url: string): string | "" {
   try {
-    // Pattern: https://res.cloudinary.com/<cloud>/image/upload/<transforms?>/v123/<public_id>.<ext>
+    // https://res.cloudinary.com/<cloud>/image/upload/<transforms?>/v123/<public_id>.<ext>
     const u = new URL(url);
     const parts = u.pathname.split("/");
     const uploadIdx = parts.findIndex((p) => p === "upload");
@@ -143,24 +161,51 @@ export function cldBlurPlaceholder(urlOrPublicId: string): string {
   return urlOrPublicId;
 }
 
-/* ------------------------------- Uploader --------------------------------- */
+/** Small helper to stringify safe errors */
+function errMessage(e: unknown, fallback = "Upload failed") {
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object" && "message" in e && typeof (e as any).message === "string") {
+    return (e as any).message as string;
+  }
+  return fallback;
+}
 
-function uploadViaApi(
+/* -------------------------- Unsigned Cloudinary XHR ------------------------ */
+
+function uploadToCloudinaryUnsigned(
   file: File,
   {
     onProgress,
     signal,
+    folder,
+    tags,
   }: {
     onProgress?: (pct: number) => void;
     signal?: AbortSignal;
+    folder?: string;
+    tags?: string[];
   }
 ): Promise<CloudinaryUploadOk> {
+  if (!CLOUD) return Promise.reject(new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"));
+  if (!PRESET) {
+    return Promise.reject(
+      new Error(
+        "Missing unsigned preset (NEXT_PUBLIC_CLOUDINARY_PRESET_AVATARS or NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)"
+      )
+    );
+  }
+  if (!CLOUD_ENDPOINT) {
+    return Promise.reject(new Error("Cloudinary upload endpoint is not configured"));
+  }
+
   return new Promise((resolve, reject) => {
-    const form = new FormData();
-    form.append("file", file);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("upload_preset", PRESET);
+    fd.append("folder", (folder || DEFAULT_FOLDER) ?? DEFAULT_FOLDER);
+    if (Array.isArray(tags) && tags.length) fd.append("tags", tags.join(","));
 
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload");
 
     const onAbort = () => {
       try {
@@ -173,34 +218,41 @@ function uploadViaApi(
     xhr.upload.onprogress = (evt) => {
       if (evt.lengthComputable) onProgress?.(Math.round((evt.loaded / evt.total) * 100));
     };
-    xhr.onload = () => {
+
+    xhr.onerror = () => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error("Network error during Cloudinary upload"));
+    };
+    xhr.onabort = () => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error("Upload aborted"));
+    };
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState !== 4) return;
       try {
-        const json = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && (json.url || json.secure_url)) {
-          const secureUrl: string = String(json.url || json.secure_url);
+        const json = JSON.parse(xhr.responseText || "{}");
+        if (xhr.status >= 200 && xhr.status < 300 && json?.secure_url) {
           resolve({
-            secure_url: secureUrl,
-            public_id: json.public_id || publicIdFromUrl(secureUrl) || "",
+            secure_url: String(json.secure_url),
+            public_id: String(json.public_id || publicIdFromUrl(String(json.secure_url)) || ""),
             width: json.width,
             height: json.height,
             format: json.format,
             bytes: json.bytes,
           });
         } else {
-          reject(new Error(json?.error || `Upload failed (${xhr.status})`));
+          reject(new Error(json?.error?.message || `Cloudinary upload failed (${xhr.status})`));
         }
-      } catch (e: any) {
-        reject(new Error(e?.message || "Upload response parse error"));
+      } catch (e) {
+        reject(new Error(errMessage(e, "Invalid Cloudinary response")));
       } finally {
         signal?.removeEventListener("abort", onAbort);
       }
     };
-    xhr.onerror = () => {
-      signal?.removeEventListener("abort", onAbort);
-      reject(new Error("Network error during upload"));
-    };
 
-    xhr.send(form);
+    xhr.open("POST", CLOUD_ENDPOINT, true);
+    xhr.send(fd);
   });
 }
 
@@ -269,17 +321,25 @@ export function useProfilePhotoUpload() {
         const controller = new AbortController();
         abortRef.current = controller;
 
-        // Upload with small retry loop
+        // 1) Direct unsigned upload → Cloudinary (with small retry loop)
         let lastErr: unknown = null;
         let attempt = 0;
-        let uploadRes: CloudinaryUploadOk | null = null;
+        let up: CloudinaryUploadOk | null = null;
+
+        // Build options object without undefined props (TS exactOptionalPropertyTypes)
+        const cldOpts: {
+          onProgress?: (pct: number) => void;
+          signal?: AbortSignal;
+          folder?: string;
+          tags?: string[];
+        } = { onProgress: setProgress, signal: controller.signal };
+
+        if (opts?.folder) cldOpts.folder = opts.folder;
+        if (opts?.tags && opts.tags.length) cldOpts.tags = opts.tags;
 
         while (attempt <= retries) {
           try {
-            uploadRes = await uploadViaApi(file, {
-              onProgress: setProgress,
-              signal: controller.signal,
-            });
+            up = await uploadToCloudinaryUnsigned(file, cldOpts);
             break;
           } catch (e) {
             lastErr = e;
@@ -290,27 +350,34 @@ export function useProfilePhotoUpload() {
           }
         }
 
-        if (!uploadRes) throw lastErr ?? new Error("Upload failed");
+        if (!up) throw lastErr ?? new Error("Upload failed");
 
-        // Persist to API
-        const res = await fetch("/api/account/profile/photo", {
+        // 2) Persist to your API: send only the secure_url
+        const save = await fetch("/api/account/profile/photo", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({ secureUrl: uploadRes.secure_url }),
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          },
+          cache: "no-store",
+          // some TS lib.d.ts versions expect AbortSignal | null with exactOptionalPropertyTypes
+          signal: (controller.signal ?? null) as AbortSignal | null,
+          body: JSON.stringify({ secureUrl: up.secure_url, intent: "avatar" }),
         });
 
-        const data: ApiOk | ApiErr = await res.json().catch(() => ({ error: "Invalid API response" }));
-        if (!res.ok) {
-          throw new Error((data as ApiErr)?.error || `API error ${res.status}: profile/photo`);
+        const data: ApiOk | ApiErr = await save.json().catch(
+          () => ({ error: "Invalid API response" } as ApiErr)
+        );
+        if (!save.ok) {
+          throw new Error((data as ApiErr)?.error || `API error ${save.status}: profile/photo`);
         }
 
         // If backend didn’t compute variants, give client-side fallbacks
         if ((data as ApiOk)?.ok && !(data as ApiOk).variants) {
-          const source = uploadRes.public_id || uploadRes.secure_url;
-          const avatarUrl = cldAvatar(uploadRes.secure_url || source, 256);
-          const previewUrl = cldAvatar(uploadRes.secure_url || source, 512);
-          const placeholderUrl = cldBlurPlaceholder(uploadRes.secure_url || source);
+          const source = up.public_id || up.secure_url;
+          const avatarUrl = cldAvatar(up.secure_url || source, 256);
+          const previewUrl = cldAvatar(up.secure_url || source, 512);
+          const placeholderUrl = cldBlurPlaceholder(up.secure_url || source);
           (data as ApiOk).variants = { avatarUrl, previewUrl, placeholderUrl };
         }
 
@@ -331,8 +398,19 @@ export function useProfilePhotoUpload() {
     setUploading(true);
     setError(null);
     try {
-      const res = await fetch("/api/account/profile/photo", { method: "DELETE" });
-      const data: ApiOk | ApiErr = await res.json().catch(() => ({ error: "Invalid API response" }));
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+
+      const res = await fetch("/api/account/profile/photo", {
+        method: "DELETE",
+        headers: { "Cache-Control": "no-store" },
+        cache: "no-store",
+        signal: (ctrl.signal ?? null) as AbortSignal | null,
+      });
+
+      const data: ApiOk | ApiErr = await res.json().catch(
+        () => ({ error: "Invalid API response" } as ApiErr)
+      );
       if (!res.ok) {
         throw new Error((data as ApiErr)?.error || "Failed to remove photo");
       }

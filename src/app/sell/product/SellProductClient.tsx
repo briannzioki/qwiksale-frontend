@@ -1,10 +1,10 @@
-// src/app/sell/SellProductClient.tsx
+// src/app/sell/product/SellProductClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { categories, type CategoryNode } from "../../data/categories";
-import { useProducts } from "../../lib/productsStore";
+import { categories, type CategoryNode } from "@/app/data/categories";
+import { useProducts } from "@/app/lib/productsStore";
 import toast from "react-hot-toast";
 import {
   normalizeKenyanPhone,
@@ -16,7 +16,9 @@ type Me = { id: string; email: string | null; profileComplete?: boolean; whatsap
 
 type Props = {
   /** If present, the form opens in EDIT mode and prefills from the server. */
-  id?: string | undefined; // ← allow explicit undefined to satisfy exactOptionalPropertyTypes
+  id?: string | undefined;
+  /** Hide legacy media section when a single media surface is already shown on the page. */
+  hideMedia?: boolean;
 };
 
 const MAX_FILES = 6;
@@ -97,7 +99,7 @@ async function uploadToCloudinary(
   return p;
 }
 
-export default function SellProductClient({ id }: Props) {
+export default function SellProductClient({ id, hideMedia = false }: Props) {
   const router = useRouter();
 
   // ---------------------- Profile Gate (no server redirects) ----------------------
@@ -184,7 +186,7 @@ export default function SellProductClient({ id }: Props) {
   // Initialize default category/subcategory once categories are known (guard cats[0])
   useEffect(() => {
     if (!category) {
-      const first = cats[0]; // CategoryNode | undefined
+      const first = cats[0];
       if (first) setCategory(first.name);
     }
   }, [category, cats]);
@@ -195,7 +197,7 @@ export default function SellProductClient({ id }: Props) {
       return;
     }
     if (!subcats.some((s) => s.name === subcategory)) {
-      const firstSub = subcats[0]; // { name: string } | undefined
+      const firstSub = subcats[0];
       setSubcategory(firstSub ? firstSub.name : "");
     }
   }, [subcats, subcategory]);
@@ -237,7 +239,6 @@ export default function SellProductClient({ id }: Props) {
 
         if (cancelled) return;
 
-        // Map API product -> local form state
         setName(p?.name ?? "");
         setDescription(p?.description ?? "");
         setCategory(p?.category ?? "");
@@ -253,11 +254,9 @@ export default function SellProductClient({ id }: Props) {
         setLocation(p?.location ?? (p?.sellerLocation ?? "Nairobi"));
         setPhone(p?.sellerPhone ?? "");
 
-        // existing images kept unless user uploads new ones
         setExistingImage(p?.image ?? null);
         setExistingGallery(Array.isArray(p?.gallery) ? p.gallery : []);
       } catch (e: any) {
-        // eslint-disable-next-line no-console
         console.error(e);
         toast.error("Failed to prefill product.");
       }
@@ -293,7 +292,7 @@ export default function SellProductClient({ id }: Props) {
   function onFileInputChange(files: FileList | null) {
     if (!files || !files.length) return;
     filesToAdd(files);
-    if (inputRef.current) inputRef.current.value = "";
+    if (inputRef.current) inputRef.current.value = ""; // reset synchronously
   }
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -331,7 +330,6 @@ export default function SellProductClient({ id }: Props) {
       toast.error("Please fill all required fields.");
       return;
     }
-    // ✅ Guard: avoid blob: URLs in payload when Cloudinary isn’t configured
     if (previews.length && !CLOUD_NAME) {
       toast.error(
         "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
@@ -343,15 +341,8 @@ export default function SellProductClient({ id }: Props) {
     setUploadPct(0);
 
     try {
-      // Upload new images if any were added
       let uploaded: { secure_url: string; public_id: string }[] = [];
       if (previews.length) {
-        if (!CLOUD_NAME) {
-          throw new Error(
-            "Cloudinary not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
-          );
-        }
-
         const total = previews.length;
         let done = 0;
 
@@ -369,7 +360,6 @@ export default function SellProductClient({ id }: Props) {
         }
       }
 
-      // If no new images uploaded during EDIT, keep existing
       const computedImage =
         uploaded[0]?.secure_url ??
         previews[0]?.url ??
@@ -401,7 +391,6 @@ export default function SellProductClient({ id }: Props) {
       let resultId: string | null = null;
 
       if (id) {
-        // ---- EDIT: PATCH existing listing ----
         const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -415,11 +404,8 @@ export default function SellProductClient({ id }: Props) {
         resultId = id;
         toast.success("Product updated!");
       } else {
-        // ---- CREATE: POST new listing ----
-        // 1) Try Zustand store if present
         let created: any = await addProduct(payload);
 
-        // 2) Fallback to server API if store doesn’t handle it
         if (!created) {
           const r = await fetch("/api/products/create", {
             method: "POST",
@@ -447,7 +433,6 @@ export default function SellProductClient({ id }: Props) {
       router.push(resultId ? `/product/${resultId}` : "/");
       router.refresh();
     } catch (err: any) {
-      // eslint-disable-next-line no-console
       console.error(err);
       toast.error(err?.message || (id ? "Failed to update product." : "Failed to post product."));
     } finally {
@@ -480,10 +465,9 @@ export default function SellProductClient({ id }: Props) {
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
-        {/* Title & Price */}
+        {/* Title & Price (consistent order) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
-            {/* Linked label */}
             <label className="label" htmlFor="name">Title</label>
             <input
               id="name"
@@ -509,6 +493,7 @@ export default function SellProductClient({ id }: Props) {
               onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
               placeholder="e.g. 35000"
               aria-describedby="price-help"
+              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
             />
             <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
               Leave empty for <em>Contact for price</em>.
@@ -535,7 +520,7 @@ export default function SellProductClient({ id }: Props) {
           </div>
         </div>
 
-        {/* Condition, Category, Subcategory */}
+        {/* Condition, Category, Subcategory (consistent order) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="label" htmlFor="condition">Condition</label>
@@ -558,7 +543,7 @@ export default function SellProductClient({ id }: Props) {
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
-              {cats.map((c) => (
+              {categories.map((c) => (
                 <option key={c.name} value={c.name}>
                   {c.name}
                 </option>
@@ -574,7 +559,7 @@ export default function SellProductClient({ id }: Props) {
               value={subcategory}
               onChange={(e) => setSubcategory(e.target.value)}
             >
-              {subcats.map((s) => (
+              {(categories.find((c) => c.name === category)?.subcategories ?? []).map((s) => (
                 <option key={s.name} value={s.name}>
                   {s.name}
                 </option>
@@ -583,7 +568,7 @@ export default function SellProductClient({ id }: Props) {
           </div>
         </div>
 
-        {/* Brand, Location, Phone (optional) */}
+        {/* Brand, Location, Phone (consistent order) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="label" htmlFor="brand">Brand (optional)</label>
@@ -643,107 +628,108 @@ export default function SellProductClient({ id }: Props) {
           />
         </div>
 
-        {/* Images + Uploader */}
-        <div>
-          <label className="label">Photos (up to {MAX_FILES})</label>
+        {/* Images + Uploader (legacy) */}
+        {!hideMedia && (
+          <div>
+            <label className="label">Photos (up to {MAX_FILES})</label>
 
-          {/* Show a hint about existing photos in edit mode */}
-          {id && (existingImage || (existingGallery?.length ?? 0) > 0) && (
-            <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">
-              Existing photos will be kept if you don’t upload new ones.
-            </p>
-          )}
-
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onDrop={onDrop}
-            className="card p-4 border-dashed border-2 border-gray-200 dark:border-slate-700/70"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <p className="text-sm text-gray-600 dark:text-slate-400">
-                Drag & drop images here, or choose files.
-                <span className="ml-2 text-xs">(JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)</span>
+            {id && (existingImage || (existingGallery?.length ?? 0) > 0) && (
+              <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">
+                Existing photos will be kept if you don’t upload new ones.
               </p>
-              <div className="flex items-center gap-2">
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept={ACCEPTED_TYPES.join(",")}
-                  multiple
-                  onChange={(e) => onFileInputChange(e.target.files)}
-                  className="hidden"
-                  id="file-input"
-                />
-                <label htmlFor="file-input" className="btn-outline cursor-pointer">
-                  Choose files
-                </label>
-              </div>
-            </div>
-
-            {previews.length > 0 && (
-              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {previews.map((p, i) => (
-                  <div key={p.key} className="relative group">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.url}
-                      alt={`Photo ${i + 1}`}
-                      className="w-full h-32 object-cover rounded-lg border dark:border-slate-700"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
-                    <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                      <button
-                        type="button"
-                        onClick={() => move(i, -1)}
-                        disabled={i === 0}
-                        className="btn-outline px-2 py-1 text-xs"
-                        title="Move left"
-                        aria-label="Move image left"
-                      >
-                        ◀
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => move(i, +1)}
-                        disabled={i === previews.length - 1}
-                        className="btn-outline px-2 py-1 text-xs"
-                        title="Move right"
-                        aria-label="Move image right"
-                      >
-                        ▶
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeAt(i)}
-                        className="btn-danger px-2 py-1 text-xs"
-                        title="Remove"
-                        aria-label="Remove image"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             )}
 
-            {submitting && uploadPct > 0 && (
-              <div className="mt-3" aria-live="polite">
-                <div className="h-2 w-full bg-gray-200 rounded">
-                  <div
-                    className="h-2 bg-emerald-500 rounded transition-all"
-                    style={{ width: `${uploadPct}%` }}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={onDrop}
+              className="card p-4 border-dashed border-2 border-gray-200 dark:border-slate-700/70"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-sm text-gray-600 dark:text-slate-400">
+                  Drag & drop images here, or choose files.
+                  <span className="ml-2 text-xs">(JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)</span>
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept={ACCEPTED_TYPES.join(",")}
+                    multiple
+                    onChange={(e) => onFileInputChange(e.target.files)}
+                    className="hidden"
+                    id="file-input"
                   />
+                  <label htmlFor="file-input" className="btn-outline cursor-pointer">
+                    Choose files
+                  </label>
                 </div>
-                <p className="text-xs text-gray-600 mt-1">Uploading images… {uploadPct}%</p>
               </div>
-            )}
+
+              {previews.length > 0 && (
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {previews.map((p, i) => (
+                    <div key={p.key} className="relative group">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={p.url}
+                        alt={`Photo ${i + 1}`}
+                        className="w-full h-32 object-cover rounded-lg border dark:border-slate-700"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
+                      <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                        <button
+                          type="button"
+                          onClick={() => move(i, -1)}
+                          disabled={i === 0}
+                          className="btn-outline px-2 py-1 text-xs"
+                          title="Move left"
+                          aria-label="Move image left"
+                        >
+                          ◀
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => move(i, +1)}
+                          disabled={i === previews.length - 1}
+                          className="btn-outline px-2 py-1 text-xs"
+                          title="Move right"
+                          aria-label="Move image right"
+                        >
+                          ▶
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeAt(i)}
+                          className="btn-danger px-2 py-1 text-xs"
+                          title="Remove"
+                          aria-label="Remove image"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {submitting && uploadPct > 0 && (
+                <div className="mt-3" aria-live="polite">
+                  <div className="h-2 w-full bg-gray-200 rounded">
+                    <div
+                      className="h-2 bg-emerald-500 rounded transition-all"
+                      style={{ width: `${uploadPct}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">Uploading images… {uploadPct}%</p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex items-center gap-3">
           <button

@@ -1,11 +1,7 @@
 // src/app/admin/dashboard/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-import { headers } from "next/headers";
-import { notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+export const revalidate = 0;
 
 type DayPoint = { date: string; users: number; products: number; services: number };
 type Metrics = {
@@ -13,16 +9,38 @@ type Metrics = {
   last7d: DayPoint[];
 };
 
-function isAdmin(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const raw = process.env["ADMIN_EMAILS"] ?? "";
-  const admins = raw
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return admins.includes(email.toLowerCase());
+/* =========================
+   UI helpers
+   ========================= */
+function StatCard({
+  label,
+  value,
+  sublabel,
+}: {
+  label: string;
+  value: number;
+  sublabel?: string | undefined; // 👈 important for exactOptionalPropertyTypes
+}) {
+  return (
+    <div className="rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-bold">{value.toLocaleString()}</div>
+      {sublabel ? <div className="mt-1 text-xs text-gray-500">{sublabel}</div> : null}
+    </div>
+  );
 }
 
+function Th({ children }: { children: React.ReactNode }) {
+  return <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold">{children}</th>;
+}
+
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <td className={`whitespace-nowrap px-3 py-2 align-middle ${className ?? ""}`}>{children}</td>;
+}
+
+/* Simple, dependency-free sparkline */
 function Sparkline({
   data,
   field,
@@ -51,36 +69,19 @@ function Sparkline({
   );
 }
 
+/* =========================
+   Page (layout already gates admin)
+   ========================= */
 export default async function Page() {
-  // Server-side admin guard (no client hooks)
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email ?? null;
-  if (!isAdmin(email)) {
-    return notFound();
-  }
-
-  // Build absolute URL from incoming request (Next 15: headers() is async)
-  const h = await headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host =
-    h.get("host") ?? new URL(process.env["NEXTAUTH_URL"] ?? "http://localhost:3000").host;
-  const base = `${proto}://${host}`;
-  const url = `${base}/api/admin/metrics`;
-
+  // Relative URL so cookies/session are forwarded by Next automatically.
   let metrics: Metrics | null = null;
   try {
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: { accept: "application/json" },
-    });
+    const res = await fetch("/api/admin/metrics", { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     metrics = (await res.json()) as Metrics;
   } catch {
     metrics = null;
   }
-
-  const card =
-    "rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
   if (!metrics) {
     return (
@@ -90,75 +91,83 @@ export default async function Page() {
     );
   }
 
+  const card =
+    "rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900";
+
+  const last = metrics.last7d.at(-1);
+  const sub = (n?: number) => (typeof n === "number" ? `${n.toLocaleString()} today` : undefined);
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className={card}>
-          <div className="text-xs text-gray-500">Users</div>
-          <div className="text-2xl font-bold">{metrics.totals.users}</div>
-        </div>
-        <div className={card}>
-          <div className="text-xs text-gray-500">Products</div>
-          <div className="text-2xl font-bold">{metrics.totals.products}</div>
-        </div>
-        <div className={card}>
-          <div className="text-xs text-gray-500">Services</div>
-          <div className="text-2xl font-bold">{metrics.totals.services}</div>
-        </div>
-        {metrics.totals.reveals != null && (
-          <div className={card}>
-            <div className="text-xs text-gray-500">Contact Reveals</div>
-            <div className="text-2xl font-bold">{metrics.totals.reveals}</div>
-          </div>
-        )}
+      {/* Hero */}
+      <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+        <h1 className="text-2xl md:text-3xl font-extrabold">Admin · Dashboard</h1>
+        <p className="mt-1 text-sm text-white/90">Live stats for users, products, and services (last 7 days).</p>
       </div>
 
-      <div className={card}>
+      {/* KPI cards */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <StatCard label="Users" value={metrics.totals.users} sublabel={sub(last?.users)} />
+        <StatCard label="Listings" value={metrics.totals.products} sublabel={sub(last?.products)} />
+        <StatCard label="Active Services" value={metrics.totals.services} sublabel={sub(last?.services)} />
+        <StatCard label="Featured" value={0} />
+        {"reveals" in metrics.totals && metrics.totals.reveals != null ? (
+          <StatCard label="Contact Reveals" value={metrics.totals.reveals ?? 0} />
+        ) : (
+          <div className={`${card} flex items-center justify-center text-sm text-gray-500`}>
+            No reveals tracked
+          </div>
+        )}
+      </section>
+
+      {/* Trends */}
+      <section className={card}>
         <h2 className="mb-3 text-sm font-semibold text-gray-600">Last 7 days</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <div>
             <div className="mb-1 text-xs text-gray-500">Users</div>
             <div className="text-[#161748]">
-              <Sparkline data={metrics.last7d} field={"users"} />
+              <Sparkline data={metrics.last7d} field="users" />
             </div>
           </div>
           <div>
             <div className="mb-1 text-xs text-gray-500">Products</div>
             <div className="text-emerald-600 dark:text-emerald-400">
-              <Sparkline data={metrics.last7d} field={"products"} />
+              <Sparkline data={metrics.last7d} field="products" />
             </div>
           </div>
           <div>
             <div className="mb-1 text-xs text-gray-500">Services</div>
             <div className="text-sky-600 dark:text-sky-400">
-              <Sparkline data={metrics.last7d} field={"services"} />
+              <Sparkline data={metrics.last7d} field="services" />
             </div>
           </div>
         </div>
 
+        {/* Detail table */}
         <div className="mt-4 overflow-auto">
           <table className="min-w-[560px] text-xs">
             <thead>
               <tr className="text-left text-gray-500">
-                <th className="px-2 py-1">Date</th>
-                <th className="px-2 py-1">Users</th>
-                <th className="px-2 py-1">Products</th>
-                <th className="px-2 py-1">Services</th>
+                <Th>Date</Th>
+                <Th>Users</Th>
+                <Th>Products</Th>
+                <Th>Services</Th>
               </tr>
             </thead>
             <tbody>
               {metrics.last7d.map((d) => (
                 <tr key={d.date} className="border-t border-gray-100 dark:border-slate-800">
-                  <td className="px-2 py-1">{d.date}</td>
-                  <td className="px-2 py-1">{d.users}</td>
-                  <td className="px-2 py-1">{d.products}</td>
-                  <td className="px-2 py-1">{d.services}</td>
+                  <Td>{d.date}</Td>
+                  <Td>{d.users.toLocaleString()}</Td>
+                  <Td>{d.products.toLocaleString()}</Td>
+                  <Td>{d.services.toLocaleString()}</Td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

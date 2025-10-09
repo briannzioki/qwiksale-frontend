@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
+import { assertAdmin } from "@/app/api/admin/_lib/guard";
 
 /* ---------------- tiny utils ---------------- */
 
@@ -15,6 +16,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
   return res;
 }
 
@@ -23,22 +25,10 @@ function getId(req: NextRequest): string {
     const pathname = req.nextUrl?.pathname ?? "";
     const segs = pathname.split("/");
     const i = segs.findIndex((s) => s === "products");
-   return (segs[i + 1] ?? "").trim();
+    return (segs[i + 1] ?? "").trim();
   } catch {
     return "";
   }
-}
-
-/** Admin allow-list from env (comma-separated emails) or DB role. */
-function isAdminEmail(email?: string | null) {
-  const raw = process.env["ADMIN_EMAILS"] || "";
-  const set = new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  return !!email && set.has(email.toLowerCase());
 }
 
 function parseBoolean(v: unknown): boolean | undefined {
@@ -77,42 +67,28 @@ export async function PATCH(req: NextRequest) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
-  // --- authN / authZ ---
-  const session = await auth();
-  const user = (session as any)?.user;
-  if (!user?.id || !user?.email) return noStore({ error: "Unauthorized" }, { status: 401 });
+  // unified admin gate
+  const denied = await assertAdmin();
+  if (denied) return denied;
 
-  let isAdmin = isAdminEmail(user.email);
-  if (!isAdmin) {
-    const dbUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { role: true },
-    });
-    isAdmin = dbUser?.role === "ADMIN";
-  }
-  if (!isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
+  // get actorId for optional audit (guard doesn’t return it)
+  const session = await auth().catch(() => null);
+  const actorId = (session as any)?.user?.id as string | undefined;
 
   // --- params ---
   const id = getId(req);
   if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
   // --- body / query ---
-  let body: any = null;
-  const ctype = req.headers.get("content-type") || "";
-  if (ctype && ctype.toLowerCase().includes("application/json")) {
-    body = await req.json().catch(() => ({}));
-  } else {
-    // allow query-only updates without JSON
-    body = {};
+  let body: any = {};
+  const ctype = (req.headers.get("content-type") || "").toLowerCase();
+  if (ctype.includes("application/json")) {
+    body = (await req.json().catch(() => ({}))) ?? {};
   }
 
   const q = req.nextUrl.searchParams;
-
-  const featuredQ = q.get("featured");
-  const forceQ = q.get("force");
-
-  const featuredParsed = parseBoolean((body as any)?.featured ?? featuredQ);
-  const forceParsed = parseBoolean((body as any)?.force ?? forceQ) === true;
+  const featuredParsed = parseBoolean(body?.featured ?? q.get("featured"));
+  const forceParsed = parseBoolean(body?.force ?? q.get("force")) === true;
 
   if (typeof featuredParsed !== "boolean") {
     return noStore({ error: "featured:boolean required" }, { status: 400 });
@@ -149,11 +125,11 @@ export async function PATCH(req: NextRequest) {
       select: { id: true, featured: true, status: true, updatedAt: true },
     });
 
-    // Optional audit (only if model exists)
+    // Optional audit if table exists
     try {
-      (prisma as any).adminAuditLog?.create?.({
+      await (prisma as any).adminAuditLog?.create?.({
         data: {
-          actorId: user.id,
+          actorId: actorId ?? null,
           action: "PRODUCT_FEATURE_TOGGLE",
           meta: {
             productId: id,
@@ -163,9 +139,7 @@ export async function PATCH(req: NextRequest) {
           },
         },
       });
-    } catch {
-      /* ignore audit errors */
-    }
+    } catch {}
 
     return noStore({ ok: true, product: updated });
   } catch (e) {
@@ -179,7 +153,7 @@ export async function PATCH(req: NextRequest) {
 export function OPTIONS() {
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["APP_ORIGIN"] ??
     "*";
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);

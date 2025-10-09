@@ -19,43 +19,37 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-const BRAND = "QwikSale";
-
 function cloudName(): string {
-  // Use server var if present, otherwise fall back to the public one (keeps config consistent)
-  const name =
-    (process.env["CLOUDINARY_CLOUD_NAME"] ??
-      process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ??
-      ""
-    ).trim();
-  if (!name) throw new Error("Missing CLOUDINARY_CLOUD_NAME/NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  const name = (
+    process.env['CLOUDINARY_CLOUD_NAME'] ??
+    process.env['NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME'] ??
+    ""
+  ).trim();
+  if (!name) throw new Error("Missing CLOUDINARY_CLOUD_NAME / NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
   return name;
 }
 
-/** Build a canonical Cloudinary delivery URL from a publicId. */
+/** Build canonical delivery URL from a Cloudinary publicId. */
 function buildCloudinaryUrl(publicId: string) {
   const cn = cloudName();
   const pid = publicId.replace(/^\/+/, "");
   return `https://res.cloudinary.com/${cn}/image/upload/f_auto,q_auto/${encodeURI(pid)}`;
 }
 
-/** Inject a transformation right after `/upload/` in a Cloudinary URL. */
+/** Insert a transformation immediately after `/upload/`. */
 function injectTransform(baseUrl: string, t: string) {
   return baseUrl.replace("/upload/", `/upload/${t}/`);
 }
 
 function deriveVariants(baseUrl: string) {
   return {
-    // center face if present, square avatar
     avatarUrl: injectTransform(baseUrl, "c_thumb,g_face,ar_1:1,w_256,h_256,f_auto,q_auto"),
-    // medium preview for settings page
     previewUrl: injectTransform(baseUrl, "c_fill,w_1024,f_auto,q_auto"),
-    // tiny blur for LQIP placeholders
     placeholderUrl: injectTransform(baseUrl, "w_24,e_blur:2000,q_1,f_auto"),
   };
 }
 
-/** Very light sanity check for Cloudinary delivery URLs for *your* cloud. */
+/** Very light sanity check that the URL is a Cloudinary delivery URL for *your* cloud. */
 function looksLikeCloudinaryUrl(url: string) {
   try {
     const u = new URL(url);
@@ -67,7 +61,6 @@ function looksLikeCloudinaryUrl(url: string) {
   }
 }
 
-/** Extract and validate the current user id. */
 async function requireUserId() {
   try {
     const session = await auth();
@@ -92,10 +85,9 @@ export async function GET() {
   });
   if (!user) return noStore({ error: "User not found" }, { status: 404 });
 
-  const variants =
-    user.image && looksLikeCloudinaryUrl(user.image)
-      ? deriveVariants(user.image)
-      : null;
+  const variants = user.image && looksLikeCloudinaryUrl(user.image)
+    ? deriveVariants(user.image)
+    : null;
 
   return noStore({ ok: true, user, variants });
 }
@@ -104,11 +96,11 @@ export async function GET() {
 /* POST                                                                        */
 /* -------------------------------------------------------------------------- */
 /**
- * Accept either:
+ * Body:
  *  - { secureUrl: "https://res.cloudinary.com/<cloud>/image/upload/.../file.jpg" }
- *  - { publicId:  "folder/file" }  (unsigned upload flow)
- *
- * Optional: { intent: "avatar" | "raw" } — currently informational only
+ *    OR
+ *  - { publicId:  "qwiksale/avatars/abc123" }
+ *  - optional { intent: "avatar" | "raw" }
  */
 export async function POST(req: NextRequest) {
   const userId = await requireUserId();
@@ -120,18 +112,18 @@ export async function POST(req: NextRequest) {
   } catch {
     return noStore({ error: "Invalid JSON body." }, { status: 400 });
   }
-  if (typeof body !== "object" || body === null) {
+  if (!body || typeof body !== "object") {
     return noStore({ error: "Body must be a JSON object." }, { status: 400 });
   }
 
-  const {
-    secureUrl,
-    publicId,
-    intent,
-  }: { secureUrl?: unknown; publicId?: unknown; intent?: unknown } = body as any;
+  const { secureUrl, publicId, intent } = body as {
+    secureUrl?: unknown;
+    publicId?: unknown;
+    intent?: unknown;
+  };
 
-  // Accept EITHER a Cloudinary secureUrl OR a publicId (from unsigned upload)
   let finalUrl: string | null = null;
+
   if (typeof secureUrl === "string" && secureUrl.trim()) {
     const url = secureUrl.trim();
     if (!looksLikeCloudinaryUrl(url)) {
@@ -157,19 +149,17 @@ export async function POST(req: NextRequest) {
       select: { id: true, image: true, name: true, username: true, email: true },
     });
 
-    const variants = looksLikeCloudinaryUrl(user.image ?? "")
-      ? deriveVariants(user.image!)
+    const variants = user.image && looksLikeCloudinaryUrl(user.image)
+      ? deriveVariants(user.image)
       : null;
 
     return noStore({
       ok: true,
       user,
       variants,
-      // surface intent back (helpful for clients that branch on result)
       meta: { intent: typeof intent === "string" ? intent : undefined },
     });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error("[profile/photo] POST error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
@@ -190,20 +180,15 @@ export async function DELETE() {
       select: { id: true, image: true, name: true, username: true, email: true },
     });
 
-    // NOTE: We’re not deleting the asset from Cloudinary because this endpoint
-    // intentionally avoids storing/admin credentials for the Cloudinary Admin API.
-    // If/when you add that, you can destroy the previous publicId safely here.
-
     return noStore({ ok: true, user });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error("[profile/photo] DELETE error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/* OPTIONS / simple health                                                     */
+/* OPTIONS / HEAD                                                              */
 /* -------------------------------------------------------------------------- */
 
 export async function OPTIONS() {

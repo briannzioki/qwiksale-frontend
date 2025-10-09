@@ -1,17 +1,16 @@
 // sentry.server.config.ts
 import * as Sentry from "@sentry/nextjs";
-import type { ErrorEvent, EventHint } from "@sentry/nextjs";
 
 /* ------------------------------ env ------------------------------ */
 
 const dsn =
-  process.env["SENTRY_DSN"] ??
-  process.env["NEXT_PUBLIC_SENTRY_DSN"] ??
+  process.env['SENTRY_DSN'] ??
+  process.env['NEXT_PUBLIC_SENTRY_DSN'] ??
   undefined;
 
 const environment =
-  process.env["SENTRY_ENV"] ??
-  process.env["NODE_ENV"] ??
+  process.env['SENTRY_ENV'] ??
+  process.env.NODE_ENV ??
   "development";
 
 const isProd = environment === "production";
@@ -29,28 +28,34 @@ function scrub(value: unknown): unknown {
 }
 
 /* ---------------------------- options ---------------------------- */
-// IMPORTANT: omit `dsn` here; add it conditionally below
 const options: Sentry.NodeOptions = {
   environment,
   tracesSampleRate: isProd ? 0.2 : 0.05,
   profilesSampleRate: isProd ? 0.1 : 0,
   sendDefaultPii: false,
 
-  beforeSend(event: ErrorEvent, _hint: EventHint): ErrorEvent | null {
+  initialScope: (scope) => {
+    scope.setTag("runtime", "server");
+    return scope;
+  },
+
+  // Use `any` here to avoid needing `@sentry/types`
+  beforeSend(event: any, _hint: any): any {
     try {
-      const next: ErrorEvent = { ...event };
+      const next: any = { ...event };
 
       if (next.request) {
         const req: Record<string, unknown> = { ...(next.request as any) };
         const url = String(req["url"] ?? "");
 
+        // Don’t send raw MPESA request details
         if (url.includes("/api/mpesa")) {
-          delete (next as any).request;
+          delete next.request;
         } else {
           delete req["cookies"];
           delete req["headers"];
           delete req["data"];
-          (next as any).request = req;
+          next.request = req;
         }
       }
 
@@ -77,9 +82,6 @@ const options: Sentry.NodeOptions = {
   },
 };
 
-// Only add DSN when defined (satisfies exactOptionalPropertyTypes)
-if (dsn) {
-  options.dsn = dsn;
-}
+if (dsn) options.dsn = dsn;
 
 Sentry.init(options);

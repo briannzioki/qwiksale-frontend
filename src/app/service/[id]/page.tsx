@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { useSession } from "next-auth/react";
-import FavoriteButton from "@/app/components/FavoriteButton";
+import FavoriteButton from "@/app/components/favorites/FavoriteButton";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
 import { buildServiceSeo } from "@/app/lib/seo";
 import Gallery from "@/app/components/Gallery";
@@ -34,10 +34,20 @@ type ServiceFetched = {
   sellerMemberSince?: string | null;
   sellerRating?: number | null;
   sellerSales?: number | null;
-  seller?: { id?: string; username?: string | null; name?: string | null; image?: string | null } | null;
+  seller?: {
+    id?: string;
+    username?: string | null;
+    name?: string | null;
+    image?: string | null;
+    phone?: string | null;
+    location?: string | null;
+  } | null;
 };
 
 const PLACEHOLDER = "/placeholder/default.jpg";
+
+// Hint for next/image when using `fill` inside the Gallery.
+const GALLERY_SIZES = "(max-width: 1024px) 100vw, 60vw";
 
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || n <= 0) return "Contact for quote";
@@ -53,7 +63,6 @@ function suffix(rt?: "hour" | "day" | "fixed" | null) {
   return "";
 }
 
-/* ---------- helper to start internal message thread ---------- */
 async function startThread(
   sellerUserId: string,
   listingType: "product" | "service",
@@ -77,7 +86,7 @@ async function startThread(
 
 export default function ServicePage() {
   const params = useParams<{ id: string }>();
-  const id = params.id ?? "";
+  const id = params.id ?? ""; // ✅ no reassignment
   const router = useRouter();
 
   const { data: session } = useSession();
@@ -104,9 +113,18 @@ export default function ServicePage() {
       try {
         setLoading(true);
         setErr(null);
-        const r = await fetch(`/api/services/${encodeURIComponent(id)}`, { cache: "no-store" });
+        const r = await fetch(`/api/services/${encodeURIComponent(id)}`, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
+        if (!r.ok) {
+          const msg =
+            j?.error ||
+            (r.status === 404 ? "Service not found or unavailable." : `Failed to load (${r.status})`);
+          throw new Error(msg);
+        }
         if (!cancelled) setFetched(j as ServiceFetched);
       } catch (e: any) {
         if (!cancelled) setErr(e?.message || "Failed to load service");
@@ -119,7 +137,6 @@ export default function ServicePage() {
     };
   }, [id]);
 
-  // Build a safe display object so the page always renders actionable UI
   const display: ServiceFetched = useMemo(() => {
     const d = fetched;
     return {
@@ -147,7 +164,6 @@ export default function ServicePage() {
     };
   }, [fetched, id]);
 
-  // Always at least one image: main, gallery, or placeholder
   const images = useMemo(() => {
     const set = new Set<string>();
     if (display?.image) set.add(display.image);
@@ -173,7 +189,6 @@ export default function ServicePage() {
 
   const isOwner = Boolean(viewerId && seller.id && viewerId === seller.id);
 
-  // Build SEO if we have something meaningful
   const seo = useMemo(() => {
     const imgs = [display.image, ...(display.gallery ?? [])].filter(Boolean) as string[];
     return buildServiceSeo({
@@ -203,10 +218,9 @@ export default function ServicePage() {
     }
   }, [origin, display?.id]);
 
-  // Real chat starter used by the shared button when user is signed in
   const onStartMessageAction = useCallback(
     async (_serviceId: string) => {
-      if (!seller.id) return; // component will still show its own dialog
+      if (!seller.id) return;
       await startThread(
         seller.id,
         "service",
@@ -217,26 +231,12 @@ export default function ServicePage() {
     [seller.id, seller.name, display.id, display.name]
   );
 
-  // Our guaranteed lightbox (Escape closes). We deliberately do NOT pass `lightbox`
-  // to <Gallery /> so that there is only ONE "Open image in fullscreen" button.
-  const [lbOpen, setLbOpen] = useState(false);
-  useEffect(() => {
-    if (!lbOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLbOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [lbOpen]);
-
-  // NOTE: We do NOT early-return on loading or error; keep shell + overlay in the DOM.
-
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-      {/* JSON-LD */}
       {seo?.jsonLd && (
         <script
           type="application/ld+json"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: JSON.stringify(seo.jsonLd) }}
         />
       )}
@@ -253,31 +253,21 @@ export default function ServicePage() {
             </span>
           )}
 
-          {/* Render images (no internal lightbox trigger) */}
-          <Gallery images={images} />
+          {/* Canonical viewer; handles fullscreen internally */}
+          <Gallery images={images} sizes={GALLERY_SIZES} lightbox />
 
-          {/* Single, accessible fullscreen trigger (ours) — ensure it's ABOVE Gallery layers */}
-          <button
-            type="button"
-            aria-label="Open image in fullscreen"
-            aria-haspopup="dialog"
-            className="absolute inset-0 z-[70] cursor-zoom-in bg-transparent"
-            onClick={() => setLbOpen(true)}
-            data-gallery-overlay
-          />
-
-          {/* Header controls stay clickable above overlay */}
-          <div className="absolute right-3 top-3 z-[80] flex gap-2">
+          {/* Header controls */}
+          <div className="absolute right-3 top-3 z-[80] flex gap-1">
             <button
               type="button"
               onClick={copyLink}
-              className="btn-outline px-2 py-1 text-xs"
+              className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white"
               title="Copy link"
+              aria-label="Copy link"
             >
-              Copy link
+              🔗
             </button>
 
-            {/* FavoriteButton now explicitly targets a service */}
             <FavoriteButton serviceId={display.id} />
 
             {isOwner && (
@@ -286,15 +276,16 @@ export default function ServicePage() {
                   href={`/sell/service?id=${display.id}`}
                   className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white"
                   title="Edit service"
+                  aria-label="Edit service"
                 >
-                  Edit
+                  ✏️
                 </Link>
+
                 <DeleteListingButton
                   serviceId={display.id}
-                  className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
-                  label="Delete"
-                  confirmText="Delete this service? This cannot be undone."
-                  afterDeleteAction={() => {
+                  label="" // icon-only
+                  className="px-2 py-1"
+                  onDeletedAction={() => {
                     toast.success("Service deleted");
                     router.push("/dashboard");
                   }}
@@ -303,10 +294,9 @@ export default function ServicePage() {
             )}
           </div>
 
-          {/* Lightweight status ribbon so tests still see the overlay while loading/errored */}
           {(loading || err) && (
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[75] bg-black/40 p-2 text-center text-xs text-white">
-              {loading ? "Loading…" : "Showing limited info"}
+              {loading ? "Loading…" : err || "Showing limited info"}
             </div>
           )}
         </div>
@@ -315,27 +305,9 @@ export default function ServicePage() {
       {/* Details */}
       <div className="space-y-4 lg:col-span-2">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {display.name || "Service"}
-            </h1>
-            <div className="mt-1 flex items-center gap-2">
-              <span className="text-sm text-gray-500 dark:text-slate-400">
-                {display.category || "General"}
-                {display.subcategory ? ` • ${display.subcategory}` : ""}
-              </span>
-              {display.featured && (
-                <span className="whitespace-nowrap rounded-full bg-[#161748] px-3 py-1 text-xs font-medium text-white">
-                  Verified Provider
-                </span>
-              )}
-            </div>
-            {(loading || err) && (
-              <div className="mt-2 text-xs text-gray-500" aria-live="polite">
-                {loading ? "Loading details…" : "Showing limited info"}
-              </div>
-            )}
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {display.name || "Service"}
+          </h1>
         </div>
 
         <div className="space-y-1 rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -344,9 +316,6 @@ export default function ServicePage() {
           </p>
           {display.serviceArea && (
             <p className="text-sm text-gray-500">Service Area: {display.serviceArea}</p>
-          )}
-          {display.availability && (
-            <p className="text-sm text-gray-500">Availability: {display.availability}</p>
           )}
           {display.location && (
             <p className="text-sm text-gray-500">Base Location: {display.location}</p>
@@ -360,14 +329,14 @@ export default function ServicePage() {
           </p>
         </div>
 
-        {/* Provider box */}
+        {/* Provider */}
         <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
           <h3 className="mb-3 font-semibold">Provider</h3>
 
           <div className="space-y-1 text-gray-700 dark:text-slate-200">
             <p className="flex items-center gap-2">
               <span className="font-medium">Name:</span>
-              <span>{(display.sellerName || seller.name) ?? "Provider"}</span>
+              <span>{seller.name ?? "Provider"}</span>
               {seller.username && (
                 <Link
                   href={`/store/${seller.username}`}
@@ -395,7 +364,6 @@ export default function ServicePage() {
               buttonLabel="Show Contact"
             />
 
-            {/* Always render a visible, testable "Message provider" */}
             <MessageProviderButton
               serviceId={display.id}
               isAuthed={isAuthed}
@@ -403,7 +371,6 @@ export default function ServicePage() {
               className="px-5 py-3"
             />
 
-            {/* Visible Visit Store button when username exists */}
             {seller.username && (
               <Link
                 href={`/store/${seller.username}`}
@@ -414,54 +381,9 @@ export default function ServicePage() {
                 Visit Store
               </Link>
             )}
-
-            {/* Donate */}
-            <Link
-              href="/donate"
-              className="rounded-lg border px-5 py-3 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
-            >
-              Donate
-            </Link>
-
-            {display.featured && (
-              <div className="ml-auto inline-flex items-center gap-2 rounded-full bg-[#161748] px-3 py-1 text-xs text-white">
-                <span>Priority support</span>
-                <span className="opacity-70">•</span>
-                <span>Top placement</span>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 text-xs text-gray-500 dark:text-slate-400">
-            Safety: meet in public places, verify credentials, and never share sensitive information.
           </div>
         </div>
       </div>
-
-      {/* Minimal fallback lightbox to satisfy click + Escape */}
-      {lbOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Image fullscreen"
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80"
-          onClick={() => setLbOpen(false)}
-        >
-          <img
-            src={images[0] || PLACEHOLDER}
-            alt={display.name || "Service image"}
-            className="max-h-[90vh] max-w-[90vw] object-contain"
-          />
-          <button
-            type="button"
-            aria-label="Close"
-            className="absolute right-4 top-4 rounded bg-white/90 px-3 py-1 text-sm hover:bg-white"
-            onClick={() => setLbOpen(false)}
-          >
-            Close
-          </button>
-        </div>
-      )}
     </div>
   );
 }

@@ -9,7 +9,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
-import DeleteListingButton from "./DeleteListingButton";
+import DeleteListingButton from "@/app/components/DeleteListingButton";
 import UserAvatar from "@/app/components/UserAvatar";
 
 /** Page metadata */

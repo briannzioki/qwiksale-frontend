@@ -23,6 +23,8 @@ function noStoreJson(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  // ensure admin responses never cache and vary by auth/cookies
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 
@@ -103,5 +105,3 @@ export async function GET(req: NextRequest) {
     }
   });
 }
-
-

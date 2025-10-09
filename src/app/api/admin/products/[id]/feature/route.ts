@@ -1,3 +1,4 @@
+// src/app/api/admin/products/[id]/feature/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -6,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
+import { assertAdmin } from "@/app/api/admin/_lib/guard";
 
 /* ---------------- analytics (console-only for now) ---------------- */
 type AnalyticsEvent =
@@ -36,22 +38,11 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 
-function isAdminEmail(email?: string | null) {
-  const raw = process.env["ADMIN_EMAILS"] || "";
-  const set = new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  return !!email && set.has(email.toLowerCase());
-}
-
 type RouteParams = { id: string };
-
 /** Next 15 validator expects params to be Promise<RouteParams> */
 type RouteContext = { params: Promise<RouteParams> };
 
@@ -79,27 +70,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     Math.random().toString(36).slice(2);
 
   try {
-    // --- authN / authZ: admin only (env whitelist OR DB role === ADMIN) ---
-    const session = await auth();
-    const user = (session as any)?.user;
+    // --- admin guard (single source of truth) ---
+    const denied = await assertAdmin();
+    if (denied) return denied;
 
-    if (!user?.id || !user?.email) {
-      track("admin_product_feature_unauthorized", { reqId });
-      return noStore({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    let isAdmin = isAdminEmail(user.email);
-    if (!isAdmin) {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: user.id },
-        select: { role: true },
-      });
-      isAdmin = dbUser?.role === "ADMIN";
-    }
-    if (!isAdmin) {
-      track("admin_product_feature_forbidden", { reqId, userId: user.id });
-      return noStore({ error: "Forbidden" }, { status: 403 });
-    }
+    // Session only needed for audit/userId after guard passes
+    const session = await auth().catch(() => null);
+    const userId = (session?.user as any)?.id as string | undefined;
 
     // --- params ---
     const { id: rawId } = await ctx.params;
@@ -138,7 +115,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     track("admin_product_feature_attempt", {
       reqId,
-      userId: user.id,
+      userId: userId ?? "unknown",
       productId: id,
       featured: featuredParsed,
       force: forceParsed,
@@ -195,7 +172,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     try {
       await (prisma as any).adminAuditLog?.create?.({
         data: {
-          actorId: user.id,
+          actorId: userId ?? null,
           action: "PRODUCT_FEATURE_TOGGLE",
           meta: {
             productId: id,

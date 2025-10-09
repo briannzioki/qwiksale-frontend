@@ -1,9 +1,9 @@
-// src/app/api/products/[id]/media/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
@@ -13,7 +13,6 @@ type PatchBody = {
 
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
-  // explicit cache busting + vary on auth-related headers
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
@@ -21,23 +20,24 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-// very small URL sanitizer: allow http(s), protocol-relative, same-origin root paths, blob: and image data: URLs
-function sanitizeUrl(u?: string | null): string | null {
-  const t = (u ?? "").trim();
-  if (!t) return null;
-  if (t.length > 2048) return null;
-  const lower = t.toLowerCase();
-  if (lower.startsWith("javascript:")) return null;
-  if (lower.startsWith("data:")) {
-    // only allow common image mime types
-    if (/^data:image\/(png|jpeg|jpg|gif|webp|bmp|svg\+xml);base64,/i.test(lower)) return t;
-    return null;
+/* ---------- allowlist (match create routes) ---------- */
+const ALLOWED_IMAGE_HOSTS = [
+  "res.cloudinary.com",
+  "images.unsplash.com",
+] as const;
+
+function isAllowedHost(hostname: string): boolean {
+  return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+}
+
+function isAllowedUrl(u: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(u);
+    if (protocol !== "https:" && protocol !== "http:") return false;
+    return isAllowedHost(hostname);
+  } catch {
+    return false;
   }
-  if (lower.startsWith("blob:")) return t;
-  if (lower.startsWith("http://") || lower.startsWith("https://")) return t;
-  if (lower.startsWith("//")) return t;
-  if (t.startsWith("/")) return t;
-  return null;
 }
 
 export async function PATCH(
@@ -68,19 +68,21 @@ export async function PATCH(
       return noStore({ error: "Bad request: expected {items: [...]}" }, { status: 400 });
     }
 
-    // Normalize, sort by provided sort (default stable index), sanitize URL, drop empties
+    // Normalize to allowed http(s) URLs only, sort, dedupe
     const normalized = body.items
       .map((x, i) => {
-        const url = sanitizeUrl(x?.url ?? null);
+        const url = typeof x?.url === "string" ? x.url.trim() : "";
+        const good = url && isAllowedUrl(url);
+        if (!good) return null;
         const sort =
           Number.isFinite(x?.sort) && x?.sort !== null ? Number(x!.sort) : i;
         const isCover = Boolean(x?.isCover);
-        return url ? { url, sort, isCover, i } : null;
+        return { url, sort, isCover, i };
       })
       .filter(Boolean) as Array<{ url: string; sort: number; isCover: boolean; i: number }>;
 
-    // Sort and de-duplicate by URL, preserving first occurrence
     normalized.sort((a, b) => a.sort - b.sort || a.i - b.i);
+
     const seen = new Set<string>();
     const unique: Array<{ url: string; isCover: boolean }> = [];
     for (const n of normalized) {
@@ -89,15 +91,15 @@ export async function PATCH(
       unique.push({ url: n.url, isCover: n.isCover });
     }
 
-    // Respect explicit cover flag; otherwise first item is cover
+    // explicit cover wins; else first is cover
     const explicitCoverIdx = unique.findIndex((x) => x.isCover);
     const ordered =
       explicitCoverIdx > 0
         ? [unique[explicitCoverIdx]!, ...unique.filter((_, idx) => idx !== explicitCoverIdx)]
         : unique;
 
-    // Enforce a small sane upper bound to avoid unbounded payload growth
-    const MAX = 24;
+    // Enforce cap = 6 (product gallery limit)
+    const MAX = 6;
     const gallery = ordered.slice(0, MAX).map((x) => x.url);
     const coverUrl = gallery[0] ?? null;
 
@@ -105,6 +107,17 @@ export async function PATCH(
       where: { id },
       data: { image: coverUrl, gallery },
     });
+
+    // revalidate tags/paths
+    try {
+      revalidateTag("home:active");
+      revalidateTag("products:latest");
+      revalidateTag(`product:${id}`);
+      revalidatePath("/");
+      revalidatePath("/products");
+      revalidatePath(`/product/${id}`);
+      revalidatePath(`/listing/${id}`);
+    } catch {}
 
     return noStore({ ok: true, cover: coverUrl, gallery });
   } catch (e) {

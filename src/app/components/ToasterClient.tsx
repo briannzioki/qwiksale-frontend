@@ -110,3 +110,6 @@ export default function ToasterClient({
     />
   );
 }
+
+// Re-export the same toast instance for convenience across the app
+export { toast } from "react-hot-toast";

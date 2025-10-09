@@ -57,6 +57,17 @@ async function detectMimeFromBytes(file: File): Promise<string | null> {
   }
 }
 
+// Normalize/sanitize a path-ish hint to avoid traversal & weird chars
+function safeHint(input?: string): string | undefined {
+  if (!input) return undefined;
+  const cleaned = input
+    .replace(/[^a-zA-Z0-9/_-]/g, "") // allow only safe chars
+    .replace(/\/{2,}/g, "/")         // collapse //
+    .replace(/^\/+|\/+$/g, "")       // trim leading/trailing /
+    .slice(0, 128);                   // cap length
+  return cleaned || undefined;
+}
+
 export async function POST(req: Request) {
   // Optional rate limit (best-effort)
   if (typeof checkRateLimit === "function") {
@@ -81,6 +92,12 @@ export async function POST(req: Request) {
   }
 
   const f = file as File;
+
+  // Zero-byte guard
+  if (f.size === 0) {
+    return noStore({ error: "Empty file" }, { status: 400 });
+  }
+
   const declaredMime = f.type || ""; // PowerShell often sends application/octet-stream or empty
 
   const maxEnv = Number(process.env["UPLOAD_MAX_BYTES"]);
@@ -92,27 +109,32 @@ export async function POST(req: Request) {
     );
   }
 
-  // Accept if either:
-  //  - declared MIME is allowed, OR
-  //  - bytes sniff to a known image (handles octet-stream uploads from PowerShell)
-  const looksImage = await sniffLooksLikeImage(f);
-  if (!ALLOWED.has(declaredMime) && !looksImage) {
-    return noStore({ error: `Unsupported file type (${declaredMime || "unknown"})` }, { status: 415 });
+  // Resolve a final MIME:
+  //  - Use declared if allowed
+  //  - Otherwise, use detected-bytes if allowed
+  //  - Otherwise, reject
+  const detectedMime = await detectMimeFromBytes(f);
+  const resolvedMime = ALLOWED.has(declaredMime) ? declaredMime : detectedMime;
+
+  if (!resolvedMime || !ALLOWED.has(resolvedMime)) {
+    // Keep a softer message but prevent unknown formats slipping through
+    const looksLike = await sniffLooksLikeImage(f);
+    return noStore(
+      { error: `Unsupported file type (${declaredMime || (looksLike ? "unknown image" : "unknown")})` },
+      { status: 415 }
+    );
   }
 
-  // Optional hints for where to place the file in your provider
-  const folder = String(form.get("folder") || "").trim() || undefined;
-  const keyPrefix = String(form.get("keyPrefix") || "").trim() || undefined;
-
-  // Pick best content-type for provider
-  const guessedMime = ALLOWED.has(declaredMime) ? declaredMime : (await detectMimeFromBytes(f)) || declaredMime || "application/octet-stream";
+  // Safe hints for where to place the file in your provider
+  const folder = safeHint(String(form.get("folder") || ""));
+  const keyPrefix = safeHint(String(form.get("keyPrefix") || ""));
 
   // Upload via our provider-agnostic helper (with clean error handling)
   try {
     const out = await uploadFile(f, {
       ...(folder ? { folder } : {}),
       ...(keyPrefix ? { keyPrefix } : {}),
-      contentType: guessedMime,
+      contentType: resolvedMime,
     });
 
     // Provide both url and secure_url for client compatibility

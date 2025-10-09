@@ -18,6 +18,8 @@ type Me = { id: string; email: string | null; profileComplete?: boolean; whatsap
 type Props = {
   /** If present, load existing service and PATCH on submit */
   editId?: string | null | undefined; // allow explicit undefined for exactOptionalPropertyTypes
+  /** If true, hides the legacy media uploader block to avoid duplication with a page-level media manager. */
+  hideMedia?: boolean;
 };
 
 const MAX_FILES = 6;
@@ -104,7 +106,7 @@ async function uploadToCloudinary(
   return p;
 }
 
-export default function SellServiceClient({ editId }: Props) {
+export default function SellServiceClient({ editId, hideMedia }: Props) {
   const router = useRouter();
 
   // ---------------------- Profile Gate (no server redirects) ----------------------
@@ -381,7 +383,7 @@ export default function SellServiceClient({ editId }: Props) {
         image: computedImage,
         gallery: computedGallery,
         location: location.trim(),
-        sellerPhone: normalizedPhone || undefined,
+        sellerPhone: normalizePhone(phone) || undefined,
       };
 
       let resultId: string | null = null;
@@ -458,89 +460,90 @@ export default function SellServiceClient({ editId }: Props) {
       <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
         {/* Name & Price */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-  <div className="md:col-span-2">
-    {/* ✅ Wrap the SuggestInput with the label so the input is labeled */}
-    <label className="label block">
-      Service Name
-      <SuggestInput
-        endpoint="/api/services/suggest"
-        value={name}
-        onChangeAction={async (next) => setName(next)}
-        onPickAction={async (item) => {
-          if (item.type === "service" || item.type === "name") {
-            setName(item.value);
-          } else if (item.type === "subcategory") {
-            const parts = item.value.split("•").map((s) => s.trim());
-            if (parts.length === 2) {
-              setCategory(parts[0] || category);
-              setSubcategory(parts[1] || subcategory);
-            } else {
-              setSubcategory(item.value);
-            }
-          } else if (item.type === "category") {
-            setCategory(item.value);
-          }
-        }}
-        placeholder="e.g. Deep Cleaning for Apartments"
-        typesAllowed={["service", "name", "subcategory", "category"]}
-        inputClassName="input mt-1"
-      />
-    </label>
-  </div>
+          <div className="md:col-span-2">
+            {/* ✅ Wrap the SuggestInput with the label so the input is labeled */}
+            <label className="label block">
+              Service Name
+              <SuggestInput
+                endpoint="/api/services/suggest"
+                value={name}
+                onChangeAction={async (next) => setName(next)}
+                onPickAction={async (item) => {
+                  if (item.type === "service" || item.type === "name") {
+                    setName(item.value);
+                  } else if (item.type === "subcategory") {
+                    const parts = item.value.split("•").map((s) => s.trim());
+                    if (parts.length === 2) {
+                      setCategory(parts[0] || category);
+                      setSubcategory(parts[1] || subcategory);
+                    } else {
+                      setSubcategory(item.value);
+                    }
+                  } else if (item.type === "category") {
+                    setCategory(item.value);
+                  }
+                }}
+                placeholder="e.g. Deep Cleaning for Apartments"
+                typesAllowed={["service", "name", "subcategory", "category"]}
+                inputClassName="input mt-1"
+              />
+            </label>
+          </div>
 
-  <div>
-    <label className="label">Base Price (KES)</label>
-    <input
-      type="number"
-      inputMode="numeric"
-      min={0}
-      className="input"
-      value={price}
-      onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
-      placeholder="e.g. 1500 (leave blank for quote)"
-      aria-describedby="price-help"
-      aria-label="Price in Kenyan shillings"
-    />
-    <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-      Leave empty for <em>Contact for quote</em>.
-    </p>
-    <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
-      <label className="inline-flex items-center gap-2">
-        <input
-          type="radio"
-          name="rateType"
-          value="fixed"
-          checked={rateType === "fixed"}
-          onChange={() => setRateType("fixed")}
-          className="rounded border-gray-300 dark:border-slate-600"
-        />
-        Fixed
-      </label>
-      <label className="inline-flex items-center gap-2">
-        <input
-          type="radio"
-          name="rateType"
-          value="hour"
-          checked={rateType === "hour"}
-          onChange={() => setRateType("hour")}
-          className="rounded border-gray-300 dark:border-slate-600"
-        />
-        /hour
-      </label>
-      <label className="inline-flex items-center gap-2">
-        <input
-          type="radio"
-          name="rateType"
-          value="day"
-          checked={rateType === "day"}
-          onChange={() => setRateType("day")}
-          className="rounded border-gray-300 dark:border-slate-600"
-        />
-        /day
-      </label>
-    </div>
-  </div>
-</div>
+          <div>
+            <label className="label">Base Price (KES)</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              className="input"
+              value={price}
+              onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
+              placeholder="e.g. 1500 (leave blank for quote)"
+              aria-describedby="price-help"
+              aria-label="Price in Kenyan shillings"
+              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+            />
+            <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+              Leave empty for <em>Contact for quote</em>.
+            </p>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="rateType"
+                  value="fixed"
+                  checked={rateType === "fixed"}
+                  onChange={() => setRateType("fixed")}
+                  className="rounded border-gray-300 dark:border-slate-600"
+                />
+                Fixed
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="rateType"
+                  value="hour"
+                  checked={rateType === "hour"}
+                  onChange={() => setRateType("hour")}
+                  className="rounded border-gray-300 dark:border-slate-600"
+                />
+                /hour
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="rateType"
+                  value="day"
+                  checked={rateType === "day"}
+                  onChange={() => setRateType("day")}
+                  className="rounded border-gray-300 dark:border-slate-600"
+                />
+                /day
+              </label>
+            </div>
+          </div>
+        </div>
 
         {/* Category, Subcategory, Area */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -668,103 +671,105 @@ export default function SellServiceClient({ editId }: Props) {
           />
         </div>
 
-        {/* Images + Uploader */}
-        <div>
-          <label className="label">Photos (up to {MAX_FILES})</label>
+        {/* Images + Uploader (legacy surface) */}
+        {!hideMedia && (
+          <div>
+            <label className="label">Photos (up to {MAX_FILES})</label>
 
-          {editId && (existingImage || (existingGallery?.length ?? 0) > 0) && (
-            <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">
-              Existing photos will be kept if you don’t upload new ones.
-            </p>
-          )}
-
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onDrop={onDrop}
-            className="card p-4 border-dashed border-2 border-gray-200 dark:border-slate-700/70"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <p className="text-sm text-gray-600 dark:text-slate-400">
-                Drag & drop images here, or choose files.
-                <span className="ml-2 text-xs">(JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)</span>
+            {editId && (existingImage || (existingGallery?.length ?? 0) > 0) && (
+              <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">
+                Existing photos will be kept if you don’t upload new ones.
               </p>
-              <div className="flex items-center gap-2">
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept={ACCEPTED_TYPES.join(",")}
-                  multiple
-                  onChange={(e) => onFileInputChange(e.target.files)}
-                  className="hidden"
-                  id="file-input"
-                />
-                <label htmlFor="file-input" className="btn-outline cursor-pointer">
-                  Choose files
-                </label>
-              </div>
-            </div>
-
-            {previews.length > 0 && (
-              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {previews.map((p, i) => (
-                  <div key={p.key} className="relative group">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.url}
-                      alt={`Photo ${i + 1}`}
-                      className="w-full h-32 object-cover rounded-lg border dark:border-slate-700"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
-                    <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                      <button
-                        type="button"
-                        onClick={() => move(i, -1)}
-                        disabled={i === 0}
-                        className="btn-outline px-2 py-1 text-xs"
-                        title="Move left"
-                        aria-label="Move image left"
-                      >
-                        ◀
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => move(i, +1)}
-                        disabled={i === previews.length - 1}
-                        className="btn-outline px-2 py-1 text-xs"
-                        title="Move right"
-                        aria-label="Move image right"
-                      >
-                        ▶
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeAt(i)}
-                        className="btn-danger px-2 py-1 text-xs"
-                        title="Remove"
-                        aria-label="Remove image"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             )}
 
-            {submitting && uploadPct > 0 && (
-              <div className="mt-3" aria-live="polite">
-                <div className="h-2 w-full bg-gray-200 rounded">
-                  <div className="h-2 bg-emerald-500 rounded transition-all" style={{ width: `${uploadPct}%` }} />
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={onDrop}
+              className="card p-4 border-dashed border-2 border-gray-200 dark:border-slate-700/70"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-sm text-gray-600 dark:text-slate-400">
+                  Drag & drop images here, or choose files.
+                  <span className="ml-2 text-xs">(JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)</span>
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept={ACCEPTED_TYPES.join(",")}
+                    multiple
+                    onChange={(e) => onFileInputChange(e.target.files)}
+                    className="hidden"
+                    id="file-input"
+                  />
+                  <label htmlFor="file-input" className="btn-outline cursor-pointer">
+                    Choose files
+                  </label>
                 </div>
-                <p className="text-xs text-gray-600 mt-1">Uploading images… {uploadPct}%</p>
               </div>
-            )}
+
+              {previews.length > 0 && (
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {previews.map((p, i) => (
+                    <div key={p.key} className="relative group">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={p.url}
+                        alt={`Photo ${i + 1}`}
+                        className="w-full h-32 object-cover rounded-lg border dark:border-slate-700"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
+                      <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                        <button
+                          type="button"
+                          onClick={() => move(i, -1)}
+                          disabled={i === 0}
+                          className="btn-outline px-2 py-1 text-xs"
+                          title="Move left"
+                          aria-label="Move image left"
+                        >
+                          ◀
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => move(i, +1)}
+                          disabled={i === previews.length - 1}
+                          className="btn-outline px-2 py-1 text-xs"
+                          title="Move right"
+                          aria-label="Move image right"
+                        >
+                          ▶
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeAt(i)}
+                          className="btn-danger px-2 py-1 text-xs"
+                          title="Remove"
+                          aria-label="Remove image"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {submitting && uploadPct > 0 && (
+                <div className="mt-3" aria-live="polite">
+                  <div className="h-2 w-full bg-gray-200 rounded">
+                    <div className="h-2 bg-emerald-500 rounded transition-all" style={{ width: `${uploadPct}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">Uploading images… {uploadPct}%</p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex items-center gap-3">
           <button

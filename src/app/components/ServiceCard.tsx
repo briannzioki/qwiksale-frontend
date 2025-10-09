@@ -1,3 +1,4 @@
+// src/app/components/ServiceCard.tsx
 "use client";
 
 import React, { memo, useEffect, useMemo, useRef, useCallback } from "react";
@@ -5,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
-import DeleteListingButton from "@/app/components/DeleteListingButton";
+import DeleteListingButton from "@/app/components/DeleteListingButton"; // ✅ canonical import
 
 type Props = {
   id: string;
@@ -16,21 +17,17 @@ type Props = {
   serviceArea?: string | null;
   availability?: string | null;
   featured?: boolean;
-  /** 0-based position in feed (helps LCP & analytics) */
   position?: number;
-  /** Next.js Link prefetch (default true) */
   prefetch?: boolean;
   className?: string;
 
   /** Dashboard mode: show Edit/Delete controls */
   ownerControls?: boolean;
-  /** Optional custom edit href (defaults to /sell/service?id=:id) */
+  /** Optional custom edit href (defaults to /service/:id/edit) */
   editHref?: string;
   /** Called after a successful delete */
   onDeletedAction?: () => void;
 };
-
-/* ----------------------- Utils ----------------------- */
 
 const PLACEHOLDER = "/placeholder/default.jpg";
 
@@ -48,34 +45,26 @@ function rateSuffix(rt?: Props["rateType"]) {
   return "";
 }
 
-// Tiny 1×1 transparent PNG as last-resort blur
 const FALLBACK_BLUR =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAuMB9l9b3a8AAAAASUVORK5CYII=";
 
-// Accept both shimmer(w, h) and shimmer({ width, height })
 function getBlurDataURL(width = 640, height = 640): string {
   try {
     const fn: any = shimmerMaybe;
     if (typeof fn === "function") {
-      if (fn.length >= 2) return fn(width, height); // (w, h)
-      return fn({ width, height }); // ({ width, height })
+      if (fn.length >= 2) return fn(width, height);
+      return fn({ width, height });
     }
   } catch {}
   return FALLBACK_BLUR;
 }
 
-/* ----------------------- Analytics ----------------------- */
-
 function track(event: string, payload?: Record<string, unknown>) {
-  // light client-side analytics hook
-  // eslint-disable-next-line no-console
   console.log("[qs:track]", event, payload);
   if (typeof window !== "undefined" && "CustomEvent" in window) {
     window.dispatchEvent(new CustomEvent("qs:track", { detail: { event, payload } }));
   }
 }
-
-/* ----------------------- Component ----------------------- */
 
 function ServiceCardImpl({
   id,
@@ -95,15 +84,13 @@ function ServiceCardImpl({
 }: Props) {
   const router = useRouter();
   const href = useMemo(() => `/service/${encodeURIComponent(id)}`, [id]);
-  const hrefEdit = editHref ?? `/sell/service?id=${encodeURIComponent(id)}`;
+  const hrefEdit = editHref ?? `/service/${encodeURIComponent(id)}/edit`; // ← default
 
   const anchorRef = useRef<HTMLAnchorElement | null>(null);
   const seenRef = useRef(false);
 
-  // Make above-the-fold thumbs priority for faster LCP (tweak threshold if needed)
   const priority = typeof position === "number" ? position < 8 : false;
 
-  // Presentable price text (avoid "/hr" when quoting)
   const priceText = useMemo(() => {
     const base = fmtKES(price);
     const withRate =
@@ -116,10 +103,8 @@ function ServiceCardImpl({
     [serviceArea, availability]
   );
 
-  // One-time view tracking when card first becomes visible
   useEffect(() => {
     if (!anchorRef.current || seenRef.current || typeof window === "undefined") return;
-
     const el = anchorRef.current;
     const io = new IntersectionObserver(
       (entries) => {
@@ -134,17 +119,14 @@ function ServiceCardImpl({
       },
       { rootMargin: "0px 0px -20% 0px" }
     );
-
     io.observe(el);
     return () => io.disconnect();
   }, [id, name, price, rateType, position, href]);
 
-  // Smart route prefetch: IO + hover/focus (best-effort)
   useEffect(() => {
     if (!prefetch || !anchorRef.current) return;
     const el = anchorRef.current;
     let done = false;
-
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -160,7 +142,6 @@ function ServiceCardImpl({
       },
       { rootMargin: "300px" }
     );
-
     io.observe(el);
     return () => io.disconnect();
   }, [href, prefetch, router]);
@@ -177,8 +158,6 @@ function ServiceCardImpl({
   }, [id, name, price, rateType, position, href]);
 
   const src = image || PLACEHOLDER;
-
-  // Only pass a blurDataURL when using "blur" placeholder
   const blurProps = priority
     ? { placeholder: "blur" as const, blurDataURL: getBlurDataURL(640, 640) }
     : { placeholder: "empty" as const };
@@ -201,19 +180,33 @@ function ServiceCardImpl({
             className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:bg-gray-900"
             title="Edit service"
             aria-label="Edit service"
+            onClick={(e) => e.stopPropagation()}
           >
             Edit
           </Link>
-          {/* exactOptionalPropertyTypes safe: only pass when defined */}
-          <DeleteListingButton
-            serviceId={id}
-            label="Delete"
-            {...(onDeletedAction ? { afterDeleteAction: onDeletedAction } : {})}
-          />
+
+          {/* Stop navigation bubbling when deleting */}
+          <div
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            className="contents"
+          >
+            <DeleteListingButton
+              serviceId={id}
+              label=""               // icon-only in tight overlay
+              className="px-2 py-1"  // compact hit area
+              {...(onDeletedAction ? { onDeletedAction } : {})}
+            />
+          </div>
         </div>
       )}
 
-      {/* Clickable image + body */}
       <Link
         href={href}
         prefetch={prefetch}
@@ -234,7 +227,6 @@ function ServiceCardImpl({
             priority={priority}
             {...blurProps}
           />
-
           {featured && (
             <span className="absolute left-2 top-2 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
               Featured
@@ -253,5 +245,4 @@ function ServiceCardImpl({
 }
 
 (ServiceCardImpl as any).displayName = "ServiceCard";
-
 export default memo(ServiceCardImpl);

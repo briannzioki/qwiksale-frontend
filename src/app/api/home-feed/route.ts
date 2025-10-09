@@ -158,6 +158,8 @@ type BrandRow = { brand: string | null; _count: { _all: number } };
 type CondRow = { condition: string | null; _count: { _all: number } };
 type SubcatRow = { subcategory: string | null; _count: { _all: number } };
 
+const FACETS_TOP_N = 6;
+
 function coalesceCaseInsensitive<T>(
   rows: T[],
   pick: (r: T) => string | null
@@ -174,7 +176,7 @@ function coalesceCaseInsensitive<T>(
     if (prev) prev.count += add;
     else map.set(key, { value: display, count: add });
   }
-  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 10);
+  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, FACETS_TOP_N);
 }
 
 /* -------------------- types to avoid TS4111 -------------------- */

@@ -128,13 +128,13 @@ export default function ServiceForm(props: Props) {
 
   async function uploadPending(): Promise<string[]> {
     if (!pendingFiles.length) return [];
-    const uploads = pendingFiles.slice(0, 10).map(async (f) => {
+    const uploads = pendingFiles.slice(0, 6).map(async (f) => {
       const fd = new FormData();
       fd.append("file", f);
       const up = await fetch("/api/upload", { method: "POST", body: fd });
       const uj = (await up.json().catch(() => ({}))) as any;
       if (!up.ok || !(uj?.url || uj?.secure_url)) throw new Error(uj?.error || "Upload failed");
-      return String(uj.url || uj.secure_url);
+      return String(uj?.url || uj?.secure_url);
     });
     return Promise.all(uploads);
   }
@@ -163,7 +163,7 @@ export default function ServiceForm(props: Props) {
       setBusy(true);
       try {
         const uploaded = await uploadPending();
-        const mergedGallery = [...gallery, ...uploaded].slice(0, 10).map(String);
+        const mergedGallery = [...gallery, ...uploaded].slice(0, 6).map(String);
         const cover = mergedGallery[0] || null;
 
         const payload = {
@@ -242,13 +242,14 @@ export default function ServiceForm(props: Props) {
         {isEdit ? "Edit Service" : "Post a Service"}
       </h2>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div>
+      {/* Name + Price + RateType */}
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="md:col-span-2">
           <label className="text-sm font-medium" htmlFor="sf-name">Service name</label>
           <input
             id="sf-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setName(e.currentTarget.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             required
             minLength={3}
@@ -257,16 +258,76 @@ export default function ServiceForm(props: Props) {
         </div>
 
         <div>
+          <label className="text-sm font-medium" htmlFor="sf-price">Price (KES)</label>
+          <input
+            id="sf-price"
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={price === "" ? "" : price}
+            onChange={(e) =>
+              setPrice(e.currentTarget.value === "" ? "" : Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)))
+            }
+            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            placeholder="Leave empty for “Contact for quote”"
+            aria-describedby="sf-price-help"
+          />
+          <p id="sf-price-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            Leave empty to show <em>Contact for quote</em>.
+          </p>
+
+          <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                name="rateType"
+                value="fixed"
+                checked={rateType === "fixed"}
+                onChange={() => setRateType("fixed")}
+                className="rounded border-gray-300 dark:border-slate-600"
+              />
+              Fixed
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                name="rateType"
+                value="hour"
+                checked={rateType === "hour"}
+                onChange={() => setRateType("hour")}
+                className="rounded border-gray-300 dark:border-slate-600"
+              />
+              /hour
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                name="rateType"
+                value="day"
+                checked={rateType === "day"}
+                onChange={() => setRateType("day")}
+                className="rounded border-gray-300 dark:border-slate-600"
+              />
+              /day
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Category/Subcategory/ServiceArea */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+        <div>
           <label className="text-sm font-medium" htmlFor="sf-category">Category</label>
           <select
             id="sf-category"
             value={category}
-            onChange={(e) => onChangeCategory(e.target.value)}
+            onChange={(e) => onChangeCategory(e.currentTarget.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
             {(catOpts ?? []).map((o: any) => {
               const val = sv(o?.value);
-              const key = s(o?.value ?? o?.label ?? val);
+              const key = String(o?.value ?? o?.label ?? val);
               return (
                 <option key={key} value={val}>
                   {o?.label ?? val}
@@ -281,13 +342,13 @@ export default function ServiceForm(props: Props) {
           <select
             id="sf-subcategory"
             value={subcategory}
-            onChange={(e) => setSubcategory(e.target.value)}
+            onChange={(e) => setSubcategory(e.currentTarget.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
           >
             {subOpts.length > 0
               ? subOpts.map((o: any) => {
                   const val = sv(o?.value);
-                  const key = s(o?.value ?? o?.label ?? val);
+                  const key = String(o?.value ?? o?.label ?? val);
                   return (
                     <option key={key} value={val}>
                       {o?.label ?? val}
@@ -299,80 +360,45 @@ export default function ServiceForm(props: Props) {
         </div>
 
         <div>
-          <label className="text-sm font-medium" htmlFor="sf-rateType">Rate type</label>
-          <select
-            id="sf-rateType"
-            value={rateType}
-            onChange={(e) => setRateType(e.target.value as RateType)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-          >
-            <option value="fixed">Fixed</option>
-            <option value="hour">Per hour</option>
-            <option value="day">Per day</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="text-sm font-medium" htmlFor="sf-price">Price (KES)</label>
-          <input
-            id="sf-price"
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={price === "" ? "" : price}
-            onChange={(e) =>
-              setPrice(e.target.value === "" ? "" : Math.max(0, Math.floor(Number(e.target.value) || 0)))
-            }
-            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            placeholder="Leave empty for “Contact for quote”"
-            aria-describedby="sf-price-help"
-          />
-          <p id="sf-price-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-            Leave empty to show <em>Contact for quote</em>.
-          </p>
-        </div>
-
-        <div>
-          <label className="text-sm font-medium" htmlFor="sf-location">Base location</label>
-          <input
-            id="sf-location"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            placeholder="e.g. Nairobi"
-          />
-        </div>
-
-        <div>
           <label className="text-sm font-medium" htmlFor="sf-area">Service area (optional)</label>
           <input
             id="sf-area"
             value={serviceArea}
-            onChange={(e) => setServiceArea(e.target.value)}
+            onChange={(e) => setServiceArea(e.currentTarget.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="e.g. Nairobi & Kiambu"
           />
         </div>
+      </div>
 
+      {/* Availability/Location/Phone */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
         <div>
           <label className="text-sm font-medium" htmlFor="sf-avail">Availability (optional)</label>
           <input
             id="sf-avail"
             value={availability}
-            onChange={(e) => setAvailability(e.target.value)}
+            onChange={(e) => setAvailability(e.currentTarget.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="e.g. Mon–Sat, 8am–6pm"
           />
         </div>
-
-        {/* Phone (optional) */}
+        <div>
+          <label className="text-sm font-medium" htmlFor="sf-location">Base location</label>
+        <input
+            id="sf-location"
+            value={location}
+            onChange={(e) => setLocation(e.currentTarget.value)}
+            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            placeholder="e.g. Nairobi"
+          />
+        </div>
         <div>
           <label className="text-sm font-medium" htmlFor="sf-phone">Seller phone (optional)</label>
           <input
             id="sf-phone"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => setPhone(e.currentTarget.value)}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             placeholder="2547XXXXXXXX"
             inputMode="tel"
@@ -386,22 +412,37 @@ export default function ServiceForm(props: Props) {
               : "Optional. Buyers can call or WhatsApp."}
           </div>
         </div>
+      </div>
 
-        {/* Photos (reusable uploader) */}
-        <div className="md:col-span-2">
-          <GalleryUploader
-            value={gallery}
-            onChangeAction={(next) => setGallery(next)}
-            onFilesSelectedAction={(files) =>
-              setPendingFiles((cur) => [...cur, ...files].slice(0, 10))
-            }
-            max={10}
-            accept="image/*,.jpg,.jpeg,.png,.webp"
-            maxSizeMB={10}
-          />
-          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
-            {pendingFiles.length ? `${pendingFiles.length} new selected (to upload on save)` : "No new files selected"}
-          </div>
+      {/* Description */}
+      <div className="mt-4">
+        <label className="text-sm font-medium" htmlFor="sf-description">Description</label>
+        <textarea
+          id="sf-description"
+          value={description}
+          onChange={(e) => setDescription(e.currentTarget.value)}
+          rows={5}
+          className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+          placeholder="Describe your service, experience, what’s included, etc."
+          required
+          minLength={10}
+        />
+      </div>
+
+      {/* Photos */}
+      <div className="md:col-span-2 mt-4">
+        <GalleryUploader
+          value={gallery}
+          onChangeAction={(next) => setGallery(next)}
+          onFilesSelectedAction={(files) =>
+            setPendingFiles((cur) => [...cur, ...files].slice(0, 6))
+          }
+          max={6}
+          accept="image/*,.jpg,.jpeg,.png,.webp"
+          maxSizeMB={10}
+        />
+        <div className="mt-2 text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
+          {pendingFiles.length ? `${pendingFiles.length} new selected (to upload on save)` : "No new files selected"}
         </div>
       </div>
 

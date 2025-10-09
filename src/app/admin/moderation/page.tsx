@@ -4,9 +4,6 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/app/lib/prisma";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import ModerationClient from "@/app/admin/moderation/ModerationClient.client";
 import type { Metadata } from "next";
 
@@ -22,24 +19,24 @@ export const metadata: Metadata = {
 
 /* ---------------------- prisma alias for new models ---------------------- */
 const db = prisma as unknown as typeof prisma & {
-  report: {
+  report?: {
     count: (args: any) => Promise<number>;
     findMany: (args: any) => Promise<any[]>;
   };
 };
 
-/* --------------------------------- RBAC --------------------------------- */
-async function requireAdmin() {
-  const session = await getServerSession(authOptions).catch(() => null);
-  const email = (session?.user as any)?.email as string | undefined;
-  const allow = (process.env["ADMIN_EMAILS"] || "")
-    .split(",")
-    .map((x) => x.trim().toLowerCase())
-    .filter(Boolean);
-  if (!email || !allow.includes(email.toLowerCase())) {
-    notFound();
+async function safeReportCount(where?: any): Promise<number> {
+  if (db.report?.count) {
+    return db.report.count(where ? { where } : undefined);
   }
-  return session!;
+  return 0;
+}
+
+async function safeReportFindMany(args: any): Promise<any[]> {
+  if (db.report?.findMany) {
+    return db.report.findMany(args);
+  }
+  return [];
 }
 
 /* ------------------------------ Data access ------------------------------ */
@@ -83,11 +80,11 @@ async function loadReports({
     ];
   }
 
-  const total = await db.report.count({ where });
+  const total = await safeReportCount(where);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
 
-  const items = await db.report.findMany({
+  const items = await safeReportFindMany({
     where,
     orderBy: [{ resolved: "asc" }, { createdAt: "desc" }],
     skip: (safePage - 1) * PAGE_SIZE,
@@ -104,29 +101,27 @@ export default async function ModerationPage({
   // Next 15 passes a Promise here
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdmin();
-
+  // Admin layout already gates access server-side.
   const raw = await searchParams;
   const parsed = parseParams(raw);
 
   const { items, total, totalPages, page } = await loadReports(parsed);
 
   return (
-    <div className="container-page py-6 space-y-4">
-      <header className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Moderation</h1>
-          <p className="text-sm text-gray-600 dark:text-slate-300">
-            Review and act on user reports.
-          </p>
-        </div>
-        <Link href="/dashboard" className="btn-outline">
-          Back
-        </Link>
-      </header>
+    <div className="space-y-6">
+      {/* Hero */}
+      <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+        <h1 className="text-2xl md:text-3xl font-extrabold">Moderation</h1>
+        <p className="mt-1 text-sm text-white/90">
+          Review and act on reports. Showing page {page} of {totalPages} • {total.toLocaleString()} total.
+        </p>
+      </div>
 
       {/* Filters */}
-      <form className="grid grid-cols-1 md:grid-cols-6 gap-2 rounded-xl border bg-white p-3 dark:bg-slate-900 dark:border-slate-800">
+      <form
+        method="GET"
+        className="grid grid-cols-1 gap-2 rounded-xl border bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:grid-cols-6"
+      >
         <input
           name="q"
           defaultValue={parsed.q}
@@ -167,32 +162,46 @@ export default async function ModerationPage({
           <option value="0">Unresolved</option>
           <option value="1">Resolved</option>
         </select>
-        <button className="rounded bg-[#161748] text-white px-3 py-1 text-sm">Apply</button>
-        <Link href="/admin/moderation" className="btn-outline text-sm px-2 py-1">
+        <button className="rounded bg-[#161748] px-3 py-1 text-sm text-white">Apply</button>
+        <Link href="/admin/moderation" className="btn-outline px-2 py-1 text-sm">
           Clear
         </Link>
       </form>
 
       {/* Client-only bulk actions + table actions */}
-      <ModerationClient
-        items={items.map((r: any) => ({
-          id: r.id as string,
-          listingId: r.listingId as string,
-          listingType: r.listingType as "product" | "service",
-          reason: r.reason as string,
-          details: (r.details ?? null) as string | null,
-          ip: (r.ip ?? null) as string | null,
-          userId: (r.userId ?? null) as string | null,
-          createdAt:
-            (r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt) as
-              | string
-              | Date,
-          resolved: Boolean(r.resolved),
-        }))}
-        page={page}
-        totalPages={totalPages}
-        total={total}
-      />
+      <section className="overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b px-4 py-3 dark:border-slate-800">
+          <h2 className="font-semibold">Reports</h2>
+        </div>
+
+        <ModerationClient
+          items={items.map((r: any) => ({
+            id: String(r.id),
+            listingId: String(r.listingId),
+            listingType: (r.listingType as "product" | "service") ?? "product",
+            reason: String(r.reason ?? ""),
+            details: (r.details ?? null) as string | null,
+            ip: (r.ip ?? null) as string | null,
+            userId: (r.userId ?? null) as string | null,
+            createdAt:
+              r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
+            resolved: Boolean(r.resolved),
+          }))}
+          page={page}
+          totalPages={totalPages}
+          total={total}
+        />
+      </section>
+
+      {/* Footer actions */}
+      <div className="flex items-center justify-end">
+        <Link
+          href="/admin/dashboard"
+          className="rounded-xl border px-3 py-1 text-sm shadow-sm transition hover:shadow dark:border-slate-800"
+        >
+          ← Back to Dashboard
+        </Link>
+      </div>
     </div>
   );
 }

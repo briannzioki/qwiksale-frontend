@@ -87,6 +87,7 @@ const productListSelect = {
 const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_RESULT_WINDOW = 10_000;
+const FACETS_TOP_N = 6;
 
 type PriceClause = { gte?: number; lte?: number };
 
@@ -363,7 +364,7 @@ function coalesceCaseInsensitive<T>(
     if (prev) prev.count += (r as any)._count._all || 0;
     else map.set(key, { value: display, count: (r as any)._count._all || 0 });
   }
-  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 10);
+  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, FACETS_TOP_N);
 }
 
 async function computeFacets(where: any) {

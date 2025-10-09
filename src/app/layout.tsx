@@ -1,5 +1,4 @@
-// src/app/layout.tsx
-export const runtime = "nodejs"; // NextAuth/Prisma need Node runtime
+﻿export const runtime = "nodejs"; // NextAuth/Prisma need Node runtime
 
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
@@ -12,6 +11,7 @@ import { fontVars } from "./fonts";
 import ToasterClient from "./components/ToasterClient";
 import { getBaseUrl } from "@/app/lib/url";
 import { getServerSession } from "@/app/lib/auth";
+import { headers } from "next/headers";
 
 /* ----------------------------- Site URL helpers ---------------------------- */
 const siteUrl = getBaseUrl().replace(/\/+$/, "");
@@ -99,6 +99,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Get the NextAuth session on the server and pass it to SessionProvider
   const session = await getServerSession();
 
+  // Pull CSP nonce from middleware (x-nonce) so inline/3P scripts satisfy script-src
+  const h = await headers();
+  const nonce = h.get("x-nonce") ?? undefined;
+
   const orgJsonLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -148,17 +152,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 
-        <Script id="theme-script" strategy="beforeInteractive">{`try {
+        {/* Inline bootstraps with nonce to satisfy CSP 'strict-dynamic' */}
+        <Script id="theme-script" strategy="beforeInteractive" nonce={nonce}>{`try {
   const ls = localStorage.getItem('theme');
   const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
   const shouldDark = ls ? (ls === 'dark') : !!mq?.matches;
   document.documentElement.classList.toggle('dark', shouldDark);
 } catch {}`}</Script>
 
-        <Script id="ld-org" type="application/ld+json">
+        <Script id="ld-org" type="application/ld+json" nonce={nonce}>
           {JSON.stringify(orgJsonLd)}
         </Script>
-        <Script id="ld-site" type="application/ld+json">
+        <Script id="ld-site" type="application/ld+json" nonce={nonce}>
           {JSON.stringify(siteJsonLd)}
         </Script>
       </head>
@@ -168,44 +173,47 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         style={{ fontFeatureSettings: "'kern' 1, 'liga' 1, 'calt' 1" }}
         data-env={isPreview ? "preview" : "prod"}
       >
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
-          {/* Providers is a CLIENT component that mounts SessionProvider with no refetch thrash */}
-          <Providers session={session}>
+        {/* Make the whole app a column; AppShell renders header/main/footer */}
+        <Providers session={session}>
+          <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
             <AppShell>{children}</AppShell>
-            {/* Mount the toaster once for the whole app */}
-            <ToasterClient />
-          </Providers>
+          </div>
 
-          <VercelAnalytics />
+          {/* Toasts (portal) */}
+          <ToasterClient />
+        </Providers>
 
-          {PLAUSIBLE_DOMAIN ? (
+        {/* Analytics & scripts */}
+        <VercelAnalytics />
+
+        {PLAUSIBLE_DOMAIN ? (
+          <Script
+            id="plausible"
+            strategy="afterInteractive"
+            src="https://plausible.io/js/script.js"
+            data-domain={PLAUSIBLE_DOMAIN}
+            nonce={nonce}
+          />
+        ) : null}
+
+        {GA_ID ? (
+          <>
             <Script
-              id="plausible"
+              id="ga-loader"
               strategy="afterInteractive"
-              src="https://plausible.io/js/script.js"
-              data-domain={PLAUSIBLE_DOMAIN}
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+              nonce={nonce}
             />
-          ) : null}
-
-          {GA_ID ? (
-            <>
-              <Script
-                id="ga-loader"
-                strategy="afterInteractive"
-                src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
-              />
-              <Script id="ga-init" strategy="afterInteractive">{`
+            <Script id="ga-init" strategy="afterInteractive" nonce={nonce}>{`
 window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
 gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: true });
-              `}</Script>
-            </>
-          ) : null}
+            `}</Script>
+          </>
+        ) : null}
 
-          {/* Dev/demo controls are hidden unless explicitly enabled */}
-          {SHOW_DEV_CONTROLS ? <DevToolsMount /> : null}
-        </div>
+        {SHOW_DEV_CONTROLS ? <DevToolsMount /> : null}
       </body>
     </html>
   );

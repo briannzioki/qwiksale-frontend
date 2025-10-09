@@ -26,6 +26,8 @@ function noStoreJson(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  // ensure admin responses never cache and vary by auth/cookies
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 
@@ -197,7 +199,6 @@ export async function GET(req: NextRequest) {
       res.headers.set("X-Service-Total", String(serviceTotal));
       res.headers.set("X-Page", String(page));
       res.headers.set("X-Per-Page", String(limit));
-      res.headers.set("Vary", "Accept-Encoding");
       return res;
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -206,5 +207,3 @@ export async function GET(req: NextRequest) {
     }
   });
 }
-
-
