@@ -1,4 +1,3 @@
-// src/app/api/products/create/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,15 +10,14 @@ import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { createHash } from "crypto";
+import { getIdempotencyKey, withIdempotency } from "@/app/lib/idempotency";
 
 /* ----------------------------- tiny utils ----------------------------- */
-
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
-  // avoid cache mixups across sessions/proxies
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
@@ -43,7 +41,6 @@ function sanitizeInline(text: unknown, max?: number): string | undefined {
 function sanitizeMultiline(text: unknown, max: number): string | undefined {
   if (typeof text !== "string") return undefined;
   let t = text.replace(STRIP_HTML_RE, "").replace(CTRL_RE, "").trim();
-  // collapse >2 consecutive newlines
   t = t.replace(/\n{3,}/g, "\n\n");
   if (!t) return undefined;
   return clampLen(t, max);
@@ -92,7 +89,6 @@ const ALLOWED_IMAGE_HOSTS = [
 ] as const;
 
 function isAllowedHost(hostname: string): boolean {
-  // Require an exact match or a subdomain of an allowed host.
   return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
 }
 
@@ -106,15 +102,16 @@ function isAllowedUrl(u: string): boolean {
   }
 }
 
+// Accept string or array for gallery
 function nGallery(v: unknown, maxUrl: number, maxCount: number): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const cleaned = v
+  const arr = Array.isArray(v) ? v : typeof v === "string" ? [v] : [];
+  if (!arr.length) return undefined;
+  const cleaned = arr
     .map((x) => (typeof x === "string" ? x.trim() : ""))
     .filter(Boolean)
     .map((x) => clampLen(x, maxUrl)!)
     .filter((x) => /^https?:\/\//i.test(x) && isAllowedUrl(x));
-  const unique = Array.from(new Set(cleaned)).slice(0, maxCount);
-  return unique;
+  return Array.from(new Set(cleaned)).slice(0, maxCount);
 }
 
 /** Normalize Kenyan MSISDN to `2547XXXXXXXX` or `2541XXXXXXXX`. */
@@ -134,7 +131,6 @@ function normalizeMsisdn(input: unknown): string | undefined {
 }
 
 /* ----------------------------- instrumentation ----------------------------- */
-
 type AnalyticsEvent =
   | "product_create_attempt"
   | "product_create_validation_error"
@@ -149,7 +145,6 @@ function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
 }
 
 /* --------------------------------- policy --------------------------------- */
-
 type Tier = "BASIC" | "GOLD" | "PLATINUM";
 const LIMITS: Record<Tier, { listingLimit: number; canFeature: boolean }> = {
   BASIC: { listingLimit: 3, canFeature: false },
@@ -165,7 +160,7 @@ const MAX = {
   location: 120,
   description: 5000,
   imageUrl: 2048,
-  galleryCount: 20,
+  galleryCount: 6,
 } as const;
 
 function toTier(sub?: string | null): Tier {
@@ -184,7 +179,7 @@ async function getMe() {
     select: {
       id: true,
       name: true,
-      username: true, // include for store revalidation
+      username: true,
       subscription: true,
       whatsapp: true,
       city: true,
@@ -208,11 +203,9 @@ export function OPTIONS() {
 }
 
 /* --------------- Prisma-safe create (drops unknown columns) --------------- */
-
 const db: any = prisma as any;
 
 async function createProductSafe(data: any) {
-  // Iteratively strip known optional columns if the schema doesn't have them
   const stripKeys = new Set(["publishedAt", "dedupeKey"]);
   let payload = { ...data };
 
@@ -233,248 +226,260 @@ async function createProductSafe(data: any) {
       throw e;
     }
   }
-
-  // Fallback (shouldn't normally reach)
   return await db.product.create({ data: payload, select: { id: true } });
 }
 
 /* --------------- POST /api/products/create (main) --------------- */
-
 export async function POST(req: NextRequest) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ??
     Math.random().toString(36).slice(2);
 
-  try {
-    const me = await getMe();
-    if (!me) {
-      track("product_create_validation_error", { reqId, reason: "unauthorized" });
-      const r = noStore({ error: "Unauthorized" }, { status: 401 });
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
+  // Use shared helper to read the key — MUST await
+  const idemKey = await getIdempotencyKey(req);
 
-    // Rate limit per IP + user
-    const rl = await checkRateLimit(req.headers, {
-      name: "products_create",
-      limit: 6,
-      windowMs: 10 * 60_000,
-      extraKey: me.id,
-    });
-    if (!rl.ok) {
-      const r = tooMany("Too many create attempts. Try again later.", rl.retryAfterSec);
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
+  return withIdempotency(idemKey, async () => {
+    try {
+      const me = await getMe();
+      if (!me) {
+        track("product_create_validation_error", { reqId, reason: "unauthorized" });
+        const r = noStore({ error: "Unauthorized" }, { status: 401 });
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
 
-    // Reject non-JSON early
-    const ctype = req.headers.get("content-type") || "";
-    if (!ctype.toLowerCase().includes("application/json")) {
-      const r = noStore({ error: "Content-Type must be application/json" }, { status: 415 });
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
-
-    track("product_create_attempt", { reqId, userId: me.id, tier: toTier(me.subscription) });
-
-    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-
-    // Required basics
-    const name = s(body["name"], MAX.name);
-    const category = s(body["category"], MAX.category);
-    const subcategory = s(body["subcategory"], MAX.subcategory);
-
-    // Optional
-    const brand = s(body["brand"], MAX.brand);
-    const description = sanitizeMultiline(body["description"], MAX.description);
-    const condition = nCond(body["condition"]) ?? "pre-owned";
-    const price = nPrice(body["price"]); // null => contact for price
-
-    // Image + gallery (allowlist hosts)
-    const rawImage = s(body["image"], MAX.imageUrl);
-    const image = rawImage && isAllowedUrl(rawImage) ? rawImage : undefined;
-
-    const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
-    const location = s(body["location"], MAX.location);
-    const negotiable = nBool(body["negotiable"]);
-    let featured = nBool(body["featured"]) ?? false;
-
-    // Seller snapshot (phone is OPTIONAL)
-    let sellerPhoneRaw = normalizeMsisdn(body["sellerPhone"]);
-    if (!sellerPhoneRaw && me.whatsapp) {
-      sellerPhoneRaw = normalizeMsisdn(me.whatsapp) ?? undefined;
-    }
-    if (typeof body["sellerPhone"] === "string" && !normalizeMsisdn(body["sellerPhone"])) {
-      track("product_create_validation_error", {
-        reqId,
-        userId: me.id,
-        field: "sellerPhone",
-        reason: "invalid_format",
+      // Rate limit per IP + user
+      const rl = await checkRateLimit(req.headers, {
+        name: "products_create",
+        limit: 6,
+        windowMs: 10 * 60_000,
+        extraKey: me.id,
       });
-      const r = noStore(
-        { error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." },
-        { status: 400 }
-      );
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
+      if (!rl.ok) {
+        const r = tooMany("Too many create attempts. Try again later.", rl.retryAfterSec);
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
 
-    const sellerName = s(body["sellerName"], 120) ?? me.name ?? undefined;
-    const sellerLocation =
-      s(body["sellerLocation"], MAX.location) ??
-      (me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? undefined) ??
-      location;
+      // Reject non-JSON early
+      const ctype = req.headers.get("content-type") || "";
+      if (!ctype.toLowerCase().includes("application/json")) {
+        const r = noStore({ error: "Content-Type must be application/json" }, { status: 415 });
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
 
-    // Validate required
-    if (!name) {
-      track("product_create_validation_error", { reqId, userId: me.id, field: "name" });
-      const r = noStore({ error: "name is required" }, { status: 400 });
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
-    if (!category) {
-      track("product_create_validation_error", { reqId, userId: me.id, field: "category" });
-      const r = noStore({ error: "category is required" }, { status: 400 });
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
-    if (!subcategory) {
-      track("product_create_validation_error", { reqId, userId: me.id, field: "subcategory" });
-      const r = noStore({ error: "subcategory is required" }, { status: 400 });
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
+      track("product_create_attempt", { reqId, userId: me.id, tier: toTier(me.subscription) });
 
-    // Tier enforcement (count only ACTIVE listings)
-    const tier = toTier(me.subscription);
-    const limits = LIMITS[tier];
-    const myActiveCount = await prisma.product.count({
-      where: { sellerId: me.id, status: "ACTIVE" },
-    });
-    if (myActiveCount >= limits.listingLimit) {
-      track("product_create_limit_reached", {
-        reqId,
-        userId: me.id,
-        tier,
-        limit: limits.listingLimit,
+      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+      // Required basics
+      const name = s(body["name"], MAX.name);
+      const category = s(body["category"], MAX.category);
+      const subcategory = s(body["subcategory"], MAX.subcategory);
+
+      // Optional
+      const brand = s(body["brand"], MAX.brand);
+      const description = sanitizeMultiline(body["description"], MAX.description);
+      const condition = nCond(body["condition"]) ?? "pre-owned";
+      const price = nPrice(body["price"]); // null => contact for price
+
+      // Image + gallery (allowlist hosts)
+      const rawImage = s(body["image"], MAX.imageUrl);
+      const image = rawImage && isAllowedUrl(rawImage) ? rawImage : undefined;
+      const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
+      const location = s(body["location"], MAX.location);
+      const negotiable = nBool(body["negotiable"]);
+      let featured = nBool(body["featured"]) ?? false;
+
+      // Seller snapshot (phone is OPTIONAL)
+      let sellerPhoneRaw = normalizeMsisdn(body["sellerPhone"]);
+      if (!sellerPhoneRaw && me.whatsapp) {
+        sellerPhoneRaw = normalizeMsisdn(me.whatsapp) ?? undefined;
+      }
+      if (typeof body["sellerPhone"] === "string" && !normalizeMsisdn(body["sellerPhone"])) {
+        track("product_create_validation_error", {
+          reqId,
+          userId: me.id,
+          field: "sellerPhone",
+          reason: "invalid_format",
+        });
+        const r = noStore(
+          { error: "Invalid sellerPhone. Use 07/01, +2547/+2541, or 2547/2541." },
+          { status: 400 }
+        );
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
+
+      const sellerName = s(body["sellerName"], 120) ?? me.name ?? undefined;
+      const sellerLocation =
+        s(body["sellerLocation"], MAX.location) ??
+        (me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? undefined) ??
+        location;
+
+      // Validate required
+      if (!name) {
+        track("product_create_validation_error", { reqId, userId: me.id, field: "name" });
+        const r = noStore({ error: "name is required" }, { status: 400 });
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
+      if (!category) {
+        track("product_create_validation_error", { reqId, userId: me.id, field: "category" });
+        const r = noStore({ error: "category is required" }, { status: 400 });
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
+      if (!subcategory) {
+        track("product_create_validation_error", { reqId, userId: me.id, field: "subcategory" });
+        const r = noStore({ error: "subcategory is required" }, { status: 400 });
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
+
+      // Tier enforcement (count only ACTIVE listings)
+      const tier = toTier(me.subscription);
+      const limits = LIMITS[tier];
+      const myActiveCount = await prisma.product.count({
+        where: { sellerId: me.id, status: "ACTIVE" },
       });
-      const r = noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 });
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
+      if (myActiveCount >= limits.listingLimit) {
+        track("product_create_limit_reached", {
+          reqId,
+          userId: me.id,
+          tier,
+          limit: limits.listingLimit,
+        });
+        const r = noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 });
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
 
-    // Enforce featured permission
-    if (!limits.canFeature && featured) featured = false;
+      // Enforce featured permission
+      if (!limits.canFeature && featured) featured = false;
 
-    // Final gallery with allowlist & dedup (& include image if not already)
-    const galleryAllowed = (gallery ?? []).filter(isAllowedUrl);
-    const finalGallery = Array.from(
-      new Set([...(image ? [image] : []), ...galleryAllowed])
-    );
+      // Final gallery with allowlist & dedup (& include image if not already), cap to 6
+      const galleryAllowed = (gallery ?? []).filter(isAllowedUrl);
+      const finalGallery = Array.from(
+        new Set([...(image ? [image] : []), ...galleryAllowed])
+      ).slice(0, MAX.galleryCount);
 
-    // Duplicate-post guard (same user, recent, same key fields)
-    const dedupeKey = createHash("sha256")
-      .update(
-        [
-          name.toLowerCase(),
-          category.toLowerCase(),
-          subcategory.toLowerCase(),
-          String(price ?? ""),
-          (brand || "").toLowerCase(),
-          condition,
-        ].join("|")
-      )
-      .digest("hex");
+      // Duplicate-post guard (same user, recent, same key fields)
+      const dedupeKey = createHash("sha256")
+        .update(
+          [
+            (name || "").toLowerCase(),
+            (category || "").toLowerCase(),
+            (subcategory || "").toLowerCase(),
+            String(price ?? ""),
+            (brand || "").toLowerCase(),
+            condition,
+          ].join("|")
+        )
+        .digest("hex");
 
-    const recentDuplicate = await prisma.product.findFirst({
-      where: {
-        sellerId: me.id,
-        status: "ACTIVE",
-        createdAt: { gt: new Date(Date.now() - 5 * 60_000) }, // last 5 minutes
+      const recentDuplicate = await prisma.product.findFirst({
+        where: {
+          sellerId: me.id,
+          status: "ACTIVE",
+          createdAt: { gt: new Date(Date.now() - 5 * 60_000) },
+          name,
+          category,
+          subcategory,
+          ...(brand ? { brand } : {}),
+          ...(price !== undefined ? { price } : {}),
+        },
+        select: { id: true },
+      });
+
+      if (recentDuplicate) {
+        const r = noStore(
+          { error: "Looks like you already posted this recently.", productId: recentDuplicate.id },
+          { status: 409 }
+        );
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
+
+      // Create ACTIVE listing (try to set publishedAt/dedupeKey if columns exist)
+      const created = await createProductSafe({
         name,
         category,
         subcategory,
+        condition,
+        featured,
+        sellerId: me.id,
+        status: "ACTIVE",
+        createdAt: new Date(),
+        publishedAt: new Date(), // dropped if column missing
+        dedupeKey,               // dropped if column missing
+
         ...(brand ? { brand } : {}),
+        ...(description ? { description } : {}),
         ...(price !== undefined ? { price } : {}),
-      },
-      select: { id: true },
-    });
+        ...(image ? { image } : {}),
+        ...(finalGallery.length ? { gallery: finalGallery } : {}),
+        ...(location ? { location } : {}),
+        ...(negotiable !== undefined ? { negotiable } : {}),
+        ...(sellerName ? { sellerName } : {}),
+        sellerPhone: sellerPhoneRaw ?? null,
+        ...(sellerLocation ? { sellerLocation } : {}),
+      });
 
-    if (recentDuplicate) {
-      const r = noStore(
-        { error: "Looks like you already posted this recently.", productId: recentDuplicate.id },
-        { status: 409 }
-      );
+      // invalidate caches so the listing appears immediately
+      try {
+        revalidateTag("home:active");
+        revalidateTag("products:latest");
+        revalidateTag(`product:${created.id}`);
+        revalidateTag(`user:${me.id}:listings`);
+        revalidatePath("/");
+        revalidatePath("/products");
+        revalidatePath("/dashboard");
+        revalidatePath("/saved");
+        if (me.username) revalidatePath(`/store/${me.username}`);
+        revalidatePath(`/product/${created.id}`);
+        revalidatePath(`/listing/${created.id}`);
+      } catch {}
+
+      track("product_create_success", {
+        reqId,
+        userId: me.id,
+        tier,
+        productId: created.id,
+        featured,
+        hasPrice: price != null,
+        gallerySize: finalGallery.length,
+      });
+
+      const r = noStore({ ok: true, productId: created.id }, { status: 201 });
       r.headers.set("x-request-id", reqId);
+      r.headers.set("Location", `/product/${created.id}`);
+      if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+      return r;
+    } catch (e: any) {
+      console.error("POST /api/products/create error", e);
+      track("product_create_error", { reqId, message: e?.message ?? String(e) });
+
+      if (e?.code === "P2002") {
+        const r = noStore({ error: "Duplicate value not allowed" }, { status: 409 });
+        r.headers.set("x-request-id", reqId);
+        if (idemKey) r.headers.set("x-idempotency-key", idemKey);
+        return r;
+      }
+      const r = noStore({ error: e?.message || "Server error" }, { status: 500 });
+      r.headers.set("x-request-id", reqId);
+      if (idemKey) r.headers.set("x-idempotency-key", idemKey);
       return r;
     }
-
-    // Create ACTIVE listing (and try to set publishedAt when available)
-    const created = await createProductSafe({
-      name,
-      category,
-      subcategory,
-      condition,
-      featured,
-      sellerId: me.id,
-      status: "ACTIVE",
-      createdAt: new Date(),
-      publishedAt: new Date(), // helps any date filters; dropped if column missing
-      dedupeKey, // dropped below if column missing
-
-      ...(brand ? { brand } : {}),
-      ...(description ? { description } : {}),
-      ...(price !== undefined ? { price } : {}), // allow null for "contact for price"
-      ...(image ? { image } : {}),
-      ...(finalGallery.length ? { gallery: finalGallery } : {}),
-      ...(location ? { location } : {}),
-      ...(negotiable !== undefined ? { negotiable } : {}),
-      ...(sellerName ? { sellerName } : {}),
-      sellerPhone: sellerPhoneRaw ?? null,
-      ...(sellerLocation ? { sellerLocation } : {}),
-    });
-
-    // invalidate caches so the listing appears immediately
-    try {
-      revalidateTag("home:active");
-      revalidateTag("products:latest");
-      revalidateTag(`user:${me.id}:listings`);
-      revalidatePath("/");
-      revalidatePath("/dashboard");
-      revalidatePath("/saved");
-      if (me.username) revalidatePath(`/store/${me.username}`);
-      revalidatePath(`/product/${created.id}`);
-      // some projects also expose /listing/[id]
-      revalidatePath(`/listing/${created.id}`);
-    } catch {
-      /* best-effort */
-    }
-
-    track("product_create_success", {
-      reqId,
-      userId: me.id,
-      tier,
-      productId: created.id,
-      featured,
-      hasPrice: price != null,
-      gallerySize: finalGallery.length,
-    });
-
-    const r = noStore({ ok: true, productId: created.id }, { status: 201 });
-    r.headers.set("x-request-id", reqId);
-    return r;
-  } catch (e: any) {
-    console.error("POST /api/products/create error", e);
-    track("product_create_error", { reqId, message: e?.message ?? String(e) });
-
-    if (e?.code === "P2002") {
-      const r = noStore({ error: "Duplicate value not allowed" }, { status: 409 });
-      r.headers.set("x-request-id", reqId);
-      return r;
-    }
-
-    const r = noStore({ error: e?.message || "Server error" }, { status: 500 });
-    r.headers.set("x-request-id", reqId);
-    return r;
-  }
+  });
 }

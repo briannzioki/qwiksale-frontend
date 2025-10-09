@@ -1,204 +1,208 @@
 // src/app/components/DeleteListingButton.tsx
 "use client";
 
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
-type Tone = "neutral" | "danger";
+type Kind = "product" | "service";
+type LegacyType = Kind;
 
-/**
- * DeleteListingButton
- *
- * Works for both products and services.
- * Accepts any of:
- *  - { productId: string }
- *  - { serviceId: string }
- *  - { id: string, type: "product" | "service" }   // fallback form
- *
- * Other props:
- *  - afterDeleteAction?: () => void | Promise<void>
- *  - label?: string
- *  - confirmText?: string
- *  - tone?: "neutral" | "danger"
- *  - className?: string
- *
- * Emits client events:
- *    - "qs:track"            { event: "listing_delete", payload: { id, type } }
- *    - "qs:listing:deleted"  { id, type }
- */
+/** Base props shared by all shapes */
 type BaseProps = {
-  className?: string;
-  afterDeleteAction?: () => void | Promise<void>;
+  id?: string;
+  productName?: string;
+  onDeletedAction?: () => void;
+  holdMs?: number;
   label?: string;
-  confirmText?: string;
-  tone?: Tone;
+  className?: string;
+  disabled?: boolean;
+  /** New prop (preferred) */
+  kind?: Kind;
+  /** Legacy prop (back-compat) */
+  type?: LegacyType;
 };
 
-type ProductProps = BaseProps & {
-  productId: string;
-  serviceId?: never;
-  id?: never;
-  type?: "product";
-};
-
-type ServiceProps = BaseProps & {
-  serviceId: string;
-  productId?: never;
-  id?: never;
-  type?: "service";
-};
-
-type GenericProps = BaseProps & {
-  id: string;
-  type: "product" | "service";
-  productId?: never;
-  serviceId?: never;
-};
-
-type Props = ProductProps | ServiceProps | GenericProps;
+/** Accept any of: id | productId | serviceId (optionally with kind/type) */
+type Props =
+  | (BaseProps & { id: string; productId?: never; serviceId?: never })
+  | (BaseProps & { productId: string; id?: never; serviceId?: never })
+  | (BaseProps & { serviceId: string; id?: never; productId?: never });
 
 export default function DeleteListingButton(props: Props) {
   const {
-    className,
-    afterDeleteAction,
-    label = "Delete",
-    confirmText,
-    tone = "neutral",
+    id,
+    productName,
+    onDeletedAction,
+    holdMs = 900,
+    label,
+    className = "",
+    disabled = false,
   } = props;
 
-  // Resolve target type + id from flexible props
-  const targetType: "product" | "service" =
-    "type" in props && props.type
-      ? props.type
-      : "productId" in props && props.productId
-      ? "product"
-      : "serviceId" in props && props.serviceId
-      ? "service"
-      : "product"; // default
+  // Normalize kind (prefer new 'kind', fall back to legacy 'type', finally infer from provided id prop)
+  const explicitKind: Kind | undefined = props.kind ?? props.type;
 
-  const targetId: string =
-    ("productId" in props && props.productId) ||
-    ("serviceId" in props && props.serviceId) ||
-    ("id" in props && props.id) ||
-    "";
+  const inferredKind: Kind =
+    explicitKind ??
+    ("serviceId" in props && typeof props.serviceId === "string"
+      ? "service"
+      : "product");
+
+  const targetId: string | undefined =
+    id ??
+    (inferredKind === "service"
+      ? ("serviceId" in props ? props.serviceId : undefined)
+      : ("productId" in props ? props.productId : undefined));
+
+  const targetMissing = !targetId;
 
   const router = useRouter();
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [_, startTransition] = useTransition();
-  const cooldownUntilRef = useRef<number>(0);
+  const [pending, startTransition] = useTransition();
+  const [busy, setBusy] = useState(false);
 
-  const effectiveConfirm =
-    confirmText ??
-    (targetType === "service"
-      ? "Delete this service? This cannot be undone."
-      : "Delete this listing? This cannot be undone.");
+  // --- Long-press state (mouse/touch/pen) ---
+  const [progress, setProgress] = useState(0); // 0..1
+  const rafRef = useRef<number | null>(null);
+  const startRef = useRef<number | null>(null);
+  const holdingRef = useRef(false);
 
-  const emit = useCallback((name: string, detail?: unknown) => {
-    // eslint-disable-next-line no-console
-    console.log(`[qs:event] ${name}`, detail);
-    if (typeof window !== "undefined" && "CustomEvent" in window) {
-      window.dispatchEvent(new CustomEvent(name, { detail }));
-    }
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
   }, []);
 
-  const track = useCallback(
-    (event: string, payload?: Record<string, unknown>) => {
-      // eslint-disable-next-line no-console
-      console.log("[qs:track]", event, payload);
-      emit("qs:track", { event, payload });
-    },
-    [emit]
-  );
+  const minHold = Math.max(400, holdMs || 900);
 
-  const handleDelete = useCallback(async () => {
-    if (!targetId) {
-      toast.error("Missing listing id");
-      return;
-    }
+  function beginHold() {
+    if (busy || pending || targetMissing || disabled) return;
+    holdingRef.current = true;
+    startRef.current = performance.now();
 
-    // Basic cooldown
-    const now = Date.now();
-    if (now < cooldownUntilRef.current || isDeleting) return;
-    cooldownUntilRef.current = now + 800;
+    const step = (now: number) => {
+      if (!holdingRef.current) return;
+      const elapsed = now - (startRef.current ?? now);
+      const p = Math.min(1, elapsed / minHold);
+      setProgress(p);
+      if (p >= 1) {
+        holdingRef.current = false;
+        setProgress(0);
+        void actuallyDelete();
+        return;
+      }
+      rafRef.current = requestAnimationFrame(step);
+    };
 
-    if (!confirm(effectiveConfirm)) return;
+    rafRef.current = requestAnimationFrame(step);
+  }
 
-    setIsDeleting(true);
-    const ac = new AbortController();
+  function cancelHold() {
+    holdingRef.current = false;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    startRef.current = null;
+    setProgress(0);
+  }
+
+  async function fallbackConfirmAndDelete() {
+    if (busy || pending || targetMissing || disabled) return;
+    const hint = productName ? `“${productName}”` : "this listing";
+    if (!window.confirm(`Delete ${hint}? This cannot be undone.`)) return;
+    await actuallyDelete();
+  }
+
+  async function actuallyDelete() {
+    if (busy || pending || targetMissing || disabled) return;
+    setBusy(true);
+
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const endpoint =
-        targetType === "service"
-          ? `/api/services/${encodeURIComponent(targetId)}`
-          : `/api/products/${encodeURIComponent(targetId)}`;
-
-      const r = await fetch(endpoint, {
+      const base = inferredKind === "service" ? "/api/services" : "/api/products";
+      const r = await fetch(`${base}/${encodeURIComponent(String(targetId))}`, {
         method: "DELETE",
-        signal: ac.signal,
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        cache: "no-store",
+        credentials: "include",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
       });
 
-      let j: any = null;
-      try {
-        j = await r.json();
-      } catch {
-        /* ignore non-JSON */
+      clearTimeout(t);
+
+      if (r.status === 401) {
+        toast.error("Please sign in.");
+        router.replace(`/signin?callbackUrl=${encodeURIComponent("/dashboard")}`);
+        return;
       }
 
+      const j = await r.json().catch(() => ({} as any));
       if (!r.ok || j?.error) {
-        const msg = j?.error || `Failed (${r.status})`;
-        throw new Error(msg);
+        throw new Error(j?.error || `Failed (${r.status})`);
       }
 
-      toast.dismiss();
-      toast.success("Deleted");
-      track("listing_delete", { id: targetId, type: targetType });
-
-      emit("qs:listing:deleted", { id: targetId, type: targetType });
-
-      try {
-        await afterDeleteAction?.();
-      } catch (e) {
-        console.error("[DeleteListingButton] afterDeleteAction error:", e);
-      }
-
+      onDeletedAction?.();
+      toast.success("Deleted.");
       startTransition(() => router.refresh());
     } catch (e: any) {
-      const message =
-        e?.name === "AbortError"
-          ? "Delete cancelled"
-          : e?.message || "Delete failed";
-      toast.dismiss();
-      toast.error(message);
+      toast.error(e?.message || "Failed to delete");
     } finally {
-      setIsDeleting(false);
+      clearTimeout(t);
+      setBusy(false);
     }
-  }, [afterDeleteAction, effectiveConfirm, isDeleting, targetId, targetType, router, track, emit]);
+  }
 
-  const toneClasses =
-    tone === "danger"
-      ? "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/20"
-      : "border-gray-300 text-gray-800 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800";
+  const isDisabled = busy || pending || targetMissing || disabled;
+  const showText = typeof label === "string" && label.trim().length > 0;
 
   return (
     <button
       type="button"
-      onClick={handleDelete}
-      disabled={isDeleting}
-      className={
-        className ??
-        [
-          "inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-semibold transition",
-          toneClasses,
-          isDeleting ? "opacity-60 cursor-wait" : "",
-        ].join(" ")
+      disabled={isDisabled}
+      onPointerDown={beginHold}
+      onPointerUp={cancelHold}
+      onPointerCancel={cancelHold}
+      onPointerLeave={cancelHold}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          void fallbackConfirmAndDelete();
+        }
+      }}
+      onClick={(e) => {
+        // Simple click -> confirm dialog (no visible tip text)
+        if (progress === 0 && !holdingRef.current) {
+          e.preventDefault();
+          void fallbackConfirmAndDelete();
+        }
+      }}
+      aria-disabled={isDisabled}
+      aria-busy={isDisabled ? "true" : "false"}
+      aria-label={
+        productName
+          ? `Delete ${productName}`
+          : `Delete ${inferredKind === "service" ? "service" : "listing"}`
       }
-      aria-label="Delete listing"
-      aria-busy={isDeleting}
-      title={label}
+      title="Delete"
+      className={[
+        "relative inline-flex items-center justify-center rounded-md",
+        "border border-red-300 bg-white text-red-600 hover:bg-red-50",
+        "dark:border-red-900/40 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-900/20",
+        "px-2 py-1 text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed",
+        className,
+      ].join(" ")}
     >
-      {isDeleting ? "Deleting…" : label}
+      {/* progress overlay (no extra text) */}
+      <span
+        className="pointer-events-none absolute inset-0 bg-red-500/10"
+        style={{ transform: `scaleX(${progress})`, transformOrigin: "left" }}
+        aria-hidden
+      />
+      <span className="relative z-10 flex items-center gap-1">
+        <span aria-hidden>🗑️</span>
+        {showText ? (isDisabled ? "Deleting…" : label) : null}
+      </span>
     </button>
   );
 }

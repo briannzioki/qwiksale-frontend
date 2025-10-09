@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
+import { assertAdmin } from "@/app/api/admin/_lib/guard";
 
 /* ---------------- tiny utils ---------------- */
 
@@ -24,16 +25,11 @@ async function getId(
   req: NextRequest,
   paramsPromise?: Promise<{ id: string }>
 ) {
-  // Try the (promised) route params first
   try {
     const p = await paramsPromise;
     const idFromParams = (p?.id ?? "").trim();
     if (idFromParams) return idFromParams;
-  } catch {
-    /* ignore and fall back to URL parse */
-  }
-
-  // Fall back to parsing the URL path
+  } catch {}
   try {
     const segs = req.nextUrl?.pathname?.split("/") ?? [];
     const i = segs.findIndex((s) => s === "services");
@@ -41,18 +37,6 @@ async function getId(
   } catch {
     return "";
   }
-}
-
-/** Admin allow-list from env (comma-separated emails) or DB role. */
-function isAdminEmail(email?: string | null) {
-  const raw = process.env["ADMIN_EMAILS"] || "";
-  const set = new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  return !!email && set.has(email.toLowerCase());
 }
 
 function parseBoolean(v: unknown): boolean | undefined {
@@ -97,45 +81,28 @@ export async function PATCH(
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
-  // --- authN / authZ ---
-  let session: any = null;
-  try {
-    session = await auth();
-  } catch {
-    /* ignore */
-  }
-  const user = session?.user;
-  if (!user?.id || !user?.email) return noStore({ error: "Unauthorized" }, { status: 401 });
+  // unified admin gate
+  const denied = await assertAdmin();
+  if (denied) return denied;
 
-  let isAdmin = isAdminEmail(user.email);
-  if (!isAdmin) {
-    const dbUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { role: true },
-    });
-    isAdmin = dbUser?.role === "ADMIN";
-  }
-  if (!isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
+  // optional actor for audit
+  const session = await auth().catch(() => null);
+  const actorId = (session as any)?.user?.id as string | undefined;
 
   // --- params ---
   const id = await getId(req, context?.params);
   if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
   // --- body / query ---
-  let body: any = null;
+  let body: any = {};
   const ctype = (req.headers.get("content-type") || "").toLowerCase();
   if (ctype.includes("application/json")) {
-    body = await req.json().catch(() => ({}));
-  } else {
-    body = {};
+    body = (await req.json().catch(() => ({}))) ?? {};
   }
 
   const q = req.nextUrl.searchParams;
-  const featuredQ = q.get("featured");
-  const forceQ = q.get("force");
-
-  const featuredParsed = parseBoolean((body as any)?.featured ?? featuredQ);
-  const forceParsed = parseBoolean((body as any)?.force ?? forceQ) === true;
+  const featuredParsed = parseBoolean(body?.featured ?? q.get("featured"));
+  const forceParsed = parseBoolean(body?.force ?? q.get("force")) === true;
 
   if (typeof featuredParsed !== "boolean") {
     return noStore({ error: "featured:boolean required" }, { status: 400 });
@@ -172,11 +139,11 @@ export async function PATCH(
       select: { id: true, featured: true, status: true, updatedAt: true },
     });
 
-    // Optional audit (only if model exists)
+    // Optional audit (only if table exists)
     try {
       await (prisma as any).adminAuditLog?.create?.({
         data: {
-          actorId: user.id,
+          actorId: actorId ?? null,
           action: "SERVICE_FEATURE_TOGGLE",
           meta: {
             serviceId: id,
@@ -186,9 +153,7 @@ export async function PATCH(
           },
         },
       });
-    } catch {
-      /* ignore audit errors */
-    }
+    } catch {}
 
     return noStore({ ok: true, service: updated });
   } catch (e) {

@@ -1,7 +1,7 @@
 // src/app/lib/servicesStore.ts
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /* Types */
 export type Service = {
@@ -18,8 +18,26 @@ export type Service = {
   gallery?: string[] | null;
   location?: string | null;
   status?: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT";
+  featured?: boolean;
   createdAt?: string; // ISO
+
+  // Keep both for compatibility; API uses sellerId
   providerId?: string | null;
+  sellerId?: string | null;
+
+  // Optional seller snapshot (as returned by API)
+  sellerName?: string | null;
+  sellerLocation?: string | null;
+  sellerMemberSince?: string | null;
+  sellerRating?: number | null;
+  sellerSales?: number | null;
+  seller?: {
+    id?: string;
+    name?: string | null;
+    image?: string | null;
+    username?: string | null;
+    subscription?: string | null;
+  } | null;
 };
 
 type ApiListEnvelope = { items: Service[] };
@@ -30,9 +48,11 @@ export type UseServicesReturn = {
   ready: boolean;
   error?: string | null;
   reload: () => void;
-  /** Optional creator to mirror product UX (not required by your forms). */
+  /** Optional creator to mirror product UX. Returns new id. */
   addService: (payload: any) => Promise<{ id: string }>;
+  /** Light re-fetch if cache is stale. */
   refreshIfStale: () => Promise<void>;
+  /** Synchronous cache read. */
   getById: (id: string) => Service | undefined;
   /** PATCH an existing service and update caches. */
   updateService: (id: string, patch: Record<string, unknown>) => Promise<Service>;
@@ -51,17 +71,22 @@ const memory = {
   lastAt: 0,
 };
 
+function normId(v: unknown): string {
+  return String(v ?? "").trim();
+}
+
 function cacheListToMemory(list: Service[]) {
   memory.list = list;
-  memory.map = new Map(list.map((s) => [String(s.id), s]));
+  memory.map = new Map(list.map((s) => [normId(s.id), s]));
   memory.lastAt = Date.now();
 }
 function updateOneInMemory(next: Service) {
-  const id = String(next.id);
-  memory.map.set(id, next);
-  const idx = memory.list.findIndex((s) => String(s.id) === id);
-  if (idx >= 0) memory.list[idx] = next;
-  else memory.list = [next, ...memory.list];
+  const id = normId(next.id);
+  const merged = { ...(memory.map.get(id) ?? {}), ...next, id } as Service;
+  memory.map.set(id, merged);
+  const idx = memory.list.findIndex((s) => normId(s.id) === id);
+  if (idx >= 0) memory.list[idx] = merged;
+  else memory.list = [merged, ...memory.list];
   memory.lastAt = Date.now();
 }
 function safeSessionGet<T>(key: string): T | null {
@@ -108,7 +133,8 @@ async function fetchList(): Promise<Service[]> {
   return normalizeList(json as ApiListResponse);
 }
 async function fetchItem(id: string): Promise<Service> {
-  const { res, json } = await fetchJson(`/api/services/${encodeURIComponent(id)}`);
+  const sid = encodeURIComponent(normId(id));
+  const { res, json } = await fetchJson(`/api/services/${sid}`);
   if (!res.ok || (json as any)?.error) {
     throw new Error((json as any)?.error || `Not found (${res.status})`);
   }
@@ -139,7 +165,9 @@ export function useServices(options: UseServicesOptions = {}): UseServicesReturn
     try {
       const list = await fetchList();
       applyList(list);
-    } catch {}
+    } catch {
+      /* best-effort */
+    }
   }, [applyList]);
 
   const load = useCallback(
@@ -189,52 +217,66 @@ export function useServices(options: UseServicesOptions = {}): UseServicesReturn
     if (!fresh) await revalidate();
   }, [cacheTtl, revalidate]);
 
-  const addService = useCallback(async (payload: any) => {
-    const r = await fetch("/api/services/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      credentials: "include",
-      body: JSON.stringify(payload),
-    });
-    const j = await r.json().catch(() => ({}));
-    const newId = String(j?.serviceId || j?.id || j?.service?.id || j?.data?.id || "").trim();
-    if (!r.ok || !newId) throw new Error(j?.error || `Failed to create service (${r.status})`);
+  const addService = useCallback(
+    async (payload: any) => {
+      const r = await fetch("/api/services/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => ({}));
+      const newId = normId(j?.serviceId || j?.id || j?.service?.id || j?.data?.id);
+      if (!r.ok || !newId) throw new Error(j?.error || `Failed to create service (${r.status})`);
 
-    const now = new Date().toISOString();
-    const item: Service = {
-      id: newId,
-      name: String(payload?.name ?? ""),
-      description: payload?.description ?? null,
-      category: String(payload?.category ?? ""),
-      subcategory: payload?.subcategory ?? null,
-      price: typeof payload?.price === "number" ? payload.price : null,
-      rateType: payload?.rateType ?? "fixed",
-      serviceArea: payload?.serviceArea ?? null,
-      availability: payload?.availability ?? null,
-      image: payload?.image ?? null,
-      gallery: Array.isArray(payload?.gallery) ? payload.gallery.map(String) : [],
-      location: payload?.location ?? null,
-      status: "ACTIVE",
-      createdAt: now,
-      providerId: null,
-    };
+      // Insert a minimal placeholder immediately…
+      const placeholder: Service = {
+        id: newId,
+        name: String(payload?.name ?? ""),
+        description: payload?.description ?? null,
+        category: String(payload?.category ?? ""),
+        subcategory: payload?.subcategory ?? null,
+        price: typeof payload?.price === "number" ? payload.price : null,
+        rateType: (payload?.rateType as any) ?? "fixed",
+        serviceArea: payload?.serviceArea ?? null,
+        availability: payload?.availability ?? null,
+        image: payload?.image ?? null,
+        gallery: Array.isArray(payload?.gallery) ? payload.gallery.map(String) : [],
+        location: payload?.location ?? null,
+        // status unknown until server truth arrives; omit to avoid lying
+        createdAt: new Date().toISOString(),
+        providerId: null,
+      };
+      updateOneInMemory(placeholder);
+      cacheListToMemory([...memory.list]);
+      safeSessionSet(LIST_KEY, memory.list);
+      setServices([...memory.list]);
 
-    updateOneInMemory(item);
-    cacheListToMemory([...memory.list]);
-    safeSessionSet(LIST_KEY, memory.list);
-    setServices([...memory.list]);
+      // …then hydrate with server truth in the background.
+      fetchItem(newId)
+        .then((fresh) => {
+          updateOneInMemory(fresh);
+          cacheListToMemory([...memory.list]);
+          safeSessionSet(LIST_KEY, memory.list);
+          setServices([...memory.list]);
+        })
+        .catch(() => {
+          /* ignore; user still sees placeholder */
+        });
 
-    void refreshIfStale();
+      void refreshIfStale();
 
-    return { id: newId };
-  }, [refreshIfStale]);
+      return { id: newId };
+    },
+    [refreshIfStale]
+  );
 
-  const getById = useCallback((id: string) => memory.map.get(String(id)), []);
+  const getById = useCallback((id: string) => memory.map.get(normId(id)), []);
 
   const updateService = useCallback(
     async (id: string, patch: Record<string, unknown>): Promise<Service> => {
-      const sid = String(id);
+      const sid = normId(id);
       const prev = memory.map.get(sid) || null;
       const optimistic: Service | null = prev ? ({ ...prev, ...patch, id: prev.id } as Service) : null;
 
@@ -280,12 +322,21 @@ export function useServices(options: UseServicesOptions = {}): UseServicesReturn
     [refreshIfStale]
   );
 
-  return { services: services, ready, error, reload, addService, refreshIfStale, getById, updateService };
+  return {
+    services,
+    ready,
+    error,
+    reload,
+    addService,
+    refreshIfStale,
+    getById,
+    updateService,
+  };
 }
 
 /* Convenience accessors */
 export function getCachedService(id: string): Service | undefined {
-  return memory.map.get(String(id));
+  return memory.map.get(normId(id));
 }
 export function primeServicesCache(list: Service[]) {
   cacheListToMemory(list);

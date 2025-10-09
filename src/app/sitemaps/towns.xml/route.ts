@@ -7,11 +7,12 @@ import { NextResponse } from "next/server";
 /** Resolve a canonical absolute base URL (no trailing slash). */
 function getBaseUrl(): string {
   const raw =
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    "https://qwiksale.sale";
+    process.env['NEXT_PUBLIC_APP_URL'] ||
+    process.env['APP_ORIGIN'] ||
+    process.env.NEXTAUTH_URL ||
+    "https://qwiksale.co";
   const trimmed = String(raw).trim().replace(/\/+$/, "");
-  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.sale";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.co";
 }
 
 /** Minimal XML escaper for <loc> contents. */
@@ -39,12 +40,12 @@ function buildMinimal(): string {
 }
 
 function hasValidDbUrl(): boolean {
-  const u = process.env["DATABASE_URL"] ?? "";
+  const u = process.env['DATABASE_URL'] ?? "";
   return /^postgres(ql)?:\/\//i.test(u);
 }
 
 function shouldSkipDb(): boolean {
-  return process.env["SKIP_SITEMAP_DB"] === "1";
+  return process.env['SKIP_SITEMAP_DB'] === "1";
 }
 
 export async function GET() {
@@ -53,6 +54,7 @@ export async function GET() {
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
         "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
+        Vary: "Accept-Encoding",
       },
     });
   }
@@ -80,13 +82,18 @@ export async function GET() {
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
         "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600",
+        Vary: "Accept-Encoding",
       },
     });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[sitemaps/towns] error:", e);
     return new NextResponse(buildMinimal(), {
-      headers: { "Content-Type": "application/xml; charset=utf-8" },
+      headers: {
+        "Content-Type": "application/xml; charset=utf-8",
+        "Cache-Control": "public, max-age=300, s-maxage=300",
+        Vary: "Accept-Encoding",
+      },
     });
   }
 }

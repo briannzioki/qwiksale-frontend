@@ -1,3 +1,4 @@
+// src/app/components/ProductCard.tsx
 "use client";
 
 import React, { memo, useEffect, useRef, useCallback, useMemo } from "react";
@@ -5,7 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
-import DeleteListingButton from "@/app/components/DeleteListingButton";
+// ⬇️ Use a RELATIVE import to avoid resolving a page component by mistake
+import DeleteListingButton from "./DeleteListingButton";
 
 type Props = {
   id: string;

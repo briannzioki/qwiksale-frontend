@@ -157,11 +157,13 @@ export default function ProfilePhotoUploader({
 
   const onPickFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const f = e.target.files?.[0];
+      // Capture the element, read files, and clear **before** any await
+      const input = e.currentTarget;
+      const f = input.files?.[0];
+      // Always reset to allow picking the same file again
+      input.value = "";
       if (!f) return;
       await beginUpload(f);
-      // reset input value to allow picking the same file again
-      e.currentTarget.value = "";
     },
     [beginUpload]
   );

@@ -449,13 +449,13 @@ async function computeFacets(where: any, Service: any) {
     const categories = (catsRaw as CatRow[])
       .filter((x) => !!x.category)
       .sort((a, b) => b._count._all - a._count._all)
-      .slice(0, 10)
+      .slice(0, 6)
       .map((x) => ({ value: String(x.category), count: x._count._all }));
 
     const subcategories = (subsRaw as SubcatRow[])
       .filter((x) => !!x.subcategory)
       .sort((a, b) => b._count._all - a._count._all)
-      .slice(0, 10)
+      .slice(0, 6)
       .map((x) => ({ value: String(x.subcategory), count: x._count._all }));
 
     return { categories, subcategories };

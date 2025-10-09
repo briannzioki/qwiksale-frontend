@@ -3,10 +3,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { categoryOptions, subcategoryOptions } from "@/app/data/categories";
-import { normalizeMsisdn } from "@/app/data/products";
+import { categories, type CategoryNode } from "@/app/data/categories";
 import { useProducts } from "@/app/lib/productsStore";
 import GalleryUploader from "@/app/components/media/GalleryUploader";
+import {
+  normalizeKenyanPhone,
+  validateKenyanPhone,
+} from "@/app/lib/phone";
 
 type InitialProduct = {
   id: string;
@@ -17,9 +20,7 @@ type InitialProduct = {
   price: number | null;
   image: string | null;
   gallery: string[] | null;
-  /** Fallback some APIs/old data use `images` instead of `gallery` */
   images?: string[] | null;
-  /** Optional brand from existing listing */
   brand?: string | null;
   location: string | null;
   condition: string | null;
@@ -50,10 +51,17 @@ type Props = CreateProps | EditProps;
 const s = (val: unknown, fallback = ""): string =>
   val === null || val === undefined ? fallback : String(val);
 
-type Opt = { value: string; label: string };
-
-// ✅ Public guard (matches your client pages)
+// ✅ Public guard (matches client page)
 const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
+
+/* ----------------------------- Money helper ----------------------------- */
+function fmtKES(n: number) {
+  try {
+    return new Intl.NumberFormat("en-KE").format(n);
+  } catch {
+    return n.toString();
+  }
+}
 
 export default function ProductForm(props: Props) {
   const { className = "" } = props;
@@ -63,49 +71,36 @@ export default function ProductForm(props: Props) {
       ? (props as EditProps).initialValues
       : (props as CreateProps).initialValues) ?? undefined;
 
-  const catOpts: Opt[] = useMemo(
-    () =>
-      (categoryOptions() ?? []).map((o: any) => ({
-        value: s(o?.value),
-        label: s(o?.label ?? o?.value),
-      })),
-    []
-  );
+  // Categories (same helper as edit page)
+  const cats: readonly CategoryNode[] = categories;
 
-  const defaultCategory = catOpts[0]?.value ?? "";
+  const defaultCategory = cats[0]?.name ?? "";
   const startCategory = s(initial?.category, defaultCategory);
+  const startSubcategory =
+    s(
+      initial?.subcategory,
+      (cats.find((c) => c.name === startCategory)?.subcategories ?? [])[0]?.name ?? ""
+    );
 
-  const subOptsFor = useCallback(
-    (cat: string): Opt[] =>
-      (subcategoryOptions(cat) ?? []).map((o: any) => ({
-        value: s(o?.value),
-        label: s(o?.label ?? o?.value),
-      })),
-    []
-  );
-
-  const firstSubOf = useCallback(
-    (cat: string) => subOptsFor(cat)[0]?.value ?? "",
-    [subOptsFor]
-  );
-  const startSubcategory = s(initial?.subcategory, firstSubOf(startCategory));
-
-  // fields
-  const [category, setCategory] = useState<string>(startCategory);
-  const [subcategory, setSubcategory] = useState<string>(startSubcategory);
+  // fields (consistent defaults/order with edit page)
   const [name, setName] = useState<string>(s(initial?.name));
-  const [brand, setBrand] = useState<string>(s((initial as any)?.brand));
-  const normalizedCondition =
-    initial?.condition === "brand new" || initial?.condition === "pre-owned"
-      ? (initial.condition as "brand new" | "pre-owned")
-      : ("pre-owned" as const);
-  const [condition, setCondition] = useState<"brand new" | "pre-owned">(normalizedCondition);
   const [price, setPrice] = useState<number | "">(
     typeof initial?.price === "number" ? initial.price : ""
   );
-  const [location, setLocation] = useState<string>(s(initial?.location));
-  const [description, setDescription] = useState<string>(s(initial?.description));
+  const [negotiable, setNegotiable] = useState<boolean>(Boolean(initial?.negotiable));
+  const normalizedCondition =
+    initial?.condition === "brand new" || initial?.condition === "pre-owned"
+      ? (initial.condition as "brand new" | "pre-owned")
+      : ("brand new" as const);
+  const [condition, setCondition] = useState<"brand new" | "pre-owned">(normalizedCondition);
+
+  const [category, setCategory] = useState<string>(startCategory);
+  const [subcategory, setSubcategory] = useState<string>(startSubcategory);
+
+  const [brand, setBrand] = useState<string>(s((initial as any)?.brand));
+  const [location, setLocation] = useState<string>(s(initial?.location) || "Nairobi");
   const [phone, setPhone] = useState<string>("");
+  const [description, setDescription] = useState<string>(s(initial?.description));
 
   // gallery state + pending local files (to be uploaded on submit)
   const initialGallery: string[] =
@@ -125,29 +120,40 @@ export default function ProductForm(props: Props) {
   // Keep subcategory valid when category changes
   useEffect(() => {
     if (!category) return;
-    const subs = subOptsFor(category);
-    const has = subs.some((o) => o.value === subcategory);
-    if (!has) setSubcategory(subs[0]?.value ?? "");
-  }, [category, subcategory, subOptsFor]);
+    const subs = (cats.find((c) => c.name === category)?.subcategories ?? []).map((s) => s.name);
+    const has = subs.includes(subcategory);
+    if (!has) setSubcategory(subs[0] ?? "");
+  }, [category, subcategory, cats]);
 
-  const subOpts = useMemo(() => subOptsFor(category), [category, subOptsFor]);
+  const subcats = useMemo(
+    () => (cats.find((c) => c.name === category)?.subcategories ?? []).map((s) => s.name),
+    [category, cats]
+  );
+
+  // Phone helpers (same as edit page)
+  const phoneValidation = phone ? validateKenyanPhone(phone) : { ok: true as const };
+  const normalizedPhone = phone ? (normalizeKenyanPhone(phone) ?? "") : "";
+  const phoneOk = !phone || phoneValidation.ok;
+
+  const priceNum = typeof price === "number" ? price : 0;
 
   const canSubmit =
-    name.trim().length > 0 &&
+    name.trim().length >= 3 &&
     !!category &&
     !!subcategory &&
-    location.trim().length > 0 &&
-    (price === "" || Number(price) >= 0);
+    description.trim().length >= 10 &&
+    (price === "" || Number(price) >= 0) &&
+    phoneOk;
 
   async function uploadPending(): Promise<string[]> {
     if (pendingFiles.length === 0) return [];
-    const uploads = pendingFiles.slice(0, 10).map(async (f) => {
+    const uploads = pendingFiles.slice(0, 6).map(async (f) => {
       const fd = new FormData();
       fd.append("file", f);
       const up = await fetch("/api/upload", { method: "POST", body: fd });
       const uj = (await up.json().catch(() => ({}))) as any;
       if (!up.ok || !(uj?.url || uj?.secure_url)) throw new Error(uj?.error || "Upload failed");
-      return String(uj.url || uj.secure_url);
+      return String(uj?.url || uj?.secure_url);
     });
     return Promise.all(uploads);
   }
@@ -156,9 +162,11 @@ export default function ProductForm(props: Props) {
     (value: string) => {
       const nextCat = s(value);
       setCategory(nextCat);
-      setSubcategory(firstSubOf(nextCat));
+      const first =
+        (cats.find((c) => c.name === nextCat)?.subcategories ?? [])[0]?.name ?? "";
+      setSubcategory(first);
     },
-    [firstSubOf]
+    [cats]
   );
 
   const submit = useCallback(
@@ -166,9 +174,8 @@ export default function ProductForm(props: Props) {
       e.preventDefault();
       if (busy) return;
 
-      const msisdn = phone ? normalizeMsisdn(phone) : null;
-      if (phone && !msisdn) {
-        toast.error("Phone must be Safaricom format (2547XXXXXXXX)");
+      if (phone && !phoneOk) {
+        toast.error("Please enter a valid Kenyan mobile.");
         return;
       }
 
@@ -183,8 +190,10 @@ export default function ProductForm(props: Props) {
       setBusy(true);
       try {
         const uploaded = await uploadPending();
-        const mergedGallery = [...gallery, ...uploaded].slice(0, 10).map(String);
+        const mergedGallery = [...gallery, ...uploaded].slice(0, 6).map(String);
         const cover = mergedGallery[0] || null;
+
+        const msisdn = normalizedPhone || null;
 
         const payload: Record<string, unknown> = {
           name: name.trim(),
@@ -195,11 +204,12 @@ export default function ProductForm(props: Props) {
           price: price === "" ? null : Number(price),
           location: location.trim(),
           description: description.trim(),
-          phone: msisdn ?? null,
+          negotiable,
           sellerPhone: msisdn ?? null,
+          // keep backwards compat with any consumers expecting `phone`
+          phone: msisdn ?? null,
           image: cover,
           gallery: mergedGallery,
-          // keep backwards compat with APIs expecting `images`
           images: mergedGallery,
         };
 
@@ -242,16 +252,17 @@ export default function ProductForm(props: Props) {
       isEdit,
       location,
       name,
+      negotiable,
+      normalizedPhone,
       pendingFiles.length,
       phone,
+      phoneOk,
       price,
       props,
       subcategory,
       updateProduct,
     ]
   );
-
-  const phoneInvalid = Boolean(phone) && !normalizeMsisdn(phone);
 
   return (
     <form
@@ -267,144 +278,170 @@ export default function ProductForm(props: Props) {
         {isEdit ? "Edit Product" : "Post a Product"}
       </h2>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-        {/* Title */}
-        <div>
-          <label className="text-sm font-medium" htmlFor="pf-title">Title</label>
-          <input
-            id="pf-title"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            required
-            minLength={3}
-          />
+      <div className="mt-4 grid grid-cols-1 gap-4">
+        {/* Title & Price (match edit page grouping) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="md:col-span-2">
+            <label className="text-sm font-medium" htmlFor="pf-title">Title</label>
+            <input
+              id="pf-title"
+              value={name}
+              onChange={(e) => setName(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              required
+              minLength={3}
+              placeholder="e.g. iPhone 13 Pro 256GB"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium" htmlFor="pf-price">Price (KES)</label>
+            <input
+              id="pf-price"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={price === "" ? "" : price}
+              onChange={(e) => {
+                const v = e.currentTarget.value;
+                setPrice(v === "" ? "" : Math.max(0, Math.floor(Number(v) || 0)));
+              }}
+              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder='Leave empty for "Contact for price"'
+              aria-describedby="pf-price-help"
+            />
+            <p id="pf-price-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+              Leave empty to show <em>Contact for price</em>.
+            </p>
+
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                id="pf-negotiable"
+                type="checkbox"
+                className="rounded border-gray-300 dark:border-slate-600"
+                checked={negotiable}
+                onChange={(e) => setNegotiable(e.currentTarget.checked)}
+              />
+              <label htmlFor="pf-negotiable" className="text-sm text-gray-700 dark:text-slate-200">
+                Negotiable price
+              </label>
+            </div>
+
+            {typeof price === "number" && price > 0 && (
+              <div className="text-xs mt-1 text-gray-600 dark:text-gray-400">
+                You entered: KES {fmtKES(priceNum)}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Brand (optional) */}
-        <div>
-          <label className="text-sm font-medium" htmlFor="pf-brand">Brand (optional)</label>
-          <input
-            id="pf-brand"
-            value={brand}
-            onChange={(e) => setBrand(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-          />
+        {/* Condition, Category, Subcategory (same order as edit page) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="text-sm font-medium" htmlFor="pf-condition">Condition</label>
+            <select
+              id="pf-condition"
+              value={condition}
+              onChange={(e) => setCondition(e.currentTarget.value as "brand new" | "pre-owned")}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            >
+              <option value="brand new">Brand new</option>
+              <option value="pre-owned">Pre-owned</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium" htmlFor="pf-category">Category</label>
+            <select
+              id="pf-category"
+              value={category}
+              onChange={(e) => onChangeCategory(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            >
+              {cats.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium" htmlFor="pf-subcategory">Subcategory</label>
+            <select
+              id="pf-subcategory"
+              value={subcategory}
+              onChange={(e) => setSubcategory(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            >
+              {subcats.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {/* Category */}
-        <div>
-          <label className="text-sm font-medium" htmlFor="pf-category">Category</label>
-          <select
-            id="pf-category"
-            value={category}
-            onChange={(e) => onChangeCategory(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-          >
-            {catOpts.map((o) => (
-              <option key={`${o.value}::${o.label}`} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Brand, Location, Phone (same order) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="text-sm font-medium" htmlFor="pf-brand">Brand (optional)</label>
+            <input
+              id="pf-brand"
+              value={brand}
+              onChange={(e) => setBrand(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder="e.g. Samsung"
+            />
+          </div>
 
-        {/* Subcategory */}
-        <div>
-          <label className="text-sm font-medium" htmlFor="pf-subcategory">Subcategory</label>
-          <select
-            id="pf-subcategory"
-            value={subcategory}
-            onChange={(e) => setSubcategory(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-          >
-            {subOpts.map((o) => (
-              <option key={`${o.value}::${o.label}`} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div>
+            <label className="text-sm font-medium" htmlFor="pf-location">Location</label>
+            <input
+              id="pf-location"
+              value={location}
+              onChange={(e) => setLocation(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder="e.g. Nairobi"
+            />
+          </div>
 
-        {/* Condition */}
-        <div>
-          <label className="text-sm font-medium" htmlFor="pf-condition">Condition</label>
-          <select
-            id="pf-condition"
-            value={condition}
-            onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-          >
-            <option value="brand new">Brand new</option>
-            <option value="pre-owned">Pre-owned</option>
-          </select>
-        </div>
-
-        {/* Price */}
-        <div>
-          <label className="text-sm font-medium" htmlFor="pf-price">Price (KES)</label>
-          <input
-            id="pf-price"
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={price === "" ? "" : price}
-            onChange={(e) => {
-              const v = e.target.value;
-              setPrice(v === "" ? "" : Math.max(0, Math.floor(Number(v) || 0)));
-            }}
-            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            placeholder='Leave empty for "Contact for price"'
-            aria-describedby="pf-price-help"
-          />
-          <p id="pf-price-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-            Leave empty to show <em>Contact for price</em>.
-          </p>
-        </div>
-
-        {/* Location */}
-        <div>
-          <label className="text-sm font-medium" htmlFor="pf-location">Location</label>
-          <input
-            id="pf-location"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            required
-          />
-        </div>
-
-        {/* Phone (optional) */}
-        <div>
-          <label className="text-sm font-medium" htmlFor="pf-phone">Seller phone (optional)</label>
-          <input
-            id="pf-phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
-            placeholder="2547XXXXXXXX"
-            inputMode="tel"
-            aria-invalid={phoneInvalid || undefined}
-          />
-          <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-            {phone
-              ? phoneInvalid
-                ? "Please use Safaricom format: 2547XXXXXXXX"
-                : `Normalized: ${normalizeMsisdn(phone)}`
-              : "Optional. Buyers can call or WhatsApp."}
+          <div>
+            <label className="text-sm font-medium" htmlFor="pf-phone">Phone (WhatsApp, optional)</label>
+            <input
+              id="pf-phone"
+              value={phone}
+              onChange={(e) => setPhone(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder="07XXXXXXXX or +2547XXXXXXXX"
+              inputMode="tel"
+              aria-invalid={!!phone && !phoneOk}
+              aria-describedby="pf-phone-help"
+            />
+            <div id="pf-phone-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+              {phone
+                ? phoneOk
+                  ? <>Normalized: <code className="font-mono">{normalizedPhone}</code></>
+                  : "Please enter a valid Kenyan mobile."
+                : "Optional. Buyers can call or WhatsApp."}
+            </div>
           </div>
         </div>
 
         {/* Description */}
-        <div className="md:col-span-2">
+        <div>
           <label className="text-sm font-medium" htmlFor="pf-description">Description</label>
           <textarea
             id="pf-description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
+            onChange={(e) => setDescription(e.currentTarget.value)}
+            rows={5}
             className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            placeholder="Describe the item, condition, accessories, warranty, etc."
+            required
+            minLength={10}
           />
         </div>
 
@@ -414,9 +451,9 @@ export default function ProductForm(props: Props) {
             value={gallery}
             onChangeAction={(next) => setGallery(next)}
             onFilesSelectedAction={(files) =>
-              setPendingFiles((cur) => [...cur, ...files].slice(0, 10))
+              setPendingFiles((cur) => [...cur, ...files].slice(0, 6))
             }
-            max={10}
+            max={6}
             accept="image/*,.jpg,.jpeg,.png,.webp"
             maxSizeMB={10}
           />

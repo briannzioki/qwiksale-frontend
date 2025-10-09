@@ -1,9 +1,11 @@
+// src/app/components/AppShell.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Header from "@/app/components/Header";
+import Footer from "@/app/components/Footer";
 
 /* ------------------------ tiny event/analytics ------------------------ */
 function emit(name: string, detail?: unknown) {
@@ -40,7 +42,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false); // categories drawer
   const pathname = usePathname();
 
-  // 🔹 Lazy categories: only load when drawer opens (smaller initial bundle)
+  // Lazy-load categories only when needed
   const [cats, setCats] = useState<ReadonlyArray<Category> | null>(null);
   useEffect(() => {
     if (open && !cats) {
@@ -50,44 +52,61 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [open, cats]);
 
-  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  // Refs for a11y management
   const drawerRef = useRef<HTMLElement | null>(null);
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const liveRef = useRef<HTMLSpanElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null); // element that opened the drawer
+  const headerRef = useRef<HTMLElement | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const footerRef = useRef<HTMLElement | null>(null);
 
-  // Announce drawer state changes for screen readers
+  // Announce changes for screen readers
   const announce = useCallback((msg: string) => {
-    if (!liveRef.current) return;
-    liveRef.current.textContent = msg;
+    const node = liveRef.current;
+    if (!node) return;
+    node.textContent = msg;
     setTimeout(() => {
-      if (liveRef.current) liveRef.current.textContent = "";
+      if (node) node.textContent = "";
     }, 1200);
   }, []);
 
-  // Bridge: allow header (or anywhere) to open/close the drawer via events
+  // Open/close helpers that restore focus correctly
+  const openDrawer = useCallback(() => {
+    openerRef.current = (document.activeElement as HTMLElement) ?? null;
+    setOpen(true);
+  }, []);
+  const closeDrawer = useCallback(() => {
+    setOpen(false);
+    // focus will be restored in the `open` effect cleanup below
+  }, []);
+
+  // Bridge: allow external components to open/close via events
   useEffect(() => {
-    const onOpen = () => setOpen(true);
-    const onClose = () => setOpen(false);
+    const onOpen = () => openDrawer();
+    const onClose = () => closeDrawer();
     window.addEventListener("qs:categories:open", onOpen as EventListener);
     window.addEventListener("qs:categories:close", onClose as EventListener);
     return () => {
       window.removeEventListener("qs:categories:open", onOpen as EventListener);
       window.removeEventListener("qs:categories:close", onClose as EventListener);
     };
-  }, []);
+  }, [openDrawer, closeDrawer]);
 
-  // Escape to close (categories)
+  // Escape to close
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeDrawer();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [closeDrawer]);
 
   // Close drawer on route change
   useEffect(() => {
     if (open) setOpen(false);
-  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
-  // Body scroll lock + focus management + focus trap
+  // Focus trap + body scroll lock + aria-hidden on background
   useEffect(() => {
     const body = document.body;
 
@@ -114,19 +133,36 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     if (open) {
-      const prev = body.style.overflow;
+      // lock scroll
+      const prevOverflow = body.style.overflow;
       body.style.overflow = "hidden";
+
+      // hide background for AT
+      headerRef.current?.setAttribute("aria-hidden", "true");
+      mainRef.current?.setAttribute("aria-hidden", "true");
+      footerRef.current?.setAttribute("aria-hidden", "true");
+
+      // focus first interactive (Close)
       closeBtnRef.current?.focus();
+
       announce("Categories opened");
       track("nav_categories_open");
       window.addEventListener("keydown", trapFocus);
+
       return () => {
         window.removeEventListener("keydown", trapFocus);
-        body.style.overflow = prev;
+        // unlock scroll
+        body.style.overflow = prevOverflow;
+        // reveal background
+        headerRef.current?.removeAttribute("aria-hidden");
+        mainRef.current?.removeAttribute("aria-hidden");
+        footerRef.current?.removeAttribute("aria-hidden");
+        // restore focus to opener if possible
+        openerRef.current?.focus?.();
+        openerRef.current = null;
+        announce("Categories closed");
+        track("nav_categories_close");
       };
-    } else {
-      announce("Categories closed");
-      track("nav_categories_close");
     }
   }, [open, announce]);
 
@@ -134,8 +170,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     (value: string) => `/?category=${encodeURIComponent(value)}`,
     []
   );
-
-  const year = useMemo(() => new Date().getFullYear(), []);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -150,37 +184,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
 
-      {/* Top bar */}
-      <Header />
+      {/* Top bar (reference for aria-hidden toggling) */}
+      <header ref={headerRef as any}>
+        <Header />
+      </header>
 
       {/* Main */}
-      <main id="main" className="flex-1">
+      <main id="main" ref={mainRef} className="flex-1">
         <div className="max-w-7xl mx-auto p-5">{children}</div>
       </main>
 
-      {/* Footer */}
-      <footer
-        className="mt-10 text-white"
-        style={{
-          backgroundImage:
-            "linear-gradient(90deg, #39a0ca 0%, #478559 50%, #161748 100%)",
-        }}
-      >
-        <div className="max-w-7xl mx-auto px-5 py-4 text-sm">
-          © {year} QwikSale — Built for Kenya 🇰🇪
-        </div>
+      {/* Unified Footer (reference for aria-hidden toggling) */}
+      <footer ref={footerRef as any}>
+        <Footer />
       </footer>
 
-      {/* ===== Backdrop (only when open) ===== */}
+      {/* Backdrop */}
       {open && (
         <button
+          type="button"
           className="fixed inset-0 z-40 bg-black/40"
-          onClick={() => setOpen(false)}
+          onClick={closeDrawer}
           aria-label="Close categories overlay"
+          // Prevent tab stop on the backdrop
+          tabIndex={-1}
         />
       )}
 
-      {/* ===== Categories Drawer (UNMOUNTED when closed) ===== */}
+      {/* Categories Drawer */}
       {open && (
         <aside
           ref={drawerRef}
@@ -207,8 +238,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </div>
             <button
+              type="button"
               ref={closeBtnRef}
-              onClick={() => setOpen(false)}
+              onClick={closeDrawer}
               className="rounded-md border border-gray-300 dark:border-white/20 px-2 py-1 text-sm hover:bg-gray-50 dark:hover:bg-white/10 text-gray-800 dark:text-slate-100"
               aria-label="Close categories"
             >
@@ -223,7 +255,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Link
               href="/"
-              onClick={() => setOpen(false)}
+              onClick={closeDrawer}
               className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 px-3 py-2 border border-gray-200 dark:border-white/10 shadow-sm transition text-gray-800 dark:text-slate-100"
               prefetch={false}
             >
@@ -269,7 +301,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                     <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100">
                                       <Link
                                         href={categoryHref(s.name)}
-                                        onClick={() => setOpen(false)}
+                                        onClick={closeDrawer}
                                         className="flex-1"
                                         prefetch={false}
                                       >
@@ -294,7 +326,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                             <li key={leaf}>
                                               <Link
                                                 href={categoryHref(leaf)}
-                                                onClick={() => setOpen(false)}
+                                                onClick={closeDrawer}
                                                 className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-[#39a0ca] transition"
                                                 prefetch={false}
                                               >
@@ -319,7 +351,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
             <Link
               href="/saved"
-              onClick={() => setOpen(false)}
+              onClick={closeDrawer}
               className="inline-flex w-full items-center justify-center rounded-xl text-white font-semibold shadow hover:opacity-90 px-4 py-2.5"
               style={{
                 backgroundImage:

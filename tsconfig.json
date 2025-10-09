@@ -24,10 +24,8 @@
 
     "plugins": [{ "name": "next" }],
 
-    /* Make TS happy in tests & Next env */
     "types": ["@types/node", "vitest/globals", "next/types/global"],
 
-    /* extra safety (opt-in) */
     "exactOptionalPropertyTypes": true,
     "noUncheckedIndexedAccess": true,
     "useUnknownInCatchVariables": true,
@@ -36,10 +34,15 @@
   },
   "include": [
     "next-env.d.ts",
-    "src",
-    "tests",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
     "src/types/**/*.d.ts",
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "src/app/sitemap.xml/**"   // legacy route removed; keep TS from looking here
+  ]
 }

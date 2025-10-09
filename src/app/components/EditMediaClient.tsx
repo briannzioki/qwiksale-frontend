@@ -5,15 +5,20 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MediaManager, {
   type MediaManagerChangeItem,
+  type MediaManagerItemIn,
 } from "@/app/components/MediaManager";
 
-type Img = { id: string; url: string; isCover?: boolean; sort?: number };
+type Img = MediaManagerItemIn;
 
 type Props = {
   entity: "product" | "service";
   entityId: string;
-  initial: Img[];
+  initial: Img[]; // must have ids because MediaManager requires it
   max?: number;
+  /** Optional: observe local changes before persist (normalized and with ids). */
+  onChangeAction?: (items: Img[]) => void;
+  /** Optional: called after a successful PATCH; good place to revalidate. */
+  onPersistAction?: () => void | Promise<void>;
 };
 
 type UploadResp =
@@ -32,26 +37,24 @@ const isOkUpload = (
 ): x is { url: string; publicId?: string; id?: string } =>
   !!(x as any)?.url && !(x as any)?.error;
 
-/**
- * Renders MediaManager and persists changes:
- * 1) Uploads any new files to /api/upload
- * 2) Sends one PATCH with the normalized list to /api/products/:id/media or /api/services/:id/media
- */
 export default function EditMediaClient({
   entity,
   entityId,
   initial,
   max = 10,
+  onChangeAction,
+  onPersistAction,
 }: Props) {
   const router = useRouter();
   const [error, setError] = useState<string>("");
   const [saving, setSaving] = useState<boolean>(false);
-  const [uploading, setUploading] = useState<number>(0); // count of finished uploads
+  const [uploading, setUploading] = useState<number>(0);
   const [uploadTotal, setUploadTotal] = useState<number>(0);
 
-  const apiBase = useMemo(() => {
-    return `/api/${entity}s/${encodeURIComponent(entityId)}/media`;
-  }, [entity, entityId]);
+  const apiBase = useMemo(
+    () => `/api/${entity}s/${encodeURIComponent(entityId)}/media`,
+    [entity, entityId]
+  );
 
   const emit = (name: string, detail: unknown) => {
     try {
@@ -80,7 +83,6 @@ export default function EditMediaClient({
     }
 
     const maybeId = j.publicId ?? j.id;
-    // IMPORTANT: with exactOptionalPropertyTypes, don't include the property when undefined
     return maybeId ? { url: j.url, id: maybeId } : { url: j.url };
   }
 
@@ -94,9 +96,7 @@ export default function EditMediaClient({
         // 1) Upload new files in parallel
         const needUpload = next
           .map((it, i) => ({ i, file: it.file }))
-          .filter(
-            (x): x is { i: number; file: File } => !!x.file
-          );
+          .filter((x): x is { i: number; file: File } => !!x.file);
 
         setUploadTotal(needUpload.length);
         setUploading(0);
@@ -110,25 +110,37 @@ export default function EditMediaClient({
           })
         );
 
-        // 2) Build final normalized payload (swap in uploaded URL/ID if present)
-        const items = next.map((it, i) => {
+        // 2) Build normalized lists:
+        //   - itemsForNotify must satisfy Img (id required) for onChangeAction
+        //   - itemsForPatch keeps id optional (omit if unknown) for your API
+        const itemsForNotify: Img[] = next.map((it, i) => {
           const swap = uploaded[i];
           const url = swap?.url ?? it.url;
-          const id = it.id ?? swap?.id;
+          const candidateId = it.id ?? swap?.id ?? url ?? `tmp-${i}-${Date.now()}`;
           return {
-            ...(id ? { id } : {}),
+            id: String(candidateId),
             url,
             isCover: !!it.isCover,
             sort: typeof it.sort === "number" ? it.sort : i,
           };
         });
 
+        const itemsForPatch = itemsForNotify.map((it, i) => ({
+          ...(next[i]?.id || uploaded[i]?.id ? { id: next[i]?.id ?? uploaded[i]?.id } : {}),
+          url: it.url,
+          isCover: !!it.isCover,
+          sort: typeof it.sort === "number" ? it.sort : i,
+        }));
+
+        // Allow caller to observe the normalized list (analytics/optimistic)
+        onChangeAction?.(itemsForNotify);
+
         // 3) Persist in one PATCH
         const pr = await fetch(apiBase, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
-          body: JSON.stringify({ items }),
+          body: JSON.stringify({ items: itemsForPatch }),
         });
 
         if (!pr.ok) {
@@ -138,7 +150,11 @@ export default function EditMediaClient({
           throw new Error(msg);
         }
 
-        emit("qs:media:saved", { entity, entityId, items });
+        emit("qs:media:saved", { entity, entityId, items: itemsForPatch });
+
+        // Let caller revalidate/tag, etc.
+        await onPersistAction?.();
+
         router.refresh();
       } catch (e: any) {
         const msg = e?.message || "Something went wrong while saving photos.";
@@ -150,7 +166,7 @@ export default function EditMediaClient({
         setUploading(0);
       }
     },
-    [entity, entityId, apiBase, router]
+    [entity, entityId, apiBase, router, onChangeAction, onPersistAction]
   );
 
   const onRemove = useCallback(

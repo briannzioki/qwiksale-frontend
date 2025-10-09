@@ -38,6 +38,8 @@ type InternalItem = MediaManagerChangeItem & {
   _localId: string;
   /** Distinguish newly-added local items (no server id yet) */
   _isNew?: boolean | undefined;
+  /** If we created an object URL for preview, keep it to revoke later */
+  _objectUrl?: string | undefined;
 };
 
 const uid = () =>
@@ -93,10 +95,22 @@ export default function MediaManager({
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
+  // Revoke any object URLs when a batch of items is replaced
+  const replaceItems = useCallback((next: InternalItem[]) => {
+    setItems((prev) => {
+      for (const it of prev) {
+        if (it._objectUrl) {
+          URL.revokeObjectURL(it._objectUrl);
+        }
+      }
+      return next;
+    });
+  }, []);
+
   // Sync when initial changes (e.g., after save)
   useEffect(() => {
-    setItems(coerceInitial(initial));
-  }, [initial]);
+    replaceItems(coerceInitial(initial));
+  }, [initial, replaceItems]);
 
   // Helpers
   const emitChange = useCallback(
@@ -105,10 +119,10 @@ export default function MediaManager({
       const norm: InternalItem[] = next.map(
         (x, i): InternalItem => ({ ...x, sort: i, isCover: i === 0 })
       );
-      setItems(norm);
+      replaceItems(norm);
       if (onChange) onChange(stripInternal(norm));
     },
-    [onChange]
+    [onChange, replaceItems]
   );
 
   const canAddMore = items.length < max;
@@ -140,9 +154,11 @@ export default function MediaManager({
     [accept, maxSizeMB]
   );
 
+  // NOTE: keep this handler synchronous so we can safely reset the input value immediately.
   const onFiles = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
+      // Reset synchronously to avoid the "e.currentTarget is null" class of issues.
       e.currentTarget.value = ""; // allow re-selecting same file later
       if (!files.length) return;
 
@@ -159,14 +175,18 @@ export default function MediaManager({
 
       // Create preview items; the actual upload can be handled by the parent
       // when it sees file objects in onChange()
-      const newItems: InternalItem[] = ok.map((file, i): InternalItem => ({
-        _localId: uid(),
-        url: URL.createObjectURL(file),
-        file,
-        isCover: false,
-        sort: items.length + i,
-        // id intentionally omitted (not yet persisted)
-      }));
+      const newItems: InternalItem[] = ok.map((file, i): InternalItem => {
+        const objUrl = URL.createObjectURL(file);
+        return {
+          _localId: uid(),
+          url: objUrl,
+          _objectUrl: objUrl,
+          file,
+          isCover: false,
+          sort: items.length + i,
+          // id intentionally omitted (not yet persisted)
+        };
+      });
       const next: InternalItem[] = [...items, ...newItems];
       emitChange(next);
       // Focus the first newly added
@@ -181,6 +201,8 @@ export default function MediaManager({
       const target = items[i]!;
       const id = target.id;
       if (!confirm("Remove this photo?")) return;
+
+      if (target._objectUrl) URL.revokeObjectURL(target._objectUrl);
 
       const next: InternalItem[] = items.filter((_, idx) => idx !== i);
       emitChange(next);
@@ -301,6 +323,15 @@ export default function MediaManager({
   );
 
   const coverIdx = useMemo(() => items.findIndex((x) => x.isCover), [items]);
+
+  // Cleanup all object URLs on unmount
+  useEffect(() => {
+    return () => {
+      for (const it of items) {
+        if (it._objectUrl) URL.revokeObjectURL(it._objectUrl);
+      }
+    };
+  }, [items]);
 
   return (
     <div className={["w-full", className].join(" ")}>

@@ -13,66 +13,14 @@ const APEX_DOMAIN = process.env.NEXT_PUBLIC_APEX_DOMAIN || "qwiksale.sale";
 // Local helper type to avoid the readonly inference issue
 type HeaderRule = { source: string; headers: { key: string; value: string }[] };
 
+/**
+ * NOTE:
+ * CSP is now set in `middleware.ts` for HTML navigations (with nonce + strict-dynamic).
+ * We intentionally DO NOT send a CSP header here to avoid duplicate/conflicting CSPs.
+ */
 const securityHeaders = (): { key: string; value: string }[] => {
-  const connect = [
-    "'self'",
-    "https://api.cloudinary.com",
-    "https://sandbox.safaricom.co.ke",
-    "https://api.safaricom.co.ke",
-    "https://accounts.google.com",
-    "https://www.googleapis.com",
-    "https://plausible.io",
-    "https://www.googletagmanager.com",
-    "https://www.google-analytics.com",
-    "https://region1.google-analytics.com",
-    ...(isProd ? [] : ["ws:", "wss:"]),
-  ].join(" ");
-
-  const img = [
-    "'self'",
-    "data:",
-    "blob:",
-    "https://res.cloudinary.com",
-    "https://lh3.googleusercontent.com",
-    "https://images.unsplash.com",
-    "https://plus.unsplash.com",
-    "https://images.pexels.com",
-    "https://picsum.photos",
-    "https://avatars.githubusercontent.com",
-  ].join(" ");
-
-  const script = [
-    "'self'",
-    "'unsafe-inline'",
-    "https://plausible.io",
-    "https://www.googletagmanager.com",
-    "https://www.google-analytics.com",
-    "https://accounts.google.com",
-    ...(isProd ? [] : ["'unsafe-eval'"]),
-  ].join(" ");
-
-  const style = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"].join(" ");
-  const font = ["'self'", "data:", "https://fonts.gstatic.com"].join(" ");
-  const frameSrc = ["'self'", "https://accounts.google.com"].join(" ");
-
-  const csp = [
-    `default-src 'self'`,
-    `base-uri 'self'`,
-    `frame-ancestors 'none'`,
-    `img-src ${img}`,
-    `connect-src ${connect}`,
-    `script-src ${script}`,
-    `style-src ${style}`,
-    `font-src ${font}`,
-    `frame-src ${frameSrc}`,
-    `form-action 'self' https://accounts.google.com`,
-    isProd ? `upgrade-insecure-requests` : ``,
-  ]
-    .filter(Boolean)
-    .join("; ");
-
   const base = [
-    { key: "Content-Security-Policy", value: csp },
+    // NO: { key: "Content-Security-Policy", value: csp }
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "X-Frame-Options", value: "DENY" },
@@ -106,10 +54,12 @@ const baseConfig: NextConfig = {
 
   images: {
     remotePatterns: [
+      // User media (must match API allowlist)
       { protocol: "https", hostname: "res.cloudinary.com", pathname: cloudName ? `/${cloudName}/**` : "/**" },
-      { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
       { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
-      { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
+
+      // Other first-party/UX images (avatars, auth, placeholders)
+      { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
       { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },
       { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
       { protocol: "https", hostname: "avatars.githubusercontent.com", pathname: "/**" },
@@ -123,7 +73,7 @@ const baseConfig: NextConfig = {
 
   async headers() {
     const rules: HeaderRule[] = [
-      // Global security headers
+      // Global security headers (CSP intentionally omitted; handled in middleware.ts)
       { source: "/:path*", headers: securityHeaders() },
 
       // Never cache auth endpoints

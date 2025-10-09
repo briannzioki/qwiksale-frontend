@@ -5,20 +5,23 @@ import Link from "next/link";
 
 export default function Footer() {
   const year = new Date().getFullYear();
+  const base =
+    (process.env['NEXT_PUBLIC_APP_URL'] || "https://qwiksale.sale").replace(/\/+$/, "") ||
+    "https://qwiksale.sale";
 
   // Lightweight Organization JSON-LD for richer snippets
   const orgLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: "QwikSale",
-    url: "https://qwiksale.sale/",
+    url: `${base}/`,
     slogan: "Buy & sell, faster. Made in Kenya.",
-    sameAs: ["https://qwiksale.sale/", "https://qwiksale.sale/press"],
+    sameAs: [`${base}/`, `${base}/press`],
     contactPoint: [
       {
         "@type": "ContactPoint",
         contactType: "customer support",
-        url: "https://qwiksale.sale/help",
+        url: `${base}/help`,
         areaServed: "KE",
         availableLanguage: ["en"],
       },
@@ -32,10 +35,13 @@ export default function Footer() {
     <footer
       className="mt-12 border-t bg-white/70 dark:bg-slate-900/70 backdrop-blur supports-[backdrop-filter]:backdrop-blur-md"
       aria-labelledby="site-footer-title"
+      role="contentinfo"
     >
       {/* Organization JSON-LD */}
       <script
+        id="org-jsonld"
         type="application/ld+json"
+        suppressHydrationWarning
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(orgLd) }}
       />
@@ -68,6 +74,7 @@ export default function Footer() {
                 alert("Thanks! We’ll keep you posted.");
               }}
               aria-label="Subscribe to updates"
+              noValidate
             >
               <input
                 type="email"
@@ -78,7 +85,7 @@ export default function Footer() {
                 required
               />
               <button
-                className="rounded-lg bg-[#161748] text-white px-3 py-2 font-semibold hover:opacity-90"
+                className="rounded-lg bg-[#161748] text-white px-3 py-2 font-semibold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#161748]"
                 type="submit"
               >
                 Subscribe
@@ -163,27 +170,31 @@ export default function Footer() {
             <div className="font-semibold text-gray-900 dark:text-slate-100">Popular</div>
             <ul className="space-y-2 text-gray-700 dark:text-slate-400">
               <li>
-                <Link className={linkClass} href="/?category=Phones">
+                <Link className={linkClass} href="/?category=Phones" prefetch={false}>
                   Phones
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Electronics">
+                <Link className={linkClass} href="/?category=Electronics" prefetch={false}>
                   Electronics
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Home%20%26%20Living">
+                <Link
+                  className={linkClass}
+                  href="/?category=Home%20%26%20Living"
+                  prefetch={false}
+                >
                   Home &amp; Living
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Fashion">
+                <Link className={linkClass} href="/?category=Fashion" prefetch={false}>
                   Fashion
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Vehicles">
+                <Link className={linkClass} href="/?category=Vehicles" prefetch={false}>
                   Vehicles
                 </Link>
               </li>
@@ -197,7 +208,7 @@ export default function Footer() {
               <li>
                 <a
                   className={linkClass}
-                  href="https://qwiksale.sale/blog"
+                  href={`${base}/blog`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -207,7 +218,7 @@ export default function Footer() {
               <li>
                 <a
                   className={linkClass}
-                  href="https://qwiksale.sale/press"
+                  href={`${base}/press`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -215,14 +226,13 @@ export default function Footer() {
                 </a>
               </li>
               <li className="pt-1">
-                <div className="text-xs mb-1 text-gray-500 dark:text-slate-500">
-                  Get the app
-                </div>
+                <div className="text-xs mb-1 text-gray-500 dark:text-slate-500">Get the app</div>
                 <div className="flex gap-2">
                   <a
                     href="#"
                     aria-label="Get it on Google Play (coming soon)"
                     className="inline-flex items-center rounded-md border px-2 py-1 text-xs bg-white/70 dark:bg-white/[0.08] border-black/5 dark:border-white/10"
+                    rel="nofollow"
                   >
                     <PlayIcon className="mr-1" />
                     Google Play
@@ -231,6 +241,7 @@ export default function Footer() {
                     href="#"
                     aria-label="Download on the App Store (coming soon)"
                     className="inline-flex items-center rounded-md border px-2 py-1 text-xs bg-white/70 dark:bg-white/[0.08] border-black/5 dark:border-white/10"
+                    rel="nofollow"
                   >
                     <AppleIcon className="mr-1" />
                     App Store
@@ -256,7 +267,11 @@ export default function Footer() {
           {/* Language (non-functional placeholder) */}
           <div className="flex items-center gap-2 text-gray-600 dark:text-slate-400">
             <GlobeIcon />
+            <label htmlFor="lang" className="sr-only">
+              Language
+            </label>
             <select
+              id="lang"
               aria-label="Language"
               className="bg-transparent border rounded px-2 py-1 text-xs border-black/10 dark:border-white/20"
               defaultValue="en"
@@ -274,7 +289,9 @@ export default function Footer() {
             <span className="ml-2 opacity-80">Built in Nairobi, Kenya.</span>
           </p>
           <p className="opacity-80">
-            <span className="mr-2 inline-block align-middle">🇰🇪</span>
+            <span className="mr-2 inline-block align-middle" aria-hidden="true">
+              🇰🇪
+            </span>
             Prices shown in KES.
           </p>
         </div>

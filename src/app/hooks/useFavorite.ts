@@ -3,6 +3,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+type Entity = "product" | "service";
+
 type Options = {
   /** Initial favorite state for faster first render (optional). */
   initial?: boolean;
@@ -18,9 +20,12 @@ type Options = {
   basePath?: string;
   /** Optional toast shim (e.g., react-hot-toast). */
   toast?: { success(msg: string): void; error(msg: string): void };
+
+  /** New: which entity this id refers to ("product" | "service"). Default "product". */
+  entity?: Entity;
 };
 
-export function useFavorite(productId: string, opts: Options = {}) {
+export function useFavorite(id: string, opts: Options = {}) {
   const {
     initial = false,
     initialCount = 0,
@@ -29,6 +34,7 @@ export function useFavorite(productId: string, opts: Options = {}) {
     onUnauthorized,
     basePath = "/api",
     toast,
+    entity = "product", // back-compat default
   } = opts;
 
   const [isFavorited, setIsFavorited] = useState<boolean>(initial);
@@ -65,6 +71,19 @@ export function useFavorite(productId: string, opts: Options = {}) {
     }
   }, [onUnauthorized, requireAuth]);
 
+  // Construct a body that’s friendly to both old and new API handlers
+  const buildBody = useCallback(() => {
+    const body: Record<string, unknown> = {
+      // New generic fields
+      entity,
+      id,
+    };
+    // Back-compat shadow fields so older handlers still work
+    if (entity === "product") body['productId'] = id;
+    if (entity === "service") body['serviceId'] = id;
+    return body;
+  }, [entity, id]);
+
   async function requestOnce(
     method: "POST" | "DELETE",
     body: Record<string, unknown>,
@@ -87,7 +106,6 @@ export function useFavorite(productId: string, opts: Options = {}) {
       });
       let json: any = null;
       try {
-        // Some APIs may respond 204/empty
         const text = await res.text();
         json = text ? JSON.parse(text) : {};
       } catch {
@@ -109,7 +127,7 @@ export function useFavorite(productId: string, opts: Options = {}) {
   }
 
   const add = useCallback(async () => {
-    if (!productId || loading || busy.current) return;
+    if (!id || loading || busy.current) return;
     busy.current = true;
     setLoading(true);
     setError(null);
@@ -123,9 +141,8 @@ export function useFavorite(productId: string, opts: Options = {}) {
     }
 
     try {
-      const { ok, status, json } = await requestOnce("POST", { productId });
+      const { ok, status, json } = await requestOnce("POST", buildBody());
       if (status === 401) {
-        // rollback + route to sign-in
         if (mounted.current) {
           setIsFavorited(prevFav);
           setCount(prevCount);
@@ -136,12 +153,14 @@ export function useFavorite(productId: string, opts: Options = {}) {
       if (!ok || (json && json.ok === false)) {
         throw new Error(json?.error || `Failed to favorite (${status})`);
       }
-      // If API returns canonical count/state, prefer them
       if (mounted.current) {
         if (typeof json?.count === "number") setCount(Math.max(0, json.count));
         if (typeof json?.favorited === "boolean") setIsFavorited(json.favorited);
       }
-      onChange?.(true, typeof json?.count === "number" ? json.count : prevFav ? prevCount : prevCount + 1);
+      onChange?.(
+        true,
+        typeof json?.count === "number" ? json.count : prevFav ? prevCount : prevCount + 1
+      );
       toast?.success?.("Saved to favorites");
     } catch (e: any) {
       if (mounted.current) {
@@ -150,15 +169,14 @@ export function useFavorite(productId: string, opts: Options = {}) {
         setError(e?.message || "Failed to favorite");
         toast?.error?.("Failed to favorite");
       }
-      // swallow error to avoid unhandled rejections in UI callers
     } finally {
       if (mounted.current) setLoading(false);
       busy.current = false;
     }
-  }, [productId, loading, onChange, toast, signInRedirect]);
+  }, [id, loading, onChange, toast, signInRedirect, buildBody]);
 
   const remove = useCallback(async () => {
-    if (!productId || loading || busy.current) return;
+    if (!id || loading || busy.current) return;
     busy.current = true;
     setLoading(true);
     setError(null);
@@ -172,7 +190,7 @@ export function useFavorite(productId: string, opts: Options = {}) {
     }
 
     try {
-      const { ok, status, json } = await requestOnce("DELETE", { productId });
+      const { ok, status, json } = await requestOnce("DELETE", buildBody());
       if (status === 401) {
         if (mounted.current) {
           setIsFavorited(prevFav);
@@ -188,7 +206,14 @@ export function useFavorite(productId: string, opts: Options = {}) {
         if (typeof json?.count === "number") setCount(Math.max(0, json.count));
         if (typeof json?.favorited === "boolean") setIsFavorited(json.favorited);
       }
-      onChange?.(false, typeof json?.count === "number" ? json.count : prevFav ? Math.max(0, prevCount - 1) : prevCount);
+      onChange?.(
+        false,
+        typeof json?.count === "number"
+          ? json.count
+          : prevFav
+          ? Math.max(0, prevCount - 1)
+          : prevCount
+      );
       toast?.success?.("Removed from favorites");
     } catch (e: any) {
       if (mounted.current) {
@@ -201,7 +226,7 @@ export function useFavorite(productId: string, opts: Options = {}) {
       if (mounted.current) setLoading(false);
       busy.current = false;
     }
-  }, [productId, loading, onChange, toast, signInRedirect]);
+  }, [id, loading, onChange, toast, signInRedirect, buildBody]);
 
   const toggle = useCallback(async () => {
     return stateRef.current.isFavorited ? remove() : add();

@@ -5,20 +5,19 @@ export const revalidate = 0;
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import SellProductClient from "@/app/sell/product/SellProductClient";
-import EditMediaClient from "@/app/components/EditMediaClient";
-import DeleteListingButton from "@/app/dashboard/DeleteListingButton";
+import DeleteListingButton from "@/app/components/DeleteListingButton";
+import ProductMediaManager from "./ProductMediaManager";
 
 export const metadata: Metadata = {
   title: "Edit listing • QwikSale",
   robots: { index: false, follow: false },
 };
 
-/** ----------------------------------------------------------------
- *  Helpers
- *  ---------------------------------------------------------------- */
+/* ----------------------------- Helpers ----------------------------- */
 type Img = { id: string; url: string; isCover?: boolean; sort?: number };
 
 function normalizeImages(p: any): Img[] {
@@ -27,23 +26,11 @@ function normalizeImages(p: any): Img[] {
 
   const push = (x: any, i: number) => {
     const id = String(
-      x?.id ??
-        x?.imageId ??
-        x?.publicId ??
-        x?.key ??
-        x?.url ??
-        (typeof x === "string" ? x : undefined) ??
-        `img-${i}`
+      x?.id ?? x?.imageId ?? x?.publicId ?? x?.key ?? x?.url ?? (typeof x === "string" ? x : undefined) ?? `img-${i}`,
     );
 
     const url = String(
-      x?.url ??
-        x?.secureUrl ??
-        x?.src ??
-        x?.location ??
-        x?.path ??
-        (typeof x === "string" ? x : "") ??
-        ""
+      x?.url ?? x?.secureUrl ?? x?.src ?? x?.location ?? x?.path ?? (typeof x === "string" ? x : "") ?? "",
     ).trim();
 
     if (!url || seenByUrl.has(url)) return;
@@ -65,7 +52,6 @@ function normalizeImages(p: any): Img[] {
     out.push({ id, url, isCover, sort });
   };
 
-  // Prefer arrays; support many shapes, including bare string arrays
   const arr =
     Array.isArray(p?.images) ? p.images :
     Array.isArray(p?.photos) ? p.photos :
@@ -76,12 +62,10 @@ function normalizeImages(p: any): Img[] {
 
   arr.forEach((x: any, i: number) => push(x, i));
 
-  // If nothing but a single cover/legacy string exists, seed it
   if (out.length === 0 && typeof p?.image === "string" && p.image.trim()) {
     push(p.image, 0);
   }
 
-  // Ensure a cover
   if (!out.some((x) => x.isCover) && out.length > 0) {
     const preferred =
       (typeof p?.image === "string" && p.image) ||
@@ -94,10 +78,7 @@ function normalizeImages(p: any): Img[] {
     out[idx]!.isCover = true;
   }
 
-  // Stable sort
-  return out
-    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id))
-    .slice(0, 50); // hard cap to keep UI snappy if a listing has huge media
+  return out.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id)).slice(0, 50);
 }
 
 function briefStatus(p: any): string {
@@ -115,13 +96,36 @@ function fmtDate(d?: Date | string | null) {
   return dd.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** ----------------------------------------------------------------
- *  Page
- *  ---------------------------------------------------------------- */
-export default async function EditListingPage(props: any) {
-  // Be tolerant with params
-  const idRaw = props?.params?.id;
-  const id = typeof idRaw === "string" ? idRaw.trim() : "";
+/* ----------------------- Server Action (quick save) ----------------------- */
+async function saveQuickAction(formData: FormData) {
+  "use server";
+  const id = String(formData.get("id") || "");
+  const name = String(formData.get("name") || "").trim();
+  if (!id || !name) return;
+
+  // Auth & ownership check
+  const session = await auth().catch(() => null as any);
+  const userId = session?.user?.id as string | undefined;
+  const isAdmin = Boolean(session?.user?.isAdmin);
+
+  const product: any = await (prisma as any).product.findUnique({ where: { id } }).catch(() => null);
+  if (!product) return;
+
+  const isOwner = Boolean(userId && product.sellerId === userId);
+  if (!isOwner && !isAdmin) return;
+
+  // Tolerant update (support both name/title fields)
+  await (prisma as any).product.update({
+    where: { id },
+    data: { name, title: name },
+  }).catch(() => {});
+
+  revalidatePath(`/product/${id}/edit`);
+}
+
+/* ----------------------- Page (Next 15: params is a Promise) ----------------------- */
+export default async function EditListingPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   if (!id) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-6">
@@ -130,7 +134,6 @@ export default async function EditListingPage(props: any) {
     );
   }
 
-  // Server-side session; never throw if auth provider glitches
   let session: any = null;
   try {
     session = await auth();
@@ -140,56 +143,11 @@ export default async function EditListingPage(props: any) {
   const userId = session?.user?.id as string | undefined;
   const isAdmin = Boolean(session?.user?.isAdmin);
 
-  // Load product with tolerant shape; never throw the page
   let product: any = null;
-  const canQuery =
-    prisma &&
-    (prisma as any).product &&
-    typeof (prisma as any).product.findUnique === "function";
-
-  if (canQuery) {
-    try {
-      product = await (prisma as any).product.findUnique({
-        where: { id },
-        include: { images: true },
-      });
-    } catch {
-      // ignore; try narrower shapes below
-    }
-  }
-
-  if (!product && canQuery) {
-    try {
-      product = await (prisma as any).product.findUnique({
-        where: { id },
-        select: {
-          id: true,
-          name: true,
-          sellerId: true,
-          updatedAt: true,
-          createdAt: true,
-          status: true,
-          image: true,
-          gallery: true,
-          coverImage: true,
-          coverImageUrl: true,
-          imageUrls: true,
-        },
-      });
-    } catch {
-      // ignore; last minimal shape
-    }
-  }
-
-  if (!product && canQuery) {
-    try {
-      product = await (prisma as any).product.findUnique({
-        where: { id },
-        select: { id: true, name: true, sellerId: true },
-      });
-    } catch {
-      product = null;
-    }
+  try {
+    product = await (prisma as any).product.findUnique({ where: { id } });
+  } catch {
+    product = null;
   }
 
   if (!product) {
@@ -206,34 +164,44 @@ export default async function EditListingPage(props: any) {
   const lastUpdated = product?.updatedAt ?? product?.createdAt ?? null;
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 py-6">
-      {/* Header */}
-      <div className="rounded-xl p-4 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-        <div className="flex items-start justify-between gap-3">
+    <main className="mx-auto w-full max-w-5xl px-4 py-6">
+      {/* Header / Hero */}
+      <div className="rounded-2xl border border-black/5 bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-5 text-white shadow-md dark:border-white/10">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-xs font-semibold">
+                Product Editor
+              </span>
+              <span className="inline-flex items-center rounded-full bg-white/15 px-2 py-0.5 text-xs">
+                Status: <span className="ml-1 font-semibold">{briefStatus(product)}</span>
+              </span>
+            </div>
+            <h1 className="mt-2 text-2xl font-extrabold md:text-3xl">
               Editing: {product?.name ?? "Product"}
             </h1>
-            <p className="mt-1 text-white/90 text-sm">
+            <p className="mt-1 text-sm text-white/90">
               ID <span className="font-mono">{product.id}</span>
               <span className="mx-2">•</span>
               Last updated <span className="font-medium">{fmtDate(lastUpdated)}</span>
-              <span className="mx-2">•</span>
-              Status <span className="font-semibold">{briefStatus(product)}</span>
             </p>
           </div>
+
           <div className="flex shrink-0 items-center gap-2">
             <Link
               href={`/product/${product.id}`}
-              className="rounded-md bg-white/20 px-3 py-1.5 text-sm font-medium hover:bg-white/30"
               prefetch={false}
+              className="rounded-lg bg-white/20 px-3 py-2 text-sm font-semibold hover:bg-white/30"
+              aria-label="View live listing"
             >
               View live
             </Link>
+
             {canDelete ? (
               <DeleteListingButton
                 productId={product.id}
-                productName={product?.name ?? "listing"}
+                label="Delete"
+                className="rounded-lg bg-red-600/90 px-3 py-2 text-sm font-semibold text-white hover:bg-red-600"
               />
             ) : null}
           </div>
@@ -241,56 +209,61 @@ export default async function EditListingPage(props: any) {
       </div>
 
       {/* Quick fields (read-only when not owner) */}
-      <form
-        aria-label="Edit product quick fields"
-        className="mt-4 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-        action="#"
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label
-              htmlFor="edit-name"
-              className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-200"
-            >
-              Product Name
-            </label>
-            <input
-              id="edit-name"
-              name="name"
-              type="text"
-              defaultValue={product.name ?? ""}
-              className="w-full rounded-md border px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
-              readOnly={!isOwner}
-              aria-readonly={!isOwner}
-              placeholder="e.g. iPhone 13, 128GB"
-            />
-            {!isOwner && (
-              <p className="mt-2 text-xs text-gray-500">
-                You must be the owner to edit this listing. Showing read-only details.
-              </p>
-            )}
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              className="rounded-lg bg-[#161748] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-              aria-label="Update"
-            >
-              Save changes
-            </button>
-          </div>
-        </div>
-      </form>
+      <section className="mt-6 grid gap-6 md:grid-cols-[1fr]">
+        <form
+          aria-label="Edit product quick fields"
+          className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900"
+          action={isOwner ? saveQuickAction : undefined}
+        >
+          <input type="hidden" name="id" value={product.id} />
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="md:col-span-2">
+              <label
+                htmlFor="edit-name"
+                className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-200"
+              >
+                Product name
+              </label>
+              <input
+                id="edit-name"
+                name="name"
+                type="text"
+                defaultValue={product.name ?? ""}
+                className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+                readOnly={!isOwner}
+                aria-readonly={!isOwner}
+                placeholder="e.g. iPhone 13, 128GB"
+              />
+              {!isOwner ? (
+                <p className="mt-2 text-xs text-gray-500">
+                  You must be the owner to edit this listing. Showing read-only details.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">
+                  For full details (pricing, condition, category), use the editor below.
+                </p>
+              )}
+            </div>
 
-      {/* Media section */}
-      <section className="mt-6 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-end">
+              {isOwner ? (
+                <button
+                  type="submit"
+                  className="h-10 w-full rounded-lg bg-[#161748] px-4 text-sm font-semibold text-white hover:opacity-90"
+                  aria-label="Save quick changes"
+                >
+                  Save changes
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </form>
+      </section>
+
+      {/* Media section (single surface, cap defaults to 6) */}
+      <section className="mt-6 rounded-2xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
         {isOwner ? (
-          <EditMediaClient
-            entity="product"
-            entityId={product.id}
-            initial={images}
-            max={10}
-          />
+          <ProductMediaManager productId={product.id} initial={images} />
         ) : (
           <>
             <div className="flex items-center justify-between">
@@ -331,13 +304,13 @@ export default async function EditListingPage(props: any) {
         )}
       </section>
 
-      {/* Full editor (owner only) */}
+      {/* Full editor (owner only; hide legacy uploader) */}
       {isOwner ? (
-        <div className="mt-6">
-          <SellProductClient id={product.id} />
-        </div>
+        <section className="mt-6 rounded-2xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+          <SellProductClient id={product.id} hideMedia />
+        </section>
       ) : (
-        <div className="mt-6 rounded-lg border p-4 text-sm text-gray-700 dark:border-slate-800 dark:text-slate-200">
+        <section className="mt-6 rounded-2xl border border-black/5 p-5 text-sm text-gray-700 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200">
           <p>
             If this is your listing,{" "}
             <Link
@@ -348,7 +321,7 @@ export default async function EditListingPage(props: any) {
             </Link>{" "}
             to make changes.
           </p>
-        </div>
+        </section>
       )}
     </main>
   );

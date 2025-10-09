@@ -3,8 +3,6 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-// If you use react-hot-toast, uncomment:
-// import toast from "react-hot-toast";
 
 export default function AdminProductActions({
   id,
@@ -18,36 +16,52 @@ export default function AdminProductActions({
   const [busy, setBusy] = useState<"feature" | "delete" | null>(null);
   const [optimisticFeatured, setOptimisticFeatured] = useState(featured);
 
+  async function patchFeature(target: boolean, force = false) {
+    const r = await fetch(`/api/admin/products/${encodeURIComponent(id)}/feature`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify({ featured: target, ...(force ? { force: true } : {}) }),
+    });
+    return r;
+  }
+
   async function toggleFeatured() {
     if (busy) return;
     setBusy("feature");
 
-    // Decide target first (avoids race with setState)
+    // Decide target first (avoids race)
     const target = !optimisticFeatured;
 
     // optimistic UI
     setOptimisticFeatured(target);
 
     try {
-      const r = await fetch(`/api/admin/products/${encodeURIComponent(id)}/feature`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        cache: "no-store",
-        body: JSON.stringify({ featured: target }),
-      });
+      let r = await patchFeature(target, false);
+
+      // If product isn't ACTIVE, server returns 409 with {status}
+      if (!r.ok && r.status === 409) {
+        const j = await r.json().catch(() => ({} as any));
+        const status = j?.status || "current status";
+        const confirmForce = confirm(
+          `Listing is ${status}. Feature toggle usually requires ACTIVE.\n\nForce anyway?`
+        );
+        if (confirmForce) {
+          r = await patchFeature(target, true);
+        }
+      }
+
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        // toast?.error?.(j?.error || "Failed to update");
-        alert(j?.error || "Failed to update");
+        alert(j?.error || `Failed: ${r.status}`);
         // revert optimistic state
         setOptimisticFeatured(!target);
         return;
       }
-      // toast?.success?.(target ? "Marked as featured" : "Removed from featured");
+
       startTransition(() => router.refresh());
     } catch {
-      // toast?.error?.("Network error");
       alert("Network error");
       setOptimisticFeatured(!target);
     } finally {
@@ -61,6 +75,7 @@ export default function AdminProductActions({
 
     setBusy("delete");
     try {
+      // Deletion stays on the main resource route (it already allows owner/admin)
       const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
         method: "DELETE",
         credentials: "same-origin",
@@ -68,14 +83,11 @@ export default function AdminProductActions({
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        // toast?.error?.(j?.error || "Failed to delete");
         alert(j?.error || "Failed to delete");
         return;
       }
-      // toast?.success?.("Listing deleted");
       startTransition(() => router.refresh());
     } catch {
-      // toast?.error?.("Network error");
       alert("Network error");
     } finally {
       setBusy(null);

@@ -11,7 +11,6 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   resolve: {
     alias: {
-      // 🔧 Make these no-ops in Vitest (Next.js-only guards)
       "server-only": path.resolve(__dirname, "tests/shims/server-only.ts"),
       "client-only": path.resolve(__dirname, "tests/shims/client-only.ts"),
     },
@@ -19,9 +18,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["tests/**/*.spec.ts"],
-    exclude: ["tests/e2e/**"],
-    passWithNoTests: true,            // ← allow success when no tests exist
+    include: ["**/*.{test,spec}.ts"],
+    exclude: ["tests/e2e/**", "node_modules/**", "dist/**"],
+    passWithNoTests: true,
     coverage: {
       provider: "v8",
       reportsDirectory: "./coverage",

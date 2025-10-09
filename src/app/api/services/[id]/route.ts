@@ -7,8 +7,37 @@ export const revalidate = 0;
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { auth } from "@/auth";
+import { getViewer } from "@/app/lib/auth";
 import { revalidatePath, revalidateTag } from "next/cache";
+
+/* ---------------- analytics (console-only for now) ---------------- */
+type AnalyticsEvent =
+  | "service_read_attempt"
+  | "service_read_public_hit"
+  | "service_read_owner_hit"
+  | "service_read_not_found"
+  | "service_read_error"
+  | "service_update_attempt"
+  | "service_update_unauthorized"
+  | "service_update_forbidden"
+  | "service_update_not_found"
+  | "service_update_success"
+  | "service_update_error"
+  | "service_delete_attempt"
+  | "service_delete_unauthorized"
+  | "service_delete_forbidden"
+  | "service_delete_not_found"
+  | "service_delete_success"
+  | "service_delete_error";
+
+function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
+  try {
+    // eslint-disable-next-line no-console
+    console.log(`[track] ${event}`, { ts: new Date().toISOString(), ...props });
+  } catch {
+    /* no-op */
+  }
+}
 
 /* ------------------------- helpers ------------------------- */
 function noStore(json: unknown, init?: ResponseInit) {
@@ -19,7 +48,6 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-/** Safe extractor: /api/services/:id */
 function getId(req: NextRequest): string {
   try {
     const segs = req.nextUrl.pathname.split("/");
@@ -31,7 +59,9 @@ function getId(req: NextRequest): string {
   }
 }
 
+// tolerant rate types & status values
 const RATE_TYPES = new Set(["hour", "day", "fixed"]);
+const STATUS_VALUES = new Set(["ACTIVE", "HIDDEN", "DRAFT", "SOLD"]);
 
 function s(v: unknown) {
   const t = typeof v === "string" ? v : v == null ? "" : String(v);
@@ -54,7 +84,19 @@ function clip(str: string | undefined, max = 2000) {
   return str.length <= max ? str : str.slice(0, max);
 }
 
-/* --------------------------- shape/select --------------------------- */
+/** Tolerate schema/model naming drift */
+function getServiceModel() {
+  const any = prisma as any;
+  const svc =
+    any.service ??
+    any.services ??
+    any.Service ??
+    any.Services ??
+    null;
+  return svc && typeof svc.findUnique === "function" ? svc : null;
+}
+
+/** stable select for service (safe fields) */
 const selectBase = {
   id: true,
   name: true,
@@ -78,6 +120,8 @@ const selectBase = {
   sellerMemberSince: true,
   sellerRating: true,
   sellerSales: true,
+  sellerPhone: true, // will be redacted for public viewers
+
   seller: {
     select: {
       id: true,
@@ -89,68 +133,106 @@ const selectBase = {
   },
 } as const;
 
-function shape(row: any) {
-  return {
+/** shape/normalize response */
+function shape(row: any, includePrivate = false) {
+  const out: any = {
     ...row,
     createdAt:
       row?.createdAt instanceof Date
         ? row.createdAt.toISOString()
         : String(row?.createdAt ?? ""),
   };
-}
 
-/** Use an `any` alias so routes keep compiling even if Prisma model isn’t generated yet. */
-const db: any = prisma;
+  if (!includePrivate && "sellerPhone" in out) out.sellerPhone = null;
+
+  if (Array.isArray(out.gallery)) {
+    out.gallery = out.gallery.map((u: any) => String(u || "").trim()).filter(Boolean);
+  }
+
+  return out;
+}
 
 /* ------------------------------ GET ------------------------------ */
 export async function GET(req: NextRequest) {
+  const reqId =
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+
   try {
     const id = getId(req);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
-    const session = await auth().catch(() => null);
-    const uid = (session?.user as any)?.id as string | undefined;
+    track("service_read_attempt", { reqId, id });
 
-    // public ACTIVE first
-    const active = await db.service.findFirst({
-      where: { id, status: "ACTIVE" },
+    const Service = getServiceModel();
+    if (!Service) return noStore({ error: "Service model not found" }, { status: 500 });
+
+    const row = await Service.findUnique({
+      where: { id },
       select: selectBase,
     });
-    if (active) return noStore(shape(active));
 
-    // owner fallback
-    if (!uid) return noStore({ error: "Not found" }, { status: 404 });
-    const owner = await db.service.findFirst({
-      where: { id, sellerId: uid },
-      select: selectBase,
-    });
-    if (!owner) return noStore({ error: "Not found" }, { status: 404 });
-    return noStore(shape(owner));
+    if (!row) {
+      track("service_read_not_found", { reqId, id, reason: "no_row" });
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
+
+    if (row.status === "ACTIVE") {
+      track("service_read_public_hit", { reqId, id });
+      return noStore(shape(row, /* includePrivate */ false));
+    }
+
+    // Owner/Admin may view non-ACTIVE
+    const viewer = await getViewer();
+    const isOwner = !!viewer.id && row.sellerId === viewer.id;
+    if (isOwner || viewer.isAdmin) {
+      track("service_read_owner_hit", { reqId, id });
+      return noStore(shape(row, /* includePrivate */ true));
+    }
+
+    track("service_read_not_found", { reqId, id, reason: "not_public_and_not_owner" });
+    return noStore({ error: "Not found" }, { status: 404 });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[services/:id GET] error:", e);
+    track("service_read_error", { message: (e as any)?.message });
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
 
 /* ----------------------------- PATCH ----------------------------- */
 export async function PATCH(req: NextRequest) {
+  const reqId =
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+
   try {
     const id = getId(req);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
-    // Content-Type check (parity with products)
+    track("service_update_attempt", { reqId, id });
+
     const ctype = req.headers.get("content-type") || "";
     if (!ctype.toLowerCase().includes("application/json")) {
       return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
     }
 
-    const session = await auth().catch(() => null);
-    const uid = (session?.user as any)?.id as string | undefined;
-    if (!uid) return noStore({ error: "Unauthorized" }, { status: 401 });
+    const Service = getServiceModel();
+    if (!Service) return noStore({ error: "Service model not found" }, { status: 500 });
 
-    const svc = await db.service.findUnique({ where: { id }, select: { sellerId: true } });
-    if (!svc || svc.sellerId !== uid) {
+    const viewer = await getViewer();
+    if (!viewer.id && !viewer.isAdmin) {
+      track("service_update_unauthorized", { reqId, id });
+      return noStore({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const svc = await Service.findUnique({ where: { id }, select: { sellerId: true } });
+    if (!svc) {
+      track("service_update_not_found", { reqId, id, reason: "no_existing" });
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
+
+    const isOwner = !!viewer.id && svc.sellerId === viewer.id;
+    if (!isOwner && !viewer.isAdmin) {
+      track("service_update_forbidden", { reqId, id });
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -167,111 +249,121 @@ export async function PATCH(req: NextRequest) {
       image: s(body.image),
       gallery: arr(body.gallery),
       location: s(body.location),
-      status: s(body.status), // allow owner to set HIDDEN / ACTIVE / DRAFT / SOLD
+      status: s(body.status),
       featured: typeof body.featured === "boolean" ? Boolean(body.featured) : undefined,
     };
 
-    // validate specific fields if provided
     if (patch.rateType && !RATE_TYPES.has(patch.rateType)) {
       return noStore({ error: "Invalid rateType" }, { status: 400 });
     }
     if (patch.price === undefined && "price" in body) {
       return noStore({ error: "Invalid price" }, { status: 400 });
     }
-    if (patch.status && !["ACTIVE", "HIDDEN", "DRAFT", "SOLD"].includes(patch.status)) {
+    if (patch.status && !STATUS_VALUES.has(patch.status)) {
       return noStore({ error: "Invalid status" }, { status: 400 });
     }
 
-    // build Prisma update data by omitting undefined
     const data: Record<string, any> = {};
     for (const [k, v] of Object.entries(patch)) {
       if (v !== undefined) data[k] = v;
     }
 
-    const updated = await db.service.update({
+    const updated = await Service.update({
       where: { id },
       data,
       select: selectBase,
     });
 
-    // ---- revalidate caches after update (parity with products) ----
     try {
       revalidateTag("home:active");
       revalidateTag("services:latest");
       revalidateTag(`service:${id}`);
-      revalidateTag(`user:${uid}:services`);
+      if (viewer.id) revalidateTag(`user:${viewer.id}:services`);
       revalidatePath("/");
       revalidatePath(`/service/${id}`);
+      revalidatePath(`/dashboard`);
     } catch {
       /* best-effort */
     }
 
-    return noStore(shape(updated));
+    track("service_update_success", { reqId, id });
+    return noStore(shape(updated, /* includePrivate */ true));
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[services/:id PATCH] error:", e);
+    track("service_update_error", { message: (e as any)?.message });
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
 
 /* ---------------------------- DELETE ---------------------------- */
-/** Soft-delete: mark as HIDDEN (parity with public filtering).
- *  Owner OR Admin may perform this action.
- */
 export async function DELETE(req: NextRequest) {
+  const reqId =
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+
   try {
     const id = getId(req);
-    if (!id) return noStore({ error: "Missing id" }, { status: 400 });
+    if (!id) {
+      track("service_delete_not_found", { reqId, reason: "missing_id" });
+      return noStore({ error: "Missing id" }, { status: 400 });
+    }
 
-    const session = await auth().catch(() => null);
-    const s: any = session?.user ?? {};
-    const uid: string | undefined = s?.id;
-    const email: string | undefined = typeof s?.email === "string" ? s.email : undefined;
-    const role: string | undefined = typeof s?.role === "string" ? s.role : undefined;
-    const isAdminFlag: boolean = s?.isAdmin === true || (role?.toUpperCase?.() === "ADMIN");
+    track("service_delete_attempt", { reqId, id });
 
-    // Admin allow-list via env (same pattern as products route)
-    const adminEmails = (process.env["ADMIN_EMAILS"] ?? "")
-      .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
-    const emailIsAdmin = !!email && adminEmails.includes(email.toLowerCase());
+    const Service = getServiceModel();
+    if (!Service) return noStore({ error: "Service model not found" }, { status: 500 });
 
-    const isAdmin = isAdminFlag || emailIsAdmin;
+    const viewer = await getViewer();
+    if (!viewer.id && !viewer.isAdmin) {
+      track("service_delete_unauthorized", { reqId, id });
+      return noStore({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (!uid && !isAdmin) return noStore({ error: "Unauthorized" }, { status: 401 });
-
-    const svc = await db.service.findUnique({
+    const svc = await Service.findUnique({
       where: { id },
       select: { sellerId: true, status: true },
     });
-    if (!svc) return noStore({ error: "Not found" }, { status: 404 });
+    if (!svc) {
+      track("service_delete_not_found", { reqId, id, reason: "no_existing" });
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
 
-    const isOwner = !!uid && svc.sellerId === uid;
-    if (!isOwner && !isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
+    const isOwner = !!viewer.id && svc.sellerId === viewer.id;
+    if (!isOwner && !viewer.isAdmin) {
+      track("service_delete_forbidden", { reqId, id });
+      return noStore({ error: "Forbidden" }, { status: 403 });
+    }
 
-    // Soft delete (leave hard-deletes to DB maintenance scripts)
-    await db.service.update({
-      where: { id },
-      data: { status: "HIDDEN", featured: false },
-    });
+    // Prefer soft-delete; if schema doesn't support 'status', fall back to hard-delete
+    let softDeleted = false;
+    try {
+      await Service.update({ where: { id }, data: { status: "HIDDEN", featured: false } });
+      softDeleted = true;
+    } catch {
+      /* ignore and hard-delete below */
+    }
+    if (!softDeleted) {
+      await Service.delete({ where: { id } });
+    }
 
-    // ---- revalidate caches after delete ----
     try {
       revalidateTag("home:active");
       revalidateTag("services:latest");
       revalidateTag(`service:${id}`);
-      if (uid) revalidateTag(`user:${uid}:services`);
+      if (viewer.id) revalidateTag(`user:${viewer.id}:services`);
       revalidatePath("/");
       revalidatePath(`/service/${id}`);
+      revalidatePath(`/dashboard`);
     } catch {
       /* best-effort */
     }
 
+    track("service_delete_success", { reqId, id, mode: softDeleted ? "soft" : "hard" });
     return noStore({ ok: true });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[services/:id DELETE] error:", e);
+    track("service_delete_error", { message: (e as any)?.message });
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
@@ -286,9 +378,16 @@ export function OPTIONS() {
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
   res.headers.set("Vary", "Origin");
-  res.headers.set("Access-Control-Allow-Methods", "GET, PATCH, DELETE, OPTIONS");
+  res.headers.set("Access-Control-Allow-Methods", "GET, PATCH, DELETE, OPTIONS, HEAD");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
   res.headers.set("Cache-Control", "no-store");
   return res;
+}
+
+export async function HEAD() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: { "Cache-Control": "no-store" },
+  });
 }

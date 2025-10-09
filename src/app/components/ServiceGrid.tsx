@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import DeleteListingButton from "@/app/components/DeleteListingButton";
+import DeleteListingButton from "@/app/components/DeleteListingButton"; // ✅ canonical import
 
 type ServiceItem = {
   id: string;
@@ -34,17 +34,12 @@ type Props = {
   ownerControls?: boolean;
 
   /**
-   * Serialisable edit href prefix (instead of a function).
-   * Final edit link is `${editHrefPrefix}${encodeURIComponent(id)}`.
-   * Default: "/sell/service?id="
+   * Edit href prefix; the final link will be `${prefix}${id}/edit`.
+   * Default: "/service/"
    */
   editHrefPrefix?: string;
 
-  /**
-   * Optional Server Action called after a delete completes.
-   * If you pass this from a Server Component, define it with `"use server"`
-   * and keep the name as *Action so Next will allow it.
-   */
+  /** Optional callback after an item is deleted */
   onItemDeletedAction?: (id: string) => void | Promise<void>;
 };
 
@@ -88,23 +83,22 @@ export default function ServiceGrid({
   useSentinel = true,
   showLoadMoreButton = true,
   ownerControls = false,
-  editHrefPrefix = "/sell/service?id=",
+  editHrefPrefix = "/service/", // ← default to page route
   onItemDeletedAction,
 }: Props) {
   return (
     <div className={className}>
-      {/* Grid */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {items.map((s) => {
           const blur = shimmer(800, 440);
           const categoryText =
             [s.category ?? "", s.subcategory ?? ""].filter(Boolean).join(" • ") || "—";
 
-          const editHref = `${editHrefPrefix}${encodeURIComponent(s.id)}`;
+          // Standardize on /service/:id/edit by default
+          const editHref = `${editHrefPrefix}${encodeURIComponent(s.id)}/edit`;
 
           return (
             <div key={s.id} className="group relative">
-              {/* Card */}
               <Link href={`/service/${s.id}`} prefetch={prefetchCards} className="block">
                 <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
                   {s.featured ? (
@@ -113,7 +107,6 @@ export default function ServiceGrid({
                     </span>
                   ) : null}
 
-                  {/* Owner actions overlay */}
                   {ownerControls && (
                     <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
                       <Link
@@ -126,15 +119,27 @@ export default function ServiceGrid({
                         Edit
                       </Link>
 
-                      {/* Only pass afterDeleteAction when we actually have an action */}
-                      <DeleteListingButton
-                        serviceId={s.id}
-                        label="Delete"
-                        className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600"
-                        {...(onItemDeletedAction
-                          ? { afterDeleteAction: () => onItemDeletedAction(s.id) }
-                          : {})}
-                      />
+                      {/* Stop navigation bubbling when deleting */}
+                      <div
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        className="contents"
+                      >
+                        <DeleteListingButton
+                          serviceId={s.id}
+                          label="" // icon-only to keep the overlay tidy
+                          className="px-2 py-1"
+                          {...(onItemDeletedAction
+                            ? { onDeletedAction: () => onItemDeletedAction(s.id) }
+                            : {})}
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -173,7 +178,6 @@ export default function ServiceGrid({
           );
         })}
 
-        {/* Skeletons while loading first page */}
         {items.length === 0 &&
           loading &&
           Array.from({ length: pageSize }).map((_, i) => (
@@ -188,7 +192,6 @@ export default function ServiceGrid({
           ))}
       </div>
 
-      {/* Status / errors / empty */}
       <div className="mt-4">
         {error ? (
           <div className="text-sm text-red-600">{error}</div>
@@ -197,7 +200,6 @@ export default function ServiceGrid({
         ) : null}
       </div>
 
-      {/* Load more button (optional) */}
       {showLoadMoreButton && hasMore && (
         <div className="mt-4 flex items-center justify-center">
           <button
@@ -210,7 +212,6 @@ export default function ServiceGrid({
         </div>
       )}
 
-      {/* Optional sentinel for auto-load (parent can observe this) */}
       {useSentinel && hasMore && !loading && <div data-grid-sentinel className="h-1 w-full" />}
     </div>
   );

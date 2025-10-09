@@ -6,9 +6,6 @@ export const revalidate = 0;
 import Link from "next/link";
 import { prisma } from "@/app/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -21,18 +18,7 @@ export const metadata: Metadata = {
   },
 };
 
-/* ---------- RBAC (server-only) ---------- */
-async function requireAdmin() {
-  const session = await getServerSession(authOptions).catch(() => null);
-  const email = session?.user?.email ?? null;
-  const list = (process.env["ADMIN_EMAILS"] || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  if (!email || !list.includes(email.toLowerCase())) {
-    notFound();
-  }
-}
+// NOTE: Admin gating is handled by /admin/layout.tsx (requireAdmin). No page-level duplication.
 
 /* ---------- helpers ---------- */
 function clamp(n: number, lo: number, hi: number) {
@@ -62,17 +48,15 @@ const fmtUTC = new Intl.DateTimeFormat("en-GB", {
 type RevealWithProduct = Prisma.ContactRevealGetPayload<{
   include: { product: { select: { id: true; name: true } } };
 }>;
+
 const TAKE_CHOICES = [50, 100, 200, 500, 1000] as const;
 
-/* ---------- page ---------- */
 export default async function AdminRevealsPage({
   searchParams,
 }: {
   // Next 15 passes a Promise here
   searchParams: Promise<SafeSearchParams>;
 }) {
-  await requireAdmin();
-
   const sp = (await searchParams) ?? {};
   const qRaw = (getStr(sp, "q") || "").trim();
   const q = qRaw.length > 120 ? qRaw.slice(0, 120) : qRaw;
@@ -108,18 +92,11 @@ export default async function AdminRevealsPage({
     loadError = "Failed to load reveal logs. Please try again.";
   }
 
-  const header = [
-    "createdAt(UTC)",
-    "productId",
-    "productName",
-    "viewerUserId",
-    "ip",
-    "userAgent",
-  ] as const;
+  const header: string[] = ["createdAt(UTC)", "productId", "productName", "viewerUserId", "ip", "userAgent"];
   const csvRows: string[][] = [
-    header as unknown as string[],
+    header,
     ...logs.map((r) => [
-      r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+      (r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt)).toISOString(),
       r.productId,
       r.product?.name ?? "",
       r.viewerUserId ?? "",
@@ -129,33 +106,42 @@ export default async function AdminRevealsPage({
   ];
   const csv = toCsv(csvRows);
   const csvHref = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+  // Safer filename (no ":" or "T")
+  const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <h1 className="text-2xl font-semibold">Contact Reveals</h1>
-        <div className="flex items-center gap-2">
-          <a
-            href={csvHref}
-            download={`contact-reveals-${new Date().toISOString().slice(0, 19)}.csv`}
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
-          >
-            Export CSV
-          </a>
-          <Link
-            href="/admin/reveals"
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
-          >
-            Refresh
-          </Link>
+    <div className="mx-auto max-w-6xl p-6 space-y-4">
+      <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-extrabold">Contact Reveals</h1>
+            <p className="mt-1 text-sm text-white/90">Search, review, and export reveal logs.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={csvHref}
+              download={`contact-reveals-${stamp}.csv`}
+              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-white/10"
+              aria-label="Export reveals as CSV"
+            >
+              Export CSV
+            </a>
+            <Link
+              href="/admin/reveals"
+              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-white/10"
+              aria-label="Refresh page"
+            >
+              Refresh
+            </Link>
+          </div>
         </div>
       </div>
 
-      <form className="mb-4 flex flex-col gap-2 sm:flex-row" role="search">
+      <form className="flex flex-col gap-2 sm:flex-row" role="search">
         <input
           name="q"
           defaultValue={q}
-          placeholder="Search product, id, user id, IP, UA…"
+          placeholder="Search product name, product id, user id, IP, User-Agent…"
           className="flex-1 rounded-lg border px-3 py-2 dark:border-slate-800 dark:bg-slate-900"
           aria-label="Search reveals"
         />
@@ -171,13 +157,16 @@ export default async function AdminRevealsPage({
             </option>
           ))}
         </select>
-        <button className="rounded-lg border px-3 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800">
+        <button
+          className="rounded-lg border px-3 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
+          aria-label="Apply filters"
+        >
           Apply
         </button>
       </form>
 
       {loadError ? (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
           {loadError}
         </div>
       ) : null}
@@ -187,7 +176,7 @@ export default async function AdminRevealsPage({
           No reveal logs found{q ? ` for “${q}”` : ""}.
         </div>
       ) : (
-        <div className="relative overflow-x-auto rounded-xl border bg-white dark:border-slate-800 dark:bg-slate-900">
+        <div className="relative overflow-x-auto rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-slate-50 text-left dark:border-slate-800 dark:bg-slate-800/40">
@@ -199,46 +188,42 @@ export default async function AdminRevealsPage({
               </tr>
             </thead>
             <tbody>
-              {logs.map((r) => (
-                <tr key={r.id} className="border-b last:border-0 dark:border-slate-800">
-                  <Td className="whitespace-nowrap">
-                    <time dateTime={new Date(r.createdAt).toISOString()}>
-                      {fmtUTC.format(new Date(r.createdAt))}
-                    </time>
-                  </Td>
-                  <Td>
-                    <a
-                      className="underline"
-                      href={`/product/${r.productId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {r.product?.name ?? r.productId}
-                    </a>
-                  </Td>
-                  <Td>
-                    {r.viewerUserId ? (
-                      r.viewerUserId
-                    ) : (
-                      <span className="text-gray-500">guest</span>
-                    )}
-                  </Td>
-                  <Td>{r.ip || <span className="text-gray-400">—</span>}</Td>
-                  <Td className="max-w-[420px]">
-                    <span className="line-clamp-2 break-all text-gray-700 dark:text-slate-200">
-                      {r.userAgent || "—"}
-                    </span>
-                  </Td>
-                </tr>
-              ))}
+              {logs.map((r) => {
+                const created = r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt);
+                return (
+                  <tr key={r.id} className="border-b last:border-0 dark:border-slate-800">
+                    <Td className="whitespace-nowrap">
+                      <time dateTime={created.toISOString()}>{fmtUTC.format(created)}</time>
+                    </Td>
+                    <Td>
+                      <Link
+                        className="underline"
+                        href={`/product/${r.productId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Open product ${r.productId}`}
+                      >
+                        {r.product?.name ?? r.productId}
+                      </Link>
+                    </Td>
+                    <Td>{r.viewerUserId ? r.viewerUserId : <span className="text-gray-500">guest</span>}</Td>
+                    <Td>{r.ip || <span className="text-gray-400">—</span>}</Td>
+                    <Td className="max-w-[420px]">
+                      <span className="line-clamp-2 break-all text-gray-700 dark:text-slate-200">
+                        {r.userAgent || "—"}
+                      </span>
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      <p className="mt-3 text-xs text-gray-500 dark:text-slate-400">
-        Showing {logs.length} of latest reveals{q ? ` filtered by “${q}”` : ""}. Data is uncached
-        and rendered on the server.
+      <p className="text-xs text-gray-500 dark:text-slate-400">
+        Showing {logs.length} of latest reveals{q ? ` filtered by “${q}”` : ""}. Data is uncached and
+        rendered on the server.
       </p>
     </div>
   );
@@ -246,8 +231,8 @@ export default async function AdminRevealsPage({
 
 /* small bits */
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="py-2 px-3">{children}</th>;
+  return <th className="px-3 py-2">{children}</th>;
 }
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <td className={`py-2 px-3 ${className ?? ""}`}>{children}</td>;
+  return <td className={`px-3 py-2 ${className ?? ""}`}>{children}</td>;
 }

@@ -1,5 +1,7 @@
 // src/app/terms/page.tsx
-export const metadata = {
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
   title: "Terms of Service | QwikSale",
   description:
     "Read the Terms of Service that govern your use of QwikSale, including account rules, listings, payments, and dispute resolution.",

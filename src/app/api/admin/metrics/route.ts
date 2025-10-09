@@ -1,5 +1,5 @@
-export const runtime = 'nodejs';
 // src/app/api/admin/metrics/route.ts
+export const runtime = 'nodejs';
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
@@ -7,6 +7,16 @@ import { assertAdmin } from "../_lib/guard";
 import { withApiLogging, type RequestLog } from "@/app/lib/api-logging";
 
 export const dynamic = "force-dynamic";
+
+/** tiny helper to ensure proper caching/vary on all JSON */
+function jsonNoStore(payload: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(payload, init);
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.headers.set("Pragma", "no-cache");
+  res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  return res;
+}
 
 /** Safely count Service records even if your Prisma schema has no `Service` model yet. */
 async function safeServiceCount(where?: any): Promise<number> {
@@ -65,7 +75,7 @@ export async function GET(req: NextRequest) {
       "admin_metrics_ok"
     );
 
-    return NextResponse.json({
+    return jsonNoStore({
       totals: {
         users: usersTotal,
         products: productsTotal,
@@ -76,5 +86,3 @@ export async function GET(req: NextRequest) {
     });
   });
 }
-
-

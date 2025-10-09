@@ -6,28 +6,35 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFavorite } from "@/app/hooks/useFavorite";
 
 /**
- * Lightweight, hook-driven Favorite button with count.
- * - Safe inside clickable cards (prevents unintended navigation)
- * - Cooldown to avoid spam clicks
- * - A11y: aria-pressed, dynamic aria-label, live updates via sr-only
- * - Emits client events + analytics: "qs:favorite:toggle", "qs:track"
+ * FavoriteButton — works for both products and services.
+ * - Back-compat: still supports productId prop
+ * - New: entity + entityId (entity: "product" | "service")
+ * - Emits qs:favorite:toggle and qs:track with entity metadata
  */
+type Entity = "product" | "service";
+
 type Props = {
-  productId: string;
-  /** Initial favorited state used by the hook for hydration/SSR */
+  /** New, preferred props */
+  entity?: Entity;
+  entityId?: string;
+
+  /** Back-compat (either still works) */
+  productId?: string;
+  serviceId?: string;
+
+  /** Initial states for hydration/SSR */
   initial?: boolean;
-  /** Initial count used by the hook for hydration/SSR */
   initialCount?: number;
-  /** Icon size (px) */
+
+  /** UI tweaks */
   size?: number;
-  /** Extra classes */
   className?: string;
-  /** Hide numeric count badge */
   hideCount?: boolean;
-  /** Optional override for the accessible label prefix (e.g., "Listing") */
   labelPrefix?: string;
-  /** Optional style variant */
   variant?: "chip" | "icon";
+
+  /** Optional callback fired after a successful toggle */
+  onToggledAction?: (next: boolean) => void | Promise<void>;
 };
 
 function emit(name: string, detail?: unknown) {
@@ -44,7 +51,13 @@ function track(event: string, payload?: Record<string, unknown>) {
 }
 
 export default function FavoriteButton({
+  entity,
+  entityId,
+
+  // legacy aliases (still supported)
   productId,
+  serviceId,
+
   initial = false,
   initialCount = 0,
   size = 18,
@@ -52,15 +65,51 @@ export default function FavoriteButton({
   hideCount = false,
   labelPrefix = "Item",
   variant = "chip",
+  onToggledAction,
 }: Props) {
-  const { isFavorited, count, toggle, loading, error } = useFavorite(productId, {
+  // ---------- Resolve entity + id with sensible fallbacks ----------
+  let resolvedEntity: Entity | undefined = entity;
+  let resolvedId: string | undefined = entityId;
+
+  if (!resolvedEntity || !resolvedId) {
+    if (productId) {
+      resolvedEntity = "product";
+      resolvedId = productId;
+    } else if (serviceId) {
+      resolvedEntity = "service";
+      resolvedId = serviceId;
+    }
+  }
+
+  // Final guard (don’t crash the tree; just render a disabled icon)
+  if (!resolvedEntity || !resolvedId) {
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[FavoriteButton] Missing entity/entityId (or productId/serviceId). Button will render disabled."
+      );
+    }
+  }
+
+  // Hook: allow passing entity as an option (safe if hook ignores it)
+  const { isFavorited, count, toggle, loading, error } = useFavorite(resolvedId || "", {
     initial,
     initialCount,
-  });
+    entity: resolvedEntity,
+  } as any);
 
   const [live, setLive] = useState<string>("");
   const cooldownUntilRef = useRef<number>(0);
   const liveTimeoutRef = useRef<number | null>(null);
+
+  // compact number for visual; keep full number for SR users
+  const fmt = useMemo(
+    () =>
+      typeof Intl !== "undefined"
+        ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 })
+        : null,
+    []
+  );
 
   useEffect(() => {
     return () => {
@@ -89,21 +138,33 @@ export default function FavoriteButton({
       e.preventDefault();
       e.stopPropagation();
 
-      if (!productId) return;
+      if (!resolvedId || !resolvedEntity) return;
 
-      // Cooldown: avoid rapid double toggles
+      // Cooldown to avoid spam toggles
       const now = Date.now();
       if (now < cooldownUntilRef.current) return;
       cooldownUntilRef.current = now + 600;
 
-      // Predict next state BEFORE calling toggle (prevents inverted analytics)
       const next = !isFavorited;
 
       try {
-        await toggle(); // hook manages state/optimism internally
+        await toggle(); // hook handles optimism/staleness
 
-        track(next ? "favorite_add" : "favorite_remove", { productId });
-        emit("qs:favorite:toggle", { productId, favorited: next });
+        // tiny haptic nudge when available
+        if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+          try {
+            (navigator as any).vibrate?.(12);
+          } catch {/* ignore */}
+        }
+
+        // analytics + events include entity info
+        track(next ? "favorite_add" : "favorite_remove", {
+          entity: resolvedEntity,
+          entityId: resolvedId,
+        });
+        emit("qs:favorite:toggle", { entity: resolvedEntity, entityId: resolvedId, favorited: next });
+
+        if (onToggledAction) await onToggledAction(next);
 
         if (liveTimeoutRef.current) clearTimeout(liveTimeoutRef.current);
         setLive(next ? `${labelPrefix} saved to favorites` : `${labelPrefix} removed from favorites`);
@@ -120,36 +181,45 @@ export default function FavoriteButton({
         }, 1200);
       }
     },
-    [isFavorited, labelPrefix, productId, toggle]
+    [isFavorited, labelPrefix, resolvedEntity, resolvedId, toggle, onToggledAction]
   );
 
-  const Icon = (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill={isFavorited ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth={isFavorited ? 0 : 1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="transition-all"
-      aria-hidden="true"
-    >
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
+  const icon = useMemo(
+    () => (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill={isFavorited ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth={isFavorited ? 0 : 1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="transition-all"
+        aria-hidden="true"
+      >
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" />
+      </svg>
+    ),
+    [isFavorited, size]
   );
 
   const baseClasses =
-    "inline-flex items-center gap-1 rounded-full text-sm transition select-none";
+    "inline-flex items-center gap-1 rounded-full text-sm transition select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#39a0ca]";
   const colorClasses = isFavorited
     ? "text-[#39a0ca] dark:text-[#39a0ca]"
     : "text-gray-700 dark:text-slate-200";
-  const stateClasses = loading ? "opacity-60 cursor-wait" : "hover:opacity-90";
+  const stateClasses = loading ? "opacity-60 cursor-wait" : "hover:opacity-90 active:opacity-100";
   const shapeClasses =
     variant === "icon"
       ? "p-1.5"
       : "px-2 py-1 border border-black/10 dark:border-white/15 bg-white/80 dark:bg-white/10";
+
+  const c = count ?? 0;
+  const visualCount = fmt ? fmt.format(c) : String(c);
+  const isCoolingDown = Date.now() < cooldownUntilRef.current;
+
+  const disabled = loading || !resolvedId || !resolvedEntity;
 
   return (
     <>
@@ -161,18 +231,32 @@ export default function FavoriteButton({
       <button
         type="button"
         onClick={onClick}
-        disabled={loading || !productId}
-        aria-pressed={isFavorited}
+        disabled={disabled}
+        aria-pressed={!!isFavorited}
         aria-busy={loading}
         aria-label={ariaLabel}
         title={title}
+        aria-describedby={error ? `fav-err-${resolvedEntity}-${resolvedId}` : undefined}
         data-state={isFavorited ? "on" : "off"}
+        data-entity={resolvedEntity || ""}
+        data-id={resolvedId || ""}
+        data-cooldown={isCoolingDown ? "1" : "0"}
         className={[baseClasses, colorClasses, stateClasses, shapeClasses, className].join(" ")}
       >
-        {Icon}
-        {!hideCount && <span className="tabular-nums">{count ?? 0}</span>}
-        {error && <span className="sr-only">({String(error)})</span>}
+        {icon}
+        {!hideCount && (
+          <span className="tabular-nums">
+            <span aria-hidden="true">{visualCount}</span>
+            <span className="sr-only">{c}</span>
+          </span>
+        )}
       </button>
+
+      {error ? (
+        <span id={`fav-err-${resolvedEntity}-${resolvedId}`} className="sr-only" role="alert">
+          {String(error)}
+        </span>
+      ) : null}
     </>
   );
 }

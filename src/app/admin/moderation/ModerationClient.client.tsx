@@ -18,11 +18,12 @@ export type ReportRow = {
 
 const fmtDateTimeKE = (d: string | Date) => {
   try {
+    const dt = typeof d === "string" ? new Date(d) : d;
     return new Intl.DateTimeFormat("en-KE", {
       dateStyle: "medium",
       timeStyle: "short",
       timeZone: "Africa/Nairobi",
-    }).format(new Date(d as any));
+    }).format(dt);
   } catch {
     return new Date(d as any).toLocaleString();
   }
@@ -51,9 +52,9 @@ export default function ModerationClient({
 
       <div className="overflow-x-auto rounded-xl border bg-white dark:bg-slate-900">
         <table className="min-w-full text-sm">
-          <thead className="text-left bg-gray-50 dark:bg-slate-800">
+          <thead className="bg-gray-50 text-left dark:bg-slate-800">
             <tr>
-              <th className="px-3 py-2 w-8">
+              <th className="w-8 px-3 py-2">
                 <input type="checkbox" data-check="all" aria-label="Select all reports" />
               </th>
               <th className="px-3 py-2">When</th>
@@ -69,38 +70,28 @@ export default function ModerationClient({
           </thead>
           <tbody>
             {items.map((r) => (
-              <tr key={r.id} className="border-t dark:border-slate-800 align-top">
+              <tr key={r.id} className="align-top border-t dark:border-slate-800">
                 <td className="px-3 py-2">
-                  <input type="checkbox" name="select" value={r.id} aria-label={`Select ${r.id}`} />
+                  <input type="checkbox" name="select" value={r.id} aria-label={`Select report ${r.id}`} />
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap">{fmtDateTimeKE(r.createdAt)}</td>
+                <td className="whitespace-nowrap px-3 py-2">{fmtDateTimeKE(r.createdAt)}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
                     <code className="text-xs">{r.listingId}</code>
-                    {r.listingType === "product" ? (
-                      <Link
-                        className="text-[#39a0ca] hover:underline"
-                        href={`/product/${r.listingId}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        open
-                      </Link>
-                    ) : (
-                      <Link
-                        className="text-[#39a0ca] hover:underline"
-                        href={`/service/${r.listingId}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        open
-                      </Link>
-                    )}
+                    <Link
+                      className="text-[#39a0ca] hover:underline"
+                      href={r.listingType === "product" ? `/product/${r.listingId}` : `/service/${r.listingId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${r.listingType} ${r.listingId}`}
+                    >
+                      open
+                    </Link>
                   </div>
                 </td>
                 <td className="px-3 py-2">{r.listingType}</td>
                 <td className="px-3 py-2">{r.reason}</td>
-                <td className="px-3 py-2 max-w-[360px]">
+                <td className="max-w-[360px] px-3 py-2">
                   <div className="line-clamp-3 text-gray-700 dark:text-slate-200">
                     {r.details || <span className="opacity-60">—</span>}
                   </div>
@@ -122,7 +113,7 @@ export default function ModerationClient({
         </table>
       </div>
 
-      <div className="flex justify-center items-center gap-2">
+      <div className="flex items-center justify-center gap-2">
         <span className="text-xs text-gray-600 dark:text-slate-300">
           Page {page} of {totalPages} • {total} reports
         </span>
@@ -161,8 +152,12 @@ function RowActions({
           body: JSON.stringify({ status }),
         });
         if (!r.ok) {
-          const j = await r.json().catch(() => ({}));
-          alert(`Failed: ${j?.error || r.status}`);
+          let msg = `${r.status}`;
+          try {
+            const j = (await r.json()) as any;
+            msg = String(j?.error || msg);
+          } catch {}
+          alert(`Failed: ${msg}`);
           return;
         }
         location.reload();
@@ -195,17 +190,19 @@ function RowActions({
     <div className="flex gap-2">
       <button
         onClick={() => patchStatus("HIDDEN")}
-        className="rounded bg-red-600/90 text-white px-2 py-1 text-xs hover:bg-red-600 disabled:opacity-60"
+        className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
+        title="Hide listing"
       >
         Hide
       </button>
       <button
         onClick={() => patchStatus("ACTIVE")}
-        className="rounded bg-emerald-600/90 text-white px-2 py-1 text-xs hover:bg-emerald-600 disabled:opacity-60"
+        className="rounded bg-emerald-600/90 px-2 py-1 text-xs text-white hover:bg-emerald-600 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
+        title="Unhide listing"
       >
         Unhide
       </button>
@@ -214,6 +211,7 @@ function RowActions({
         className="rounded border px-2 py-1 text-xs disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
+        title={resolved ? "Mark as unresolved" : "Mark as resolved"}
       >
         {resolved ? "Unresolve" : "Resolve"}
       </button>
@@ -238,10 +236,7 @@ function BulkActions({
     const onMasterChange = () => {
       const bs = boxes();
       bs.forEach((b) => (b.checked = !!master?.checked));
-      // reflect partial selection
-      if (master) {
-        master.indeterminate = false;
-      }
+      if (master) master.indeterminate = false;
     };
 
     const onDocChange = () => {
@@ -255,7 +250,6 @@ function BulkActions({
 
     master?.addEventListener("change", onMasterChange);
     document.addEventListener("change", onDocChange);
-    // initialize state once
     onDocChange();
 
     return () => {
@@ -312,12 +306,13 @@ function BulkActions({
     });
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="mb-3 flex items-center gap-2">
       <button
         onClick={() => doResolve("1")}
-        className="rounded bg-emerald-600/90 text-white px-3 py-1 text-sm hover:bg-emerald-600 disabled:opacity-60"
+        className="rounded bg-emerald-600/90 px-3 py-1 text-sm text-white hover:bg-emerald-600 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
+        title="Mark selected as resolved"
       >
         Resolve selected
       </button>
@@ -326,23 +321,26 @@ function BulkActions({
         className="rounded border px-3 py-1 text-sm disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
+        title="Mark selected as unresolved"
       >
         Unresolve selected
       </button>
       <span className="mx-2 opacity-50">•</span>
       <button
         onClick={() => doVisibility("HIDDEN")}
-        className="rounded bg-red-600/90 text-white px-3 py-1 text-sm hover:bg-red-600 disabled:opacity-60"
+        className="rounded bg-red-600/90 px-3 py-1 text-sm text-white hover:bg-red-600 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
+        title="Hide selected listings"
       >
         Hide listings
       </button>
       <button
         onClick={() => doVisibility("ACTIVE")}
-        className="rounded bg-[#161748] text-white px-3 py-1 text-sm hover:opacity-90 disabled:opacity-60"
+        className="rounded bg-[#161748] px-3 py-1 text-sm text-white hover:opacity-90 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
+        title="Unhide selected listings"
       >
         Unhide listings
       </button>
