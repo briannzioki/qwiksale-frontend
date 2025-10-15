@@ -2,9 +2,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import toast from "react-hot-toast";
+import { toast } from "@/app/components/ToasterClient";
 import SuggestInput from "@/app/components/SuggestInput";
+import { extractGalleryUrls } from "@/app/lib/media"; // ✅ normalize any legacy gallery shapes to plain URLs
 
 const SERVICE_CATEGORIES = [
   { name: "Home Services", subcategories: [{ name: "Cleaning" }, { name: "Repairs" }] },
@@ -17,9 +19,11 @@ type Me = { id: string; email: string | null; profileComplete?: boolean; whatsap
 
 type Props = {
   /** If present, load existing service and PATCH on submit */
-  editId?: string | null | undefined; // allow explicit undefined for exactOptionalPropertyTypes
+  editId?: string | null | undefined;
   /** If true, hides the legacy media uploader block to avoid duplication with a page-level media manager. */
   hideMedia?: boolean;
+  /** 🔐 Hook to run *before* submit (e.g. commit staged media). */
+  onBeforeSubmitAction?: () => Promise<void>;
 };
 
 const MAX_FILES = 6;
@@ -40,9 +44,7 @@ function normalizePhone(raw: string): string {
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-function looksLikeValidKePhone(input: string): boolean {
-  return /^254(7|1)\d{8}$/.test(normalizePhone(input));
-}
+const looksLikeValidKePhone = (input: string) => /^254(7|1)\d{8}$/.test(normalizePhone(input));
 
 /* --------------------------- Cloudinary uploader -------------------------- */
 async function uploadToCloudinary(
@@ -66,7 +68,6 @@ async function uploadToCloudinary(
     return { secure_url: json.secure_url, public_id: json.public_id };
   }
 
-  // Signed fallback if you're not using unsigned uploads
   const sigRes = await fetch(`/api/upload/sign?folder=${encodeURIComponent(folder)}`, {
     method: "GET",
     cache: "no-store",
@@ -80,33 +81,22 @@ async function uploadToCloudinary(
   fd.append("folder", folder);
 
   const xhr = new XMLHttpRequest();
-  const p = new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-    xhr.upload.onprogress = (evt) => {
-      if (evt.lengthComputable && opts?.onProgress) {
-        opts.onProgress(Math.round((evt.loaded / evt.total) * 100));
-      }
-    };
+  return await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
+    xhr.upload.onprogress = (evt) => evt.lengthComputable && opts?.onProgress?.(Math.round((evt.loaded / evt.total) * 100));
     xhr.onreadystatechange = () => {
-      if (xhr.readyState === 4) {
-        try {
-          const j = JSON.parse(xhr.responseText);
-          if (xhr.status >= 200 && xhr.status < 300 && j.secure_url) {
-            resolve({ secure_url: j.secure_url, public_id: j.public_id });
-          } else {
-            reject(new Error(j?.error?.message || `Cloudinary upload failed (${xhr.status})`));
-          }
-        } catch (e: any) {
-          reject(new Error(e?.message || "Cloudinary response parse error"));
-        }
-      }
+      if (xhr.readyState !== 4) return;
+      try {
+        const j = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && j.secure_url) resolve({ secure_url: j.secure_url, public_id: j.public_id });
+        else reject(new Error(j?.error?.message || `Cloudinary upload failed (${xhr.status})`));
+      } catch (e: any) { reject(new Error(e?.message || "Cloudinary response parse error")); }
     };
     xhr.open("POST", endpoint, true);
     xhr.send(fd);
   });
-  return p;
 }
 
-export default function SellServiceClient({ editId, hideMedia }: Props) {
+export default function SellServiceClient({ editId, hideMedia = false, onBeforeSubmitAction }: Props) {
   const router = useRouter();
 
   // ---------------------- Profile Gate (no server redirects) ----------------------
@@ -117,73 +107,44 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
   const [name, setName] = useState<string>("");
   const [price, setPrice] = useState<number | "">("");
   const [rateType, setRateType] = useState<"hour" | "day" | "fixed">("fixed");
-
   const [category, setCategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.name || "Services"));
-  const [subcategory, setSubcategory] = useState<string>(
-    String(SERVICE_CATEGORIES[0]?.subcategories?.[0]?.name || "")
-  );
-
+  const [subcategory, setSubcategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.subcategories?.[0]?.name || ""));
   const [serviceArea, setServiceArea] = useState<string>("Nairobi");
   const [availability, setAvailability] = useState<string>("Weekdays");
   const [location, setLocation] = useState<string>("Nairobi");
   const [phone, setPhone] = useState<string>("");
   const [description, setDescription] = useState<string>("");
 
-  // Images
+  // Images (legacy surface)
   const [previews, setPreviews] = useState<FilePreview[]>([]);
   const [existingImage, setExistingImage] = useState<string | null>(null);
   const [existingGallery, setExistingGallery] = useState<string[]>([]);
-
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // keep phone in a ref so the effect doesn't depend on state
   const phoneRef = useRef<string>("");
-  useEffect(() => {
-    phoneRef.current = phone;
-  }, [phone]);
 
-  // Prefill phone from profile + gate checks
+  useEffect(() => { phoneRef.current = phone; }, [phone]);
+
+  // Prefill phone from profile + gate checks (show CTA link when logged out)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/me", { cache: "no-store" });
-
-        if (res.status === 401) {
-          if (!cancelled) router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`);
-          return;
-        }
-        if (!res.ok) {
-          if (!cancelled) {
-            setAllowed(true);
-            setReady(true);
-          }
-          return;
-        }
-
+        if (res.status === 401) { if (!cancelled) { setAllowed(false); setReady(true); } return; }
+        if (!res.ok) { if (!cancelled) { setAllowed(true); setReady(true); } return; }
         const j = (await res.json().catch(() => null)) as any;
         const me: Me | null = j?.user ?? j ?? null;
-
-        if (!cancelled && me && me.profileComplete === false) {
-          router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell/service")}`);
-          return;
-        }
+        if (!cancelled && me && me.profileComplete === false) { setAllowed(true); setReady(true); return; }
         if (!cancelled && !phoneRef.current && me?.whatsapp) setPhone(me.whatsapp);
-
         if (!cancelled) setAllowed(true);
-      } catch {
-        if (!cancelled) setAllowed(true); // fail-open
-      } finally {
-        if (!cancelled) setReady(true);
-      }
+      } catch { if (!cancelled) setAllowed(true); }
+      finally { if (!cancelled) setReady(true); }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+    return () => { cancelled = true; };
+  }, []);
 
   /* --------------------------- EDIT PREFILL LOGIC --------------------------- */
   useEffect(() => {
@@ -192,10 +153,7 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
     (async () => {
       try {
         const r = await fetch(`/api/services/${encodeURIComponent(editId)}`, { cache: "no-store" });
-        if (!r.ok) {
-          toast.error("Unable to load service for editing.");
-          return;
-        }
+        if (!r.ok) { toast.error("Unable to load service for editing."); return; }
         const s: any = await r.json();
         if (cancelled) return;
 
@@ -209,18 +167,11 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
         setAvailability(s?.availability ?? "Weekdays");
         setLocation(s?.location ?? s?.serviceArea ?? "Nairobi");
         setPhone(s?.sellerPhone ?? "");
-
         setExistingImage(s?.image ?? null);
-        setExistingGallery(Array.isArray(s?.gallery) ? s.gallery : []);
-      } catch (e: any) {
-        // eslint-disable-next-line no-console
-        console.error(e);
-        toast.error("Failed to prefill service.");
-      }
+        setExistingGallery(extractGalleryUrls({ gallery: s?.gallery }, undefined, 50));
+      } catch (e: any) { console.error(e); toast.error("Failed to prefill service."); }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [editId]);
 
   // Derived options (local)
@@ -234,20 +185,11 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
   }, [cats, category]);
 
   useEffect(() => {
-    if (!subcats.length) {
-      setSubcategory("");
-      return;
-    }
-    if (!subcats.some((s) => s.name === subcategory)) {
-      setSubcategory(subcats[0]?.name || "");
-    }
+    if (!subcats.length) { setSubcategory(""); return; }
+    if (!subcats.some((s) => s.name === subcategory)) setSubcategory(subcats[0]?.name || "");
   }, [subcats, subcategory]);
 
-  useEffect(() => {
-    return () => {
-      previews.forEach((p) => URL.revokeObjectURL(p.url));
-    };
-  }, [previews]);
+  useEffect(() => () => { previews.forEach((p) => URL.revokeObjectURL(p.url)); }, [previews]);
 
   const normalizedPhone = phone ? normalizePhone(phone) : "";
   const phoneOk = !phone || looksLikeValidKePhone(phone);
@@ -263,21 +205,14 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
     const next: FilePreview[] = [];
     for (const f of Array.from(files)) {
       if (next.length + previews.length >= MAX_FILES) break;
-      if (!ACCEPTED_TYPES.includes(f.type)) {
-        toast.error(`Unsupported file: ${f.name}`);
-        continue;
-      }
-      if (f.size > MAX_MB * 1024 * 1024) {
-        toast.error(`${f.name} is larger than ${MAX_MB}MB`);
-        continue;
-      }
+      if (!ACCEPTED_TYPES.includes(f.type)) { toast.error(`Unsupported file: ${f.name}`); continue; }
+      if (f.size > MAX_MB * 1024 * 1024) { toast.error(`${f.name} is larger than ${MAX_MB}MB`); continue; }
       const key = `${f.name}:${f.size}:${f.lastModified}`;
       if (previews.some((p) => p.key === key) || next.some((p) => p.key === key)) continue;
       const url = URL.createObjectURL(f);
       next.push({ file: f, url, key });
     }
-    if (!next.length) return;
-    setPreviews((prev) => [...prev, ...next].slice(0, MAX_FILES));
+    if (next.length) setPreviews((prev) => [...prev, ...next].slice(0, MAX_FILES));
   }
 
   function onFileInputChange(files: FileList | null) {
@@ -287,20 +222,18 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
   }
 
   function onDrop(e: DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     if (e.dataTransfer?.files?.length) filesToAdd(e.dataTransfer.files);
   }
 
-  function removeAt(idx: number) {
+  const removeAt = (idx: number) =>
     setPreviews((prev) => {
       const removed = prev[idx];
       if (removed) URL.revokeObjectURL(removed.url);
       return prev.filter((_, i) => i !== idx);
     });
-  }
 
-  function move(idx: number, dir: -1 | 1) {
+  const move = (idx: number, dir: -1 | 1) =>
     setPreviews((prev) => {
       const j = idx + dir;
       if (j < 0 || j >= prev.length) return prev;
@@ -312,20 +245,15 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
       a[j] = left;
       return a;
     });
-  }
 
   /* -------------------------------- Submit -------------------------------- */
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit) {
-      toast.error("Please fill all required fields.");
-      return;
-    }
-    // ✅ Guard: avoid blob: URLs in payload when Cloudinary isn’t configured
-    if (previews.length && !CLOUD_NAME) {
-      toast.error(
-        "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
-      );
+    if (!canSubmit) return toast.error("Please fill all required fields.");
+
+    // If we show the legacy uploader, ensure Cloudinary is configured when files exist
+    if (!hideMedia && previews.length && !CLOUD_NAME) {
+      toast.error("Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET).");
       return;
     }
     if (submitting) return;
@@ -333,23 +261,19 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
     setUploadPct(0);
 
     try {
-      // Upload images if added
+      // 🔐 Commit staged media first (if provided)
+      if (onBeforeSubmitAction) {
+        await onBeforeSubmitAction();
+      }
+
+      // Handle *legacy inline uploads* only when hideMedia === false
       let uploaded: { secure_url: string; public_id: string }[] = [];
-      if (previews.length) {
-        if (!CLOUD_NAME) {
-          throw new Error(
-            "Cloudinary not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
-          );
-        }
-        const total = previews.length;
-        let done = 0;
+      if (!hideMedia && previews.length) {
+        const total = previews.length; let done = 0;
         for (const p of previews) {
           const item = await uploadToCloudinary(p.file, {
             folder: "qwiksale/services",
-            onProgress: (pct) => {
-              const overall = Math.round(((done + pct / 100) / total) * 100);
-              setUploadPct(overall);
-            },
+            onProgress: (pct) => setUploadPct(Math.round(((done + pct / 100) / total) * 100)),
           });
           uploaded.push(item);
           done += 1;
@@ -357,21 +281,8 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
         }
       }
 
-      // If no new images during EDIT, keep existing
-      const computedImage =
-        uploaded[0]?.secure_url ??
-        previews[0]?.url ??
-        existingImage ??
-        "/placeholder/default.jpg";
-
-      const computedGallery =
-        uploaded.length
-          ? uploaded.map((u) => u.secure_url)
-          : previews.length
-          ? previews.map((p) => p.url)
-          : (existingGallery?.length ? existingGallery : []);
-
-      const payload = {
+      // Build payload (🚫 do NOT stomp media)
+      const payload: Record<string, unknown> = {
         name: name.trim(),
         description: description.trim(),
         category,
@@ -380,16 +291,34 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
         rateType,
         serviceArea: serviceArea || undefined,
         availability: availability || undefined,
-        image: computedImage,
-        gallery: computedGallery,
         location: location.trim(),
         sellerPhone: normalizePhone(phone) || undefined,
       };
 
+      // Only include media when we’re *not* using the staged media surface.
+      // And never send empty arrays / placeholder image.
+      if (!hideMedia) {
+        const computedImage =
+          uploaded[0]?.secure_url ??
+          (previews[0]?.url || undefined) ??
+          (existingImage || undefined);
+
+        const computedGallery: string[] =
+          uploaded.length
+            ? uploaded.map((u) => u.secure_url)
+            : previews.length
+            ? previews.map((p) => p.url)
+            : (existingGallery?.length ? existingGallery : []);
+
+        if (computedImage) payload["image"] = computedImage;
+        if (computedGallery.length > 0) payload["gallery"] = computedGallery;
+      }
+      // When hideMedia === true we *omit* image/gallery entirely so we never overwrite
+      // the canonical media that was just committed by the MediaManager flow.
+
       let resultId: string | null = null;
 
       if (editId) {
-        // PATCH existing
         const r = await fetch(`/api/services/${encodeURIComponent(editId)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -397,13 +326,10 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
           body: JSON.stringify(payload),
         });
         const j = await r.json().catch(() => ({} as any));
-        if (!r.ok || (j as any)?.error) {
-          throw new Error((j as any)?.error || `Failed to update (${r.status})`);
-        }
+        if (!r.ok || (j as any)?.error) throw new Error((j as any)?.error || `Failed to update (${r.status})`);
         resultId = editId;
         toast.success("Service updated!");
       } else {
-        // POST new
         const r = await fetch("/api/services/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -415,17 +341,15 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
           throw new Error(j?.error || "You’re posting too fast. Please slow down.");
         }
         const j = await r.json().catch(() => ({} as any));
-        if (!r.ok || (j as any)?.error) {
-          throw new Error((j as any)?.error || `Failed to create (${r.status})`);
-        }
+        if (!r.ok || (j as any)?.error) throw new Error((j as any)?.error || `Failed to create (${r.status})`);
         resultId = String((j as any)?.serviceId || "");
         toast.success("Service posted!");
       }
 
-      router.push(resultId ? `/service/${resultId}` : "/");
+      // ✅ Redirect to editor; fallback to sell page
+      router.push(resultId ? `/service/${resultId}/edit` : "/sell/service");
       router.refresh();
     } catch (err: any) {
-      // eslint-disable-next-line no-console
       console.error(err);
       toast.error(err?.message || (editId ? "Failed to update service." : "Failed to post service."));
     } finally {
@@ -434,7 +358,8 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
     }
   }
 
-  if (!ready || !allowed) {
+  // Loading state (while we check auth)
+  if (!ready) {
     return (
       <div className="container-page py-10">
         <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
@@ -445,16 +370,29 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
     );
   }
 
+  // Logged-out CTA (must be a visible link with text matching /sign in|login/i)
+  if (allowed === false) {
+    return (
+      <div className="container-page py-10">
+        <div className="rounded-xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="text-xl font-semibold">You’re not signed in</h2>
+          <p className="mt-2 text-gray-600 dark:text-slate-300">Please sign in to post a service.</p>
+          <div className="mt-4">
+            <Link href={`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`} className="btn-gradient-primary inline-block">
+              Sign in
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container-page py-6">
       {/* Header card */}
       <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-        <h1 className="text-2xl font-bold text-balance">
-          {editId ? "Edit Service" : "Post a Service"}
-        </h1>
-        <p className="text-white/90">
-          {editId ? "Update your service details." : "List your service — it takes less than 2 minutes."}
-        </p>
+        <h1 className="text-2xl font-bold text-balance">{editId ? "Edit Service" : "Post a Service"}</h1>
+        <p className="text-white/90">{editId ? "Update your service details." : "List your service — it takes less than 2 minutes."}</p>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
@@ -509,36 +447,15 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
             </p>
             <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
               <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="fixed"
-                  checked={rateType === "fixed"}
-                  onChange={() => setRateType("fixed")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
+                <input type="radio" name="rateType" value="fixed" checked={rateType === "fixed"} onChange={() => setRateType("fixed")} className="rounded border-gray-300 dark:border-slate-600" />
                 Fixed
               </label>
               <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="hour"
-                  checked={rateType === "hour"}
-                  onChange={() => setRateType("hour")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
+                <input type="radio" name="rateType" value="hour" checked={rateType === "hour"} onChange={() => setRateType("hour")} className="rounded border-gray-300 dark:border-slate-600" />
                 /hour
               </label>
               <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="rateType"
-                  value="day"
-                  checked={rateType === "day"}
-                  onChange={() => setRateType("day")}
-                  className="rounded border-gray-300 dark:border-slate-600"
-                />
+                <input type="radio" name="rateType" value="day" checked={rateType === "day"} onChange={() => setRateType("day")} className="rounded border-gray-300 dark:border-slate-600" />
                 /day
               </label>
             </div>
@@ -549,31 +466,17 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="label">Category</label>
-            <select
-              className="select"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              aria-label="Category"
-            >
+            <select className="select" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">
               {SERVICE_CATEGORIES.map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.name}
-                </option>
+                <option key={c.name} value={c.name}>{c.name}</option>
               ))}
             </select>
           </div>
           <div>
             <label className="label">Subcategory</label>
-            <select
-              className="select"
-              value={subcategory}
-              onChange={(e) => setSubcategory(e.target.value)}
-              aria-label="Subcategory"
-            >
+            <select className="select" value={subcategory} onChange={(e) => setSubcategory(e.target.value)} aria-label="Subcategory">
               {subcats.map((s) => (
-                <option key={s.name} value={s.name}>
-                  {s.name}
-                </option>
+                <option key={s.name} value={s.name}>{s.name}</option>
               ))}
             </select>
 
@@ -581,18 +484,12 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
               <SuggestInput
                 endpoint="/api/services/suggest"
                 value=""
-                onChangeAction={async () => {
-                  /* picks drive state */
-                }}
+                onChangeAction={async () => {}}
                 onPickAction={async (item) => {
                   if (item.type === "subcategory") {
                     const parts = item.value.split("•").map((s) => s.trim());
-                    if (parts.length === 2) {
-                      setCategory(parts[0] || category);
-                      setSubcategory(parts[1] || subcategory);
-                    } else {
-                      setSubcategory(item.value);
-                    }
+                    if (parts.length === 2) { setCategory(parts[0] || category); setSubcategory(parts[1] || subcategory); }
+                    else { setSubcategory(item.value); }
                   } else if (item.type === "category") {
                     setCategory(item.value);
                     setSubcategory("");
@@ -608,13 +505,7 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
           </div>
           <div>
             <label className="label">Service Area (optional)</label>
-            <input
-              className="input"
-              value={serviceArea}
-              onChange={(e) => setServiceArea(e.target.value)}
-              placeholder="e.g. Nairobi CBD, Westlands"
-              aria-label="Service area"
-            />
+            <input className="input" value={serviceArea} onChange={(e) => setServiceArea(e.target.value)} placeholder="e.g. Nairobi CBD, Westlands" aria-label="Service area" />
           </div>
         </div>
 
@@ -622,34 +513,15 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="label">Availability (optional)</label>
-            <input
-              className="input"
-              value={availability}
-              onChange={(e) => setAvailability(e.target.value)}
-              placeholder="e.g. Mon–Sat 8am–6pm"
-              aria-label="Availability"
-            />
+            <input className="input" value={availability} onChange={(e) => setAvailability(e.target.value)} placeholder="e.g. Mon–Sat 8am–6pm" aria-label="Availability" />
           </div>
           <div>
             <label className="label">Base Location</label>
-            <input
-              className="input"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g. Nairobi"
-              aria-label="Location"
-            />
+            <input className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Nairobi" aria-label="Location" />
           </div>
           <div>
             <label className="label">Phone (WhatsApp, optional)</label>
-            <input
-              className="input"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="07XXXXXXXX or 2547XXXXXXXX"
-              aria-invalid={!!phone && !looksLikeValidKePhone(phone)}
-              aria-label="WhatsApp phone number (optional)"
-            />
+            <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07XXXXXXXX or 2547XXXXXXXX" aria-invalid={!!phone && !looksLikeValidKePhone(phone)} aria-label="WhatsApp phone number (optional)" />
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
               If provided, we’ll normalize as <code className="font-mono">{normalizedPhone || "—"}</code>
             </div>
@@ -659,16 +531,7 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
         {/* Description */}
         <div>
           <label className="label">Description</label>
-          <textarea
-            className="textarea"
-            rows={5}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe your service, experience, what’s included, etc."
-            required
-            minLength={10}
-            aria-label="Service description"
-          />
+          <textarea className="textarea" rows={5} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe your service, experience, what’s included, etc." required minLength={10} aria-label="Service description" />
         </div>
 
         {/* Images + Uploader (legacy surface) */}
@@ -677,37 +540,15 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
             <label className="label">Photos (up to {MAX_FILES})</label>
 
             {editId && (existingImage || (existingGallery?.length ?? 0) > 0) && (
-              <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">
-                Existing photos will be kept if you don’t upload new ones.
-              </p>
+              <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">Existing photos will be kept if you don’t upload new ones.</p>
             )}
 
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onDrop={onDrop}
-              className="card p-4 border-dashed border-2 border-gray-200 dark:border-slate-700/70"
-            >
+            <div onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }} onDrop={onDrop} className="card p-4 border-dashed border-2 border-gray-200 dark:border-slate-700/70">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <p className="text-sm text-gray-600 dark:text-slate-400">
-                  Drag & drop images here, or choose files.
-                  <span className="ml-2 text-xs">(JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)</span>
-                </p>
+                <p className="text-sm text-gray-600 dark:text-slate-400">Drag & drop images here, or choose files.<span className="ml-2 text-xs">(JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)</span></p>
                 <div className="flex items-center gap-2">
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    accept={ACCEPTED_TYPES.join(",")}
-                    multiple
-                    onChange={(e) => onFileInputChange(e.target.files)}
-                    className="hidden"
-                    id="file-input"
-                  />
-                  <label htmlFor="file-input" className="btn-outline cursor-pointer">
-                    Choose files
-                  </label>
+                  <input ref={inputRef} type="file" accept={ACCEPTED_TYPES.join(",")} multiple onChange={(e) => onFileInputChange(e.target.files)} className="hidden" id="file-input" />
+                  <label htmlFor="file-input" className="btn-outline cursor-pointer">Choose files</label>
                 </div>
               </div>
 
@@ -716,43 +557,12 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
                   {previews.map((p, i) => (
                     <div key={p.key} className="relative group">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={p.url}
-                        alt={`Photo ${i + 1}`}
-                        className="w-full h-32 object-cover rounded-lg border dark:border-slate-700"
-                        loading="lazy"
-                      />
+                      <img src={p.url} alt={`Photo ${i + 1}`} className="w-full h-32 object-cover rounded-lg border dark:border-slate-700" loading="lazy" />
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
                       <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                        <button
-                          type="button"
-                          onClick={() => move(i, -1)}
-                          disabled={i === 0}
-                          className="btn-outline px-2 py-1 text-xs"
-                          title="Move left"
-                          aria-label="Move image left"
-                        >
-                          ◀
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => move(i, +1)}
-                          disabled={i === previews.length - 1}
-                          className="btn-outline px-2 py-1 text-xs"
-                          title="Move right"
-                          aria-label="Move image right"
-                        >
-                          ▶
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeAt(i)}
-                          className="btn-danger px-2 py-1 text-xs"
-                          title="Remove"
-                          aria-label="Remove image"
-                        >
-                          Remove
-                        </button>
+                        <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="btn-outline px-2 py-1 text-xs" title="Move left" aria-label="Move image left">◀</button>
+                        <button type="button" onClick={() => move(i, +1)} disabled={i === previews.length - 1} className="btn-outline px-2 py-1 text-xs" title="Move right" aria-label="Move image right">▶</button>
+                        <button type="button" onClick={() => removeAt(i)} className="btn-danger px-2 py-1 text-xs" title="Remove" aria-label="Remove image">Remove</button>
                       </div>
                     </div>
                   ))}
@@ -772,17 +582,10 @@ export default function SellServiceClient({ editId, hideMedia }: Props) {
         )}
 
         <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={!canSubmit || submitting}
-            className={`btn-gradient-primary ${!canSubmit || submitting ? "opacity-60" : ""}`}
-            aria-label={editId ? "Update service" : "Post service"}
-          >
+          <button type="submit" disabled={!canSubmit || submitting} className={`btn-gradient-primary ${!canSubmit || submitting ? "opacity-60" : ""}`} aria-label={editId ? "Update service" : "Post service"}>
             {submitting ? (editId ? "Updating…" : "Posting…") : (editId ? "Update Service" : "Post Service")}
           </button>
-          <button type="button" onClick={() => router.back()} className="btn-outline" aria-label="Cancel">
-            Cancel
-          </button>
+          <button type="button" onClick={() => router.back()} className="btn-outline" aria-label="Cancel">Cancel</button>
         </div>
       </form>
     </div>

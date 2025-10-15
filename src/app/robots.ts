@@ -1,57 +1,38 @@
 ﻿// src/app/robots.ts
 import type { MetadataRoute } from "next";
 
-function siteUrl() {
-  const env =
+function siteUrl(): string {
+  const raw =
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_ORIGIN"] ||
     process.env["NEXTAUTH_URL"] ||
-    "https://qwiksale.co";
-
-  // Robustly normalize to an origin (handles values with/without protocol)
-  let base: string;
-  try {
-    base = new URL(env).origin;
-  } catch {
-    base = "https://qwiksale.co";
-  }
-  return base.replace(/\/+$/, "");
+    "https://qwiksale.sale";
+  const trimmed = String(raw).trim().replace(/\/+$/, "");
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.sale";
 }
 
 export default function robots(): MetadataRoute.Robots {
   const base = siteUrl();
-
-  const disallow = [
-    // APIs
-    "/api",
-    "/api/",
-    // Admin
-    "/admin",
-    "/admin/",
-    // App-private areas
-    "/dashboard",
-    "/dashboard/",
-    "/account",
-    "/account/",
-    "/messages",
-    "/messages/",
-    "/sell",
-    "/sell/",
-    "/signin",
-    "/signin/",
-    "/signup",
-    "/signup/",
-  ];
-
   return {
     rules: [
       {
         userAgent: "*",
-        allow: ["/"],
-        disallow,
+        allow: "/",
+        disallow: [
+          // non-indexable areas
+          "/api/",
+          "/signin",
+          "/signup",
+          "/account",
+          "/dashboard",
+          "/messages",
+          "/profile",
+          "/_next/",
+          "/static/",
+        ],
       },
     ],
     sitemap: `${base}/sitemap.xml`,
-    host: base,
   };
 }

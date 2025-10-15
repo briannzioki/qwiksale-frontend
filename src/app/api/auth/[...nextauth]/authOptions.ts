@@ -1,4 +1,3 @@
-// src/app/api/auth/[...nextauth]/authOptions.ts
 import { createTransport } from "nodemailer";
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
@@ -6,7 +5,10 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import EmailProvider from "next-auth/providers/email";
 
-import { prisma } from "@/lib/db";
+// ✅ Keep prisma import consistent with the rest of the app
+import { prisma } from "@/app/lib/prisma";
+// If your project truly uses "@/lib/db", swap back — this path matches other files you shared.
+
 import { verifyPassword, hashPassword } from "@/server/auth";
 
 const isProd = process.env.NODE_ENV === "production";
@@ -23,6 +25,16 @@ const ALLOWED_CALLBACK_PATHS = new Set<string>([
   "/account/complete-profile",
   "/admin",
 ]);
+
+/** Derive a lightweight handle from email or name as a non-persistent fallback */
+function deriveHandle(email?: string | null, name?: string | null) {
+  const base =
+    (email?.split("@")[0] || name || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "")
+      .slice(0, 30) || null;
+  return base;
+}
 
 export const authOptions: NextAuthOptions = {
   debug: process.env["NEXTAUTH_DEBUG"] === "1",
@@ -126,6 +138,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             name: user.name ?? null,
             image: user.image ?? null,
+            // Note: username is attached via JWT callback below
           };
         }
 
@@ -187,13 +200,32 @@ export const authOptions: NextAuthOptions = {
       return baseUrl;
     },
 
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user, account, profile, trigger }) {
+      // Persist user id
       if (user?.id) (token as any).uid = user.id;
 
+      // Opportunistically capture username on first login from user/profile
+      if ((token as any).username == null) {
+        const fromUser = (user as any)?.username ?? null;
+        // Some providers expose preferred_username
+        const fromProfile =
+          (profile as any)?.preferred_username ??
+          (profile as any)?.login ?? // GitHub-style
+          null;
+
+        (token as any).username =
+          fromUser ??
+          fromProfile ??
+          // last resort: a non-persistent derived handle (purely cosmetic until DB has one)
+          deriveHandle(user?.email ?? null, user?.name ?? null) ??
+          null;
+      }
+
+      // Keep JWT in sync with DB on first login and on explicit token updates
       if (user?.id || trigger === "update") {
         const uid = (user?.id as string) || (token as any).uid;
         if (uid) {
-          const profile = await prisma.user.findUnique({
+          const profileRow = await prisma.user.findUnique({
             where: { id: uid },
             select: {
               subscription: true,
@@ -202,18 +234,21 @@ export const authOptions: NextAuthOptions = {
               role: true,
             },
           });
-          if (profile) {
-            (token as any).subscription = profile.subscription ?? null;
-            (token as any).username = profile.username ?? null;
-            (token as any).referralCode = profile.referralCode ?? null;
-            (token as any).role = profile.role ?? "USER";
+
+          if (profileRow) {
+            (token as any).subscription = profileRow.subscription ?? null;
+            (token as any).username = profileRow.username ?? (token as any).username ?? null;
+            (token as any).referralCode = profileRow.referralCode ?? null;
+            (token as any).role = profileRow.role ?? "USER";
           }
         }
       }
+
       return token;
     },
 
     async session({ session, token }) {
+      // Attach id and custom claims onto the session user
       if (session.user && (token as any)?.uid) {
         (session.user as any).id = (token as any).uid as string;
       }
@@ -221,6 +256,9 @@ export const authOptions: NextAuthOptions = {
       (session.user as any).username = (token as any).username ?? null;
       (session.user as any).referralCode = (token as any).referralCode ?? null;
       (session.user as any).role = (token as any).role ?? "USER";
+
+      // (Optional) You can attach lightweight badge counts here if you add queries.
+      // Keep them small to avoid slowing every request.
       return session;
     },
   },

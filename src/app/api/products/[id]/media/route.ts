@@ -1,3 +1,4 @@
+// src/app/api/products/[id]/media/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,7 +9,12 @@ import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
 type PatchBody = {
-  items?: Array<{ id?: string; url?: string; isCover?: boolean; sort?: number | null | undefined }>;
+  items?: Array<{
+    id?: string;
+    url?: string;
+    isCover?: boolean;
+    sort?: number | null | undefined;
+  }>;
 };
 
 function noStore(json: unknown, init?: ResponseInit) {
@@ -20,14 +26,39 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-/* ---------- allowlist (match create routes) ---------- */
-const ALLOWED_IMAGE_HOSTS = [
-  "res.cloudinary.com",
-  "images.unsplash.com",
-] as const;
+/* ---------- Allowlist (configurable; matches create routes) ---------- */
+const RAW_HOSTS =
+  process.env["NEXT_PUBLIC_IMAGE_HOSTS"] ||
+  "res.cloudinary.com,images.unsplash.com";
+
+const ALLOW_ANY_HTTPS =
+  process.env["NEXT_PUBLIC_IMAGE_ALLOW_ANY_HTTPS"] === "1" ||
+  process.env["NEXT_PUBLIC_IMAGE_ALLOW_ANY_HTTPS"] === "true";
+
+const EXTRA_BASES = [
+  process.env["AWS_S3_PUBLIC_URL"] || "",
+  process.env["NEXT_PUBLIC_CDN_BASE"] || "",
+  process.env["R2_PUBLIC_URL"] || process.env["CLOUDFLARE_R2_PUBLIC_URL"] || "",
+].filter(Boolean);
+
+const EXTRA_HOSTS: string[] = [];
+for (const base of EXTRA_BASES) {
+  try {
+    const u = new URL(base);
+    if (u.hostname) EXTRA_HOSTS.push(u.hostname);
+  } catch {}
+}
+
+const ALLOWED_IMAGE_HOSTS: readonly string[] = [
+  ...RAW_HOSTS.split(",").map((s) => s.trim()).filter(Boolean),
+  ...EXTRA_HOSTS,
+];
 
 function isAllowedHost(hostname: string): boolean {
-  return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  if (ALLOW_ANY_HTTPS) return true;
+  return ALLOWED_IMAGE_HOSTS.some(
+    (h) => hostname === h || hostname.endsWith(`.${h}`)
+  );
 }
 
 function isAllowedUrl(u: string): boolean {
@@ -39,6 +70,9 @@ function isAllowedUrl(u: string): boolean {
     return false;
   }
 }
+
+const MAX_GALLERY =
+  Math.max(1, Number(process.env["NEXT_PUBLIC_GALLERY_MAX"] || "6")) || 6;
 
 export async function PATCH(
   req: NextRequest,
@@ -68,39 +102,34 @@ export async function PATCH(
       return noStore({ error: "Bad request: expected {items: [...]}" }, { status: 400 });
     }
 
-    // Normalize to allowed http(s) URLs only, sort, dedupe
-    const normalized = body.items
+    const prepared = body.items
       .map((x, i) => {
         const url = typeof x?.url === "string" ? x.url.trim() : "";
-        const good = url && isAllowedUrl(url);
-        if (!good) return null;
+        if (!url || !isAllowedUrl(url)) return null;
         const sort =
           Number.isFinite(x?.sort) && x?.sort !== null ? Number(x!.sort) : i;
-        const isCover = Boolean(x?.isCover);
+        const isCover = !!x?.isCover;
         return { url, sort, isCover, i };
       })
       .filter(Boolean) as Array<{ url: string; sort: number; isCover: boolean; i: number }>;
 
-    normalized.sort((a, b) => a.sort - b.sort || a.i - b.i);
+    prepared.sort((a, b) => a.sort - b.sort || a.i - b.i);
 
     const seen = new Set<string>();
     const unique: Array<{ url: string; isCover: boolean }> = [];
-    for (const n of normalized) {
-      if (seen.has(n.url)) continue;
-      seen.add(n.url);
-      unique.push({ url: n.url, isCover: n.isCover });
+    for (const it of prepared) {
+      if (seen.has(it.url)) continue;
+      seen.add(it.url);
+      unique.push({ url: it.url, isCover: it.isCover });
     }
 
-    // explicit cover wins; else first is cover
     const explicitCoverIdx = unique.findIndex((x) => x.isCover);
     const ordered =
       explicitCoverIdx > 0
         ? [unique[explicitCoverIdx]!, ...unique.filter((_, idx) => idx !== explicitCoverIdx)]
         : unique;
 
-    // Enforce cap = 6 (product gallery limit)
-    const MAX = 6;
-    const gallery = ordered.slice(0, MAX).map((x) => x.url);
+    const gallery = ordered.slice(0, MAX_GALLERY).map((x) => x.url);
     const coverUrl = gallery[0] ?? null;
 
     await prisma.product.update({
@@ -108,7 +137,6 @@ export async function PATCH(
       data: { image: coverUrl, gallery },
     });
 
-    // revalidate tags/paths
     try {
       revalidateTag("home:active");
       revalidateTag("products:latest");
@@ -116,7 +144,9 @@ export async function PATCH(
       revalidatePath("/");
       revalidatePath("/products");
       revalidatePath(`/product/${id}`);
+      revalidatePath(`/product/${id}/edit`);
       revalidatePath(`/listing/${id}`);
+      revalidatePath(`/dashboard`);
     } catch {}
 
     return noStore({ ok: true, cover: coverUrl, gallery });

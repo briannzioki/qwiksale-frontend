@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/app/lib/prisma";
 import UserAvatar from "@/app/components/UserAvatar";
 import SmartImage from "@/app/components/SmartImage";
+import { auth } from "@/auth";
 
 type Seller = {
   id: string;
@@ -131,8 +132,11 @@ export default async function ListingPage(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const product = await getListing(id);
+  const [product, session] = await Promise.all([getListing(id), auth()]);
   if (!product) notFound();
+
+  const viewerId = (session?.user as any)?.id as string | undefined;
+  const isOwner = Boolean(viewerId && product.seller?.id && viewerId === product.seller.id);
 
   const images = Array.from(
     new Set([product.image, ...(product.gallery || [])].filter(Boolean) as string[])
@@ -233,6 +237,16 @@ export default async function ListingPage(
                 >
                   Message on WhatsApp
                 </a>
+                {isOwner && (
+                  <Link
+                    href={`/product/${encodeURIComponent(product.id)}/edit`}
+                    className="rounded-xl border px-4 py-2 hover:bg-gray-50"
+                    aria-label="Edit listing"
+                    prefetch={false}
+                  >
+                    Edit
+                  </Link>
+                )}
               </div>
             </div>
 

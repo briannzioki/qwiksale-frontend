@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SearchCombobox from "@/app/components/SearchCombobox";
+import IconButton from "@/app/components/IconButton";
 
 type SuggestionType = "name" | "brand" | "category" | "subcategory" | "service";
 
@@ -147,7 +148,8 @@ export default function SearchBox(props: Props) {
         const meta: SuggestionMeta = { type: s.type };
         if (typeof s.value === "string" && s.value.trim()) meta.value = s.value.trim();
         if (typeof s.category === "string" && s.category.trim()) meta.category = s.category.trim();
-        if (typeof s.subcategory === "string" && s.subcategory.trim()) meta.subcategory = s.subcategory.trim();
+        if (typeof s.subcategory === "string" && s.subcategory.trim())
+          meta.subcategory = s.subcategory.trim();
 
         out.push({
           id: `${s.type}:${normVal}:${idx++}`,
@@ -379,7 +381,13 @@ export default function SearchBox(props: Props) {
             e.preventDefault();
             go(q);
           }}
-          className="flex items-center gap-2 rounded-2xl border border-gray-300 bg-white px-3 py-2 shadow-sm transition focus-within:ring-2 focus-within:ring-brandBlue dark:border-slate-700 dark:bg-slate-900"
+          className="
+            flex items-center gap-2 rounded-2xl
+            border border-gray-200 dark:border-white/10
+            bg-white dark:bg-slate-900
+            px-3 py-2 shadow-sm transition
+            focus-within:ring-2 focus-within:ring-brandBlue
+          "
           role="search"
           aria-label="Search products, brands, categories or services"
         >
@@ -401,7 +409,9 @@ export default function SearchBox(props: Props) {
                 <div
                   className={classNames(
                     "flex w-full items-center justify-between gap-3 text-left",
-                    active ? "text-gray-900 dark:text-slate-100" : "text-gray-700 dark:text-slate-200"
+                    active
+                      ? "text-gray-900 dark:text-slate-100"
+                      : "text-gray-700 dark:text-slate-200"
                   )}
                 >
                   <span className="truncate">{it.label}</span>
@@ -428,14 +438,13 @@ export default function SearchBox(props: Props) {
           </div>
 
           {q && (
-            <button
-              type="button"
-              aria-label="Clear search"
-              className="rounded-md px-1.5 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            <IconButton
+              icon="delete"
+              srLabel="Clear search"
+              variant="ghost"
+              size="xs"
               onClick={() => setQ("")}
-            >
-              Clear
-            </button>
+            />
           )}
           <button
             type="submit"
@@ -461,7 +470,9 @@ export default function SearchBox(props: Props) {
       ref={wrapRef}
       className={classNames(
         // animated container
-        "relative overflow-hidden rounded-xl border transition-all duration-200 bg-white dark:bg-slate-900 dark:border-gray-800",
+        "relative overflow-hidden rounded-xl border transition-all duration-200",
+        "bg-white dark:bg-slate-900",
+        "border-gray-200 dark:border-white/10",
         inlineOpen ? "w-72 opacity-100 px-2 py-1.5" : "w-0 opacity-0 px-0 py-0",
         className
       )}
@@ -492,14 +503,13 @@ export default function SearchBox(props: Props) {
           {/* Actions row: clear + icon submit */}
           <div className="mt-1 flex items-center justify-end gap-1">
             {!!q && (
-              <button
-                type="button"
-                aria-label="Clear"
-                className="rounded-md px-1.5 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              <IconButton
+                icon="delete"
+                srLabel="Clear search"
+                variant="ghost"
+                size="xs"
                 onClick={() => setQ("")}
-              >
-                Clear
-              </button>
+              />
             )}
             <button
               type="submit"

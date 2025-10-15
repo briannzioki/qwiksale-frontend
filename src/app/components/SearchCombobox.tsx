@@ -197,18 +197,27 @@ export default function SearchCombobox<TMeta = unknown>({
         id={inputId}
         value={q}
         onChange={(e) => {
-          setQ(e.target.value);
-          onChangeAction?.(e.target.value);
+          const next = e.target.value;
+          setQ(next);
+          onChangeAction?.(next);
           // only open if we have something non-empty; actual items will open after fetch
-          if (e.target.value.trim()) setOpen(true);
-          else setOpen(false);
+          setOpen(Boolean(next.trim()));
         }}
         onKeyDown={handleKeyDown}
         onFocus={() => {
           if (items.length) setOpen(true);
         }}
         placeholder={placeholder}
-        className="w-full rounded-lg border px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+        className="
+          w-full rounded-lg px-3 py-2
+          text-gray-900 dark:text-slate-100
+          bg-white dark:bg-slate-900
+          border border-gray-200 dark:border-white/10
+          focus:outline-none focus:ring-2 focus:ring-brandBlue
+        "
+        spellCheck
+        autoCorrect="on"
+        autoComplete="off"
         // ---- ARIA combobox on the input (recommended) ----
         role="combobox"
         aria-autocomplete="list"
@@ -216,16 +225,23 @@ export default function SearchCombobox<TMeta = unknown>({
         aria-controls={listId}
         aria-haspopup="listbox"
         aria-activedescendant={activeId}
+        aria-label={ariaLabel}
       />
 
       {open && (
         <ul
           id={listId}
           role="listbox"
-          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border bg-white shadow dark:border-slate-700 dark:bg-slate-900"
+          className="
+            absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg
+            border border-gray-200 dark:border-white/10
+            bg-white dark:bg-slate-900 shadow-md
+          "
         >
           {items.length === 0 && (
-            <li className="px-3 py-2 text-sm text-gray-500">No suggestions</li>
+            <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
+              No suggestions
+            </li>
           )}
           {items.map((it, i) => (
             <li
@@ -233,11 +249,13 @@ export default function SearchCombobox<TMeta = unknown>({
               role="option"
               aria-selected={i === active}
               key={it.id}
-              className={`cursor-pointer px-3 py-2 text-sm ${
-                i === active ? "bg-gray-100 dark:bg-slate-800" : ""
-              }`}
+              className={`
+                cursor-pointer px-3 py-2 text-sm
+                text-gray-800 dark:text-slate-100
+                ${i === active ? "bg-gray-100 dark:bg-slate-800" : "bg-transparent"}
+              `}
               onMouseEnter={() => setActive(i)}
-              onMouseDown={(e) => e.preventDefault()} // prevent input blur before click
+              onMouseDown={(e) => e.preventDefault()} /* prevent input blur before click */
               onClick={() => commit(it)}
             >
               {renderItemAction ? renderItemAction(it, i === active) : it.label}
@@ -247,7 +265,7 @@ export default function SearchCombobox<TMeta = unknown>({
       )}
 
       <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-        Use up/down to navigate, Enter to select, Esc to dismiss.
+        Use ↑/↓ to navigate, Enter to select, Esc to dismiss.
       </p>
     </div>
   );

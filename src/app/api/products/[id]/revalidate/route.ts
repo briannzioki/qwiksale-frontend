@@ -1,4 +1,3 @@
-// src/app/api/products/[id]/revalidate/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -49,11 +48,15 @@ export async function POST(
     /* ignore malformed body */
   }
 
-  // Always revalidate the product page
-  const paths = new Set<string>([`/product/${encodeURIComponent(id)}`]);
+  // Always revalidate the product page (+ edit)
+  const paths = new Set<string>([
+    `/product/${encodeURIComponent(id)}`,
+    `/product/${encodeURIComponent(id)}/edit`,
+  ]);
 
   // Optionally revalidate common surfaces
   paths.add("/"); // homepage / feed
+
   // Add any caller-provided extra paths
   (payload.paths ?? []).forEach((p) => {
     const s = String(p || "").trim();
@@ -111,13 +114,14 @@ export async function GET(
 
   try {
     revalidatePath(`/product/${encodeURIComponent(id)}`);
+    revalidatePath(`/product/${encodeURIComponent(id)}/edit`);
     revalidatePath("/");
   } catch {
     /* ignore */
   }
 
   return NextResponse.json(
-    { ok: true, revalidated: { id, paths: [`/product/${id}`, `/`] } },
+    { ok: true, revalidated: { id, paths: [`/product/${id}`, `/product/${id}/edit`, `/`] } },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

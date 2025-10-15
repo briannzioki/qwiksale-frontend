@@ -199,8 +199,8 @@ function ServiceCardImpl({
           >
             <DeleteListingButton
               serviceId={id}
-              label=""               // icon-only in tight overlay
-              className="px-2 py-1"  // compact hit area
+              label=""
+              className="px-2 py-1"
               {...(onDeletedAction ? { onDeletedAction } : {})}
             />
           </div>
@@ -226,6 +226,7 @@ function ServiceCardImpl({
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             priority={priority}
             {...blurProps}
+            unoptimized
           />
           {featured && (
             <span className="absolute left-2 top-2 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">

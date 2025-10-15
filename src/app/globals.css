@@ -1,8 +1,7 @@
 /* src/app/globals.css */
 
-/* If stylelint is enabled, silence Tailwind at-rules warnings in this file. */
 /* stylelint-disable at-rule-no-unknown */
-/* @config "../tailwind.config.js" */
+/* @config "../../tailwind.config.ts" */
 
 @tailwind base;
 @tailwind components;
@@ -11,24 +10,54 @@
 /* Respect system color-scheme for native widgets */
 :root { color-scheme: light dark; }
 
-/* Brand tokens */
+/* =========================
+   Brand & Semantic Tokens
+   ========================= */
 :root {
+  /* Brand (hex) */
   --brand-navy: #161748;
   --brand-green: #478559;
   --brand-blue: #39a0ca;
+  --accent: #f95d9b;
 
-  /* RGB triplets for opacity-aware usage */
+  /* Brand (RGB triplets) for alpha usage */
   --brand-navy-rgb: 22 23 72;
   --brand-green-rgb: 71 133 89;
   --brand-blue-rgb: 57 160 202;
+  --accent-rgb: 249 93 155;
 
-  /* Z-index tokens (optional semantic mapping) */
+  /* Semantic Surfaces / Text */
+  --bg-app: #f8fafc;         /* slate-50 */
+  --bg-elevated: #ffffff;
+  --bg-muted: #f1f5f9;       /* slate-100 */
+  --border: #e2e8f0;         /* slate-200 */
+  --text: #0f172a;           /* slate-900 */
+  --text-muted: #475569;     /* slate-600 */
+
+  /* Spotlight / noise intensity */
+  --spotlight-size: 900px;
+  --spotlight-alpha: 0.14;
+  --noise-alpha: 0.035; /* light mode base (kept subtle) */
+
+  /* Z-index tokens */
   --z-header: 40;
   --z-backdrop: 45;
   --z-popover: 50;
   --z-drawer: 60;
   --z-toast: 70;
   --z-modal: 80;
+}
+
+.dark {
+  --bg-app: #020617;         /* slate-950 */
+  --bg-elevated: #0b1220;    /* near slate-900 with a hint of blue */
+  --bg-muted: #0f172a;       /* slate-900 */
+  --border: #334155;         /* slate-700 */
+  --text: #e2e8f0;           /* slate-200 */
+  --text-muted: #94a3b8;     /* slate-400 */
+
+  --spotlight-alpha: 0.22;
+  --noise-alpha: 0.06;       /* dark mode target */
 }
 
 /* Small utility */
@@ -38,115 +67,127 @@
    Base layer
    ========================= */
 @layer base {
-  /* Smooth fonts */
+  html, body, #__next, :root {
+    height: 100%;
+  }
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background: var(--bg-app);
+    color: var(--text);
+  }
+  body {
+    background:
+      /* subtle noise on top */
+      radial-gradient(circle at 10% 10%, rgba(255 255 255 / 0.02), transparent 40%),
+      var(--bg-app);
+    min-height: 100%;
   }
 
-  /* Text selection color (uses rgb(var()) with color-mix) */
+  /* Text selection */
   ::selection {
-    background: color-mix(in oklab, rgb(var(--brand-blue-rgb)) 18%, transparent);
+    background: color-mix(in oklab, rgb(var(--brand-blue-rgb)) 22%, transparent);
     color: inherit;
   }
 
-  /* Keep form controls readable in both themes */
+  /* Form controls defaults */
   input, select, textarea, button {
     @apply text-gray-900 dark:text-slate-100;
   }
-  input::placeholder,
-  textarea::placeholder {
-    @apply text-gray-500;
-  }
-  .dark input::placeholder,
-  .dark textarea::placeholder {
-    @apply text-slate-400;
-  }
+  input::placeholder, textarea::placeholder { @apply text-gray-500; }
+  .dark input::placeholder, .dark textarea::placeholder { @apply text-slate-400; }
 
-  /* Default control backgrounds (override per component as needed) */
   input, select, textarea {
     @apply bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700;
   }
 
-  /* Accessible focus */
+  /* Accessible focus ring (fallback + utility-friendly) */
   :focus-visible {
     outline: 0;
-    box-shadow: 0 0 0 2px color-mix(in oklab, rgb(var(--brand-blue-rgb)) 80%, #fff 0%);
-  }
-  input:focus, select:focus, textarea:focus, button:focus {
-    @apply outline-none ring-2 ring-brandBlue;
+    box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
   }
 
   /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
     * {
-      animation-duration: 0.01ms !important;
+      animation-duration: .01ms !important;
       animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
+      transition-duration: .01ms !important;
       scroll-behavior: auto !important;
     }
   }
 
   /* Scrollbar (WebKit) */
   *::-webkit-scrollbar { width: 10px; height: 10px; }
-  *::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,.15); border-radius: 9999px; }
-  .dark *::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,.18); }
+  *::-webkit-scrollbar-thumb { background-color: rgba(0 0 0 / .15); border-radius: 9999px; }
+  .dark *::-webkit-scrollbar-thumb { background-color: rgba(255 255 255 / .18); }
 }
 
 /* =========================
    Components layer
    ========================= */
 @layer components {
+  /* Glass / blur surfaces */
+  .glass {
+    background: rgba(255 255 255 / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(0 0 0 / 0.06);
+    @apply rounded-2xl shadow-sm dark:bg-white/5 dark:border-white/10;
+  }
+  .glass-strong {
+    background: rgba(255 255 255 / 0.55);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(0 0 0 / 0.08);
+    @apply rounded-3xl shadow dark:bg-white/5 dark:border-white/10;
+  }
+
+  /* Translucent hero */
+  .hero-surface {
+    @apply p-6 md:p-8 rounded-3xl text-gray-900 dark:text-slate-100 shadow;
+    background:
+      linear-gradient(90deg, rgba(var(--brand-navy-rgb)/.85), rgba(var(--brand-blue-rgb)/.85)),
+      radial-gradient(1200px circle at 10% -10%, rgba(255 255 255 / .12), transparent 50%);
+    color: #fff;
+    border: 1px solid rgba(255 255 255 / .08);
+    backdrop-filter: blur(6px);
+  }
+
+  /* Solid cards */
+  .card {
+    @apply rounded-2xl shadow-sm border;
+    background: var(--bg-elevated);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
   /* Translucent cards */
   .card-surface {
-    @apply bg-white/80 dark:bg-white/5
-           backdrop-blur-md
-           text-gray-900 dark:text-slate-100
-           border border-black/5 dark:border-white/10
-           rounded-2xl shadow-sm;
+    @apply rounded-2xl shadow-sm;
+    background: rgba(255 255 255 / 0.8);
+    border: 1px solid rgba(0 0 0 / 0.06);
+    backdrop-filter: blur(10px);
+  }
+  .dark .card-surface {
+    background: rgba(255 255 255 / 0.05);
+    border: 1px solid rgba(255 255 255 / 0.10);
   }
 
-  .hero-surface {
-    @apply bg-white/70 dark:bg-white/5
-           backdrop-blur-md
-           text-gray-900 dark:text-slate-100
-           border border-black/5 dark:border-white/10
-           rounded-2xl shadow
-           p-6 md:p-8;
-  }
-
-  /* Solid card */
-  .card {
-    @apply bg-white dark:bg-slate-900/40
-           text-gray-900 dark:text-slate-100
-           border border-gray-200 dark:border-slate-800
-           rounded-2xl shadow-sm;
-  }
-
-  /* Container wrapper (piggyback Tailwind container) */
-  .container-page { @apply container max-w-6xl; }
-
-  /* Inputs */
-  .input {
-    @apply w-full rounded-lg px-3 py-2
+  /* Inputs / selects / textareas (classed variants) */
+  .input, .select, .textarea {
+    @apply w-full rounded-xl px-3 py-2
            bg-white dark:bg-slate-800
            border border-gray-300 dark:border-slate-700
            placeholder:text-gray-500 dark:placeholder:text-slate-400
-           focus:outline-none focus:ring-2 focus:ring-brandBlue;
+           focus:outline-none focus:ring-2;
+    /* keep the ring color consistent with brand token */
+    box-shadow: 0 0 0 0 transparent;
   }
-  .select {
-    @apply w-full rounded-lg px-3 py-2
-           bg-white dark:bg-slate-800
-           border border-gray-300 dark:border-slate-700
-           focus:outline-none focus:ring-2 focus:ring-brandBlue;
+  .input:focus, .select:focus, .textarea:focus {
+    box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
   }
-  .textarea {
-    @apply w-full rounded-lg px-3 py-2
-           bg-white dark:bg-slate-800
-           border border-gray-300 dark:border-slate-700
-           placeholder:text-gray-500 dark:placeholder:text-slate-400
-           focus:outline-none focus:ring-2 focus:ring-brandBlue;
-  }
+
   .label { @apply block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1; }
 
   /* Buttons */
@@ -157,16 +198,58 @@
            text-gray-900 dark:text-slate-100
            border border-gray-300 dark:border-slate-700
            hover:bg-gray-50 dark:hover:bg-slate-700
-           focus:outline-none focus:ring-2 focus:ring-brandBlue focus:ring-offset-2 dark:focus:ring-offset-slate-900
+           focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900
+           focus:ring-2
            disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-outline:focus-visible {
+    box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2
-           rounded-lg px-3 py-1.5 text-sm
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm
            text-white bg-red-600 hover:bg-red-700
-           focus:outline-none focus:ring-2 focus:ring-red-400
+           focus:outline-none focus:ring-2
            disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-danger:focus-visible { box-shadow: 0 0 0 3px rgba(248 113 113 / 0.4); } /* red-400 */
+
+  /* Brand gradient primary button */
+  .btn-gradient-primary {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-xl px-4 py-2 font-semibold text-white
+           disabled:opacity-60 disabled:cursor-not-allowed
+           ring-offset-2 ring-offset-white dark:ring-offset-slate-900
+           focus:outline-none focus:ring-2;
+
+    /* Brand gradient + subtle gloss */
+    background:
+      linear-gradient(180deg, rgba(255 255 255 / .18), rgba(255 255 255 / 0)) 0 0 / 100% 100% no-repeat,
+      linear-gradient(90deg,
+        rgba(var(--brand-navy-rgb) / 1),
+        rgba(var(--brand-green-rgb) / 1),
+        rgba(var(--brand-blue-rgb) / 1)
+      );
+    box-shadow:
+      0 6px 20px rgba(var(--brand-blue-rgb) / .22),
+      inset 0 0 0 1px rgba(255 255 255 / .12);
+    border: 1px solid rgba(0 0 0 / .06);
+  }
+  .btn-gradient-primary:hover {
+    filter: brightness(1.03);
+    box-shadow:
+      0 10px 28px rgba(var(--brand-blue-rgb) / .28),
+      inset 0 0 0 1px rgba(255 255 255 / .16);
+  }
+  .btn-gradient-primary:active {
+    transform: translateY(0.5px);
+    filter: brightness(0.98);
+  }
+  .btn-gradient-primary:focus-visible {
+    box-shadow:
+      0 10px 28px rgba(var(--brand-blue-rgb) / .28),
+      inset 0 0 0 1px rgba(255 255 255 / .16),
+      0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
   }
 
   /* Badges */
@@ -174,31 +257,163 @@
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs
            bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700;
   }
-  .badge-verified { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs bg-brandNavy text-white; }
+  .badge-verified {
+    color: #fff;
+    background: linear-gradient(90deg, rgba(var(--brand-navy-rgb)/1), rgba(var(--brand-blue-rgb)/1));
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs;
+  }
 
-  /* Skeleton */
+  /* Chips (base + variants) */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition
+           focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900
+           focus-visible:ring-2;
+  }
+  /* Subtle outlined chip for plain surfaces */
+  .chip-outline {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium border transition;
+    background-color: rgba(255 255 255 / 0.60);
+    border-color: rgba(0 0 0 / 0.08);
+    color: #0f172a;
+  }
+  .chip-outline:hover { background-color: rgba(255 255 255 / 0.75); }
+  .dark .chip-outline {
+    background-color: rgba(255 255 255 / 0.06);
+    border-color: rgba(255 255 255 / 0.12);
+    color: #e2e8f0;
+  }
+  .dark .chip-outline:hover { background-color: rgba(255 255 255 / 0.10); }
+  /* Light-on-gradient chip (used in 404/error hero) */
+  .chip--light {
+    @apply text-white;
+    background: rgba(255 255 255 / 0.15);
+    border: 1px solid rgba(255 255 255 / 0.20);
+    box-shadow: 0 1px 0 rgba(255 255 255 / 0.08) inset;
+  }
+  .chip--light:hover { background: rgba(255 255 255 / 0.25); }
+  .chip--light:active { background: rgba(255 255 255 / 0.30); }
+  /* Neutral chip for plain backgrounds */
+  .chip--neutral {
+    @apply text-gray-800 bg-white border border-gray-200 shadow-sm
+           dark:text-slate-200 dark:bg-slate-800 dark:border-slate-700;
+  }
+  .chip:focus-visible { box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35); }
+  button.chip { @apply cursor-pointer select-none; }
+  button.chip:disabled { @apply opacity-60 cursor-not-allowed; }
+
+  /* Skeleton (no default pulse—use shimmer util below) */
   .skeleton {
-    @apply animate-pulse bg-gray-200/70 dark:bg-slate-700/40;
-    background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+    @apply bg-gray-200/70 dark:bg-slate-700/40;
+    background-image: linear-gradient(90deg, transparent, rgba(255 255 255 / .35), transparent);
     background-size: 200% 100%;
     background-position: 200% 0;
   }
 
-  .shadow-soft { box-shadow: 0 10px 30px -10px rgba(0,0,0,0.25); }
+  .shadow-soft { box-shadow: 0 12px 32px rgba(0 0 0 / 0.12); }
 
-  .link { @apply text-brandNavy hover:text-brandPink; }
-
-  kbd {
-    @apply inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px]
-           bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700
-           font-medium text-gray-700 dark:text-slate-200;
+  .link {
+    color: var(--brand-navy);
+    transition: color .15s ease, text-decoration-color .15s ease;
   }
+  .link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: rgba(var(--accent-rgb) / .6);
+  }
+
+  /* Container wrapper (piggybacks Tailwind container) */
+  .container-page { @apply container max-w-7xl; }
 }
 
 /* =========================
    Utilities layer
    ========================= */
 @layer utilities {
+  /* Gradient text using brand ramp (aligns with tailwind plugin tokens) */
+  .text-gradient {
+    background-image: linear-gradient(
+      90deg,
+      rgba(var(--brand-navy-rgb) / 1) 0%,
+      rgba(var(--brand-green-rgb) / 1) 50%,
+      rgba(var(--brand-blue-rgb) / 1) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Focus ring utility if you want explicit class usage */
+  .ring-focus { box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35); }
+
+  /* Soft glow (e.g., on hover) */
+  .glow { box-shadow: 0 0 0 6px rgba(var(--brand-blue-rgb) / 0.12); }
+
+  /* Noise texture overlay (uses /brand/noise.png) */
+  .brand-noise {
+    background-image: url('/brand/noise.png');
+    background-size: 256px 256px;
+    background-repeat: repeat;
+  }
+
+  /* Spotlights overlay (uses /brand/spots.svg) */
+  .brand-spots {
+    background-image: url('/brand/spots.svg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    mix-blend-mode: soft-light;
+    opacity: .6;
+  }
+
+  /* Lightweight grid overlay (uses /brand/grid.svg) */
+  .bg-grid {
+    background-image: url('/brand/grid.svg');
+    background-size: 40px 40px;
+    background-repeat: repeat;
+    mix-blend-mode: soft-light;
+    opacity: .55;
+  }
+
+  /* Noise texture overlay as a utility (pointer-events: none so it can sit atop) */
+  .bg-noise {
+    position: relative;
+  }
+  .bg-noise::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    /* Lowered, subtle presence everywhere */
+    opacity: .06; /* was var(--noise-alpha); now fixed to .06 per spec */
+    mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>\
+<filter id='n'>\
+<feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/>\
+<feColorMatrix type='saturate' values='0'/>\
+</filter>\
+<rect width='100%' height='100%' filter='url(%23n)'/>\
+</svg>");
+  }
+
+  /* Radial spotlight (centered, attach to sections/headers) */
+  .bg-spotlight {
+    position: relative;
+    isolation: isolate;
+  }
+  .bg-spotlight::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle var(--spotlight-size) at 50% -10%,
+      rgba(var(--brand-blue-rgb) / var(--spotlight-alpha)),
+      transparent 60%
+    );
+    z-index: -1;
+  }
+
+  /* Line clamp (if not using plugin) */
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -209,29 +424,41 @@
 
   .break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
 
-  /* Prose tweaks (if @tailwind/typography is present) */
+  /* Prose tweaks (with @tailwind/typography) */
   .prose :where(code):not(:where([class~="not-prose"] *)) {
     @apply rounded-md bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 text-[0.85em];
   }
 
-  /* Optional shimmer variant for skeletons */
+  /* Shimmer variant for skeletons */
   @keyframes skeleton-shimmer {
-    0%   { background-position: 200% 0; }
+    0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
   }
   .skeleton-shimmer {
-    background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+    background-image: linear-gradient(90deg, transparent, rgba(255 255 255 / .35), transparent);
     background-size: 200% 100%;
     animation: skeleton-shimmer 1.2s linear infinite;
   }
 
-  /* --------- Optional semantic z-index helpers (if you prefer CSS names) --------- */
+  /* Spinner speed used by <Button> */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .animate-spin-slow { animation: spin 1.2s linear infinite; }
+
+  /* Rounded inherits (used by Button loading overlay) */
+  .rounded-inherit { border-radius: inherit; }
+
+  /* Semantic z-index helpers */
   .z-header   { z-index: var(--z-header); }
   .z-backdrop { z-index: var(--z-backdrop); }
   .z-popover  { z-index: var(--z-popover); }
   .z-drawer   { z-index: var(--z-drawer); }
   .z-toast    { z-index: var(--z-toast); }
   .z-modal    { z-index: var(--z-modal); }
+
+  /* ---------- Tiny guard: hide inline index badge when lightbox is open ---------- */
+  [data-gallery-open="true"] [data-gallery-index-badge] {
+    display: none !important;
+  }
 }
 
 /* stylelint-enable at-rule-no-unknown */

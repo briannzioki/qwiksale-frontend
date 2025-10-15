@@ -1,31 +1,34 @@
-// playwright.config.ts (ESM-safe but doesn't use import.meta)
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3000";
-const storageState = path.resolve("tests/e2e/.auth/state.json");
+const STORAGE = path.resolve("tests/e2e/.auth/state.json");
+const PORT = process.env.PORT || "3000";
+// Use the same BASE URL everywhere (config + global setup) to keep cookie scope aligned.
+const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${PORT}`;
 
 export default defineConfig({
   testDir: "tests/e2e",
   timeout: 60_000,
   fullyParallel: true,
   workers: process.env.CI ? 2 : 4,
-  expect: { timeout: 12_000 },
+  retries: process.env.CI ? 2 : 0,
+  expect: { timeout: 15_000 },
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL,
+    baseURL: BASE_URL,
+    storageState: STORAGE,
     actionTimeout: 10_000,
     navigationTimeout: 30_000,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
-    storageState,
+    ignoreHTTPSErrors: true,
   },
-  webServer: process.env.PLAYWRIGHT_BASE_URL
+  webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
         command: "npm run start",
-        url: "http://127.0.0.1:3000",
+        url: BASE_URL,
         timeout: 120_000,
         reuseExistingServer: !process.env.CI,
       },

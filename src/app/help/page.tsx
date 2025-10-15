@@ -1,6 +1,6 @@
-// src/app/help/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
+import SectionHeader from "@/app/components/SectionHeader";
 
 export const metadata: Metadata = {
   title: "Help Center — QwikSale",
@@ -10,54 +10,56 @@ export const metadata: Metadata = {
   alternates: { canonical: "/help" },
 };
 
+function Card({
+  title,
+  children,
+  href,
+}: {
+  title: string;
+  children: React.ReactNode;
+  href?: string;
+}) {
+  const inner = (
+    <div className="card group block rounded-xl border p-5 shadow-sm transition hover:shadow-md dark:border-slate-800">
+      <h3 className="font-semibold">{title}</h3>
+      <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">{children}</p>
+    </div>
+  );
+  return href ? <Link href={href}>{inner}</Link> : inner;
+}
+
 export default function HelpCenterPage() {
   return (
     <main className="container-page py-8">
-      {/* Hero */}
-      <section className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
-        <h1 className="text-2xl md:text-3xl font-extrabold">Help Center</h1>
-        <p className="mt-1 text-white/90">
-          Find answers fast, or reach the team for personal support.
-        </p>
-      </section>
+      <SectionHeader
+        title="Help Center"
+        subtitle="Find answers fast, or reach the team for personal support."
+        className="bg-spotlight brand-noise"
+        actions={
+          <div className="flex gap-2">
+            <Link href="/contact" className="btn-gradient-primary text-sm">Contact Support</Link>
+            <Link href="/report" className="btn-outline text-sm">Report a Problem</Link>
+          </div>
+        }
+      />
 
       {/* Quick links */}
       <section className="mt-6 grid gap-4 md:grid-cols-3">
-        <Link
-          href="/contact"
-          className="block rounded-xl border bg-white p-5 shadow-sm hover:shadow-md transition dark:border-slate-800 dark:bg-slate-900"
-        >
-          <h3 className="font-semibold">Contact Support</h3>
-          <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
-            Message us about account, billing, or product questions.
-          </p>
-        </Link>
-
-        <Link
-          href="/report"
-          className="block rounded-xl border bg-white p-5 shadow-sm hover:shadow-md transition dark:border-slate-800 dark:bg-slate-900"
-        >
-          <h3 className="font-semibold">Report a Problem</h3>
-          <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
-            Flag suspicious activity, scams, or listing issues.
-          </p>
-        </Link>
-
-        <Link
-          href="/safety"
-          className="block rounded-xl border bg-white p-5 shadow-sm hover:shadow-md transition dark:border-slate-800 dark:bg-slate-900"
-        >
-          <h3 className="font-semibold">Safety Guidelines</h3>
-          <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
-            Meet-up tips, payments, and staying safe on QwikSale.
-          </p>
-        </Link>
+        <Card title="Contact Support" href="/contact">
+          Message us about account, billing, or product questions.
+        </Card>
+        <Card title="Report a Problem" href="/report">
+          Flag suspicious activity, scams, or listing issues.
+        </Card>
+        <Card title="Safety Guidelines" href="/safety">
+          Meet-up tips, payments, and staying safe on QwikSale.
+        </Card>
       </section>
 
       {/* FAQs (no JS; native details/summary) */}
       <section className="mt-8">
         <h2 className="text-lg font-semibold">Frequently Asked Questions</h2>
-        <div className="mt-4 divide-y rounded-xl border bg-white shadow-sm dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+        <div className="mt-4 divide-y rounded-xl border bg-white shadow-sm brand-noise dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
               <span className="font-medium">How do I create an account?</span>
@@ -127,7 +129,7 @@ export default function HelpCenterPage() {
       </section>
 
       {/* Contact strip */}
-      <section className="mt-8 rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <section className="mt-8 card rounded-2xl p-5 shadow-sm brand-noise">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Need personal help?</h2>
@@ -136,12 +138,8 @@ export default function HelpCenterPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/contact" className="rounded-xl bg-[#161748] px-4 py-2 text-white hover:opacity-90">
-              Contact Support
-            </Link>
-            <Link href="/report" className="rounded-xl border px-4 py-2 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800">
-              Report a Problem
-            </Link>
+            <Link href="/contact" className="btn-gradient-primary">Contact Support</Link>
+            <Link href="/report" className="btn-outline">Report a Problem</Link>
           </div>
         </div>
       </section>

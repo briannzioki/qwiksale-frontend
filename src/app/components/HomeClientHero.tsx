@@ -4,16 +4,19 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { categories } from "../data/categories";
+import IconButton from "@/app/components/IconButton";
 
 /* ------------------------ tiny event/analytics ------------------------ */
 function emit(name: string, detail?: unknown) {
-  // eslint-disable-next-line no-console
-  console.log(`[qs:event] ${name}`, detail);
-  if (typeof window !== "undefined" && "CustomEvent" in window) {
-    window.dispatchEvent(new CustomEvent(name, { detail }));
-  }
+  try {
+    // eslint-disable-next-line no-console
+    console.log(`[qs:event] ${name}`, detail);
+    if (typeof window !== "undefined" && "CustomEvent" in window) {
+      window.dispatchEvent(new CustomEvent(name, { detail }));
+    }
+  } catch {}
 }
 function track(event: string, payload?: Record<string, unknown>) {
   // eslint-disable-next-line no-console
@@ -25,31 +28,30 @@ function track(event: string, payload?: Record<string, unknown>) {
 type LeafName = string;
 type Subcategory = { name: string; subsubcategories?: ReadonlyArray<LeafName> };
 type Category = { name: string; subcategories?: ReadonlyArray<Subcategory> };
-
-function isCategory(x: unknown): x is Category {
-  return !!x && typeof (x as any).name === "string";
-}
+const isCategory = (x: unknown): x is Category =>
+  !!x && typeof (x as any).name === "string";
 
 /* --------------------------- helpers ---------------------------------- */
-function categoryHref(value: string) {
-  return `/?category=${encodeURIComponent(value)}`;
-}
+const categoryHref = (value: string) => `/?category=${encodeURIComponent(value)}`;
 
-function pickTopCategoryNames(max = 8) {
-  // categories is an array from ../data/categories; keep it defensive
+function pickTopCategoryNames(max = 10) {
   const names: string[] = [];
   for (const c of categories as unknown as Category[]) {
     if (isCategory(c)) names.push(c.name);
     if (names.length >= max) break;
   }
-  return names.slice(0, max);
+  // Fallbacks if dataset is sparse
+  return (names.length ? names : ["Phones", "Cars", "Laptops", "Furniture", "Home services"]).slice(
+    0,
+    max
+  );
 }
 
 /* --------------------------- component -------------------------------- */
 export default function HomeClientHero({ className = "" }: { className?: string }) {
   const { data: session, status } = useSession();
 
-  // ✅ Null-safe user shape with optional username, matching your auth callbacks
+  // Null-safe user (aligns with your auth callbacks)
   const user = (session?.user ?? null) as (Session["user"] & {
     username?: string | null;
   }) | null;
@@ -64,32 +66,53 @@ export default function HomeClientHero({ className = "" }: { className?: string 
 
   const topCats = useMemo(() => pickTopCategoryNames(10), []);
 
+  // Prefetch a few high-traffic routes to feel snappy
+  useEffect(() => {
+    try {
+      // @ts-ignore – app router exposes prefetch on <Link>, and router.prefetch exists at runtime
+      ;(globalThis as any)?.router?.prefetch?.("/search");
+    } catch {}
+  }, []);
+
   return (
     <section
-      aria-label="Welcome"
+      aria-label="Welcome hero"
       className={[
         "relative overflow-hidden rounded-2xl border border-black/5 dark:border-white/10",
+        // Subtle brandy gradient that works on both themes
         "bg-gradient-to-br from-[#e6f6fd] via-[#eaf7f0] to-[#f0effa] dark:from-slate-900 dark:via-slate-900 dark:to-slate-950",
         "p-5 md:p-6",
+        "shadow-soft",
         className,
       ].join(" ")}
     >
-      {/* Decorative gradient stripe */}
+      {/* Decorative blobs (hidden from a11y; reduced motion friendly) */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full blur-3xl opacity-40"
+        className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full opacity-40 md:blur-3xl"
         style={{
           background:
             "radial-gradient(closest-side, #39a0ca 0%, transparent 60%), radial-gradient(closest-side, #478559 0%, transparent 60%)",
+          willChange: "transform, opacity",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-20 -bottom-20 h-48 w-48 rounded-full opacity-30 md:blur-3xl"
+        style={{
+          background:
+            "radial-gradient(closest-side, #161748 0%, transparent 60%), radial-gradient(closest-side, #f95d9b 0%, transparent 60%)",
+          willChange: "transform, opacity",
         }}
       />
 
       <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
         {/* Copy + actions */}
         <div>
-          {/* Removed the small green title line to avoid duplication with header */}
-
-          <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white">
+          <h1
+            className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white text-balance"
+            aria-live="polite"
+          >
             {greeting} — buy &amp; sell, faster.
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-gray-700 dark:text-slate-300">
@@ -100,41 +123,61 @@ export default function HomeClientHero({ className = "" }: { className?: string 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Link
               href="/sell"
+              prefetch
               onClick={() => track("hero_sell_click")}
-              className="inline-flex items-center rounded-lg bg-[#161748] px-3 py-2 text-sm font-semibold text-white shadow hover:opacity-90"
+              className="btn-gradient-hero"
             >
               + Post a listing
             </Link>
 
             <Link
               href="/search"
+              prefetch
               onClick={() => track("hero_browse_click")}
-              className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+              className="btn-outline"
             >
               Browse all
             </Link>
 
             {status === "authenticated" ? (
               <>
+                {/* Favorites (icon-only) — make it a real link, not a button */}
                 <Link
                   href="/saved"
+                  prefetch
                   onClick={() => track("hero_saved_click")}
-                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                  aria-label="Favorites"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 bg-white/60 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/50 dark:hover:bg-slate-900/70"
                 >
-                  Saved
+                  {/* heart icon */}
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    className="text-pink-600 dark:text-pink-400"
+                  >
+                    <path d="M12 21s-7.5-4.35-10-8.5C-0.5 8 2 4 6 4c2.14 0 3.57 1.07 4.5 2.3C11.43 5.07 12.86 4 15 4c4 0 6.5 4 4 8.5C19.5 16.65 12 21 12 21z" />
+                  </svg>
                 </Link>
+
+                {/* Dashboard → outline IconButton (settings icon) */}
                 <Link
                   href="/dashboard"
+                  prefetch
                   onClick={() => track("hero_dashboard_click")}
-                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                  className="contents"
                 >
-                  Dashboard
+                  <IconButton icon="settings" variant="outline" labelText="Dashboard" srLabel="Dashboard" />
                 </Link>
+
                 {!user?.username && (
                   <Link
                     href="/account/complete-profile"
+                    prefetch
                     onClick={() => track("hero_complete_profile_click")}
-                    className="inline-flex items-center rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+                    className="inline-flex items-center rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
                     title="Set your username & profile details"
                   >
                     Complete profile
@@ -145,15 +188,17 @@ export default function HomeClientHero({ className = "" }: { className?: string 
               <>
                 <Link
                   href="/signin"
+                  prefetch
                   onClick={() => track("hero_signin_click")}
-                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                  className="btn-outline"
                 >
                   Sign in
                 </Link>
                 <Link
                   href="/signup"
+                  prefetch
                   onClick={() => track("hero_join_click")}
-                  className="inline-flex items-center rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                  className="btn-outline"
                 >
                   Join
                 </Link>
@@ -185,8 +230,9 @@ export default function HomeClientHero({ className = "" }: { className?: string 
               <li key={name}>
                 <Link
                   href={categoryHref(name)}
+                  prefetch
                   onClick={() => track("hero_category_click", { category: name })}
-                  className="inline-flex items-center rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-sm text-gray-900 hover:bg-white dark:border-white/20 dark:bg-white/10 dark:text-slate-100"
+                  className="chip-outline"
                 >
                   {name}
                 </Link>
@@ -203,7 +249,7 @@ export default function HomeClientHero({ className = "" }: { className?: string 
 
 function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...props}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
       <path d="M12 3l7 3v6a9 9 0 0 1-7 8 9 9 0 0 1-7-8V6l7-3z" stroke="currentColor" strokeWidth="1.8" />
       <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" />
     </svg>
@@ -211,14 +257,14 @@ function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
 }
 function StarIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
       <path d="M12 17.27l5.18 3.05-1.4-6.03 4.64-4.02-6.12-.53L12 4 9.7 9.74l-6.12.53 4.64 4.02-1.4 6.03L12 17.27z" />
     </svg>
   );
 }
 function BoltIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
       <path d="M13 2 3 14h7l-1 8 11-14h-7V2z" />
     </svg>
   );

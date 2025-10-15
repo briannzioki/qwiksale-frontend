@@ -114,7 +114,6 @@ function tokenSearchAND(tokens: string[], fields: string[]) {
 /* =========================
    Explicit Prisma result types
    ========================= */
-// product rows (from findMany select)
 type ProductRow = {
   id: string;
   name: string | null;
@@ -128,7 +127,7 @@ type ProductRow = {
   location: string | null;
   createdAt: Date | string | null;
 };
-// service rows (from findMany select)
+
 type ServiceRow = {
   id: string;
   name: string | null;
@@ -144,13 +143,25 @@ type ServiceRow = {
   createdAt: Date | string | null;
 };
 
-// groupBy buckets
 type ProductCategoryGroup = { category: string | null; _count: { category: number } };
 type ProductBrandGroup = { brand: string | null; _count: { brand: number } };
 type ProductConditionGroup = { condition: string | null; _count: { condition: number } };
 
 type ServiceCategoryGroup = { category: string | null; _count: { category: number } };
 type ServiceSubcategoryGroup = { subcategory: string | null; _count: { subcategory: number } };
+
+/* =========================
+   Helpers (bounds, tokens, sorting)
+   ========================= */
+function normalizeBounds(min?: number, max?: number): [number | undefined, number | undefined] {
+  if (min == null || max == null) return [min, max];
+  return min <= max ? [min, max] : [max, min];
+}
+function tokenize(q?: string) {
+  if (!q) return [] as string[];
+  // unique, non-empty tokens; cap to 6 to keep the query lean
+  return Array.from(new Set(q.toLowerCase().split(/\s+/).filter(Boolean))).slice(0, 6);
+}
 
 /* =========================
    Products
@@ -161,16 +172,17 @@ export async function getProductsPage(input: ListingQuery): Promise<PageResponse
   const page = clamp(nInt(input.page) ?? 1, 1, 10_000);
 
   const q = normStr(input.q);
-  const tokens = q ? q.toLowerCase().split(/\s+/).slice(0, 6) : [];
+  const tokens = tokenize(q);
   const category = normStr(input.category);
   const subcategory = normStr(input.subcategory);
   const brand = normStr(input.brand);
   const condition = (normStr(input.condition) as ListingQuery["condition"]) || undefined;
 
-  const minPrice = nInt(input.minPrice);
-  const maxPrice = nInt(input.maxPrice);
-  const featuredOnly = !!input.featuredOnly;
+  const minPriceRaw = nInt(input.minPrice);
+  const maxPriceRaw = nInt(input.maxPrice);
+  const [minPrice, maxPrice] = normalizeBounds(minPriceRaw, maxPriceRaw);
 
+  const featuredOnly = !!input.featuredOnly;
   const sort = (input.sort || "newest") as NonNullable<ListingQuery["sort"]>;
 
   const priceWhere =
@@ -185,6 +197,7 @@ export async function getProductsPage(input: ListingQuery): Promise<PageResponse
 
   const where: Record<string, unknown> = {
     status: "ACTIVE",
+    name: { not: null }, // ✅ exclude null names safely
     ...(featuredOnly ? { featured: true } : {}),
     ...(category ? { category: { equals: category, mode: "insensitive" } } : {}),
     ...(subcategory ? { subcategory: { equals: subcategory, mode: "insensitive" } } : {}),
@@ -322,14 +335,15 @@ export async function getServicesPage(input: ListingQuery): Promise<PageResponse
   const page = clamp(nInt(input.page) ?? 1, 1, 10_000);
 
   const q = normStr(input.q);
-  const tokens = q ? q.toLowerCase().split(/\s+/).slice(0, 6) : [];
+  const tokens = tokenize(q);
   const category = normStr(input.category);
   const subcategory = normStr(input.subcategory);
 
-  const minPrice = nInt(input.minPrice);
-  const maxPrice = nInt(input.maxPrice);
-  const featuredOnly = !!input.featuredOnly;
+  const minPriceRaw = nInt(input.minPrice);
+  const maxPriceRaw = nInt(input.maxPrice);
+  const [minPrice, maxPrice] = normalizeBounds(minPriceRaw, maxPriceRaw);
 
+  const featuredOnly = !!input.featuredOnly;
   const sort = (input.sort || "newest") as NonNullable<ListingQuery["sort"]>;
 
   const priceWhere =
@@ -344,6 +358,7 @@ export async function getServicesPage(input: ListingQuery): Promise<PageResponse
 
   const where: Record<string, unknown> = {
     status: "ACTIVE",
+    name: { not: null }, // ✅ exclude null names safely
     ...(featuredOnly ? { featured: true } : {}),
     ...(category ? { category: { equals: category, mode: "insensitive" } } : {}),
     ...(subcategory ? { subcategory: { equals: subcategory, mode: "insensitive" } } : {}),

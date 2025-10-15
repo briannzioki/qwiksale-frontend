@@ -1,6 +1,6 @@
-// src/app/components/LightboxModal.client.tsx
 "use client";
 
+import type React from "react";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 
 type Props = {
@@ -24,7 +24,6 @@ export default function LightboxModal({
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
-  const lastFocusableRef = useRef<HTMLButtonElement | null>(null);
   const liveRef = useRef<HTMLSpanElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -57,11 +56,7 @@ export default function LightboxModal({
   // Announce changes for screen readers
   useEffect(() => {
     if (!liveRef.current) return;
-    if (!len) {
-      liveRef.current.textContent = "No images";
-      return;
-    }
-    liveRef.current.textContent = `Image ${safeIndex + 1} of ${len}`;
+    liveRef.current.textContent = len ? `Image ${safeIndex + 1} of ${len}` : "No images";
   }, [safeIndex, len]);
 
   // Focus trap (Tab cycles inside the modal)
@@ -104,10 +99,8 @@ export default function LightboxModal({
       }
     };
 
-    // Use the root for wheel so it only applies while the modal is open
     const onWheel = (e: WheelEvent) => {
       if (len < 2) return;
-      // pick dominant axis; ignore tiny trackpad jitters
       const magY = Math.abs(e.deltaY);
       const magX = Math.abs(e.deltaX);
       const delta = magX > magY ? e.deltaX : e.deltaY;
@@ -183,7 +176,6 @@ export default function LightboxModal({
     b.src = images[nextIdx]!;
   }, [safeIndex, len, images]);
 
-  // helpers
   const goPrev = useCallback(
     () => onIndexAction((safeIndex - 1 + len) % len),
     [safeIndex, len, onIndexAction]
@@ -195,7 +187,6 @@ export default function LightboxModal({
 
   const dots = useMemo(() => Array.from({ length: len }, (_, i) => i), [len]);
 
-  // Stop clicks inside the image wrapper from hitting the backdrop (which closes)
   const stopClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
   }, []);
@@ -212,6 +203,10 @@ export default function LightboxModal({
       role="dialog"
       aria-modal="true"
       aria-label="Image viewer"
+      data-lightbox-root
+      data-visible="true"
+      /* OPTIONAL redundancy: same selector also present AFTER open */
+      data-gallery-overlay="true"
     >
       {/* a11y announcer */}
       <span ref={liveRef} className="sr-only" aria-live="polite" />
@@ -255,6 +250,7 @@ export default function LightboxModal({
         ].join(" ")}
       >
         {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={src}
             alt=""
@@ -263,6 +259,7 @@ export default function LightboxModal({
             loading="eager"
             decoding="async"
             onContextMenu={(e) => e.preventDefault()}
+            data-gallery-image
           />
         ) : (
           <div className="flex h-[60vh] w-[70vw] items-center justify-center text-white/70">
@@ -283,7 +280,6 @@ export default function LightboxModal({
             ‹
           </button>
           <button
-            ref={lastFocusableRef}
             type="button"
             className="absolute right-2 top-1/2 z-[101] -translate-y-1/2 rounded-full px-3 py-1.5 text-3xl text-white/90 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/70 md:right-6"
             onClick={goNext}

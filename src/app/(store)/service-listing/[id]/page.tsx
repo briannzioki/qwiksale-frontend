@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/app/lib/prisma";
 import UserAvatar from "@/app/components/UserAvatar";
 import SmartImage from "@/app/components/SmartImage";
+import { auth } from "@/auth";
 
 type Seller = {
   id: string;
@@ -36,8 +37,8 @@ const PLACEHOLDER = "/placeholder/default.jpg";
 
 /** Absolute base URL for server contexts (prod/preview/dev) */
 const BASE = (
-  process.env['NEXT_PUBLIC_APP_URL'] ||
-  (process.env['VERCEL_URL'] ? `https://${process.env['VERCEL_URL']}` : "http://localhost:3000")
+  process.env["NEXT_PUBLIC_APP_URL"] ||
+  (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "http://localhost:3000")
 ).replace(/\/+$/, "");
 
 function fmtKES(n?: number | null) {
@@ -145,8 +146,11 @@ export default async function ServicePage(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const svc = await getService(id);
+  const [svc, session] = await Promise.all([getService(id), auth()]);
   if (!svc) notFound();
+
+  const viewerId = (session?.user as any)?.id as string | undefined;
+  const isOwner = Boolean(viewerId && svc.seller?.id && viewerId === svc.seller.id);
 
   const hero = svc.image || PLACEHOLDER;
   const priceTxt = fmtKES(svc.price);
@@ -244,6 +248,16 @@ export default async function ServicePage(
                 >
                   Message on WhatsApp
                 </a>
+                {isOwner && (
+                  <Link
+                    href={`/service/${encodeURIComponent(svc.id)}/edit`}
+                    className="rounded-xl border px-4 py-2 hover:bg-gray-50"
+                    aria-label="Edit service"
+                    prefetch={false}
+                  >
+                    Edit
+                  </Link>
+                )}
               </div>
             </div>
 

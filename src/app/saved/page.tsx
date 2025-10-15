@@ -1,4 +1,3 @@
-// src/app/saved/page.tsx
 "use client";
 
 import * as React from "react";
@@ -6,11 +5,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import FavoriteButton from "../components/FavoriteButton";
-import { useProducts } from "../lib/productsStore";
-import { useFavourites } from "../lib/favoritesStore";
+import FavoriteButton from "@/app/components/favorites/FavoriteButton";
+import { useProducts } from "@/app/lib/productsStore";
+import { useFavourites } from "@/app/lib/favoritesStore";
 import { getJson } from "@/app/lib/http";
 import { shimmer } from "@/app/lib/blur";
+import ErrorBanner from "@/app/components/ErrorBanner";
 
 /* Types */
 type ApiProduct = {
@@ -65,6 +65,19 @@ export default function SavedPage() {
     if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
 
+  const loadFavorites = React.useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const data = await getJson<ApiResponse>("/api/favorites?format=full&limit=100");
+      setFavItems(Array.isArray(data?.items) ? data.items : []);
+    } catch (e: any) {
+      setErr(e?.message || "Failed to load favorites");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -106,7 +119,7 @@ export default function SavedPage() {
 
   const list: ApiFavorite[] = React.useMemo(() => {
     if (favItems) return favItems;
-    if (err) return fallbackFavs;
+    if (err) return fallbackFavs; // Show local fallbacks when API fails
     if (!loading && sessionStatus === "unauthenticated") return [];
     return [];
   }, [favItems, fallbackFavs, err, loading, sessionStatus]);
@@ -129,6 +142,15 @@ export default function SavedPage() {
         <h1 className="text-2xl md:text-3xl font-extrabold">Saved Items</h1>
         <p className="text-white/90">Your favorites live here. {count ? `(${count})` : ""}</p>
       </div>
+
+      {/* Re-triable fetch error banner (non-blocking; we still render any fallbacks below) */}
+      {err ? (
+        <ErrorBanner
+          message={err}
+          onRetryAction={loadFavorites}
+          className="mt-0"
+        />
+      ) : null}
 
       {sessionStatus === "loading" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -154,20 +176,19 @@ export default function SavedPage() {
         </div>
       ) : loading ? (
         <div className="text-gray-600 dark:text-slate-300">Loading your favorites…</div>
-      ) : err && !list.length ? (
-        <div className="card p-6 space-y-3">
-          <div className="text-red-600">{err}</div>
-          <div className="text-sm text-gray-700 dark:text-slate-200">
-            Showing local favorites isn’t available yet. Try again shortly.
-          </div>
-        </div>
       ) : list.length === 0 ? (
-        <div className="text-gray-600 dark:text-slate-300">
-          No saved items yet. Browse the{" "}
-          <Link href="/" className="link">
-            homepage
-          </Link>{" "}
-          and tap the heart ❤️.
+        <div className="card p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="text-gray-700 dark:text-slate-200">
+            No saved items yet. Browse the{" "}
+            <Link href="/" className="link">
+              homepage
+            </Link>{" "}
+            and tap the heart ❤️.
+          </div>
+          <div className="flex gap-2">
+            <Link href="/" className="btn-outline">Browse listings</Link>
+            <Link href="/sell" className="btn-outline">Post a listing</Link>
+          </div>
         </div>
       ) : (
         <>
@@ -201,7 +222,7 @@ export default function SavedPage() {
                       </div>
 
                       <div className="absolute top-2 right-2 z-10 flex gap-1">
-                        <FavoriteButton productId={p.id} compact />
+                        <FavoriteButton productId={p.id} />
                         <button
                           type="button"
                           onClick={(e) => {

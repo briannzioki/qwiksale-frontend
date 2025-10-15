@@ -1,6 +1,4 @@
 ﻿export const runtime = "nodejs";
-// dynamic here doesn't stop Next from evaluating at build time for sitemap,
-// but we keep it for consistency.
 export const dynamic = "force-dynamic";
 
 import type { MetadataRoute } from "next";
@@ -8,6 +6,7 @@ import type { MetadataRoute } from "next";
 /** Resolve a canonical absolute base URL (no trailing slash). */
 function siteUrl(): string {
   const raw =
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_ORIGIN"] ||
     process.env["NEXTAUTH_URL"] ||
@@ -42,11 +41,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Legal pages (indexable)
     { url: `${base}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
     { url: `${base}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
-    // Low-priority account subpage (kept, but search engines may de-prioritize)
+    // Low-priority account subpage (kept, but crawlers may de-prioritize)
     { url: `${base}/account/billing`, lastModified: now, changeFrequency: "monthly", priority: 0.2 },
   ];
 
-  // Hard skip if requested (useful for tight-memory builds)
+  // Optional fast escape (useful for tight-memory builds)
   if (process.env["SKIP_SITEMAP_DB"] === "1") {
     return staticRoutes;
   }
@@ -65,19 +64,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         take: SITEMAP_TAKE,
         orderBy: { updatedAt: "desc" },
       }) as Promise<Array<{ id: string; updatedAt: Date }>>,
+
+      // Service model is optional across deployments; guard at runtime.
       (async () => {
         try {
-          // service model might not exist on some deployments
-          // ts-expect-error – tolerate missing model at runtime
-          return (await prisma.service.findMany({
-            where: { status: "ACTIVE" },
-            select: { id: true, updatedAt: true },
-            take: SITEMAP_TAKE,
-            orderBy: { updatedAt: "desc" },
-          })) as Array<{ id: string; updatedAt: Date }>;
+          const anyPrisma = prisma as any;
+          const Service =
+            anyPrisma.service ??
+            anyPrisma.services ??
+            anyPrisma.Service ??
+            anyPrisma.Services ??
+            null;
+
+          if (Service && typeof Service.findMany === "function") {
+            return (await Service.findMany({
+              where: { status: "ACTIVE" },
+              select: { id: true, updatedAt: true },
+              take: SITEMAP_TAKE,
+              orderBy: { updatedAt: "desc" },
+            })) as Array<{ id: string; updatedAt: Date }>;
+          }
         } catch {
-          return [] as Array<{ id: string; updatedAt: Date }>;
+          /* ignore and fall through */
         }
+        return [] as Array<{ id: string; updatedAt: Date }>;
       })(),
     ]);
 

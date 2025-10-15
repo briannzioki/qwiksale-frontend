@@ -146,11 +146,11 @@ export default async function StorePage({
   const svcOk = Boolean(svcRes?.ok);
 
   const productsJson: ApiListResp<StoreProduct> = prodOk
-    ? await prodRes!.json()
+    ? await prodRes!.json().catch(() => ({ page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] }))
     : { page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] };
 
   const servicesJson: ApiListResp<StoreService> = svcOk
-    ? await svcRes!.json()
+    ? await svcRes!.json().catch(() => ({ page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] }))
     : { page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] };
 
   // Normalize nullable bits for UI

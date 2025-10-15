@@ -1,4 +1,3 @@
-// src/app/api/services/[id]/revalidate/route.ts
 import { NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 
@@ -25,13 +24,14 @@ export async function POST(
     revalidateTag(`service:${id}`);
     revalidateTag(`listing:${id}`);
     revalidatePath(`/service/${id}`, "page");
+    // ⬇️ Also revalidate the edit page for instant UI update after edits
+    revalidatePath(`/service/${id}/edit`, "page");
     return noStore({ ok: true });
   } catch (e: any) {
     return noStore({ error: e?.message || "Revalidate failed" }, { status: 500 });
   }
 }
 
-// Optional convenience for manual checks (browser / curl)
 export async function GET(
   _req: Request,
   context: { params: Promise<{ id?: string }> }
@@ -44,7 +44,11 @@ export async function GET(
     revalidateTag(`service:${id}`);
     revalidateTag(`listing:${id}`);
     revalidatePath(`/service/${id}`, "page");
-    return noStore({ ok: true, revalidated: { id, paths: [`/service/${id}`], tags: [`service:${id}`, `listing:${id}`] } });
+    revalidatePath(`/service/${id}/edit`, "page");
+    return noStore({
+      ok: true,
+      revalidated: { id, paths: [`/service/${id}`, `/service/${id}/edit`], tags: [`service:${id}`, `listing:${id}`] },
+    });
   } catch (e: any) {
     return noStore({ error: e?.message || "Revalidate failed" }, { status: 500 });
   }

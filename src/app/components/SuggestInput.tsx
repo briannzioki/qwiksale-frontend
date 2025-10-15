@@ -8,7 +8,7 @@ type Props = {
   endpoint: string;
   value: string;
 
-  /** Name ends with Action so it can be a Server Action when passed from an RSC parent */
+  /** Ends with Action to be Server Action-safe from RSC parents */
   onChangeAction?: (next: string) => void | Promise<void>;
   onPickAction?: (item: Suggestion) => void | Promise<void>;
 
@@ -133,7 +133,13 @@ export default function SuggestInput({
   // Keyboard navigation
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (!showList) return;
+      if (!showList) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          // if we have something to show, opening with arrows feels natural
+          if (hasResults) setOpen(true);
+        }
+        return;
+      }
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -153,7 +159,7 @@ export default function SuggestInput({
         closeList();
       }
     },
-    [active, filtered, onSelect, showList, closeList]
+    [active, filtered, onSelect, showList, closeList, hasResults]
   );
 
   // Blur handling (delay to allow click on options)
@@ -204,9 +210,10 @@ export default function SuggestInput({
           "w-full px-4 py-2 rounded-lg",
           "text-gray-900 dark:text-slate-100",
           "placeholder:text-gray-500 dark:placeholder:text-slate-400",
-          "bg-white dark:bg-slate-800",
-          "border border-gray-300 dark:border-slate-700",
-          "focus:outline-none focus:ring-2 focus:ring-[#39a0ca]",
+          // ↓ lighter, calmer surfaces per audit
+          "bg-white dark:bg-slate-900",
+          "border border-gray-200 dark:border-white/10",
+          "focus:outline-none focus:ring-2 focus:ring-brandBlue",
           "disabled:opacity-60",
           inputClassName || "",
         ].join(" ")}
@@ -218,8 +225,9 @@ export default function SuggestInput({
         <div
           className={[
             "absolute z-20 mt-1 w-full rounded-xl shadow-lg",
+            // ↓ toned glass / lighter borders
             "bg-white dark:bg-slate-900",
-            "border border-gray-200 dark:border-slate-700",
+            "border border-gray-200 dark:border-white/10",
             listClassName || "",
           ].join(" ")}
         >
@@ -228,7 +236,7 @@ export default function SuggestInput({
               <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">Loading…</li>
             )}
             {!loading && error && (
-              <li className="px-3 py-2 text-sm text-red-600 dark:text-red-400">Error: {error}</li>
+              <li className="px-3 py-2 text-sm text-rose-600 dark:text-rose-400">Error: {error}</li>
             )}
             {!loading && !error && !hasResults && (
               <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">No suggestions</li>
@@ -236,20 +244,19 @@ export default function SuggestInput({
             {!loading &&
               !error &&
               filtered.map((sug, i) => {
-                const activeCls =
-                  i === active
-                    ? "bg-gray-100 dark:bg-slate-800"
-                    : "hover:bg-gray-50 dark:hover:bg-slate-800/60";
+                const isActive = i === active;
                 return (
                   <li
                     id={`${optionIdBase}-${i}`}
                     key={`${sug.type}:${sug.label}:${i}`}
                     role="option"
-                    aria-selected={i == active}
+                    aria-selected={isActive}
                     className={[
                       "px-3 py-2 text-sm cursor-pointer select-none",
                       "text-gray-900 dark:text-slate-100",
-                      activeCls,
+                      isActive
+                        ? "bg-gray-100 dark:bg-white/5"
+                        : "hover:bg-gray-50 dark:hover:bg-white/5",
                     ].join(" ")}
                     onMouseEnter={() => setActive(i)}
                     onMouseDown={(e) => {
@@ -261,7 +268,14 @@ export default function SuggestInput({
                   >
                     <div className="flex items-center gap-2">
                       <span className="truncate">{sug.label}</span>
-                      <span className="ml-auto text-[11px] rounded-full px-2 py-[2px] border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300">
+                      <span
+                        className={[
+                          "ml-auto text-[11px] px-2 py-[2px] rounded-full",
+                          // outline pill that matches new chip tone
+                          "border border-gray-200 dark:border-white/10",
+                          "text-gray-600 dark:text-slate-300",
+                        ].join(" ")}
+                      >
                         {sug.type}
                       </span>
                     </div>

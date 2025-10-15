@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import SmartImage from "@/app/components/SmartImage";
+import IconButton from "@/app/components/IconButton";
 
 type Props = {
   /** Current gallery (cover is index 0). Absolute URLs or Cloudinary IDs. */
@@ -342,24 +343,25 @@ export default function GalleryUploader({
         {/* Add tile */}
         {canAddMore && (
           <li className="relative rounded-lg border border-dashed p-2 text-center">
-            <button
-              type="button"
-              onClick={pickFiles}
-              className="group flex h-28 w-full flex-col items-center justify-center gap-1 rounded-md bg-white/60 text-xs hover:bg-white dark:bg-slate-900/40 dark:hover:bg-slate-900"
-              aria-label="Add photos"
-              title="Add photos"
-              disabled={busy}
-            >
-              <span className="text-2xl leading-none">＋</span>
-              <span className="font-medium">{busy ? "Uploading…" : "Add photo"}</span>
-            </button>
+            <div className="flex h-28 w-full items-center justify-center">
+              <IconButton
+                icon="upload"
+                labelText={busy ? "Uploading…" : "Upload photos"}
+                variant="outline"
+                size="sm"
+                loading={busy}
+                onClick={pickFiles}
+                disabled={busy}
+                srLabel="Upload photos"
+              />
+            </div>
           </li>
         )}
 
         {images.length === 0 && (
           <li className="col-span-full">
             <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-600 dark:border-slate-700 dark:text-slate-300">
-              No photos yet. Click <span className="font-semibold">Add photo</span>, drag & drop, or paste.
+              No photos yet. Click <span className="font-semibold">Upload photos</span>, drag & drop, or paste.
             </div>
           </li>
         )}
@@ -438,14 +440,16 @@ export default function GalleryUploader({
 
       {/* Controls row */}
       <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
+        <IconButton
+          icon="upload"
+          labelText={busy ? "Uploading…" : "Upload photos"}
+          variant="outline"
+          size="sm"
+          loading={busy}
           onClick={pickFiles}
-          className="rounded-xl px-3 py-2 ring-1 ring-gray-300 hover:bg-gray-50 dark:ring-gray-700 dark:hover:bg-gray-900 disabled:opacity-60"
           disabled={!canAddMore || busy}
-        >
-          {busy ? "Uploading…" : canAddMore ? "Choose files" : "Max reached"}
-        </button>
+          srLabel="Upload photos"
+        />
         <input
           id={`gu-files-${uid}`}
           ref={inputRef}

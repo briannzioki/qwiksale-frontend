@@ -3,6 +3,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
+import IconButton from "@/app/components/IconButton";
 import DeleteListingButton from "@/app/components/DeleteListingButton"; // ✅ canonical import
 
 type ServiceItem = {
@@ -44,11 +46,13 @@ type Props = {
 };
 
 const FALLBACK_IMG = "/placeholder/default.jpg";
+
 const fmtKES = (n?: number | null) =>
   typeof n === "number" && n > 0
-    ? `KES ${new Intl.NumberFormat("en-KE").format(n)}`
+    ? `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n)}`
     : "Contact for price";
 
+/** tiny shimmer dataURL for next/image blur placeholders (browser-only) */
 function shimmer(width: number, height: number) {
   const svg = `
   <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
@@ -62,11 +66,20 @@ function shimmer(width: number, height: number) {
     <rect width="${width}" height="${height}" fill="#eee" />
     <rect id="r" width="${width}" height="${height}" fill="url(#g)" />
     <animate xlink:href="#r" attributeName="x" from="-${width}" to="${width}" dur="1.2s" repeatCount="indefinite" />
-  </svg>`;
-  const encode =
-    typeof window === "undefined"
-      ? (s: string) => Buffer.from(s, "utf8").toString("base64")
-      : (s: string) => btoa(s);
+  </svg>`.trim();
+
+  // Avoid Node Buffer so TS doesn't require node types; this is a client component.
+  const encode = (s: string) => {
+    try {
+      // encodeURIComponent handles unicode safely for btoa
+      return typeof window !== "undefined"
+        ? window.btoa(unescape(encodeURIComponent(s)))
+        : ""; // SSR path not used for "use client" component
+    } catch {
+      return "";
+    }
+  };
+
   return `data:image/svg+xml;base64,${encode(svg)}`;
 }
 
@@ -83,9 +96,11 @@ export default function ServiceGrid({
   useSentinel = true,
   showLoadMoreButton = true,
   ownerControls = false,
-  editHrefPrefix = "/service/", // ← default to page route
+  editHrefPrefix = "/service/",
   onItemDeletedAction,
 }: Props) {
+  const router = useRouter();
+
   return (
     <div className={className}>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -94,54 +109,62 @@ export default function ServiceGrid({
           const categoryText =
             [s.category ?? "", s.subcategory ?? ""].filter(Boolean).join(" • ") || "—";
 
-          // Standardize on /service/:id/edit by default
-          const editHref = `${editHrefPrefix}${encodeURIComponent(s.id)}/edit`;
+          // ✅ Normalize prefix to guarantee `/service/:id/edit` shape even if caller omits the trailing slash
+          const prefixNormalized = editHrefPrefix.endsWith("/")
+            ? editHrefPrefix
+            : `${editHrefPrefix}/`;
+          const editHref = `${prefixNormalized}${encodeURIComponent(s.id)}/edit`;
+
+          const ariaTitle = s.name || "Service";
 
           return (
             <div key={s.id} className="group relative">
-              <Link href={`/service/${s.id}`} prefetch={prefetchCards} className="block">
-                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+              {/* Owner overlay controls — positioned OUTSIDE the link to avoid accidental navigation */}
+              {ownerControls && (
+                <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
+                  {/* EDIT */}
+                  <IconButton
+                    icon="edit"
+                    variant="outline"
+                    size="xs"
+                    labelText={<span className="hidden sm:inline">Edit</span>}
+                    srLabel="Edit service"
+                    onClick={(e) => {
+                      const me = e.nativeEvent as MouseEvent;
+                      if (me.metaKey || me.ctrlKey) {
+                        window.open(editHref, "_blank", "noopener,noreferrer");
+                      } else {
+                        router.push(editHref);
+                      }
+                    }}
+                  />
+
+                  {/* DELETE — DeleteListingButton renders IconButton internally */}
+                  <DeleteListingButton
+                    serviceId={s.id}
+                    buttonVariant="outline"
+                    buttonTone="danger"
+                    buttonSize="xs"
+                    {...(onItemDeletedAction
+                      ? { onDeletedAction: () => onItemDeletedAction(s.id) }
+                      : {})}
+                  />
+                </div>
+              )}
+
+              <Link
+                href={`/service/${s.id}`}
+                prefetch={prefetchCards}
+                className="block"
+                aria-label={`Service: ${ariaTitle}`}
+                title={ariaTitle}
+              >
+                <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white transition dark:border-white/10 dark:bg-slate-900">
                   {s.featured ? (
-                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
+                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white">
                       Featured
                     </span>
                   ) : null}
-
-                  {ownerControls && (
-                    <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
-                      <Link
-                        href={editHref}
-                        className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:bg-gray-900"
-                        onClick={(e) => e.stopPropagation()}
-                        title="Edit service"
-                        aria-label="Edit service"
-                      >
-                        Edit
-                      </Link>
-
-                      {/* Stop navigation bubbling when deleting */}
-                      <div
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onPointerDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        className="contents"
-                      >
-                        <DeleteListingButton
-                          serviceId={s.id}
-                          label="" // icon-only to keep the overlay tidy
-                          className="px-2 py-1"
-                          {...(onItemDeletedAction
-                            ? { onDeletedAction: () => onItemDeletedAction(s.id) }
-                            : {})}
-                        />
-                      </div>
-                    </div>
-                  )}
 
                   <div className="relative">
                     <Image
@@ -149,10 +172,11 @@ export default function ServiceGrid({
                       src={s.image || FALLBACK_IMG}
                       width={800}
                       height={440}
-                      className="h-44 w-full object-cover bg-gray-100 dark:bg-slate-800"
+                      className="h-44 w-full bg-gray-100 object-cover dark:bg-slate-800"
                       placeholder="blur"
                       blurDataURL={blur}
                       priority={false}
+                      // Keep SVGs unoptimized so Next/Image doesn’t proxy them
                       unoptimized={Boolean((s.image as string | null)?.endsWith?.(".svg"))}
                       onError={(e) => {
                         const img = e.currentTarget as HTMLImageElement;
@@ -161,8 +185,9 @@ export default function ServiceGrid({
                       loading="lazy"
                     />
                   </div>
+
                   <div className="p-4">
-                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
+                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-slate-100">
                       {s.name || "Unnamed service"}
                     </h3>
                     <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
@@ -178,20 +203,22 @@ export default function ServiceGrid({
           );
         })}
 
+        {/* Skeletons while loading first page */}
         {items.length === 0 &&
           loading &&
           Array.from({ length: pageSize }).map((_, i) => (
             <div
               key={`skeleton-${i}`}
-              className="rounded-xl border bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900"
+              className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900"
             >
-              <div className="h-40 w-full rounded-lg bg-gray-200 dark:bg-slate-800 animate-pulse" />
-              <div className="mt-2 h-4 w-3/4 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
-              <div className="mt-1 h-4 w-1/2 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
+              <div className="h-40 w-full animate-pulse rounded-lg bg-gray-200 dark:bg-slate-800" />
+              <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-slate-800" />
+              <div className="mt-1 h-4 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-slate-800" />
             </div>
           ))}
       </div>
 
+      {/* Status / errors / empty */}
       <div className="mt-4">
         {error ? (
           <div className="text-sm text-red-600">{error}</div>
@@ -200,18 +227,20 @@ export default function ServiceGrid({
         ) : null}
       </div>
 
+      {/* Load more */}
       {showLoadMoreButton && hasMore && (
         <div className="mt-4 flex items-center justify-center">
           <button
             onClick={() => onLoadMoreAction && onLoadMoreAction()}
             disabled={loading}
-            className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 disabled:opacity-60"
           >
             {loading ? "Loading…" : "Load more"}
           </button>
         </div>
       )}
 
+      {/* Optional sentinel for auto-load (parent controls IO) */}
       {useSentinel && hasMore && !loading && <div data-grid-sentinel className="h-1 w-full" />}
     </div>
   );

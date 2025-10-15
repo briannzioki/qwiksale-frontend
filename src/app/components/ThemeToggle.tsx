@@ -56,7 +56,7 @@ export default function ThemeToggle({
   const [mode, setMode] = useState<ThemeMode>(defaultMode);
 
   const mqlRef = useRef<MediaQueryList | null>(null);
-  const modeRef = useRef<ThemeMode>(defaultMode); // <- keep the authoritative current mode
+  const modeRef = useRef<ThemeMode>(defaultMode); // authoritative current mode
 
   const nextMode = useMemo<ThemeMode>(() => {
     if (mode === "light") return "dark";
@@ -115,13 +115,14 @@ export default function ThemeToggle({
 
     // Cross-tab sync (when persisting)
     const onStorage = (e: StorageEvent) => {
-      if (!persist || e.key !== LS_KEY || !e.newValue) return;
-      const v = e.newValue as ThemeMode;
+      if (!persist || e.key !== LS_KEY) return;
+      const v = (e.newValue || "").toLowerCase();
       if (v === "light" || v === "dark" || v === "system") {
-        modeRef.current = v;
-        setMode(v);
-        applyTheme(v, mqlRef.current, persist);
-        emitChange(v);
+        const nv = v as ThemeMode;
+        modeRef.current = nv;
+        setMode(nv);
+        applyTheme(nv, mqlRef.current, persist);
+        emitChange(nv);
       }
     };
     window.addEventListener("storage", onStorage);
@@ -135,7 +136,7 @@ export default function ThemeToggle({
 
   const handleSetMode = useCallback(
     (m: ThemeMode) => {
-      modeRef.current = m; // <- keep in sync so OS changes don't override manual choice
+      modeRef.current = m; // keep in sync so OS changes don't override manual choice
       setMode(m);
       applyTheme(m, mqlRef.current, persist);
       emitChange(m);
@@ -150,11 +151,17 @@ export default function ThemeToggle({
 
   const handleClick = useCallback(() => handleSetMode(nextMode), [handleSetMode, nextMode]);
 
+  // Pre-mount placeholder (avoids layout shift, keeps hover calm)
   if (!mounted) {
     return (
       <button
         aria-hidden
-        className={`rounded-xl p-2 transition hover:bg-white/20 ${className}`}
+        className={[
+          "rounded-xl p-2 transition",
+          "hover:bg-black/5 dark:hover:bg-white/10",
+          "focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900 focus-visible:ring-2 ring-focus",
+          className,
+        ].join(" ")}
         title="Toggle theme"
       >
         <span className="inline-block h-2 w-2 rounded-full bg-white/70" />
@@ -165,9 +172,14 @@ export default function ThemeToggle({
   return (
     <button
       onClick={handleClick}
-      className={`inline-flex items-center gap-2 rounded-xl p-2 text-sm transition hover:bg-white/20 ${className}`}
-      role="switch"
-      aria-pressed={mode === "dark"}
+      className={[
+        "inline-flex items-center gap-2 rounded-xl p-2 text-sm transition",
+        "hover:bg-black/5 dark:hover:bg-white/10",
+        "focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900 focus-visible:ring-2 ring-focus",
+        className,
+      ].join(" ")}
+      // `switch` is boolean; keep button semantics + rich label for 3-state
+      role="button"
       aria-label={`Theme: ${label}. Click to switch to ${nextMode}.`}
       title={`Theme: ${label} — click to switch to ${nextMode}`}
     >

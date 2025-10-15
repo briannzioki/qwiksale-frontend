@@ -3,6 +3,8 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import toast from "react-hot-toast";
+import IconButton from "@/app/components/IconButton";
 import { normalizeKenyanPhone, makeWhatsAppLink } from "@/app/lib/phone";
 
 /* ----------------------------- Types ----------------------------- */
@@ -66,6 +68,7 @@ export default function ContactModalService({
   const [payload, setPayload] = useState<RevealPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -73,7 +76,7 @@ export default function ContactModalService({
 
   const name = payload?.contact?.name ?? fallbackName ?? "—";
   const phone = payload?.contact?.phone ?? "—";
-  const location = payload?.contact?.location ?? fallbackLocation ?? "—";
+  const providerLocation = payload?.contact?.location ?? fallbackLocation ?? "—";
 
   const msisdn = useMemo(
     () => (payload?.contact?.phone ? normalizeKenyanPhone(payload.contact.phone) : null),
@@ -85,11 +88,42 @@ export default function ContactModalService({
     const sname = serviceName || payload?.service?.name || "your service";
     const provider = name && name !== "—" ? name : "Provider";
     const text = `Hi ${provider}, I'm interested in "${sname}" on QwikSale. Are you available?`;
-    // makeWhatsAppLink normalizes again safely; passing msisdn is fine
     return makeWhatsAppLink(msisdn, text) ?? null;
   }, [msisdn, name, serviceName, payload?.service?.name]);
 
   const telLink = useMemo(() => (msisdn ? `tel:+${msisdn}` : null), [msisdn]);
+
+  // Share URL (avoid shadowing global location)
+  const shareUrl = useMemo(() => {
+    if (typeof window !== "undefined" && window.location) {
+      return `${window.location.origin}/service/${serviceId}`;
+    }
+    return `/service/${serviceId}`;
+  }, [serviceId]);
+
+  const share = useCallback(async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: serviceName || payload?.service?.name || "Service",
+          url: shareUrl,
+        });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Link copied");
+      }
+      track("service_share_click", { serviceId });
+    } catch {
+      /* user cancelled or unsupported — ignore */
+    }
+  }, [serviceId, serviceName, payload?.service?.name, shareUrl]);
+
+  const toggleSave = useCallback(() => {
+    const next = !saved;
+    setSaved(next);
+    emit("qs:listing:save_toggled", { kind: "service", id: serviceId, saved: next });
+    track(next ? "service_saved" : "service_unsaved", { serviceId });
+  }, [saved, serviceId]);
 
   const reveal = useCallback(async () => {
     if (!serviceId || loading) return;
@@ -291,38 +325,72 @@ export default function ContactModalService({
                       )}
                     </div>
                     <div>
-                      <span className="font-medium">Location:</span> {location}
+                      <span className="font-medium">Location:</span> {providerLocation}
                     </div>
                   </div>
 
                   {/* CTAs */}
                   <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    {/* Message (WhatsApp) */}
                     {waLink && (
-                      <a
-                        href={waLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-xl bg-[#25D366] px-3 py-1.5 text-sm text-white hover:opacity-90"
-                        onClick={() => track("service_contact_whatsapp_click", { serviceId })}
-                        aria-label="Open WhatsApp chat with provider"
-                      >
-                        WhatsApp
-                      </a>
+                      <IconButton
+                        icon="message"
+                        variant="outline"
+                        labelText="Message"
+                        srLabel="Message on WhatsApp"
+                        onClick={() => {
+                          try {
+                            window.open(waLink, "_blank", "noopener,noreferrer");
+                            track("service_contact_whatsapp_click", { serviceId });
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                      />
                     )}
+
+                    {/* Call */}
                     {telLink && (
-                      <a
-                        href={telLink}
-                        className="rounded-xl border px-3 py-1.5 text-sm dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900 hover:bg-gray-50"
-                        onClick={() => track("service_contact_call_click", { serviceId })}
-                        aria-label="Call provider"
-                      >
-                        Call
-                      </a>
+                      <IconButton
+                        icon="phone"
+                        variant="outline"
+                        labelText="Call"
+                        srLabel="Call provider"
+                        onClick={() => {
+                          try {
+                            window.location.href = telLink;
+                            track("service_contact_call_click", { serviceId });
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                      />
                     )}
+
+                    {/* Share */}
+                    <IconButton
+                      icon="share"
+                      variant="outline"
+                      labelText="Share"
+                      srLabel="Share service"
+                      onClick={() => void share()}
+                    />
+
+                    {/* Favorite (renamed from Save) */}
+                    <IconButton
+                      icon="heart"
+                      variant="outline"
+                      labelText={saved ? "Favorited" : "Favorite"}
+                      srLabel={saved ? "Unfavorite service" : "Favorite service"}
+                      aria-pressed={saved}
+                      onClick={toggleSave}
+                    />
+
+                    {/* Close */}
                     <button
                       onClick={() => setOpen(false)}
                       type="button"
-                      className="rounded-xl border px-3 py-1.5 text-sm dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900 hover:bg-gray-50"
+                      className="rounded-xl border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 dark:text-gray-200"
                     >
                       Close
                     </button>

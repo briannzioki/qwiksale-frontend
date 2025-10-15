@@ -21,6 +21,11 @@ type Me = {
   image?: string | null; // existing avatar, if any
 };
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function looksLikeEmail(e?: string) {
+  return !!e && EMAIL_RE.test(e.trim().toLowerCase());
+}
+
 function normalizeKePhone(raw: string): string {
   const trimmed = (raw || "").trim();
   if (/^\+254(7|1)\d{8}$/.test(trimmed)) return trimmed.replace(/^\+/, "");
@@ -62,6 +67,7 @@ export default function CompleteProfileClient() {
   const [saving, setSaving] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
 
+  const [email, setEmail] = useState("");        // <— NEW
   const [username, setUsername] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [address, setAddress] = useState("");
@@ -118,6 +124,7 @@ export default function CompleteProfileClient() {
         }
 
         setMe(u);
+        setEmail((u.email ?? "").trim());          // <— NEW
         setUsername((u.username ?? "").trim());
         setWhatsapp(u.whatsapp ?? "");
         setAddress(u.address ?? "");
@@ -188,7 +195,12 @@ export default function CompleteProfileClient() {
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     const u = username.trim();
+    const eMail = email.trim().toLowerCase(); // <— NEW
 
+    if (!looksLikeEmail(eMail)) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
     if (!looksLikeValidUsername(u)) {
       toast.error("Username must be 3–24 chars (letters, numbers, dot, underscore).");
       return;
@@ -216,6 +228,7 @@ export default function CompleteProfileClient() {
         credentials: "same-origin",
         cache: "no-store",
         body: JSON.stringify({
+          email: eMail,                               // <— NEW
           username: u,
           // image is handled via /api/account/profile/photo by the uploader
           whatsapp: whatsappNormalized || null,
@@ -233,10 +246,11 @@ export default function CompleteProfileClient() {
       }
       if (!r.ok || j?.error) throw new Error(j?.error || `Failed to save (${r.status})`);
 
+      // Note: session email may be stale until next refresh/sign-in; server is updated.
       toast.success("Profile saved!");
       router.replace(ret); // default /dashboard
-    } catch (e: any) {
-      toast.error(e?.message || "Could not save profile");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not save profile");
     } finally {
       setSaving(false);
     }
@@ -280,6 +294,30 @@ export default function CompleteProfileClient() {
         </div>
 
         <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4" noValidate aria-busy={saving}>
+          {/* Email */}
+          <div>
+            <label htmlFor="email" className="label">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              className="input"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onBlur={(e) => setEmail(e.target.value.trim())}
+              required
+              autoComplete="email"
+              inputMode="email"
+              disabled={saving}
+              aria-invalid={email ? (!looksLikeEmail(email) || undefined) : undefined}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Changing your sign-in email may require verification.
+            </p>
+          </div>
+
           {/* Username */}
           <div>
             <label htmlFor="username" className="label">
@@ -388,7 +426,7 @@ export default function CompleteProfileClient() {
           <div className="flex gap-2 pt-2">
             <button
               type="submit"
-              disabled={saving || nameStatus === "checking" || nameStatus === "invalid"}
+              disabled={saving || nameStatus === "checking" || nameStatus === "invalid" || !looksLikeEmail(email)}
               className="btn-gradient-primary"
             >
               {saving ? "Saving…" : "Save & continue"}

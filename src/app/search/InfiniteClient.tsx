@@ -97,6 +97,11 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
   const abortRef = useRef<AbortController | null>(null);
   const timeoutRef = useRef<number | null>(null);
 
+  // external sentinel: [data-grid-sentinel] support
+  const externalSentinelRef = useRef<Element | null>(null);
+  const externalIoRef = useRef<IntersectionObserver | null>(null);
+  const moRef = useRef<MutationObserver | null>(null);
+
   const fetchNext = useCallback(async () => {
     if (loading || done) return;
     const nextPage = page + 1;
@@ -134,14 +139,13 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
 
       if (res.status === 429) {
         const j = await res.json().catch(() => ({}));
-        setError(j?.error || "You’re loading too fast. Please wait.");
-        window.setTimeout(() => setError(null), 3000);
+        setError(j?.error || "You’re loading too fast. Please wait and try again.");
         setLoading(false);
         return;
       }
 
       if (!res.ok) {
-        setError("Failed to load more results.");
+        setError("Failed to load more results. Please try again.");
         setLoading(false);
         return;
       }
@@ -167,7 +171,13 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
     }
   }, [endpoint, page, totalPages, params, loading, done]);
 
-  // Setup IntersectionObserver
+  const onRetry = useCallback(() => {
+    // Clear the error, then explicitly fetch next page.
+    setError(null);
+    fetchNext();
+  }, [fetchNext]);
+
+  // Internal sentinel (our own <InfiniteLoader /> wrapper)
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -176,7 +186,8 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
 
     ioRef.current = new IntersectionObserver(
       (entries) => {
-        if (done || loading) return;
+        // Do not auto-load while an error is shown; require manual Retry.
+        if (done || loading || !!error) return;
         for (const e of entries) {
           if (e.isIntersecting) {
             if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
@@ -200,7 +211,60 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
       ioRef.current?.disconnect();
       ioRef.current = null;
     };
-  }, [fetchNext, done, loading]);
+  }, [fetchNext, done, loading, error]);
+
+  // External sentinel support: observe any [data-grid-sentinel] emitted by ProductGrid/ServiceGrid
+  useEffect(() => {
+    // find and attach
+    const attach = (el: Element) => {
+      if (externalSentinelRef.current === el) return; // already attached
+      externalIoRef.current?.disconnect();
+
+      externalIoRef.current = new IntersectionObserver(
+        (entries) => {
+          if (done || loading || !!error) return;
+          for (const e of entries) {
+            if (e.isIntersecting) {
+              if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+              timeoutRef.current = window.setTimeout(() => {
+                fetchNext();
+                timeoutRef.current = null;
+              }, 120);
+              break;
+            }
+          }
+        },
+        { rootMargin: "800px 0px" }
+      );
+
+      externalIoRef.current.observe(el);
+      externalSentinelRef.current = el;
+    };
+
+    // try initial query
+    const initialEl =
+      typeof document !== "undefined" ? document.querySelector("[data-grid-sentinel]") : null;
+    if (initialEl) attach(initialEl);
+
+    // watch for future insertions
+    if (typeof MutationObserver !== "undefined") {
+      moRef.current?.disconnect();
+      moRef.current = new MutationObserver(() => {
+        if (externalSentinelRef.current) return;
+        const el = document.querySelector("[data-grid-sentinel]");
+        if (el) attach(el);
+      });
+      moRef.current.observe(document.body, { childList: true, subtree: true });
+    }
+
+    return () => {
+      externalIoRef.current?.disconnect();
+      externalIoRef.current = null;
+      externalSentinelRef.current = null;
+      moRef.current?.disconnect();
+      moRef.current = null;
+    };
+  }, [fetchNext, done, loading, error]);
 
   // Cleanup in-flight on unmount
   useEffect(() => {
@@ -289,14 +353,26 @@ export function InfiniteClient({ endpoint, initial, params }: Props) {
       )}
 
       {error && (
-        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
-          {error}
+        <div
+          role="alert"
+          className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200"
+        >
+          <span>{error}</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded-md border border-amber-300 bg-white/80 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-white dark:border-amber-800/60 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-900/30"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Loader + sentinel */}
+      {/* Loader + our internal sentinel */}
       <div ref={sentinelRef} className="mt-4">
-        <InfiniteLoader onLoadAction={fetchNext} disabled={done || loading} />
+        <InfiniteLoader onLoadAction={fetchNext} disabled={done || loading || !!error} />
       </div>
     </>
   );
