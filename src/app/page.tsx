@@ -1,4 +1,4 @@
-﻿// src/app/page.tsx
+// src/app/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -338,7 +338,7 @@ export default async function HomePage({
             <div className="flex flex-wrap items-center gap-2">
               {/* Primary */}
               <Link
-                href="/post"
+                href="/sell"
                 prefetch={false}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white btn-gradient-primary"
                 aria-label="Post a listing"
