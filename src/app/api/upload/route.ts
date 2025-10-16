@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { uploadFile } from "@/app/lib/media";
+import { uploadFile } from "@/app/lib/media.server";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
@@ -128,12 +128,14 @@ export async function POST(req: Request) {
   // Safe hints for where to place the file in your provider
   const folder = safeHint(String(form.get("folder") || ""));
   const keyPrefix = safeHint(String(form.get("keyPrefix") || ""));
+  const filename = safeHint(String(form.get("filename") || ""));
 
   // Upload via our provider-agnostic helper (with clean error handling)
   try {
     const out = await uploadFile(f, {
       ...(folder ? { folder } : {}),
       ...(keyPrefix ? { keyPrefix } : {}),
+      ...(filename ? { filename } : {}),
       contentType: resolvedMime,
     });
 
@@ -150,13 +152,21 @@ export async function POST(req: Request) {
       (out as any)?.url ||
       null;
 
+    const id =
+      (out as any)?.id ||
+      (out as any)?.public_id ||
+      (out as any)?.publicId ||
+      null;
+
     if (!url) {
       return noStore({ error: "Upload failed: no URL returned" }, { status: 500 });
     }
 
+    // Return both `id` and `publicId` so EditMediaClient can pick either.
     return noStore(
       {
-        id: (out as any)?.id || (out as any)?.public_id || null,
+        id,
+        publicId: id ?? undefined,
         url,
         secure_url,
       },

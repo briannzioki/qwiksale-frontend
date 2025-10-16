@@ -36,7 +36,7 @@ export default function EditPageHeader({
           {breadcrumbs.map((b, i) => (
             <span key={`${b.label}-${i}`}>
               {b.href ? (
-                <Link href={b.href} className="hover:underline">
+                <Link href={b.href} className="hover:underline" prefetch={false}>
                   {b.label}
                 </Link>
               ) : (

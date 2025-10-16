@@ -13,8 +13,18 @@ type Props = {
   threshold?: number | number[];
   /** If true, fires once then disconnects. */
   once?: boolean;
-  /** Optional className for sizing/spacing the sentinel. */
+  /** Optional className for sizing/spacing the sentinel (invisible but occupies space). */
   className?: string;
+
+  /** --- Optional retry affordance --- */
+  /** If provided, a visible Retry button can be rendered. (Name ends with “Action” to satisfy Next’s rule.) */
+  onRetryAction?: () => void | Promise<void>;
+  /** Toggle visibility of the retry button (pair with `onRetryAction`). */
+  showRetry?: boolean;
+  /** Customize the retry label. */
+  retryLabel?: string;
+  /** Class for the retry container (spacing above/below). */
+  retryClassName?: string;
 };
 
 export default function InfiniteLoader({
@@ -24,6 +34,10 @@ export default function InfiniteLoader({
   threshold = 0,
   once = false,
   className = "h-12",
+  onRetryAction,
+  showRetry = false,
+  retryLabel = "Retry",
+  retryClassName = "mt-3",
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const ioRef = useRef<IntersectionObserver | null>(null);
@@ -125,5 +139,24 @@ export default function InfiniteLoader({
     };
   }, [disabled, rootMargin, threshold, once]);
 
-  return <div ref={ref} aria-hidden={true} role="presentation" className={className} />;
+  return (
+    <>
+      {/* Invisible IO sentinel (space holder) */}
+      <div ref={ref} aria-hidden role="presentation" className={className} />
+
+      {/* Optional retry affordance (consumer controls visibility via `showRetry`) */}
+      {onRetryAction && showRetry ? (
+        <div className={retryClassName}>
+          <button
+            type="button"
+            onClick={() => void onRetryAction()}
+            className="btn-outline"
+            aria-label="Retry loading more results"
+          >
+            {retryLabel}
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
 }

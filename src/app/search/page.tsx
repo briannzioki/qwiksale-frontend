@@ -1,12 +1,17 @@
-﻿import Link from "next/link";
+﻿// src/app/search/page.tsx
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Sort } from "./SearchClient";
+import { InfiniteClient } from "./InfiniteClient";
+import { getBaseUrl } from "@/app/lib/url";
+import SectionHeader from "@/app/components/SectionHeader";
+import NumberInputNoWheel from "@/app/components/ui/NumberInputNoWheel";
+
+// Fallback cards are regular client components—import them statically
 import ProductCard from "@/app/components/ProductCard";
 import ServiceCard from "@/app/components/ServiceCard";
-import { InfiniteClient } from "./InfiniteClient";
-import type { Sort } from "./SearchClient";
-import { getBaseUrl } from "@/app/lib/url";
 
-/** Always render fresh – results depend on query string. */
+// Always render fresh – results depend on query string.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -116,7 +121,14 @@ export default async function SearchPage({
   const url = `${base}${endpoint}?${qs.toString()}`;
 
   // Fetch initial page server-side (SSR fallback)
+  let initialError: string | null = null;
   const res = await fetch(url, { cache: "no-store" }).catch(() => null);
+  if (!res) {
+    initialError = "Network error while loading results.";
+  } else if (!res.ok) {
+    initialError = `Search failed (${res.status}).`;
+  }
+
   const json = res && res.ok ? await res.json().catch(() => null) : null;
 
   const emptyProducts: Envelope<ProductHit> = { page: 1, pageSize, total: 0, totalPages: 1, items: [] };
@@ -153,160 +165,298 @@ export default async function SearchPage({
     type,
   } as const;
 
+  // Prefer new ListingCard if available (optional dependency)
+  let ListingCard: any = null;
+  let hasListingCard = true;
+  try {
+    ListingCard = (await import("@/app/components/ListingCard")).default as any;
+  } catch {
+    hasListingCard = false;
+  }
+
+  // Open the <details> block if any advanced filter is present
+  const advancedOpen =
+    Boolean(brand) ||
+    Boolean(condition) ||
+    typeof minPrice === "number" ||
+    typeof maxPrice === "number";
+
   return (
     <div className="container-page py-6">
-      {/* Header */}
-      <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-        <h1 className="text-2xl md:text-3xl font-extrabold">{headerTitle}</h1>
-        <p className="mt-1 text-white/90">
-          {q ? (
-            <>Results for <span className="font-semibold">“{q}”</span></>
-          ) : type === "product" ? (
-            "Find deals across categories, brands and services."
-          ) : (
-            "Find reliable service providers."
-          )}
-        </p>
-      </div>
+      {/* Section header (brand gradient, matches the shared style) */}
+      <SectionHeader
+        title={headerTitle}
+        subtitle={
+          q
+            ? `Results for “${q}”`
+            : type === "product"
+              ? "Find deals across categories, brands and conditions."
+              : "Find reliable service providers."
+        }
+        actions={
+          <Link
+            href="/"
+            prefetch={false}
+            className="rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/25"
+          >
+            Home
+          </Link>
+        }
+      />
 
-      {/* Controls */}
+      {/* Filters card */}
       <form
-        className="mt-4 grid grid-cols-1 gap-3 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:grid-cols-12"
+        className="mt-4 grid grid-cols-1 gap-3 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
         method="GET"
         action="/search"
       >
-        {/* Type */}
-        <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Type</label>
-          <select
-            name="type"
-            defaultValue={type}
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          >
-            <option value="product">Products</option>
-            <option value="service">Services</option>
-          </select>
-        </div>
-
-        {/* Query */}
-        <div className="md:col-span-4">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Keywords</label>
-          <input
-            name="q"
-            defaultValue={q || ""}
-            placeholder="e.g. Samsung S21, Mama Fua, SUVs…"
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          />
-        </div>
-
-        {/* Category */}
-        <div className="md:col-span-3">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Category</label>
-          <input
-            name="category"
-            defaultValue={category || ""}
-            placeholder="Any"
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          />
-        </div>
-
-        {/* Subcategory */}
-        <div className="md:col-span-3">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Subcategory</label>
-          <input
-            name="subcategory"
-            defaultValue={subcategory || ""}
-            placeholder="Any"
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          />
-        </div>
-
-        {/* Brand */}
-        <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Brand</label>
-          <input
-            name="brand"
-            defaultValue={brand || ""}
-            placeholder="e.g. Samsung"
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          />
-        </div>
-
-        {/* Condition */}
-        <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Condition</label>
-          <select
-            name="condition"
-            defaultValue={condition || ""}
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          >
-            <option value="">Any</option>
-            <option value="brand new">Brand New</option>
-            <option value="pre-owned">Pre-Owned</option>
-          </select>
-        </div>
-
-        {/* Price */}
-        <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Min price (KES)</label>
-          <input
-            type="number"
-            name="minPrice"
-            defaultValue={minPrice ?? ""}
-            min={0}
-            inputMode="numeric"
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          />
-        </div>
-        <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Max price (KES)</label>
-          <input
-            type="number"
-            name="maxPrice"
-            defaultValue={maxPrice ?? ""}
-            min={0}
-            inputMode="numeric"
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          />
-        </div>
-
-        {/* Featured + Sort */}
-        <div className="md:col-span-2 flex items-end gap-2">
-          <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-200">
+        {/* Row 1: Type + Keywords + Category + Subcategory (Type floats right on md+) */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+          {/* Keywords */}
+          <div className="md:col-span-6">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+              Keywords
+            </label>
             <input
-              type="checkbox"
-              name="featured"
-              defaultChecked={featuredOnly}
-              className="rounded border-gray-300 dark:border-slate-600"
+              name="q"
+              defaultValue={q || ""}
+              placeholder="e.g. Samsung S21, Mama Fua, SUVs…"
+              className="
+                mt-1 w-full rounded-lg px-3 py-2
+                bg-white dark:bg-slate-800
+                border border-gray-200 dark:border-slate-700
+                text-gray-900 dark:text-slate-100
+                focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+              "
             />
-            Featured only
-          </label>
+          </div>
+
+          {/* Category */}
+          <div className="md:col-span-3">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+              Category
+            </label>
+            <input
+              name="category"
+              defaultValue={category || ""}
+              placeholder="Any"
+              className="
+                mt-1 w-full rounded-lg px-3 py-2
+                bg-white dark:bg-slate-800
+                border border-gray-200 dark:border-slate-700
+                text-gray-900 dark:text-slate-100
+                focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+              "
+            />
+          </div>
+
+          {/* Subcategory */}
+          <div className="md:col-span-3">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+              Subcategory
+            </label>
+            <input
+              name="subcategory"
+              defaultValue={subcategory || ""}
+              placeholder="Any"
+              className="
+                mt-1 w-full rounded-lg px-3 py-2
+                bg-white dark:bg-slate-800
+                border border-gray-200 dark:border-slate-700
+                text-gray-900 dark:text-slate-100
+                focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+              "
+            />
+          </div>
         </div>
-        <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-gray-700 dark:text-slate-200 mb-1">Sort</label>
-          <select
-            name="sort"
-            defaultValue={sort}
-            className="w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+
+        {/* Progressive disclosure: advanced filters */}
+        <details className="rounded-lg border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3" {...(advancedOpen ? { open: true } : {})}>
+          <summary className="cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-slate-200">
+            More filters
+          </summary>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
+            {/* Brand */}
+            <div className="md:col-span-3">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+                Brand
+              </label>
+              <input
+                name="brand"
+                defaultValue={brand || ""}
+                placeholder="e.g. Samsung"
+                className="
+                  mt-1 w-full rounded-lg px-3 py-2
+                  bg-white dark:bg-slate-800
+                  border border-gray-200 dark:border-slate-700
+                  text-gray-900 dark:text-slate-100
+                  focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+                "
+              />
+            </div>
+
+            {/* Condition */}
+            <div className="md:col-span-3">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+                Condition
+              </label>
+              <select
+                name="condition"
+                defaultValue={condition || ""}
+                className="
+                  mt-1 w-full rounded-lg px-3 py-2
+                  bg-white dark:bg-slate-800
+                  border border-gray-200 dark:border-slate-700
+                  text-gray-900 dark:text-slate-100
+                  focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+                "
+              >
+                <option value="">Any</option>
+                <option value="brand new">Brand New</option>
+                <option value="pre-owned">Pre-Owned</option>
+              </select>
+            </div>
+
+            {/* Min / Max */}
+            <div className="md:col-span-3">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+                Min price (KES)
+              </label>
+              <NumberInputNoWheel
+                name="minPrice"
+                defaultValue={minPrice ?? ""}
+                min={0}
+                inputMode="numeric"
+                className="
+                  mt-1 w-full rounded-lg px-3 py-2
+                  bg-white dark:bg-slate-800
+                  border border-gray-200 dark:border-slate-700
+                  text-gray-900 dark:text-slate-100
+                  focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+                "
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+                Max price (KES)
+              </label>
+              <NumberInputNoWheel
+                name="maxPrice"
+                defaultValue={maxPrice ?? ""}
+                min={0}
+                inputMode="numeric"
+                className="
+                  mt-1 w-full rounded-lg px-3 py-2
+                  bg-white dark:bg-slate-800
+                  border border-gray-200 dark:border-slate-700
+                  text-gray-900 dark:text-slate-100
+                  focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+                "
+              />
+            </div>
+          </div>
+        </details>
+
+        {/* Row: Type / Featured / Sort */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+          {/* Type */}
+          <div className="md:col-span-3">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+              Type
+            </label>
+            <select
+              name="type"
+              defaultValue={type}
+              className="
+                mt-1 w-full rounded-lg px-3 py-2
+                bg-white dark:bg-slate-800
+                border border-gray-200 dark:border-slate-700
+                text-gray-900 dark:text-slate-100
+                focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+              "
+            >
+              <option value="product">Products</option>
+              <option value="service">Services</option>
+            </select>
+          </div>
+
+          {/* Featured */}
+          <div className="md:col-span-3 flex items-end">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                name="featured"
+                defaultChecked={featuredOnly}
+                className="rounded border-gray-300 dark:border-slate-600"
+              />
+              Featured only
+            </label>
+          </div>
+
+          {/* Sort */}
+          <div className="md:col-span-3">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+              Sort
+            </label>
+            <select
+              name="sort"
+              defaultValue={sort}
+              className="
+                mt-1 w-full rounded-lg px-3 py-2
+                bg-white dark:bg-slate-800
+                border border-gray-200 dark:border-slate-700
+                text-gray-900 dark:text-slate-100
+                focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
+              "
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Submit */}
-        <div className="md:col-span-12 flex items-center gap-2 pt-1">
-          <button className="rounded-lg bg-[#161748] px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
-            Apply filters
-          </button>
+        <div className="flex items-center gap-2 pt-1">
+          {/* When changing filters, go back to page 1 */}
+          <input type="hidden" name="page" value="1" />
+          <input type="hidden" name="pageSize" value={String(pageSize)} />
+          <button className="btn-gradient-primary">Apply filters</button>
           <Link className="btn-outline" href="/search" prefetch={false} aria-label="Clear filters">
             Clear
           </Link>
         </div>
       </form>
+
+      {/* SSR fetch error banner (retriable) */}
+      {initialError && (
+        <div
+          role="alert"
+          className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-200"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-medium">We couldn’t load results. {initialError}</p>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/search?${qs.toString()}`}
+                prefetch={false}
+                className="rounded-lg border border-red-300 bg-white/70 px-2.5 py-1.5 text-xs font-semibold text-red-800 hover:bg-white dark:border-rose-800/60 dark:bg-transparent dark:text-rose-200 dark:hover:bg-rose-900/30"
+              >
+                Try again
+              </Link>
+              <Link
+                href="/"
+                prefetch={false}
+                className="rounded-lg border border-gray-300 bg-white/70 px-2.5 py-1.5 text-xs font-semibold text-gray-800 hover:bg-white dark:border-white/20 dark:bg-transparent dark:text-slate-100 dark:hover:bg-white/10"
+              >
+                Go Home
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Meta */}
       <div className="mt-3 text-sm text-gray-600 dark:text-slate-300">
@@ -316,30 +466,58 @@ export default async function SearchPage({
 
       {/* Results grid (SSR page 1) */}
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-        {type === "product"
-          ? (data as Envelope<ProductHit>).items.map((p) => (
-              <ProductCard
-                key={p.id}
-                id={p.id}
-                name={p.name}
-                image={p.image ?? null}
-                price={p.price === 0 ? null : p.price ?? null}
-                {...(typeof p.featured === "boolean" ? { featured: p.featured } : {})}
-              />
-            ))
-          : (data as Envelope<ServiceHit>).items.map((s) => (
-              <ServiceCard
-                key={s.id}
-                id={s.id}
-                name={s.name ?? s.title ?? "Service"}
-                image={s.image ?? null}
-                price={s.price ?? null}
-                {...(s.rateType ? { rateType: s.rateType } : {})}
-                {...(s.serviceArea != null ? { serviceArea: s.serviceArea } : {})}
-                {...(s.availability != null ? { availability: s.availability } : {})}
-                {...(typeof s.featured === "boolean" ? { featured: s.featured } : {})}
-              />
-            ))}
+        {hasListingCard
+          ? (type === "product"
+              ? (data as Envelope<ProductHit>).items.map((p) => (
+                  <ListingCard
+                    key={p.id}
+                    href={`/product/${p.id}`}
+                    title={p.name}
+                    imageUrl={p.image ?? null}
+                    price={p.price ?? null}
+                    featured={p.featured ?? false}
+                    metaTop={p.brand || undefined}
+                    metaBottom={p.condition || undefined}
+                  />
+                ))
+              : (data as Envelope<ServiceHit>).items.map((s) => (
+                  <ListingCard
+                    key={s.id}
+                    href={`/service/${s.id}`}
+                    title={s.name ?? s.title ?? "Service"}
+                    imageUrl={s.image ?? null}
+                    price={s.price ?? null}
+                    featured={s.featured ?? false}
+                    metaTop={s.serviceArea || undefined}
+                    metaBottom={s.rateType ? `/${s.rateType}` : s.availability || undefined}
+                  />
+                )))
+          : type === "product"
+            ? (data as Envelope<ProductHit>).items.map((p) => (
+                <ProductCard
+                  key={p.id}
+                  {...({
+                    id: p.id,
+                    name: p.name,
+                    image: p.image ?? null,
+                    price: p.price === 0 ? null : p.price ?? null,
+                    ...(typeof p.featured === "boolean" ? { featured: p.featured } : {}),
+                  } as any)}
+                />
+              ))
+            : (data as Envelope<ServiceHit>).items.map((s) => (
+                <ServiceCard
+                  key={s.id}
+                  id={s.id}
+                  name={s.name ?? s.title ?? "Service"}
+                  image={s.image ?? null}
+                  price={s.price ?? null}
+                  {...(s.rateType ? { rateType: s.rateType } : {})}
+                  {...(s.serviceArea != null ? { serviceArea: s.serviceArea } : {})}
+                  {...(s.availability != null ? { availability: s.availability } : {})}
+                  {...(typeof s.featured === "boolean" ? { featured: s.featured } : {})}
+                />
+              ))}
       </div>
 
       {/* Empty state */}
@@ -362,11 +540,7 @@ export default async function SearchPage({
       {/* Infinite client loader – progressively loads page 2+ */}
       {(data as any).totalPages > 1 && (
         <div className="mt-6">
-          <InfiniteClient
-            endpoint={endpoint}
-            initial={data as any}
-            params={clientParams}
-          />
+          <InfiniteClient endpoint={endpoint} initial={data as any} params={clientParams} />
         </div>
       )}
     </div>

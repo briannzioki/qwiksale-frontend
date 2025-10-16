@@ -1,4 +1,6 @@
 // src/app/api/services/route.ts
+import "server-only";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -9,7 +11,7 @@ import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const SERVICES_VER = "vDEBUG-SERVICES-008";
+const SERVICES_VER = "vDEBUG-SERVICES-011";
 function attachVersion(h: Headers) {
   h.set("X-Services-Version", SERVICES_VER);
 }
@@ -69,12 +71,12 @@ const DEFAULT_PAGE_SIZE = 24;
 const MAX_RESULT_WINDOW = 10_000;
 
 /* ------------------------- search variants ------------------------- */
-type SearchField = "name" | "title" | "description" | "category" | "subcategory";
+// Removed "title" so we never reference a non-existent column
+type SearchField = "name" | "description" | "category" | "subcategory";
 
 /** Try richer → safer. */
 const SEARCH_FIELD_VARIANTS: SearchField[][] = [
-  ["name", "title", "description", "category", "subcategory"],
-  ["name", "description", "category", "subcategory"], // no `title`
+  ["name", "description", "category", "subcategory"],
   ["name", "category", "subcategory"],
   ["name", "description"],
   ["name"],
@@ -140,7 +142,6 @@ export async function GET(req: NextRequest) {
       optStr(url.searchParams.get("seller")) ||
       optStr(url.searchParams.get("user"));
 
-    // If caller requested "mine", force sellerId from session
     if (mine) {
       const session = await auth().catch(() => null);
       const uid = (session as any)?.user?.id as string | undefined;
@@ -153,11 +154,11 @@ export async function GET(req: NextRequest) {
       sellerId = uid;
     }
 
-    // If a username is provided, resolve to id
+    // Resolve username → id (best-effort; case-insensitive)
     if (!sellerId && sellerUsername) {
       try {
-        const u = await prisma.user.findUnique({
-          where: { username: sellerUsername },
+        const u = await prisma.user.findFirst({
+          where: { username: { equals: sellerUsername, mode: "insensitive" } },
           select: { id: true },
         });
         sellerId = u?.id ?? sellerId;
@@ -193,8 +194,8 @@ export async function GET(req: NextRequest) {
     // -------------------- build non-search filters --------------------
     const statusParam = optStr(url.searchParams.get("status"));
     const whereBase: Record<string, any> = {};
-    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") whereBase['status'] = "ACTIVE";
-    else if (statusParam.toUpperCase() !== "ALL") whereBase['status'] = statusParam.toUpperCase();
+    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") whereBase["status"] = "ACTIVE";
+    else if (statusParam.toUpperCase() !== "ALL") whereBase["status"] = statusParam.toUpperCase();
 
     const ANDExtra: any[] = [];
     if (category) ANDExtra.push({ category: { equals: category, mode: "insensitive" } });
@@ -241,10 +242,9 @@ export async function GET(req: NextRequest) {
         const AND: any[] = [];
         if (ANDsearch.length) AND.push(...ANDsearch);
         if (ANDExtra.length) AND.push(...ANDExtra);
-        if (AND.length) candidate['AND'] = AND;
+        if (AND.length) candidate["AND"] = AND;
 
         try {
-          // Probe via count to ensure Prisma accepts these fields in this schema
           await Service.count({ where: candidate });
           chosenWhere = candidate;
           chosenFields = fields;
@@ -264,7 +264,7 @@ export async function GET(req: NextRequest) {
     // Fallback: no search or no variant worked → only non-search filters
     if (!chosenWhere) {
       const candidate: Record<string, any> = { ...whereBase };
-      if (ANDExtra.length) candidate['AND'] = ANDExtra;
+      if (ANDExtra.length) candidate["AND"] = ANDExtra;
       chosenWhere = candidate;
     }
 
@@ -322,46 +322,102 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Select candidates (schema tolerant)
+    // Select candidates (schema tolerant). Always include gallery; never include title.
     const selectCandidates: any[] = [
-      // rich (with location & featured)
-      { id: true, name: true, title: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true, sellerId: true },
-      { id: true, name: true, category: true, subcategory: true, price: true, image: true, location: true, featured: true, createdAt: true, sellerId: true },
-      // without location
-      { id: true, name: true, title: true, category: true, subcategory: true, price: true, image: true, featured: true, createdAt: true, sellerId: true },
-      { id: true, name: true, category: true, subcategory: true, price: true, image: true, featured: true, createdAt: true, sellerId: true },
-      // minimal
+      {
+        id: true,
+        name: true,
+        category: true,
+        subcategory: true,
+        price: true,
+        rateType: true,
+        serviceArea: true,
+        image: true,
+        gallery: true,
+        location: true,
+        featured: true,
+        createdAt: true,
+        sellerId: true,
+        seller: { select: { username: true } },
+      },
+      {
+        id: true,
+        name: true,
+        category: true,
+        subcategory: true,
+        price: true,
+        image: true,
+        gallery: true,
+        location: true,
+        featured: true,
+        createdAt: true,
+        sellerId: true,
+        seller: { select: { username: true } },
+      },
+      // fallbacks without seller relation
+      {
+        id: true,
+        name: true,
+        category: true,
+        subcategory: true,
+        price: true,
+        rateType: true,
+        serviceArea: true,
+        image: true,
+        gallery: true,
+        featured: true,
+        createdAt: true,
+        sellerId: true,
+      },
+      {
+        id: true,
+        name: true,
+        category: true,
+        subcategory: true,
+        price: true,
+        image: true,
+        gallery: true,
+        featured: true,
+        createdAt: true,
+        sellerId: true,
+      },
       { id: true, name: true, createdAt: true, featured: true },
-      { id: true, title: true, createdAt: true, featured: true },
-      { id: true, name: true, createdAt: true },
-      { id: true, title: true, createdAt: true },
       { id: true },
     ];
 
-    // Build list args with pagination
-    const baseListArgs: any = {
+    // Build list args with pagination (cursor tolerant to numeric/string IDs)
+    const baseListArgsCommon: any = {
       where: chosenWhere,
       take: pageSize + 1,
     };
+
+    const cursorVariants: any[] = [];
     if (cursor) {
-      baseListArgs.cursor = { id: cursor };
-      baseListArgs.skip = 1;
+      // try string id
+      cursorVariants.push({ ...baseListArgsCommon, cursor: { id: cursor }, skip: 1 });
+      // try numeric id
+      const asNum = Number(cursor);
+      if (Number.isFinite(asNum)) {
+        cursorVariants.push({ ...baseListArgsCommon, cursor: { id: asNum }, skip: 1 });
+      }
     } else {
-      baseListArgs.skip = (page - 1) * pageSize;
+      cursorVariants.push({ ...baseListArgsCommon, skip: (page - 1) * pageSize });
     }
 
     // total first (cheap & robust)
     const total = await Service.count({ where: chosenWhere });
 
-    // findMany with tolerant select + orderBy fallbacks
+    // findMany with tolerant select + orderBy + cursor variants
     let rowsRaw: any[] = [];
     outer: for (const select of selectCandidates) {
       for (const orderBy of orderByCandidates) {
-        try {
-          rowsRaw = await Service.findMany({ ...baseListArgs, select, orderBy });
-          break outer;
-        } catch {
-          /* try next combo */
+        for (const listArgs of cursorVariants) {
+          try {
+            rowsRaw = await Service.findMany({ ...listArgs, select, orderBy });
+            break outer;
+          } catch {
+            /* try next combo */
+          }
         }
       }
     }
@@ -370,23 +426,30 @@ export async function GET(req: NextRequest) {
     const data = hasMore ? rowsRaw.slice(0, pageSize) : rowsRaw;
     const nextCursor = hasMore && data.length ? data[data.length - 1]!.id : null;
 
-    const items = (data as Array<any>).map((s) => ({
-      id: String(s.id),
-      name: String(s.name ?? s.title ?? "Service"),
-      category: (s.category ?? null) as string | null,
-      subcategory: (s.subcategory ?? null) as string | null,
-      price: typeof s.price === "number" ? s.price : null,
-      image: (s.image ?? null) as string | null,
-      featured: Boolean(s.featured),
-      location: (s.location ?? null) as string | null,
-      createdAt:
-        s?.createdAt instanceof Date
-          ? s.createdAt.toISOString()
-          : typeof s?.createdAt === "string"
-          ? s.createdAt
-          : "",
-      sellerId: s?.sellerId ? String(s.sellerId) : undefined,
-    }));
+    const items = (data as Array<any>).map((s) => {
+      const gallery = Array.isArray(s.gallery) ? s.gallery.filter(Boolean) : [];
+      return {
+        id: String(s.id),
+        name: String(s.name ?? "Service"),
+        category: (s.category ?? null) as string | null,
+        subcategory: (s.subcategory ?? null) as string | null,
+        price: typeof s.price === "number" ? s.price : null,
+        rateType: (s.rateType ?? null) as "hour" | "day" | "fixed" | null,
+        serviceArea: (s.serviceArea ?? null) as string | null,
+        image: (s.image ?? (gallery[0] ?? null)) as string | null, // fallback to first gallery image
+        gallery, // expose gallery to UI
+        featured: Boolean(s.featured),
+        location: (s.location ?? null) as string | null,
+        createdAt:
+          s?.createdAt instanceof Date
+            ? s.createdAt.toISOString()
+            : typeof s?.createdAt === "string"
+            ? s.createdAt
+            : "",
+        sellerId: s?.sellerId ? String(s.sellerId) : undefined,
+        sellerUsername: s?.seller?.username ?? null,
+      };
+    });
 
     // facets (first page only, no cursor)
     let facets: any | undefined = undefined;
@@ -411,6 +474,10 @@ export async function GET(req: NextRequest) {
     attachVersion(res.headers);
     res.headers.set("X-Total-Count", String(total));
     res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+    if (process.env.NODE_ENV !== "production") {
+      res.headers.set("X-Query-Tokens", tokens.join(" "));
+      if (chosenFields.length) res.headers.set("X-Search-Fields", chosenFields.join(","));
+    }
     return res;
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -472,14 +539,13 @@ export async function HEAD(_req: Request) {
   h.set("Cache-Control", "no-store, no-cache, must-revalidate");
   h.set("Pragma", "no-cache");
   h.set("Expires", "0");
-  // no body on 204
   return new Response(null, { status: 204, headers: h });
 }
 
 export async function OPTIONS(req: Request) {
   const originHeader =
     req.headers.get("origin") ||
-    process.env['NEXT_PUBLIC_APP_URL'] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
     "*";
 
   const h = new Headers();

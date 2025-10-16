@@ -1,4 +1,3 @@
-// src/app/api/products/suggest/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -71,7 +70,11 @@ export async function GET(request: Request) {
         limit: 30,
         windowMs: 60_000,
       });
-      if (!rl.ok) return tooMany("Too many requests. Please slow down and try again.", rl.retryAfterSec);
+      if (!rl.ok)
+        return tooMany(
+          "Too many requests. Please slow down and try again.",
+          rl.retryAfterSec
+        );
     }
 
     const corpus: Suggestion[] = [];
@@ -88,7 +91,7 @@ export async function GET(request: Request) {
       if (brand) corpus.push({ label: brand, type: "brand", value: brand });
     }
 
-    // Categories + subcategories
+    // Categories + subcategories (map Services → "service")
     for (const c of categories) {
       const cName = (c?.name ?? "").trim();
       if (!cName) continue;
@@ -108,7 +111,6 @@ export async function GET(request: Request) {
         if (!sName) continue;
 
         if (isServices) {
-          // Map Services subcategories to "service" so SearchBox flips to services mode
           corpus.push({
             label: `${cName} • ${sName}`,
             type: "service",
@@ -152,8 +154,10 @@ export async function GET(request: Request) {
         if (seen.has(key)) continue;
 
         if (label.includes("•")) {
-          // Normalize parts to guaranteed strings
-          const parts = label.split("•").map((s) => s.trim()).filter(Boolean);
+          const parts = label
+            .split("•")
+            .map((s) => s.trim())
+            .filter(Boolean);
           const parent = parts[0] ?? "";
           const child = parts[1] ?? "";
           const isServicesLike = slugify(parent) === "services";
@@ -199,6 +203,9 @@ export async function GET(request: Request) {
 
 export async function HEAD() {
   return withCommonHeaders(
-    new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } })
+    new NextResponse(null, {
+      status: 204,
+      headers: { "Cache-Control": "no-store" },
+    })
   );
 }

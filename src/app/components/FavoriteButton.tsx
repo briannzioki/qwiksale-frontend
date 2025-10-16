@@ -1,4 +1,3 @@
-// src/app/components/FavoriteButton.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,8 +7,11 @@ import { useFavourites } from "../lib/favoritesStore";
 type Kind = "product" | "service";
 
 type BaseProps = {
+  /** Small icon-only pill for toolbars/overlays */
   compact?: boolean;
+  /** For a11y messages and titles: "Item" | "Service" ... */
   labelPrefix?: string;
+  /** Extra classes appended to the computed classes */
   className?: string;
 };
 
@@ -176,59 +178,19 @@ export default function FavoriteButton(props: Props) {
     };
   }, []);
 
-  const onClick = useCallback(
-    async (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!targetId) return;
-
-      const now = Date.now();
-      if (now < cooldownRef.current || pending) return;
-      cooldownRef.current = now + 600;
-
-      setPending(true);
-      const prev = fav;
-      const next = !prev;
-      setFav(next); // optimistic
-
-      try {
-        const confirmed = await callToggle(targetId);
-        setFav(confirmed);
-
-        toast.dismiss();
-        if (confirmed) {
-          toast.success("Saved to favorites");
-          trackClient("favorite_add", { id: targetId, type: targetType });
-          announce(`${labelPrefix} saved to favorites`);
-        } else {
-          toast("Removed from favorites", { icon: "💔" });
-          trackClient("favorite_remove", { id: targetId, type: targetType });
-          announce(`${labelPrefix} removed from favorites`);
-        }
-      } catch {
-        setFav(prev);
-        toast.dismiss();
-        toast.error("Could not update favorites. Please try again.");
-        announce(`Failed to update favorites for ${labelPrefix}`);
-      } finally {
-        if (mountedRef.current) setPending(false);
-      }
-    },
-    [announce, callToggle, fav, labelPrefix, pending, targetId, targetType]
-  );
-
-  const aria = fav ? "Unsave" : "Save";
+  // IMPORTANT: Avoid "Save"/"Saved" in button's accessible name
+  const aria = fav ? "Unfavorite" : "Favorite";
   const title = `${aria} ${labelPrefix}`;
 
-  const heart = (
+  const HeartIcon = ({ filled, size = 18 }: { filled: boolean; size?: number }) => (
     <svg
-      width={compact ? 18 : 20}
-      height={compact ? 18 : 20}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       aria-hidden="true"
       className={pending ? "opacity-70" : ""}
     >
-      {fav ? (
+      {filled ? (
         <path
           fill="currentColor"
           d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6.02 3.99 4 6.5 4c1.73 0 3.4.82 4.5 2.1C12.1 4.82 13.77 4 15.5 4 18.01 4 20 6.02 20 8.5c0 3.78-3.4 6.86-8.55 11.53L12 21.35z"
@@ -244,7 +206,10 @@ export default function FavoriteButton(props: Props) {
     </svg>
   );
 
+  /* ----------------------------- RENDER ----------------------------- */
+
   if (compact) {
+    // Compact = icon-only crisp pill (used in media overlays, cards, etc.)
     return (
       <>
         <span className="sr-only" aria-live="polite" aria-atomic="true">
@@ -252,7 +217,43 @@ export default function FavoriteButton(props: Props) {
         </span>
         <button
           type="button"
-          onClick={onClick}
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!targetId) return;
+
+            const now = Date.now();
+            if (now < cooldownRef.current || pending) return;
+            cooldownRef.current = now + 600;
+
+            setPending(true);
+            const prev = fav;
+            const next = !prev;
+            setFav(next); // optimistic
+
+            try {
+              const confirmed = await callToggle(targetId);
+              setFav(confirmed);
+
+              toast.dismiss();
+              if (confirmed) {
+                toast.success("Saved to favorites");
+                trackClient("favorite_add", { id: targetId, type: targetType });
+                announce(`${labelPrefix} saved to favorites`);
+              } else {
+                toast("Removed from favorites", { icon: "💔" });
+                trackClient("favorite_remove", { id: targetId, type: targetType });
+                announce(`${labelPrefix} removed from favorites`);
+              }
+            } catch {
+              setFav(prev);
+              toast.dismiss();
+              toast.error("Could not update favorites. Please try again.");
+              announce(`Failed to update favorites for ${labelPrefix}`);
+            } finally {
+              if (mountedRef.current) setPending(false);
+            }
+          }}
           aria-label={aria}
           aria-pressed={fav}
           aria-busy={pending}
@@ -260,21 +261,19 @@ export default function FavoriteButton(props: Props) {
           title={title}
           data-state={fav ? "on" : "off"}
           className={[
-            "absolute top-2 right-2 rounded-full p-2 shadow-md border transition",
-            fav
-              ? "text-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
-              : "text-gray-700 bg-white/95 hover:bg-white dark:bg-gray-900 dark:text-slate-200",
-            "border-gray-200 dark:border-gray-700",
+            "btn-outline p-2 rounded-full inline-flex items-center justify-center",
+            fav ? "text-[#f95d9b] border-[#f95d9b]" : "",
             pending ? "cursor-wait opacity-75" : "",
             className,
           ].join(" ")}
         >
-          {heart}
+          <HeartIcon filled={fav} size={18} />
         </button>
       </>
     );
   }
 
+  // Non-compact = pill with label (matches btn-outline everywhere else)
   return (
     <>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
@@ -282,7 +281,43 @@ export default function FavoriteButton(props: Props) {
       </span>
       <button
         type="button"
-        onClick={onClick}
+        onClick={async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!targetId) return;
+
+          const now = Date.now();
+          if (now < cooldownRef.current || pending) return;
+          cooldownRef.current = now + 600;
+
+          setPending(true);
+          const prev = fav;
+          const next = !prev;
+          setFav(next); // optimistic
+
+          try {
+            const confirmed = await callToggle(targetId);
+            setFav(confirmed);
+
+            toast.dismiss();
+            if (confirmed) {
+              toast.success("Saved to favorites");
+              trackClient("favorite_add", { id: targetId, type: targetType });
+              announce(`${labelPrefix} saved to favorites`);
+            } else {
+              toast("Removed from favorites", { icon: "💔" });
+              trackClient("favorite_remove", { id: targetId, type: targetType });
+              announce(`${labelPrefix} removed from favorites`);
+            }
+          } catch {
+            setFav(prev);
+            toast.dismiss();
+            toast.error("Could not update favorites. Please try again.");
+            announce(`Failed to update favorites for ${labelPrefix}`);
+          } finally {
+            if (mountedRef.current) setPending(false);
+          }
+        }}
         aria-label={aria}
         aria-pressed={fav}
         aria-busy={pending}
@@ -290,17 +325,14 @@ export default function FavoriteButton(props: Props) {
         title={title}
         data-state={fav ? "on" : "off"}
         className={[
-          "rounded-lg border px-5 py-3 font-semibold flex items-center gap-2 transition",
-          fav
-            ? "text-[#f95d9b] border-[#f95d9b] bg-white dark:bg-gray-900 dark:text-pink-400"
-            : "hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700",
-          "border-gray-300 text-gray-900 dark:text-slate-100",
+          "btn-outline inline-flex items-center gap-2",
+          fav ? "text-[#f95d9b] border-[#f95d9b]" : "",
           pending ? "opacity-75 cursor-wait" : "",
           className,
         ].join(" ")}
       >
-        {heart}
-        {fav ? "Saved" : "Save"}
+        <HeartIcon filled={fav} size={20} />
+        {fav ? "Favorited" : "Favorite"}
       </button>
     </>
   );

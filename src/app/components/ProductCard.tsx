@@ -1,46 +1,60 @@
-// src/app/components/ProductCard.tsx
+// src/app/components/ProductGrid.tsx
 "use client";
 
-import React, { memo, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
+import ProductCard from "@/app/components/ProductCard";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
-// ⬇️ Use a RELATIVE import to avoid resolving a page component by mistake
-import DeleteListingButton from "./DeleteListingButton";
 
-type Props = {
+/* --------------------------------- types --------------------------------- */
+
+type Mode = "products" | "all";
+
+type BaseItem = {
   id: string;
   name: string;
-  price?: number | null;
-  image?: string | null;
-  featured?: boolean;
-  /** Optional small meta text, e.g. "Electronics • Phones & Tablets" */
-  subtitle?: string | null;
-  /** 0-based position in the feed, used for analytics + image priority */
-  position?: number;
-  /** Allow route prefetching (default true) */
-  prefetch?: boolean;
-  className?: string;
-
-  /** Dashboard mode: show Edit/Delete controls */
-  ownerControls?: boolean;
-  /** Optional custom edit href (fallback shown below) */
-  editHref?: string;
-  /** Called after a successful delete (e.g., remove from list) */
-  onDeletedAction?: () => void;
+  price: number | null;
+  image: string | null;
+  featured?: boolean | null;
+  createdAt?: string;
 };
 
-/* ----------------------- Utils ----------------------- */
+type ProductItem = BaseItem;
+type MixedItem = BaseItem & { type: "product" | "service" };
 
-function formatKES(value?: number | null) {
-  if (!value || value <= 0) return "Contact for price";
-  try {
-    return `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(value)}`;
-  } catch {
-    return `KES ${Number(value).toLocaleString("en-KE")}`;
-  }
-}
+type Props =
+  | {
+      mode?: "products";
+      items: ProductItem[];
+      loading?: boolean;
+      error?: string | null;
+      hasMore?: boolean;
+      onLoadMoreAction?: () => void | Promise<void>;
+      pageSize?: number;
+      prefetchCards?: boolean;
+      className?: string;
+      emptyText?: string;
+      useSentinel?: boolean;
+      showLoadMoreButton?: boolean;
+    }
+  | {
+      mode: "all";
+      items: MixedItem[];
+      loading?: boolean;
+      error?: string | null;
+      hasMore?: boolean;
+      onLoadMoreAction?: () => void | Promise<void>;
+      pageSize?: number;
+      prefetchCards?: boolean;
+      className?: string;
+      emptyText?: string;
+      useSentinel?: boolean;
+      showLoadMoreButton?: boolean;
+    };
+
+/* --------------------------------- utils --------------------------------- */
+
+const PLACEHOLDER = "/placeholder/default.jpg";
 
 // Tiny 1×1 transparent PNG as last-resort blur
 const FALLBACK_BLUR =
@@ -58,194 +72,170 @@ function getBlurDataURL(width = 640, height = 360): string {
   return FALLBACK_BLUR;
 }
 
-/* ----------------------- Analytics ----------------------- */
-
-function trackClient(event: string, payload?: Record<string, unknown>) {
-  // eslint-disable-next-line no-console
-  console.log("[qs:track]", event, payload);
-  if (typeof window !== "undefined" && "CustomEvent" in window) {
-    window.dispatchEvent(new CustomEvent("qs:track", { detail: { event, payload } }));
+function fmtKES(n: number | null | undefined) {
+  if (typeof n !== "number" || n <= 0) return "Contact for price";
+  try {
+    return `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n)}`;
+  } catch {
+    return `KES ${n}`;
   }
 }
 
-/* ----------------------- Component ----------------------- */
+/* -------------------------- simple mixed item tile ------------------------- */
 
-function ProductCardImpl({
-  id,
-  name,
-  price,
-  image,
-  featured = false,
-  subtitle = null,
-  position,
-  prefetch = true,
-  className = "",
-  ownerControls = false,
-  editHref,
-  onDeletedAction,
-}: Props) {
-  const router = useRouter();
-  const href = useMemo(() => `/product/${encodeURIComponent(id)}`, [id]);
-  // Sensible default for editing products. Override via `editHref` if your app uses a different route.
-  const hrefEdit = editHref ?? `/product/${encodeURIComponent(id)}/edit`;
+function MixedTile({
+  it,
+  index,
+  prefetch,
+}: {
+  it: MixedItem;
+  index: number;
+  prefetch: boolean;
+}) {
+  const href = it.type === "service" ? `/service/${it.id}` : `/product/${it.id}`;
+  const url = it.image || PLACEHOLDER;
 
-  const url = image || "/placeholder/default.jpg";
-  const anchorRef = useRef<HTMLAnchorElement | null>(null);
-  const seenRef = useRef(false);
+  const priority = index < 8;
+  const blurProps =
+    priority
+      ? ({ placeholder: "blur", blurDataURL: getBlurDataURL(640, 360) } as const)
+      : ({ placeholder: "empty" } as const);
 
-  // Make above-the-fold images priority for better LCP (e.g., first 8)
-  const priority = typeof position === "number" ? position < 8 : false;
+  const alt =
+    it.name
+      ? `${it.type === "service" ? "Service" : "Product"} image for ${it.name}`
+      : it.type === "service"
+      ? "Service image"
+      : "Product image";
 
-  // One-time product_view when first visible
-  useEffect(() => {
-    if (!anchorRef.current || seenRef.current || typeof window === "undefined") return;
-
-    const el = anchorRef.current;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && !seenRef.current) {
-            seenRef.current = true;
-            trackClient("product_view", { id, name, price, position });
-            io.disconnect();
-            break;
-          }
-        }
-      },
-      { rootMargin: "0px 0px -10% 0px" }
-    );
-
-    io.observe(el);
-    return () => io.disconnect();
-  }, [id, name, price, position]);
-
-  // Smart route prefetch: IO + hover/focus (best-effort)
-  useEffect(() => {
-    if (!prefetch || !anchorRef.current) return;
-    const el = anchorRef.current;
-    let done = false;
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && !done) {
-            done = true;
-            try {
-              // App Router: Link prefetches, but this is a hint when visible
-              (router as any)?.prefetch?.(href);
-            } catch {}
-            io.disconnect();
-            break;
-          }
-        }
-      },
-      { rootMargin: "300px" }
-    );
-
-    io.observe(el);
-    return () => io.disconnect();
-  }, [href, prefetch, router]);
-
-  const hoverPrefetch = useCallback(() => {
-    if (!prefetch) return;
-    try {
-      (router as any)?.prefetch?.(href);
-    } catch {}
-  }, [href, prefetch, router]);
-
-  const onClick = useCallback(() => {
-    trackClient("product_click", { id, name, price, position, href });
-  }, [id, name, price, position, href]);
-
-  const priceText = useMemo(() => formatKES(price), [price]);
-
-  // ✅ Only pass blurDataURL when using "blur" placeholder
-  const blurProps = useMemo<
-    | { placeholder: "blur"; blurDataURL: string }
-    | { placeholder: "empty" }
-  >(
-    () =>
-      priority
-        ? { placeholder: "blur", blurDataURL: getBlurDataURL(640, 360) }
-        : { placeholder: "empty" },
-    [priority]
-  );
-
+  // Prefer border-only (no heavy shadow) to match lighter glass audit
   return (
-    <div
-      className={[
-        "group relative block rounded-xl border bg-white p-3 shadow-sm will-change-transform",
-        "border-black/5 hover:border-black/10 hover:shadow-md",
-        "dark:bg-gray-900 dark:border-white/10 dark:hover:border-white/15",
-        className,
-      ].join(" ")}
-      data-product-id={id}
+    <Link
+      href={href}
+      prefetch={prefetch}
+      className="group"
+      aria-label={`${it.type === "service" ? "Service" : "Product"}: ${it.name ?? "Listing"}`}
+      title={it.name ?? undefined}
     >
-      {/* Action overlay (owner mode) */}
-      {ownerControls && (
-        <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
-          <Link
-            href={hrefEdit}
-            className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:bg-gray-900"
-            title="Edit product"
-            aria-label="Edit product"
-          >
-            Edit
-          </Link>
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white transition dark:border-white/10 dark:bg-slate-900">
+        {it.featured ? (
+          <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white">
+            Featured
+          </span>
+        ) : null}
 
-          {/* exactOptionalPropertyTypes safe: only pass when defined */}
-          <DeleteListingButton
-            productId={id}
-            label="Delete"
-            {...(onDeletedAction ? { afterDeleteAction: onDeletedAction } : {})}
-          />
-        </div>
-      )}
-
-      {/* Featured badge */}
-      {featured && (
-        <span
-          className="absolute left-3 top-3 z-10 select-none rounded-md bg-[#161748] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white shadow"
-          aria-hidden="true"
-        >
-          FEATURED
-        </span>
-      )}
-
-      {/* Clickable media/title area */}
-      <Link
-        href={href}
-        prefetch={prefetch}
-        onMouseEnter={hoverPrefetch}
-        onFocus={hoverPrefetch}
-        onClick={onClick}
-        ref={anchorRef}
-        title={name}
-      >
-        <div className="relative h-40 w-full overflow-hidden rounded-lg border border-white/10 dark:border-white/10">
+        <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
           <SmartImage
             src={url}
-            alt={name || "Product image"}
+            alt={alt}
             fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
             priority={priority}
             {...blurProps}
           />
         </div>
 
-        <div className="mt-2 space-y-1">
-          <div className="line-clamp-1 font-medium text-gray-900 dark:text-gray-100">{name}</div>
-          {subtitle ? (
-            <div className="line-clamp-1 text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>
-          ) : null}
-          <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{priceText}</div>
+        <div className="p-3">
+          <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-slate-100">{it.name}</h3>
+          <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">{fmtKES(it.price)}</p>
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+            {it.type === "service" ? "Service" : "Product"}
+          </p>
         </div>
-      </Link>
-    </div>
+      </div>
+    </Link>
   );
 }
 
-(ProductCardImpl as any).displayName = "ProductCard";
+/* ---------------------------------- cmp ---------------------------------- */
 
-export default memo(ProductCardImpl);
+export default function ProductGrid(props: Props) {
+  const {
+    mode = "products",
+    items,
+    loading = false,
+    error = null,
+    hasMore = false,
+    onLoadMoreAction,
+    pageSize = 24,
+    prefetchCards = true,
+    className = "",
+    emptyText = "No items found. Try adjusting filters.",
+    useSentinel = true,
+    showLoadMoreButton = true,
+  } = props as any;
+
+  const isAll: boolean = mode === "all";
+
+  return (
+    <div className={className}>
+      {/* Grid */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {items.map((p: any, idx: number) =>
+          isAll ? (
+            <MixedTile
+              key={`${(p as MixedItem).type}-${p.id}`}
+              it={p as MixedItem}
+              index={idx}
+              prefetch={prefetchCards}
+            />
+          ) : (
+            <ProductCard
+              key={p.id}
+              {...p}
+              position={idx}
+              prefetch={prefetchCards}
+              // ProductCard already follows the border-first, lighter style after your recent updates
+            />
+          )
+        )}
+
+        {/* Skeletons while loading first page */}
+        {items.length === 0 &&
+          loading &&
+          Array.from({ length: pageSize }).map((_, i) => (
+            <div
+              key={`skeleton-${i}`}
+              className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900"
+            >
+              <div className="h-40 w-full rounded-lg bg-gray-200 dark:bg-slate-800 animate-pulse" />
+              <div className="mt-2 h-4 w-3/4 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
+              <div className="mt-1 h-4 w-1/2 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
+            </div>
+          ))}
+      </div>
+
+      {/* Status / errors / empty */}
+      <div className="mt-4">
+        {error ? (
+          <div className="text-sm text-red-600">{error}</div>
+        ) : !loading && items.length === 0 ? (
+          <div className="text-sm text-gray-600 dark:text-slate-300">{emptyText}</div>
+        ) : null}
+      </div>
+
+      {/* Load more button */}
+      {showLoadMoreButton && hasMore && (
+        <div className="mt-4 flex items-center justify-center">
+          <button
+            onClick={() => onLoadMoreAction && onLoadMoreAction()}
+            disabled={loading}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 disabled:opacity-60"
+          >
+            {loading ? "Loading…" : "Load more"}
+          </button>
+        </div>
+      )}
+
+      {/* Optional sentinel for auto-load (parent controls when to fetch) */}
+      {useSentinel && hasMore && !loading && (
+        <div
+          // Consumers can wrap this div with their own IntersectionObserver if needed
+          data-grid-sentinel
+          className="h-1 w-full"
+        />
+      )}
+    </div>
+  );
+}

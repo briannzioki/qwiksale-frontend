@@ -10,12 +10,24 @@ import {
   useState,
 } from "react";
 import SuggestInput from "@/app/components/SuggestInput";
+import IconButton from "@/app/components/IconButton";
+import NumberInputNoWheel from "@/app/components/ui/NumberInputNoWheel";
 
 export type Filters = {
+  /** Search keywords */
   query: string;
+
+  /** Top-level taxonomy */
+  category?: string;
+  subcategory?: string;
+
+  /** “More filters” */
+  brand?: string;
   condition: "all" | "brand new" | "pre-owned";
   minPrice?: number | "";
   maxPrice?: number | "";
+
+  /** Always visible */
   sort: "newest" | "price_asc" | "price_desc" | "featured";
   verifiedOnly?: boolean;
 };
@@ -159,6 +171,9 @@ export default function FiltersBar({
     clearDebounce();
     const base: Filters = {
       query: "",
+      category: "",
+      subcategory: "",
+      brand: "",
       condition: "all",
       minPrice: "",
       maxPrice: "",
@@ -184,6 +199,10 @@ export default function FiltersBar({
   const idMax = useId();
   const idVerified = useId();
   const idRangeHint = useId();
+  const idCategory = useId();
+  const idSubcategory = useId();
+  const idBrand = useId();
+  const idDetails = useId(); // controls the <details> “More filters”
 
   const placeholder = useMemo(() => "Search by name, brand, category…", []);
 
@@ -211,6 +230,55 @@ export default function FiltersBar({
   const conditionValue = (condition ?? "all") as Filters["condition"];
   const sortValue = (sort ?? "newest") as Filters["sort"];
 
+  const inputBase =
+    "w-full rounded-lg px-3 py-2 " +
+    "text-gray-900 dark:text-slate-100 " +
+    "bg-white dark:bg-slate-800 " +
+    "border border-gray-200 dark:border-white/10 " + // toned-down borders
+    "placeholder:text-gray-500 dark:placeholder:text-slate-400 " +
+    "focus:outline-none focus:ring-2 focus:ring-[#39a0ca] disabled:opacity-60";
+
+  const selectBase =
+    "w-full rounded-lg px-3 py-2 " +
+    "text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-800 " +
+    "border border-gray-200 dark:border-white/10";
+
+  const buttonBase =
+    "px-3 md:px-4 py-2 rounded-lg " +
+    "bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 " +
+    "border border-gray-200 dark:border-white/10 " +
+    "hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-60";
+
+  // ----- Mobile Refine & Sort via IconButtons -----
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const sortRef = useRef<HTMLSelectElement | null>(null);
+  const [refineOpen, setRefineOpen] = useState(false);
+
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    const onToggle = () => setRefineOpen(el.open);
+    el.addEventListener("toggle", onToggle);
+    return () => el.removeEventListener("toggle", onToggle);
+  }, []);
+
+  const toggleRefine = useCallback(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    el.open = !el.open;
+    if (el.open) {
+      // focus first interactive control for a11y
+      const first = el.querySelector<HTMLElement>("input, select, button");
+      first?.focus();
+    }
+  }, []);
+
+  const focusSort = useCallback(() => {
+    sortRef.current?.focus();
+    // Optionally nudge a small highlight
+    sortRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, []);
+
   return (
     <div
       className={`card-surface w-full px-4 py-3 ${className}`}
@@ -218,9 +286,29 @@ export default function FiltersBar({
       aria-label="Listing filters"
       aria-live="polite"
     >
-      <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
+      {/* Mobile quick actions */}
+      <div className="mb-2 flex items-center gap-2 md:hidden">
+        <IconButton
+          icon="refine"
+          labelText="Refine"
+          variant="outline"
+          onClick={toggleRefine}
+          aria-controls={idDetails}
+          aria-expanded={refineOpen}
+        />
+        <IconButton
+          icon="sort"
+          labelText="Sort"
+          variant="outline"
+          onClick={focusSort}
+          aria-controls={idSort}
+        />
+      </div>
+
+      {/* Row 1: Search / Category / Subcategory + Sort + (optional) Verified */}
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-12 md:items-end">
         {/* Search */}
-        <div className="flex-1 flex gap-2">
+        <div className="md:col-span-4 flex gap-2">
           <label htmlFor={idSearch} className="sr-only">
             Search
           </label>
@@ -229,26 +317,16 @@ export default function FiltersBar({
           {suggestEndpoint ? (
             <div className="w-full">
               <SuggestInput
-                /* Use a deterministic name so our '/' shortcut can query by [name] */
                 name={idSearch}
                 ariaLabel="Search"
                 endpoint={suggestEndpoint}
                 value={qLocal}
                 onChangeAction={async (next) => {
                   setQLocal(next);
-                  // debounced/applyNow will handle notifying the parent
                 }}
                 placeholder={placeholder}
                 disabled={disabled}
-                inputClassName="
-                  w-full px-4 py-2 rounded-lg
-                  text-gray-900 dark:text-slate-100
-                  placeholder:text-gray-500 dark:placeholder:text-slate-400
-                  bg-white dark:bg-slate-800
-                  border border-gray-300 dark:border-slate-700
-                  focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
-                  disabled:opacity-60
-                "
+                inputClassName={inputBase}
               />
             </div>
           ) : (
@@ -264,29 +342,14 @@ export default function FiltersBar({
               disabled={disabled}
               autoCorrect="on"
               spellCheck
-              className="
-                w-full px-4 py-2 rounded-lg
-                text-gray-900 dark:text-slate-100
-                placeholder:text-gray-500 dark:placeholder:text-slate-400
-                bg-white dark:bg-slate-800
-                border border-gray-300 dark:border-slate-700
-                focus:outline-none focus:ring-2 focus:ring-[#39a0ca]
-                disabled:opacity-60
-              "
+              className={inputBase}
             />
           )}
 
           <button
             onClick={() => void applyNow()}
             disabled={disabled}
-            className="
-              px-3 md:px-4 py-2 rounded-lg
-              bg-white dark:bg-slate-800
-              text-gray-900 dark:text-slate-100
-              border border-gray-300 dark:border-slate-700
-              hover:bg-gray-50 dark:hover:bg-slate-700
-              disabled:opacity-60
-            "
+            className={buttonBase}
             title="Search"
           >
             Search
@@ -297,138 +360,77 @@ export default function FiltersBar({
               update({ query: "" }, "query");
             }}
             disabled={disabled || !qLocal}
-            className="
-              px-3 md:px-4 py-2 rounded-lg
-              bg-white dark:bg-slate-800
-              text-gray-900 dark:text-slate-100
-              border border-gray-300 dark:border-slate-700
-              hover:bg-gray-50 dark:hover:bg-slate-700
-              disabled:opacity-60
-            "
+            className={buttonBase}
             title="Clear search"
           >
             Clear
           </button>
         </div>
 
-        {/* Controls */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 w-full lg:w-auto">
-          <div>
-            <label htmlFor={idCond} className="sr-only">
-              Condition
-            </label>
-            <select
-              id={idCond}
-              value={conditionValue}
-              onChange={(e) =>
-                update({ condition: e.target.value as Filters["condition"] }, "condition")
-              }
-              className="
-                w-full rounded-lg px-3 py-2
-                text-gray-900 dark:text-slate-100
-                bg-white dark:bg-slate-800
-                border border-gray-300 dark:border-slate-700
-              "
-              title="Condition"
-              disabled={disabled}
-            >
-              <option value="all">All Conditions</option>
-              <option value="brand new">Brand New</option>
-              <option value="pre-owned">Pre-Owned</option>
-            </select>
-          </div>
+        {/* Category */}
+        <div className="md:col-span-3">
+          <label htmlFor={idCategory} className="sr-only">
+            Category
+          </label>
+          <input
+            id={idCategory}
+            type="text"
+            value={value.category ?? ""}
+            onChange={(e) => update({ category: e.target.value }, "category")}
+            placeholder="Category"
+            disabled={disabled}
+            className={inputBase}
+          />
+        </div>
 
-          <div>
-            <label htmlFor={idSort} className="sr-only">
-              Sort
-            </label>
-            <select
-              id={idSort}
-              value={sortValue}
-              onChange={(e) => update({ sort: e.target.value as Filters["sort"] }, "sort")}
-              className="
-                w-full rounded-lg px-3 py-2
-                text-gray-900 dark:text-slate-100
-                bg-white dark:bg-slate-800
-                border border-gray-300 dark:border-slate-700
-              "
-              title="Sort"
-              disabled={disabled}
-            >
-              <option value="newest">Newest</option>
-              <option value="featured">Featured first</option>
-              <option value="price_asc">Price: Low → High</option>
-              <option value="price_desc">Price: High → Low</option>
-            </select>
-          </div>
+        {/* Subcategory */}
+        <div className="md:col-span-3">
+          <label htmlFor={idSubcategory} className="sr-only">
+            Subcategory
+          </label>
+          <input
+            id={idSubcategory}
+            type="text"
+            value={value.subcategory ?? ""}
+            onChange={(e) => update({ subcategory: e.target.value }, "subcategory")}
+            placeholder="Subcategory"
+            disabled={disabled}
+            className={inputBase}
+          />
+        </div>
 
-          <div>
-            <label htmlFor={idMin} className="sr-only">
-              Min price
-            </label>
-            <input
-              id={idMin}
-              type="number"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              value={minPrice === "" || minPrice == null ? "" : Number(minPrice)}
-              onChange={(e) => update({ minPrice: parsePrice(e.target.value) }, "minPrice")}
-              onBlur={(e) => update({ minPrice: parsePrice(e.target.value) }, "minPrice")}
-              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-              placeholder="Min KES"
-              className={`
-                w-full rounded-lg px-3 py-2
-                text-gray-900 dark:text-slate-100
-                bg-white dark:bg-slate-800
-                border border-gray-300 dark:border-slate-700
-                ${rangeInvalid ? "border-red-400 focus:ring-red-300" : ""}
-              `}
-              title="Min price"
-              aria-invalid={rangeInvalid}
-              aria-describedby={rangeInvalid ? idRangeHint : undefined}
-              disabled={disabled}
-            />
-          </div>
+        {/* Sort */}
+        <div className="md:col-span-2">
+          <label htmlFor={idSort} className="sr-only">
+            Sort
+          </label>
+          <select
+            id={idSort}
+            ref={sortRef}
+            value={sortValue}
+            onChange={(e) => update({ sort: e.target.value as Filters["sort"] }, "sort")}
+            className={selectBase}
+            title="Sort"
+            disabled={disabled}
+          >
+            <option value="newest">Newest</option>
+            <option value="featured">Featured first</option>
+            <option value="price_asc">Price: Low → High</option>
+            <option value="price_desc">Price: High → Low</option>
+          </select>
+        </div>
 
-          <div>
-            <label htmlFor={idMax} className="sr-only">
-              Max price
-            </label>
-            <input
-              id={idMax}
-              type="number"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              value={maxPrice === "" || maxPrice == null ? "" : Number(maxPrice)}
-              onChange={(e) => update({ maxPrice: parsePrice(e.target.value) }, "maxPrice")}
-              onBlur={(e) => update({ maxPrice: parsePrice(e.target.value) }, "maxPrice")}
-              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-              placeholder="Max KES"
-              className={`
-                w-full rounded-lg px-3 py-2
-                text-gray-900 dark:text-slate-100
-                bg-white dark:bg-slate-800
-                border border-gray-300 dark:border-slate-700
-                ${rangeInvalid ? "border-red-400 focus:ring-red-300" : ""}
-              `}
-              title="Max price"
-              aria-invalid={rangeInvalid}
-              aria-describedby={rangeInvalid ? idRangeHint : undefined}
-              disabled={disabled}
-            />
-          </div>
-
-          {showVerifiedToggle && (
+        {/* Verified toggle (optional) */}
+        {showVerifiedToggle && (
+          <div className="md:col-span-2 md:col-start-11 md:row-start-1 md:justify-self-end hidden md:block">
             <label
               htmlFor={idVerified}
               className="
                 inline-flex items-center gap-2 rounded-lg
                 bg-white dark:bg-slate-800
                 text-gray-900 dark:text-slate-100
-                border border-gray-300 dark:border-slate-700
-                px-3 py-2 text-sm select-none
+                border border-gray-200 dark:border-white/10
+                px-3 py-2 text-sm select-none w-full justify-center
               "
               title="Featured (verified) listings only"
             >
@@ -442,30 +444,133 @@ export default function FiltersBar({
               />
               Featured only
             </label>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {rangeInvalid && (
-        <p id={idRangeHint} className="mt-2 text-xs text-red-600">
-          Min price is greater than max price. Adjust the range to apply a valid filter.
-        </p>
-      )}
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          onClick={() => void reset()}
-          disabled={disabled}
-          className="
-            rounded-lg border px-3 py-1.5 text-sm
-            bg-white dark:bg-slate-800
-            text-gray-900 dark:text-slate-100
-            border-gray-300 dark:border-slate-700
-            hover:bg-gray-50 dark:hover:bg-slate-700
-            disabled:opacity-60
-          "
-          title="Reset all filters"
+      {/* Row 2: More filters (Brand / Condition / Min / Max) */}
+      <div className="mt-2">
+        <details
+          ref={detailsRef}
+          id={idDetails}
+          className="group rounded-xl border border-gray-200 dark:border-white/10 bg-white/70 dark:bg-white/[0.03]"
         >
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm text-gray-700 dark:text-slate-200 flex items-center justify-between">
+            <span className="inline-flex items-center gap-2">
+              More filters
+              <span className="text-gray-500 dark:text-slate-400 hidden md:inline">
+                (brand, condition, price range)
+              </span>
+            </span>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              className="transition-transform duration-200 group-open:rotate-180 text-gray-500 dark:text-slate-400"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M12 15.5l-7-7 1.4-1.4L12 12.7l5.6-5.6L19 8.5z" />
+            </svg>
+          </summary>
+
+          <div className="px-3 pb-3 pt-1 grid grid-cols-1 gap-2 md:grid-cols-12">
+            {/* Brand */}
+            <div className="md:col-span-3">
+              <label htmlFor={idBrand} className="sr-only">
+                Brand
+              </label>
+              <input
+                id={idBrand}
+                type="text"
+                value={value.brand ?? ""}
+                onChange={(e) => update({ brand: e.target.value }, "brand")}
+                placeholder="Brand (e.g., Samsung)"
+                disabled={disabled}
+                className={inputBase}
+              />
+            </div>
+
+            {/* Condition */}
+            <div className="md:col-span-3">
+              <label htmlFor={idCond} className="sr-only">
+                Condition
+              </label>
+              <select
+                id={idCond}
+                value={conditionValue}
+                onChange={(e) =>
+                  update({ condition: e.target.value as Filters["condition"] }, "condition")
+                }
+                className={selectBase}
+                title="Condition"
+                disabled={disabled}
+              >
+                <option value="all">All conditions</option>
+                <option value="brand new">Brand New</option>
+                <option value="pre-owned">Pre-Owned</option>
+              </select>
+            </div>
+
+            {/* Price min */}
+            <div className="md:col-span-3">
+              <label htmlFor={idMin} className="sr-only">
+                Min price
+              </label>
+              <NumberInputNoWheel
+                id={idMin}
+                min={0}
+                step={1}
+                inputMode="numeric"
+                value={minPrice === "" || minPrice == null ? "" : Number(minPrice)}
+                onChange={(e) => update({ minPrice: parsePrice(e.currentTarget.value) }, "minPrice")}
+                onBlur={(e) => update({ minPrice: parsePrice(e.currentTarget.value) }, "minPrice")}
+                placeholder="Min KES"
+                className={`${inputBase} ${rangeInvalid ? "border-red-400 focus:ring-red-300" : ""}`}
+                title="Min price"
+                aria-invalid={rangeInvalid}
+                aria-describedby={rangeInvalid ? idRangeHint : undefined}
+                disabled={disabled}
+              />
+            </div>
+
+            {/* Price max */}
+            <div className="md:col-span-3">
+              <label htmlFor={idMax} className="sr-only">
+                Max price
+              </label>
+              <NumberInputNoWheel
+                id={idMax}
+                min={0}
+                step={1}
+                inputMode="numeric"
+                value={maxPrice === "" || maxPrice == null ? "" : Number(maxPrice)}
+                onChange={(e) => update({ maxPrice: parsePrice(e.currentTarget.value) }, "maxPrice")}
+                onBlur={(e) => update({ maxPrice: parsePrice(e.currentTarget.value) }, "maxPrice")}
+                placeholder="Max KES"
+                className={`${inputBase} ${rangeInvalid ? "border-red-400 focus:ring-red-300" : ""}`}
+                title="Max price"
+                aria-invalid={rangeInvalid}
+                aria-describedby={rangeInvalid ? idRangeHint : undefined}
+                disabled={disabled}
+              />
+            </div>
+
+            {rangeInvalid && (
+              <p id={idRangeHint} className="md:col-span-12 text-xs text-red-600">
+                Min price is greater than max price. Adjust the range to apply a valid filter.
+              </p>
+            )}
+          </div>
+        </details>
+      </div>
+
+      {/* Footer actions */}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button onClick={() => void applyNow()} disabled={disabled} className={buttonBase} title="Apply">
+          Apply filters
+        </button>
+        <button onClick={() => void reset()} disabled={disabled} className={buttonBase} title="Reset all">
           Reset all
         </button>
       </div>

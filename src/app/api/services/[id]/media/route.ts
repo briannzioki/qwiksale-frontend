@@ -1,3 +1,4 @@
+// src/app/api/services/[id]/media/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,7 +9,12 @@ import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
 type PatchBody = {
-  items?: Array<{ id?: string; url?: string; isCover?: boolean; sort?: number | null | undefined }>;
+  items?: Array<{
+    id?: string;
+    url?: string;
+    isCover?: boolean;
+    sort?: number | null | undefined;
+  }>;
 };
 
 function noStore(json: unknown, init?: ResponseInit) {
@@ -20,7 +26,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-// schema-tolerant accessor in case the model name is different
+// schema-tolerant accessor in case the model name differs
 function getServiceModel() {
   const anyPrisma = prisma as any;
   const svc =
@@ -32,14 +38,41 @@ function getServiceModel() {
   return svc && typeof svc.findUnique === "function" ? svc : null;
 }
 
-/* ---------- allowlist (match create routes) ---------- */
-const ALLOWED_IMAGE_HOSTS = [
-  "res.cloudinary.com",
-  "images.unsplash.com",
-] as const;
+/* ---------- Allowlist (configurable; matches create routes) ---------- */
+const RAW_HOSTS =
+  process.env["NEXT_PUBLIC_IMAGE_HOSTS"] ||
+  "res.cloudinary.com,images.unsplash.com";
+
+const ALLOW_ANY_HTTPS =
+  process.env["NEXT_PUBLIC_IMAGE_ALLOW_ANY_HTTPS"] === "1" ||
+  process.env["NEXT_PUBLIC_IMAGE_ALLOW_ANY_HTTPS"] === "true";
+
+const EXTRA_BASES = [
+  process.env["AWS_S3_PUBLIC_URL"] || "",
+  process.env["NEXT_PUBLIC_CDN_BASE"] || "",
+  process.env["R2_PUBLIC_URL"] || process.env["CLOUDFLARE_R2_PUBLIC_URL"] || "",
+].filter(Boolean);
+
+const EXTRA_HOSTS: string[] = [];
+for (const base of EXTRA_BASES) {
+  try {
+    const u = new URL(base);
+    if (u.hostname) EXTRA_HOSTS.push(u.hostname);
+  } catch {
+    /* ignore */
+  }
+}
+
+const ALLOWED_IMAGE_HOSTS: readonly string[] = [
+  ...RAW_HOSTS.split(",").map((s) => s.trim()).filter(Boolean),
+  ...EXTRA_HOSTS,
+];
 
 function isAllowedHost(hostname: string): boolean {
-  return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  if (ALLOW_ANY_HTTPS) return true;
+  return ALLOWED_IMAGE_HOSTS.some(
+    (h) => hostname === h || hostname.endsWith(`.${h}`)
+  );
 }
 
 function isAllowedUrl(u: string): boolean {
@@ -52,17 +85,17 @@ function isAllowedUrl(u: string): boolean {
   }
 }
 
+const MAX_GALLERY =
+  Math.max(1, Number(process.env["NEXT_PUBLIC_GALLERY_MAX"] || "6")) || 6;
+
 export async function PATCH(
   req: NextRequest,
+  // IMPORTANT: keep params as a Promise to satisfy Next's ParamCheck<RouteContext>
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    let id = "";
-    try {
-      id = ((await context.params)?.id ?? "").trim();
-    } catch {
-      id = "";
-    }
+    const { id: raw } = await context.params; // await the promise param
+    const id = (raw ?? "").trim();
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     const session = await auth().catch(() => null);
@@ -70,7 +103,9 @@ export async function PATCH(
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const Service = getServiceModel();
-    if (!Service) return noStore({ error: "Service model not available" }, { status: 500 });
+    if (!Service) {
+      return noStore({ error: "Service model not available" }, { status: 500 });
+    }
 
     const svc = await Service.findUnique({
       where: { id },
@@ -87,38 +122,37 @@ export async function PATCH(
       return noStore({ error: "Bad request: expected {items: [...]}" }, { status: 400 });
     }
 
-    // Normalize (only http/https), sort, dedupe; drop non-allowlisted
-    const normalized = body.items
+    // Normalize http(s) only, drop disallowed hosts, sort, dedupe by URL.
+    const prepared = body.items
       .map((x, i) => {
         const url = typeof x?.url === "string" ? x.url.trim() : "";
-        const good = url && isAllowedUrl(url);
-        if (!good) return null;
-        const sort = Number.isFinite(x?.sort) && x?.sort !== null ? Number(x!.sort) : i;
-        const isCover = Boolean(x?.isCover);
+        if (!url || !isAllowedUrl(url)) return null;
+        const sort =
+          Number.isFinite(x?.sort) && x?.sort !== null ? Number(x!.sort) : i;
+        const isCover = !!x?.isCover;
         return { url, sort, isCover, i };
       })
       .filter(Boolean) as Array<{ url: string; sort: number; isCover: boolean; i: number }>;
 
-    normalized.sort((a, b) => a.sort - b.sort || a.i - b.i);
+    // server-side ordering: sort by (sort, i), dedupe by URL
+    prepared.sort((a, b) => a.sort - b.sort || a.i - b.i);
 
     const seen = new Set<string>();
     const unique: Array<{ url: string; isCover: boolean }> = [];
-    for (const n of normalized) {
-      if (seen.has(n.url)) continue;
-      seen.add(n.url);
-      unique.push({ url: n.url, isCover: n.isCover });
+    for (const it of prepared) {
+      if (seen.has(it.url)) continue;
+      seen.add(it.url);
+      unique.push({ url: it.url, isCover: it.isCover });
     }
 
-    // Respect explicit cover; else first item is cover
+    // Ensure single cover: explicit cover wins; otherwise first entry is cover.
     const explicitCoverIdx = unique.findIndex((x) => x.isCover);
     const ordered =
       explicitCoverIdx > 0
         ? [unique[explicitCoverIdx]!, ...unique.filter((_, idx) => idx !== explicitCoverIdx)]
         : unique;
 
-    // Cap gallery length to 6 (service gallery limit)
-    const MAX = 6;
-    const gallery = ordered.slice(0, MAX).map((x) => x.url);
+    const gallery = ordered.slice(0, MAX_GALLERY).map((x) => x.url);
     const coverUrl = gallery[0] ?? null;
 
     await Service.update({
@@ -134,6 +168,9 @@ export async function PATCH(
       revalidatePath("/");
       revalidatePath("/services");
       revalidatePath(`/service/${id}`);
+      revalidatePath(`/service/${id}/edit`);
+      revalidatePath(`/service-listing/${id}`); // store alias
+      revalidatePath(`/dashboard`);
     } catch {}
 
     return noStore({ ok: true, cover: coverUrl, gallery });

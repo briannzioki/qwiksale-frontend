@@ -1,4 +1,3 @@
-// src/app/api/services/suggest/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -90,12 +89,12 @@ export async function GET(request: Request) {
 
     const corpus: Suggestion[] = [];
 
-    // 1) Pull recent ACTIVE service names if the model exists
+    // 1) Pull recent ACTIVE service names, tolerant to schema
     try {
       const Service = getServiceModel();
       if (Service) {
         const rows = await Service.findMany({
-          where: { status: "ACTIVE", name: { not: null } },
+          where: { status: "ACTIVE", name: { not: null } }, // <-- fixed
           select: { name: true },
           orderBy: { createdAt: "desc" },
           take: 250,

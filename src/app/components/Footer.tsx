@@ -1,7 +1,10 @@
 // src/app/components/Footer.tsx
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
+import { Button } from "@/app/components/Button";
+import { toast } from "@/app/components/ToasterClient";
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -30,6 +33,55 @@ export default function Footer() {
 
   const linkClass =
     "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 rounded-sm";
+
+  // --- Newsletter state/handlers (client-only) ---
+  const [email, setEmail] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  async function onSubscribe(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+
+    const trimmed = email.trim();
+    // super simple, good-enough validation
+    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed);
+    if (!ok) {
+      toast.error("Enter a valid email address.");
+      return;
+    }
+
+    setBusy(true);
+
+    const endpoint = process.env['NEXT_PUBLIC_NEWSLETTER_POST_URL'];
+    try {
+      if (endpoint) {
+        const r = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ email: trimmed, source: "footer" }),
+        });
+        if (!r.ok) {
+          // try to show server error if present
+          let msg = "Subscription failed.";
+          try {
+            const j = await r.json();
+            if (j?.error) msg = String(j.error);
+          } catch {}
+          throw new Error(msg);
+        }
+      } else {
+        // Simulate latency so the user sees feedback even without backend wiring
+        await new Promise((res) => setTimeout(res, 500));
+      }
+
+      toast.success("Subscribed! We’ll keep you posted.");
+      setEmail("");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not subscribe. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <footer
@@ -65,31 +117,32 @@ export default function Footer() {
               Secure listings • KES pricing • Community moderation
             </p>
 
-            {/* Newsletter (no network call; just UI) */}
-            <form
-              className="mt-4 flex items-stretch gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                // purely cosmetic; wire up to your email provider later
-                alert("Thanks! We’ll keep you posted.");
-              }}
-              aria-label="Subscribe to updates"
-              noValidate
-            >
+            {/* Newsletter */}
+            <form className="mt-4 flex items-stretch gap-2" onSubmit={onSubscribe} noValidate>
+              <label htmlFor="newsletter-email" className="sr-only">
+                Email address
+              </label>
               <input
+                id="newsletter-email"
                 type="email"
                 inputMode="email"
                 placeholder="Email for deals & tips"
-                className="w-full rounded-lg border px-3 py-2 bg-white/80 dark:bg-slate-900/70 border-gray-300 dark:border-slate-700 text-gray-900 dark:text-slate-100"
+                className="w-full rounded-lg border px-3 py-2 bg-white/80 dark:bg-slate-900/70 border-gray-300 dark:border-slate-700 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 ring-focus"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 aria-label="Email address"
-                required
+                disabled={busy}
+                autoComplete="email"
               />
-              <button
-                className="rounded-lg bg-[#161748] text-white px-3 py-2 font-semibold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#161748]"
+              <Button
                 type="submit"
+                size="sm"
+                loading={busy}
+                aria-disabled={busy || undefined}
+                title={busy ? "Subscribing…" : "Subscribe to newsletter"}
               >
                 Subscribe
-              </button>
+              </Button>
             </form>
 
             {/* Trust row */}
@@ -111,27 +164,27 @@ export default function Footer() {
             <div className="font-semibold text-gray-900 dark:text-slate-100">Company</div>
             <ul className="space-y-2 text-gray-700 dark:text-slate-400">
               <li>
-                <Link className={linkClass} href="/about">
+                <Link className={linkClass} href="/about" prefetch={false}>
                   About
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/contact">
+                <Link className={linkClass} href="/contact" prefetch={false}>
                   Contact
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/help">
+                <Link className={linkClass} href="/help" prefetch={false}>
                   Help Center
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/report">
+                <Link className={linkClass} href="/report" prefetch={false}>
                   Report a Problem
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/careers">
+                <Link className={linkClass} href="/careers" prefetch={false}>
                   Careers
                 </Link>
               </li>
@@ -143,22 +196,22 @@ export default function Footer() {
             <div className="font-semibold text-gray-900 dark:text-slate-100">Legal</div>
             <ul className="space-y-2 text-gray-700 dark:text-slate-400">
               <li>
-                <Link className={linkClass} href="/terms">
+                <Link className={linkClass} href="/terms" prefetch={false}>
                   Terms
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/privacy">
+                <Link className={linkClass} href="/privacy" prefetch={false}>
                   Privacy
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/safety">
+                <Link className={linkClass} href="/safety" prefetch={false}>
                   Safety
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/cookies">
+                <Link className={linkClass} href="/cookies" prefetch={false}>
                   Cookies
                 </Link>
               </li>
@@ -180,11 +233,7 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Home%20%26%20Living"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Home%20%26%20Living" prefetch={false}>
                   Home &amp; Living
                 </Link>
               </li>
@@ -232,7 +281,8 @@ export default function Footer() {
                     href="#"
                     aria-label="Get it on Google Play (coming soon)"
                     className="inline-flex items-center rounded-md border px-2 py-1 text-xs bg-white/70 dark:bg-white/[0.08] border-black/5 dark:border-white/10"
-                    rel="nofollow"
+                    rel="nofollow noopener"
+                    target="_blank"
                   >
                     <PlayIcon className="mr-1" />
                     Google Play
@@ -241,7 +291,8 @@ export default function Footer() {
                     href="#"
                     aria-label="Download on the App Store (coming soon)"
                     className="inline-flex items-center rounded-md border px-2 py-1 text-xs bg-white/70 dark:bg-white/[0.08] border-black/5 dark:border-white/10"
-                    rel="nofollow"
+                    rel="nofollow noopener"
+                    target="_blank"
                   >
                     <AppleIcon className="mr-1" />
                     App Store
@@ -264,7 +315,7 @@ export default function Footer() {
             </span>
           </div>
 
-          {/* Language (non-functional placeholder) */}
+          {/* Language (placeholder) */}
           <div className="flex items-center gap-2 text-gray-600 dark:text-slate-400">
             <GlobeIcon />
             <label htmlFor="lang" className="sr-only">

@@ -26,8 +26,13 @@ const NAV = [
   { href: "/admin/reveals", label: "Reveals", icon: "eye" },
 ] as const;
 
-function Icon({ name, className = "size-4" }: { name: typeof NAV[number]["icon"] | "home"; className?: string }) {
-  // lightweight inline icons (no extra deps)
+function Icon({
+  name,
+  className = "size-4",
+}: {
+  name: (typeof NAV)[number]["icon"] | "home";
+  className?: string;
+}) {
   const paths: Record<string, string> = {
     home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-10.5Z",
     gauge: "M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8.94 1.06A10 10 0 1 0 4.06 14.06l1.42-1.42A8 8 0 1 1 18.52 12l1.42 1.42ZM11 22h2v-5h-2v5Z",
@@ -57,12 +62,10 @@ function NavLink({ href, label, icon }: (typeof NAV)[number]) {
 }
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  // central server gate (no duplication in child pages)
   await requireAdmin("/admin");
 
   return (
     <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Skip link */}
       <a
         href="#admin-main"
         className="sr-only focus:not-sr-only focus:fixed focus:z-[100] focus:top-3 focus:left-3 focus:bg-white focus:text-[#161748] focus:px-3 focus:py-2 focus:rounded-lg focus:shadow"
@@ -70,7 +73,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         Skip to content
       </a>
 
-      {/* Top bar */}
       <header
         className="sticky top-0 z-30 bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow"
         aria-label="Admin header"
@@ -90,7 +92,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               </Link>
               <span className="text-lg font-extrabold tracking-tight">Admin</span>
             </div>
-            {/* mobile menu uses details/summary (no JS) */}
             <details className="lg:hidden">
               <summary className="list-none cursor-pointer rounded-md px-2 py-1 text-sm font-semibold hover:bg-white/15">
                 Menu
@@ -105,19 +106,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
 
-      {/* Body: sticky sidebar + content */}
       <div className="mx-auto max-w-7xl px-6 py-6">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[250px_minmax(0,1fr)]">
           <aside className="hidden lg:block">
             <div className="sticky top-[4.5rem] space-y-4">
-              <nav aria-label="Admin navigation" className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <nav
+                aria-label="Admin navigation"
+                className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              >
                 {NAV.map((item) => (
                   <NavLink key={item.href} {...item} />
                 ))}
               </nav>
               <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                Tip: use the <span className="font-semibold">Dashboard</span> for quick metrics. Listings &amp; Moderation
-                let you feature, unlist, or remove content.
+                Tip: use the <span className="font-semibold">Dashboard</span> for quick metrics. Listings &amp;
+                Moderation let you feature, unlist, or remove content.
               </div>
             </div>
           </aside>

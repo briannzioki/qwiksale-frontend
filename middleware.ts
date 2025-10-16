@@ -13,32 +13,68 @@ function makeUUID(): string {
   return (crypto as any)?.randomUUID?.() ?? `${Date.now().toString(36)}-${makeNonce()}`;
 }
 
+/* ----------------------- Suggest soft limiter (Edge) ---------------------- */
+/** window+limit can be tuned via env if you like */
+const SUGGEST_WINDOW_MS = Number(process.env.SUGGEST_WINDOW_MS ?? 10_000); // 10s
+const SUGGEST_LIMIT = Number(process.env.SUGGEST_LIMIT ?? 12); // 12 reqs per window
+
+type StampStore = Map<string, number[]>;
+const g = globalThis as unknown as { __QS_SUGGEST_RL__?: StampStore };
+const SUGGEST_STORE: StampStore = g.__QS_SUGGEST_RL__ ?? new Map();
+if (!g.__QS_SUGGEST_RL__) g.__QS_SUGGEST_RL__ = SUGGEST_STORE;
+
+function isSuggestApiPath(p: string) {
+  // Matches /api/suggest, /api/search/suggest, /api/foo/bar/suggest, etc.
+  return p.startsWith("/api/") && /(?:^|\/)suggest(?:\/|$)/i.test(p);
+}
+function rlKeyFromReq(req: NextRequest) {
+  const ip =
+    (req as any).ip ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("cf-connecting-ip") ||
+    req.headers.get("x-real-ip") ||
+    "0.0.0.0";
+  const ua = req.headers.get("user-agent") || "ua";
+  return `${ip}::${ua}`;
+}
+
 /* ------------------------- Security / CSP ------------------------- */
-function buildSecurityHeaders(nonce: string, isDev: boolean) {
+function buildSecurityHeaders(nonce: string, isDev: boolean, reportOnly: boolean) {
   const imgSrc = [
     "'self'",
     "data:",
     "blob:",
+    // First-party/user media CDNs (match next.config.ts remotePatterns)
     "https://res.cloudinary.com",
     "https://images.unsplash.com",
     "https://plus.unsplash.com",
     "https://lh3.googleusercontent.com",
+    "https://avatars.githubusercontent.com",
+    "https://images.pexels.com",
+    "https://picsum.photos",
+    // GA beacons sometimes render pixels
     "https://www.google-analytics.com",
   ].join(" ");
 
   const connectSrc = [
     "'self'",
+    // Your APIs / third-parties
     "https://api.resend.com",
     "https://api.africastalking.com",
     "https://api.sandbox.africastalking.com",
+    // Vercel Analytics (historical + current)
     "https://vitals.vercel-insights.com",
-    "ws:",
-    "wss:",
+    "https://vitals.vercel-analytics.com",
+    // Analytics
     "https://plausible.io",
     "https://www.google-analytics.com",
     "https://region1.google-analytics.com",
+    // Google auth/profile
     "https://accounts.google.com",
     "https://www.googleapis.com",
+    // WebSocket (dev HMR etc.)
+    "ws:",
+    "wss:",
   ].join(" ");
 
   const styleSrc = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"].join(" ");
@@ -48,7 +84,7 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
     "'self'",
     `'nonce-${nonce}'`,
     "'strict-dynamic'",
-    ...(isDev ? ["'unsafe-eval'"] : []),
+    ...(isDev ? ["'unsafe-eval'"] : []), // dev only
     "https://plausible.io",
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
@@ -73,7 +109,7 @@ function buildSecurityHeaders(nonce: string, isDev: boolean) {
     ].join("; ") + ";";
 
   const headers = new Headers();
-  headers.set("Content-Security-Policy", csp);
+  headers.set(reportOnly ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy", csp);
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "SAMEORIGIN");
@@ -114,11 +150,11 @@ function isAllowedOrigin(req: NextRequest): boolean {
   const raw = process.env.CORS_ALLOW_ORIGINS || process.env.NEXT_PUBLIC_APP_URL || "";
   const list = raw
     .split(",")
-    .map(s => s.trim())
+    .map((s) => s.trim())
     .filter(Boolean);
 
   // Match against exact origin (scheme+host+port)
-  return list.some(entry => {
+  return list.some((entry) => {
     try {
       return new URL(entry).origin === new URL(origin).origin;
     } catch {
@@ -141,7 +177,6 @@ export default withAuth(
       p.startsWith("/_next") ||
       p.startsWith("/_vercel") ||
       p === "/favicon.ico" ||
-      p.startsWith("/icon") ||
       p === "/robots.txt" ||
       p === "/sitemap.xml" ||
       p.startsWith("/sitemaps") ||
@@ -150,8 +185,9 @@ export default withAuth(
       return NextResponse.next();
     }
 
-    const isPreview = process.env.VERCEL_ENV === "preview";
+    const isPreview = process.env.VERCEL_ENV === "preview" || process.env.NEXT_PUBLIC_NOINDEX === "1";
     const isDev = process.env.NODE_ENV !== "production" || isPreview;
+    const useReportOnly = isPreview || process.env.CSP_REPORT_ONLY === "1";
 
     const accept = (req.headers.get("accept") || "").toLowerCase();
     const isHtmlLike = accept.includes("text/html") || accept.includes("*/*");
@@ -176,6 +212,41 @@ export default withAuth(
       }
     }
 
+    /* -------------------- NEW: soft RL for suggest endpoints -------------------- */
+    if (isApi && isSuggestApiPath(p)) {
+      const key = rlKeyFromReq(req);
+      const now = Date.now();
+      const cutoff = now - SUGGEST_WINDOW_MS;
+
+      const arr = SUGGEST_STORE.get(key) ?? [];
+      // prune old hits
+      while (arr.length && arr[0] <= cutoff) arr.shift();
+
+      if (arr.length >= SUGGEST_LIMIT) {
+        const oldest = arr[0] ?? now;
+        const retryMs = Math.max(2000, SUGGEST_WINDOW_MS - (now - oldest)); // min 2s cool-off
+        const retrySec = Math.max(1, Math.ceil(retryMs / 1000));
+
+        return new NextResponse(JSON.stringify({ error: "Too many requests. Please slow down." }), {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+            "Retry-After": String(retrySec),
+            "X-RateLimit-Limit": String(SUGGEST_LIMIT),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Policy": `${SUGGEST_LIMIT};w=${Math.round(SUGGEST_WINDOW_MS / 1000)}`,
+            "X-RateLimit-Bucket": "suggest",
+          },
+        });
+      }
+
+      // record hit
+      arr.push(now);
+      SUGGEST_STORE.set(key, arr);
+    }
+    /* -------------------------------------------------------------------------- */
+
     // Pass CSP nonce to app on HTML navigations
     const nonce = isHtmlLike && !isApi ? makeNonce() : "";
     const forwarded = new Headers(req.headers);
@@ -185,7 +256,7 @@ export default withAuth(
 
     // Security headers for documents only
     if (!isApi && isHtmlLike) {
-      const sec = buildSecurityHeaders(nonce, isDev);
+      const sec = buildSecurityHeaders(nonce, isDev, useReportOnly);
       for (const [k, v] of sec.entries()) res.headers.set(k, v);
     }
 
@@ -226,7 +297,7 @@ export default withAuth(
           const email = typeof t.email === "string" ? t.email.toLowerCase() : "";
           const adminList = (process.env.ADMIN_EMAILS ?? "")
             .split(",")
-            .map(e => e.trim().toLowerCase())
+            .map((e) => e.trim().toLowerCase())
             .filter(Boolean);
           const emailIsAdmin = !!email && adminList.includes(email);
 

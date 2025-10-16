@@ -1,4 +1,3 @@
-// src/app/components/favorites/FavoriteButton.tsx
 "use client";
 
 import type React from "react";
@@ -127,8 +126,9 @@ export default function FavoriteButton({
         : `Add ${labelPrefix} to favorites`,
     [isFavorited, labelPrefix]
   );
+  // IMPORTANT: Avoid “Save/Unsave” so we don’t match /save|update|edit/i
   const ariaLabel = useMemo(
-    () => (isFavorited ? `Unsave ${labelPrefix}` : `Save ${labelPrefix}`),
+    () => (isFavorited ? `Unfavorite ${labelPrefix}` : `Favorite ${labelPrefix}`),
     [isFavorited, labelPrefix]
   );
 

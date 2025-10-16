@@ -15,11 +15,14 @@ type Props = {
   dismissOnNavigate?: boolean;
   /** Position override; defaults to 'top-right' on desktop, 'top-center' on small screens */
   position?: ToasterProps["position"];
+  /** Optional extra options to merge on top of theme defaults */
+  extraToastOptions?: Partial<DefaultToastOptions>;
 };
 
 export default function ToasterClient({
   dismissOnNavigate = true,
   position,
+  extraToastOptions,
 }: Props) {
   const pathname = usePathname();
 
@@ -56,54 +59,63 @@ export default function ToasterClient({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Ensure this is ALWAYS defined (fix for exactOptionalPropertyTypes)
-  const toastOptions: DefaultToastOptions = useMemo(
+  // Theme-aligned default styles
+  const baseToastOptions: DefaultToastOptions = useMemo(
     () => ({
-      duration: reducedMotion ? 2000 : 3000,
+      duration: reducedMotion ? 2200 : 3200,
       className:
-        "rounded-xl border shadow-lg px-3 py-2 bg-white text-gray-900 border-gray-200 " +
-        "dark:bg-gray-900 dark:text-gray-100 dark:border-gray-800",
+        "glass rounded-xl shadow-soft px-3 py-2 text-[0.9rem] text-gray-900 dark:text-slate-100",
       style: {
-        fontSize: "0.875rem",
         lineHeight: 1.4,
         maxWidth: "min(calc(100vw - 2rem), 420px)",
+        backdropFilter: "blur(10px)",
+        WebkitBackdropFilter: "blur(10px)",
       },
       success: {
-        duration: reducedMotion ? 1800 : 2500,
+        duration: reducedMotion ? 1800 : 2600,
         className:
-          "rounded-xl border shadow-lg px-3 py-2 " +
-          "bg-emerald-50 text-emerald-900 border-emerald-200 " +
-          "dark:bg-emerald-900/20 dark:text-emerald-50 dark:border-emerald-800",
-        iconTheme: { primary: "#10b981", secondary: "#ffffff" },
+          "rounded-xl px-3 py-2 shadow-soft bg-brandGreen-50 text-brandGreen-900 border border-brandGreen-200 " +
+          "dark:bg-brandGreen-600/15 dark:text-brandGreen-50 dark:border-brandGreen-700",
+        iconTheme: { primary: "#478559", secondary: "#ffffff" }, // brandGreen
       },
       error: {
-        duration: reducedMotion ? 2500 : 4000,
+        duration: reducedMotion ? 2600 : 4200,
         className:
-          "rounded-xl border shadow-lg px-3 py-2 " +
-          "bg-rose-50 text-rose-900 border-rose-200 " +
+          "rounded-xl px-3 py-2 shadow-soft bg-rose-50 text-rose-900 border border-rose-200 " +
           "dark:bg-rose-900/20 dark:text-rose-50 dark:border-rose-800",
         iconTheme: { primary: "#ef4444", secondary: "#ffffff" },
       },
       loading: {
         className:
-          "rounded-xl border shadow-lg px-3 py-2 " +
-          "bg-white text-gray-900 border-gray-200 " +
-          "dark:bg-gray-900 dark:text-gray-100 dark:border-gray-800",
+          "glass rounded-xl px-3 py-2 shadow bg-white/90 text-gray-900 border border-gray-200 " +
+          "dark:bg-white/5 dark:text-slate-100 dark:border-white/10",
       },
     }),
     [reducedMotion]
   );
+
+  // Merge safe overrides from the caller
+  const mergedToastOptions: DefaultToastOptions = useMemo(() => {
+    const extra = extraToastOptions ?? {};
+    return {
+      ...baseToastOptions,
+      ...extra,
+      success: { ...(baseToastOptions.success ?? {}), ...(extra.success ?? {}) },
+      error: { ...(baseToastOptions.error ?? {}), ...(extra.error ?? {}) },
+      loading: { ...(baseToastOptions.loading ?? {}), ...(extra.loading ?? {}) },
+    };
+  }, [baseToastOptions, extraToastOptions]);
 
   const resolvedPosition = position ?? autoPos;
 
   return (
     <Toaster
       {...(position ? { position } : { position: resolvedPosition })}
-      gutter={8}
+      gutter={10}
       reverseOrder={false}
-      toastOptions={toastOptions}
+      toastOptions={mergedToastOptions}
       containerStyle={{
-        zIndex: 60,
+        zIndex: 70, // z-toast
         inset: 12,
         pointerEvents: "none",
       }}

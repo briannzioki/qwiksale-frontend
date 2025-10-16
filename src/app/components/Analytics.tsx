@@ -31,10 +31,10 @@ function parseIds(raw?: string | null): string[] {
 }
 
 export default function Analytics() {
-  // ✅ Use DOT notation for public envs so Next can inline them on the client
-  const gaIds = useMemo(() => parseIds(process.env["NEXT_PUBLIC_GA_ID"]), []);
-  const debug = process.env["NEXT_PUBLIC_ANALYTICS_DEBUG"] === "1";
-  const defaultConsent = (process.env["NEXT_PUBLIC_GA_DEFAULT_CONSENT"] || "granted").toLowerCase();
+  // ✅ Use DOT notation so Next inlines at build time
+  const gaIds = useMemo(() => parseIds(process.env['NEXT_PUBLIC_GA_ID']), []);
+  const debug = process.env['NEXT_PUBLIC_ANALYTICS_DEBUG'] === "1";
+  const defaultConsent = (process.env['NEXT_PUBLIC_GA_DEFAULT_CONSENT'] || "granted").toLowerCase();
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -44,7 +44,7 @@ export default function Analytics() {
 
   // Make the first ID definitely a string (for <Script src=...>)
   const [primaryId, ...restIds] = gaIds as [string, ...string[]];
-  void restIds; // silence unused var if not referenced elsewhere
+  void restIds; // keep lint happy
 
   // Page view on route change
   useEffect(() => {

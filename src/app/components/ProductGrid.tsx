@@ -101,22 +101,29 @@ function MixedTile({
       ? ({ placeholder: "blur", blurDataURL: getBlurDataURL(640, 360) } as const)
       : ({ placeholder: "empty" } as const);
 
-  const alt =
-    it.name
-      ? `${it.type === "service" ? "Service" : "Product"} image for ${it.name}`
-      : it.type === "service"
-      ? "Service image"
-      : "Product image";
+  const alt = it.name
+    ? `${it.type === "service" ? "Service" : "Product"} image for ${it.name}`
+    : it.type === "service"
+    ? "Service image"
+    : "Product image";
 
+  // Prefer border-only (no heavy shadow) to match lighter glass audit
   return (
-    <Link href={href} prefetch={prefetch} className="group">
-      <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+    <Link
+      href={href}
+      prefetch={prefetch}
+      className="group"
+      aria-label={`${it.type === "service" ? "Service" : "Product"}: ${it.name ?? "Listing"}`}
+      title={it.name ?? undefined}
+    >
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white transition dark:border-white/10 dark:bg-slate-900">
         {it.featured ? (
-          <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
+          <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white">
             Featured
           </span>
         ) : null}
-        <div className="relative h-40 w-full bg-gray-100">
+
+        <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
           <SmartImage
             src={url}
             alt={alt}
@@ -127,9 +134,14 @@ function MixedTile({
             {...blurProps}
           />
         </div>
+
         <div className="p-3">
-          <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">{it.name}</h3>
-          <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">{fmtKES(it.price)}</p>
+          <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-slate-100">
+            {it.name}
+          </h3>
+          <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
+            {fmtKES(it.price)}
+          </p>
           <p className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">
             {it.type === "service" ? "Service" : "Product"}
           </p>
@@ -155,9 +167,9 @@ export default function ProductGrid(props: Props) {
     emptyText = "No items found. Try adjusting filters.",
     useSentinel = true,
     showLoadMoreButton = true,
-  } = props as Required<Props>;
+  } = props as any;
 
-  const isAll = mode === "all";
+  const isAll: boolean = mode === "all";
 
   return (
     <div className={className}>
@@ -174,13 +186,16 @@ export default function ProductGrid(props: Props) {
           ) : (
             <ProductCard
               key={p.id}
-              id={p.id}
-              name={p.name}
-              price={p.price ?? null}
-              image={p.image ?? null}
-              featured={Boolean(p.featured)}
-              position={idx}
-              prefetch={prefetchCards}
+              {...({
+                id: p.id,
+                name: p.name,
+                price: p.price ?? null,
+                image: p.image ?? null,
+                featured: Boolean(p.featured),
+                position: idx,
+                prefetch: prefetchCards,
+              } as any)}
+              // ProductCard already follows the border-first, lighter style after your recent updates
             />
           )
         )}
@@ -191,7 +206,7 @@ export default function ProductGrid(props: Props) {
           Array.from({ length: pageSize }).map((_, i) => (
             <div
               key={`skeleton-${i}`}
-              className="rounded-xl border bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900"
+              className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900"
             >
               <div className="h-40 w-full rounded-lg bg-gray-200 dark:bg-slate-800 animate-pulse" />
               <div className="mt-2 h-4 w-3/4 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
@@ -215,7 +230,7 @@ export default function ProductGrid(props: Props) {
           <button
             onClick={() => onLoadMoreAction && onLoadMoreAction()}
             disabled={loading}
-            className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 disabled:opacity-60"
           >
             {loading ? "Loading…" : "Load more"}
           </button>

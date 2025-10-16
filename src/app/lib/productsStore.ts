@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { extractGalleryUrls } from "@/app/lib/media";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -29,6 +30,12 @@ export type Product = {
     image?: string | null;
     subscription: "FREE" | "GOLD" | "PLATINUM";
   } | null;
+
+  /** ---- Optional hardening fields ---- */
+  /** True when the list payload looks shallow (e.g., cover-only / <2 media). */
+  _partial?: boolean;
+  /** Number of unique, valid media URLs we could detect on the object. */
+  mediaCount?: number;
 };
 
 type ApiListEnvelope = {
@@ -142,6 +149,41 @@ function dedupeById(list: Product[]): Product[] {
 }
 
 /* ------------------------------------------------------------------ */
+/* Media meta helpers                                                 */
+/* ------------------------------------------------------------------ */
+
+type SourceTag = "list" | "detail" | "optimistic";
+
+/** Count valid, renderable media URLs without injecting placeholders. */
+function computeMediaCount(obj: unknown): number {
+  try {
+    const urls = extractGalleryUrls(obj, undefined /* no fallback */);
+    return Array.isArray(urls) ? urls.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Attach media meta:
+ * - mediaCount: number of valid URLs (cover + arrays)
+ * - _partial:   true if object looks shallow for list/optimistic sources (mediaCount < 2)
+ *               For "detail", we still set _partial based on mediaCount, but it will usually be false.
+ */
+function withMediaMeta<T extends Product>(p: T, src: SourceTag): T {
+  const mediaCount = computeMediaCount(p);
+  const isPartial = mediaCount < 2 && (src === "list" || src === "optimistic" || src === "detail");
+  // Keep first-seen values stable unless we’re upgrading from partial->complete.
+  if (p._partial && !isPartial) {
+    return { ...p, mediaCount, _partial: false };
+  }
+  if (p.mediaCount !== mediaCount || p._partial !== isPartial) {
+    return { ...p, mediaCount, _partial: isPartial };
+  }
+  return p;
+}
+
+/* ------------------------------------------------------------------ */
 /* Fetch helpers (with backoff + abort)                               */
 /* ------------------------------------------------------------------ */
 
@@ -207,7 +249,10 @@ async function fetchList(args: FetchListArgs): Promise<Product[]> {
     const msg = (json as any)?.error || `Request failed (${res.status})`;
     throw new Error(msg);
   }
-  return dedupeById(normalizeList(json as ApiListResponse));
+  const normalized = dedupeById(normalizeList(json as ApiListResponse));
+
+  // Annotate list-page items as partial if they look shallow (fast guard for detail pages).
+  return normalized.map((p) => withMediaMeta(p, "list"));
 }
 
 async function fetchItem(id: string, signal?: AbortSignal | null): Promise<Product> {
@@ -217,7 +262,9 @@ async function fetchItem(id: string, signal?: AbortSignal | null): Promise<Produ
   if (!res.ok || (json as any)?.error) {
     throw new Error((json as any)?.error || `Not found (${res.status})`);
   }
-  return json as Product;
+  // Annotate detail payload too (usually upgrades to complete).
+  const detail = withMediaMeta(json as Product, "detail");
+  return detail;
 }
 
 /* Simple retry with backoff for list fetch in silent refreshes */
@@ -247,7 +294,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
 
   // Prime memory cache once if initial is provided and memory is empty
   if (options.initial && memory.list.length === 0) {
-    const seeded = dedupeById(options.initial);
+    const seeded = dedupeById(options.initial).map((p) => withMediaMeta(p, "list"));
     cacheListToMemory(seeded);
     safeSessionSet(LIST_KEY, seeded);
   }
@@ -258,7 +305,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
   const acRef = useRef<AbortController | null>(null);
 
   const applyList = useCallback((list: Product[]) => {
-    const deduped = dedupeById(list);
+    const deduped = dedupeById(list).map((p) => withMediaMeta(p, "list"));
     cacheListToMemory(deduped);
     safeSessionSet(LIST_KEY, deduped);
     setProducts(deduped);
@@ -290,8 +337,10 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
       if (!memory.list.length && !force) {
         const sessionList = safeSessionGet<Product[]>(LIST_KEY);
         if (sessionList?.length) {
-          cacheListToMemory(sessionList);
-          setProducts(sessionList);
+          // Ensure session payload has meta (older sessions may not)
+          const annotated = sessionList.map((p) => withMediaMeta(p, "list"));
+          cacheListToMemory(annotated);
+          setProducts(annotated);
           setReady(true);
           void revalidateSilently();
           return;
@@ -368,7 +417,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
 
       // Build a local product for optimistic cache
       const nowIso = new Date().toISOString();
-      const newItem: Product = {
+      const optimisticBare: Product = {
         id: newId,
         name: String(payload.name ?? ""),
         description: payload.description ?? null,
@@ -391,9 +440,11 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         sellerId: null,
       };
 
+      const newItem = withMediaMeta(optimisticBare, "optimistic");
+
       // Update caches and state optimistically
       updateOneInMemory(newItem);
-      const deduped = dedupeById([...memory.list]);
+      const deduped = dedupeById([...memory.list]).map((p) => withMediaMeta(p, "list"));
       cacheListToMemory(deduped);
       safeSessionSet(LIST_KEY, deduped);
       setProducts(deduped);
@@ -416,12 +467,12 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
       // Optimistic candidate
       const prev = memory.map.get(pid) || null;
       const optimistic: Product | null = prev
-        ? ({ ...prev, ...patch, id: prev.id } as Product)
+        ? withMediaMeta({ ...prev, ...patch, id: prev.id } as Product, "optimistic")
         : null;
 
       if (optimistic) {
         updateOneInMemory(optimistic);
-        const deduped = dedupeById([...memory.list]);
+        const deduped = dedupeById([...memory.list]).map((p) => withMediaMeta(p, "list"));
         cacheListToMemory(deduped);
         safeSessionSet(LIST_KEY, deduped);
         setProducts(deduped);
@@ -439,7 +490,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         // rollback if needed
         if (prev) {
           updateOneInMemory(prev);
-          const deduped = dedupeById([...memory.list]);
+          const deduped = dedupeById([...memory.list]).map((p) => withMediaMeta(p, "list"));
           cacheListToMemory(deduped);
           safeSessionSet(LIST_KEY, deduped);
           setProducts(deduped);
@@ -447,10 +498,12 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         throw new Error(j?.error || `Failed to update product (${r.status})`);
       }
 
-      const fresh = (j && typeof j === "object" ? j : null) as Product | null;
+      const freshRaw = (j && typeof j === "object" ? j : null) as Product | null;
+      const fresh = freshRaw ? withMediaMeta(freshRaw, "detail") : null;
+
       if (fresh && fresh.id) {
         updateOneInMemory(fresh);
-        const deduped = dedupeById([...memory.list]);
+        const deduped = dedupeById([...memory.list]).map((p) => withMediaMeta(p, "list"));
         cacheListToMemory(deduped);
         safeSessionSet(LIST_KEY, deduped);
         setProducts(deduped);
@@ -501,7 +554,7 @@ export function useProduct(id: string) {
       try {
         const p = await fetchItem(id, acRef.current.signal);
         updateOneInMemory(p);
-        const deduped = dedupeById([...memory.list]);
+        const deduped = dedupeById([...memory.list]).map((x) => withMediaMeta(x, "list"));
         cacheListToMemory(deduped);
         safeSessionSet(LIST_KEY, deduped);
         setProduct(p);
@@ -531,7 +584,7 @@ export function getCachedProduct(id: string): Product | undefined {
 }
 
 export function primeProductsCache(list: Product[]) {
-  const deduped = dedupeById(list);
+  const deduped = dedupeById(list).map((p) => withMediaMeta(p, "list"));
   cacheListToMemory(deduped);
   safeSessionSet(LIST_KEY, deduped);
 }

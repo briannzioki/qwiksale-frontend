@@ -1,4 +1,5 @@
-﻿export const runtime = "nodejs"; // NextAuth/Prisma need Node runtime
+﻿// src/app/layout.tsx
+export const runtime = "nodejs"; // NextAuth/Prisma need Node runtime
 
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
@@ -12,6 +13,7 @@ import ToasterClient from "./components/ToasterClient";
 import { getBaseUrl } from "@/app/lib/url";
 import { getServerSession } from "@/app/lib/auth";
 import { headers } from "next/headers";
+import Analytics from "./components/Analytics";
 
 /* ----------------------------- Site URL helpers ---------------------------- */
 const siteUrl = getBaseUrl().replace(/\/+$/, "");
@@ -49,7 +51,7 @@ export const metadata: Metadata = {
     title: "QwikSale — Kenya’s trusted marketplace for all items.",
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
-    images: [{ url: `${siteUrl}/og-image.png`, width: 1200, height: 630, alt: "QwikSale" }],
+    images: [{ url: `${siteUrl}/og.png`, width: 1200, height: 630, alt: "QwikSale" }],
     locale: "en_KE",
   },
   twitter: {
@@ -57,15 +59,17 @@ export const metadata: Metadata = {
     title: "QwikSale — Kenya’s trusted marketplace for all items.",
     description:
       "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
-    images: [`${siteUrl}/og-image.png`],
+    images: [`${siteUrl}/og.png`],
   },
   icons: {
     icon: [
-      { url: "/favicon.ico" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/favicon/favicon.ico" },
+      { url: "/favicon/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon/android-chrome-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/favicon/android-chrome-512x512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+    apple: [{ url: "/favicon/apple-touch-icon.png", sizes: "180x180" }],
   },
   robots: isPreview
     ? {
@@ -96,36 +100,53 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Get the NextAuth session on the server and pass it to SessionProvider
   const session = await getServerSession();
 
   // Pull CSP nonce from middleware (x-nonce) so inline/3P scripts satisfy script-src
   const h = await headers();
   const nonce = h.get("x-nonce") ?? undefined;
 
-  const orgJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    name: "QwikSale",
+  const site = {
     url: siteUrl,
-    logo: `${siteUrl}/icon-512.png`,
-    sameAs: [`${siteUrl}/about`, `${siteUrl}/contact`, `${siteUrl}/help`],
+    orgJsonLd: {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: "QwikSale",
+      url: siteUrl,
+      logo: `${siteUrl}/favicon/android-chrome-512x512.png`,
+      sameAs: [`${siteUrl}/about`, `${siteUrl}/contact`, `${siteUrl}/help`],
+    } as const,
+    siteJsonLd: {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      name: "QwikSale",
+      url: siteUrl,
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${siteUrl}/search?q={search_term_string}`,
+        "query-input": "required name=search_term_string",
+      },
+    } as const,
   } as const;
 
-  const siteJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: "QwikSale",
-    url: siteUrl,
-    potentialAction: {
-      "@type": "SearchAction",
-      target: `${siteUrl}/search?q={search_term_string}`,
-      "query-input": "required name=search_term_string",
-    },
-  } as const;
-
-  const GA_ID = process.env["NEXT_PUBLIC_GA_ID"];
   const PLAUSIBLE_DOMAIN = process.env["NEXT_PUBLIC_PLAUSIBLE_DOMAIN"];
+
+  // Gradient header slot
+  const headerSlot = (
+    <header
+      className="bg-spotlight bg-noise text-white"
+      style={{ WebkitMaskImage: "linear-gradient(to bottom, black 80%, transparent)" }}
+    >
+      <div className="container-page pt-10 pb-4 md:pt-12 md:pb-6">
+        <div className="flex items-end justify-between gap-4">
+          <h1 className="text-balance text-2xl md:text-3xl font-extrabold tracking-tight text-gradient">
+            QwikSale
+          </h1>
+          <div id="page-header-actions" className="flex items-center gap-2" />
+        </div>
+      </div>
+    </header>
+  );
 
   return (
     <html lang="en-KE" dir="ltr" className="h-full" suppressHydrationWarning>
@@ -148,23 +169,38 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="preconnect" href="https://picsum.photos" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="//picsum.photos" />
 
-        {/* Fonts (pair these; gstatic needs crossorigin) */}
+        {/* Fonts */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
 
-        {/* Inline bootstraps with nonce to satisfy CSP 'strict-dynamic' */}
-        <Script id="theme-script" strategy="beforeInteractive" nonce={nonce}>{`try {
-  const ls = localStorage.getItem('theme');
-  const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
-  const shouldDark = ls ? (ls === 'dark') : !!mq?.matches;
-  document.documentElement.classList.toggle('dark', shouldDark);
-} catch {}`}</Script>
+        {/* Theme bootstrap with nonce — prevents dark/light flash */}
+        <Script
+          id="theme-script"
+          strategy="beforeInteractive"
+          nonce={nonce}
+        >{`(() => {
+  try {
+    var m = (localStorage.getItem('theme') || 'system').toLowerCase();
+    var isSystem = m === 'system';
+    var prefersDark = false;
+    try {
+      prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch {}
+    var dark = (m === 'dark') || (isSystem && prefersDark);
 
+    var root = document.documentElement;
+    root.classList.toggle('dark', dark);
+    root.style.colorScheme = dark ? 'dark' : 'light';
+    root.setAttribute('data-theme-mode', m);
+  } catch {}
+})();`}</Script>
+
+        {/* Structured data */}
         <Script id="ld-org" type="application/ld+json" nonce={nonce}>
-          {JSON.stringify(orgJsonLd)}
+          {JSON.stringify(site.orgJsonLd)}
         </Script>
         <Script id="ld-site" type="application/ld+json" nonce={nonce}>
-          {JSON.stringify(siteJsonLd)}
+          {JSON.stringify(site.siteJsonLd)}
         </Script>
       </head>
 
@@ -173,18 +209,26 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         style={{ fontFeatureSettings: "'kern' 1, 'liga' 1, 'calt' 1" }}
         data-env={isPreview ? "preview" : "prod"}
       >
-        {/* Make the whole app a column; AppShell renders header/main/footer */}
-        <Providers session={session}>
-          <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#f0f4ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
-            <AppShell>{children}</AppShell>
-          </div>
+        {/* Background foundation */}
+        <div className="relative min-h-screen isolate bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#eef6ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
+          <div className="absolute inset-0 pointer-events-none bg-noise" aria-hidden />
 
-          {/* Toasts (portal) */}
-          <ToasterClient />
-        </Providers>
+          <Providers session={session}>
+            <AppShell headerSlot={headerSlot}>{children}</AppShell>
+
+            {/* Toasts (portal) */}
+            <ToasterClient
+              extraToastOptions={{
+                duration: 3500,
+                style: { borderRadius: "12px" },
+              }}
+            />
+          </Providers>
+        </div>
 
         {/* Analytics & scripts */}
         <VercelAnalytics />
+        <Analytics />
 
         {PLAUSIBLE_DOMAIN ? (
           <Script
@@ -194,23 +238,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             data-domain={PLAUSIBLE_DOMAIN}
             nonce={nonce}
           />
-        ) : null}
-
-        {GA_ID ? (
-          <>
-            <Script
-              id="ga-loader"
-              strategy="afterInteractive"
-              src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
-              nonce={nonce}
-            />
-            <Script id="ga-init" strategy="afterInteractive" nonce={nonce}>{`
-window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', '${GA_ID}', { anonymize_ip: true, send_page_view: true });
-            `}</Script>
-          </>
         ) : null}
 
         {SHOW_DEV_CONTROLS ? <DevToolsMount /> : null}

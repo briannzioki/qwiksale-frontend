@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { deleteByUrlOrId } from "@/app/lib/media";
+import { deleteByUrlOrId } from "@/app/lib/media.server";
 import { auth } from "@/auth";
 
 function noStore(json: unknown, init?: ResponseInit) {

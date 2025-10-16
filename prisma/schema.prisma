@@ -1,13 +1,15 @@
+// prisma/schema.prisma
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"] // needed for extensions = [...]
+  previewFeatures = ["postgresqlExtensions"] // enables datasource.extensions
 }
 
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
   directUrl  = env("DIRECT_URL")
-  extensions = [citext()] // enables @db.Citext
+  // Keep citext for case-insensitive unique(email/username). Add pg_trgm later if needed.
+  extensions = [citext()]
 }
 
 /**
@@ -32,12 +34,15 @@ enum PaymentStatus {
   FAILED
 }
 
-/** Unified status for both Product and Service (matches UI/API: ACTIVE/DRAFT/PAUSED/ARCHIVED) */
+/**
+ * Unified status for both Product and Service (matches UI/API)
+ * NOTE: Aligns with API which uses ACTIVE | DRAFT | HIDDEN | SOLD
+ */
 enum ListingStatus {
   ACTIVE
   DRAFT
-  PAUSED
-  ARCHIVED
+  HIDDEN
+  SOLD
 }
 
 enum PaymentMethod {
@@ -185,19 +190,19 @@ model Referral {
 }
 
 model Product {
-  id          String         @id @default(uuid())
+  id          String        @id @default(uuid())
   name        String
-  description String?        @db.Text
+  description String?       @db.Text
   category    String
   subcategory String
   brand       String?
   condition   String?
   price       Int?
   image       String?
-  gallery     String[]       @default([])
+  gallery     String[]      @default([])
   location    String?
-  negotiable  Boolean        @default(false)
-  status      ListingStatus  @default(ACTIVE)
+  negotiable  Boolean       @default(false)
+  status      ListingStatus @default(ACTIVE)
   soldAt      DateTime?
 
   /// When the listing becomes visible (set on create)
@@ -234,32 +239,30 @@ model Product {
   @@index([status, price])
   @@index([sellerId, status, createdAt(sort: Desc)])
   @@index([status, brand])
-
   /// Published ordering
   @@index([status, featured, publishedAt(sort: Desc)])
   @@index([status, publishedAt(sort: Desc)])
   @@index([status, category, subcategory, publishedAt(sort: Desc)])
   @@index([sellerId, status, publishedAt(sort: Desc)])
-
   /// Per-seller duplicate checks
   @@index([sellerId, dedupeKey, createdAt(sort: Desc)])
 }
 
 model Service {
-  id           String         @id @default(uuid())
+  id           String        @id @default(uuid())
   name         String
-  description  String?        @db.Text
+  description  String?       @db.Text
   category     String
   subcategory  String?
-  price        Int?           // null => “contact for quote”
-  rateType     RateType       @default(fixed)
+  price        Int? // null => “contact for quote”
+  rateType     RateType      @default(fixed)
   serviceArea  String?
   availability String?
   image        String?
-  gallery      String[]       @default([])
+  gallery      String[]      @default([])
   location     String?
-  status       ListingStatus  @default(ACTIVE)
-  featured     Boolean        @default(false)
+  status       ListingStatus @default(ACTIVE)
+  featured     Boolean       @default(false)
 
   /// Visible-from timestamp (set on create)
   publishedAt DateTime? @default(now())
@@ -278,18 +281,41 @@ model Service {
   sellerRating      Float?
   sellerSales       Int?
 
+  // Optional relation if you choose to persist media in a join table
+  images ServiceImage[]
+
+  SupportTicket     SupportTicket[]
+
   /// ---------- Indexes ----------
   @@index([status, featured, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
   @@index([status, category, subcategory, createdAt(sort: Desc)])
   @@index([status, price])
   @@index([sellerId, status, createdAt(sort: Desc)])
-
   /// Published ordering
   @@index([status, featured, publishedAt(sort: Desc)])
   @@index([status, publishedAt(sort: Desc)])
   @@index([status, category, subcategory, publishedAt(sort: Desc)])
   @@index([sellerId, status, publishedAt(sort: Desc)])
+  /// FK-only fast path when you need a naïve seller filter
+  @@index([sellerId])
+}
+
+/**
+ * Optional media table for services.
+ * If you don't need it yet, you can keep it and just not write to it; your API
+ * already tolerates its absence. Defining it now gives you indexed lookups when used.
+ */
+model ServiceImage {
+  id        String  @id @default(cuid())
+  serviceId String
+  url       String  @db.Text
+  createdAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, createdAt(sort: Desc)])
+  @@index([serviceId])
 }
 
 model Favorite {
@@ -366,14 +392,17 @@ model SupportTicket {
 
   url        String?
   productId  String?
+  serviceId  String? // used by API
   reporterId String?
 
   // Optional telemetry
-  clientIp  String?
-  userAgent String?
-  referer   String?
+  clientIp    String?
+  userAgent   String?
+  referer     String?
+  contentHash String? @db.Char(64)
 
   product  Product? @relation("TicketProducts", fields: [productId], references: [id], onDelete: SetNull)
+  service  Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   reporter User?    @relation("ReporterTickets", fields: [reporterId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
@@ -382,7 +411,10 @@ model SupportTicket {
   @@index([type, createdAt])
   @@index([status, createdAt])
   @@index([productId, createdAt])
+  @@index([serviceId, createdAt])
   @@index([reporterId, createdAt])
+  @@index([email, createdAt])
+  @@index([contentHash, createdAt])
 }
 
 model Report {

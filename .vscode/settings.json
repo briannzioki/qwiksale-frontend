@@ -1,7 +1,18 @@
 {
+  // Use the workspace TypeScript (prevents the giant phantom “problems” list)
   "typescript.tsdk": "node_modules\\typescript\\lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
 
-  // Silence Tailwind/PostCSS at-rule warnings in the editor
+  // Helpful TS/JS suggestions
+  "typescript.preferences.preferTypeOnlyAutoImports": true,
+  "javascript.suggest.autoImports": true,
+
+  // Run ESLint fixes explicitly on save (only when you trigger Save)
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+
+  // Tailwind/PostCSS: silence at-rule warnings in the editor
   "css.lint.unknownAtRules": "ignore",
   "scss.lint.unknownAtRules": "ignore",
   "less.lint.unknownAtRules": "ignore",
@@ -10,7 +21,12 @@
   // Better class name suggestions in strings
   "editor.quickSuggestions": { "strings": true },
 
-  // Recognize classes inside your classNames() helper
+  // Tailwind: recognize classes in TS/TSX/JSX and classNames() helper
+  "tailwindCSS.includeLanguages": {
+    "typescript": "javascript",
+    "typescriptreact": "javascript",
+    "javascriptreact": "javascript"
+  },
   "tailwindCSS.experimental.classRegex": [
     ["classNames\\(([^)]*)\\)", "(?:'|\"|`)([^'\"`]*)(?:'|\"|`)"]
   ]

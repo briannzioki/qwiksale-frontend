@@ -1,3 +1,4 @@
+// src/app/api/products/[id]/contact/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -55,7 +56,7 @@ function validUrl(u?: string | null): string | null {
 /* ----------------------------- CORS (optional) ----------------------------- */
 export function OPTIONS() {
   const origin =
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["NEXT_PUBLIC_APP_ORIGIN"] ??
     process.env["NEXT_PUBLIC_APP_URL"] ??
     "*";
 
@@ -106,71 +107,21 @@ export async function GET(req: NextRequest) {
     });
     if (!product) return noStore({ error: "Not found" }, { status: 404 });
 
-    // ---- Soft throttle windows (DB-backed) ----
+    // Basic telemetry (do not block on errors)
     const ip = getClientIp(req);
     const ua = req.headers.get("user-agent") || null;
-
-    // Window sizes & limits
-    const now = Date.now();
-    const WIN_IP_HR = new Date(now - 60 * 60 * 1000);     // 1 hour
-    const WIN_DEVICE_15 = new Date(now - 15 * 60 * 1000); // 15 minutes
-
-    const MAX_PER_IP_PER_HOUR = 12;
-    const MAX_PER_DEVICE_15MIN = 6;
-
-    // Count recent reveals per IP for this listing
-    if (ip) {
-      const ipCount = await prisma.contactReveal.count({
-        where: {
-          listingType: "product",
-          listingId,
-          ip,
-          createdAt: { gte: WIN_IP_HR },
-        },
-      });
-      if (ipCount >= MAX_PER_IP_PER_HOUR) {
-        const res = noStore(
-          { error: "Too many requests. Please try again later." },
-          { status: 429 },
-        );
-        res.headers.set("Retry-After", "1800"); // 30 min
-        return res;
-      }
-    }
-
-    // Count recent reveals per (IP + UA) for this listing
-    if (ip && ua) {
-      const devCount = await prisma.contactReveal.count({
-        where: {
-          listingType: "product",
-          listingId,
-          ip,
-          userAgent: ua,
-          createdAt: { gte: WIN_DEVICE_15 },
-        },
-      });
-      if (devCount >= MAX_PER_DEVICE_15MIN) {
-        const res = noStore(
-          { error: "Please wait a few minutes before trying again." },
-          { status: 429 },
-        );
-        res.headers.set("Retry-After", "300"); // 5 min
-        return res;
-      }
-    }
-
-    // Light telemetry — never block user on errors
     const referer = validUrl(req.headers.get("referer"));
-    void referer; // (add column later if you want)
+    void referer; // keep for future column if needed
 
+    // Record the reveal (align with current Prisma schema: productId / viewerUserId / userAgent)
     prisma.contactReveal
       .create({
         data: {
-          listingType: "product",
-          listingId,
+          productId: listingId,
           viewerUserId: viewerUserId ?? null,
-          ip: ip ?? null,
           userAgent: ua,
+          // NOTE: Your current ContactReveal model (per error logs) doesn't include `ip` or `listingType`.
+          // If you add those columns later, include them here.
         },
       })
       .catch(() => void 0);

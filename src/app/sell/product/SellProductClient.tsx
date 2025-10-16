@@ -2,14 +2,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { categories, type CategoryNode } from "@/app/data/categories";
 import { useProducts } from "@/app/lib/productsStore";
-import toast from "react-hot-toast";
-import {
-  normalizeKenyanPhone,
-  validateKenyanPhone,
-} from "@/app/lib/phone";
+import { toast } from "@/app/components/ToasterClient";
+import { normalizeKenyanPhone, validateKenyanPhone } from "@/app/lib/phone";
+import { extractGalleryUrls } from "@/app/lib/media"; // normalize legacy gallery shapes to plain URLs
 
 type FilePreview = { file: File; url: string; key: string };
 type Me = { id: string; email: string | null; profileComplete?: boolean; whatsapp?: string | null };
@@ -19,6 +18,11 @@ type Props = {
   id?: string | undefined;
   /** Hide legacy media section when a single media surface is already shown on the page. */
   hideMedia?: boolean;
+  /**
+   * Optional hook that runs *before* we submit.
+   * Use it to commit staged media (e.g., ProductMediaManager.commitDraft()).
+   */
+  onBeforeSubmitAction?: () => Promise<void>;
 };
 
 const MAX_FILES = 6;
@@ -99,7 +103,11 @@ async function uploadToCloudinary(
   return p;
 }
 
-export default function SellProductClient({ id, hideMedia = false }: Props) {
+export default function SellProductClient({
+  id,
+  hideMedia = false,
+  onBeforeSubmitAction,
+}: Props) {
   const router = useRouter();
 
   // ---------------------- Profile Gate (no server redirects) ----------------------
@@ -120,10 +128,10 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
   const [phone, setPhone] = useState<string>("");
   const [description, setDescription] = useState<string>("");
 
-  // Images
+  // Images (legacy local uploader — not used when hideMedia === true)
   const [previews, setPreviews] = useState<FilePreview[]>([]);
   const [existingImage, setExistingImage] = useState<string | null>(null);
-  const [existingGallery, setExistingGallery] = useState<string[]>([]);
+  const [existingGallery, setExistingGallery] = useState<string[]>([]); // always string[]
 
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadPct, setUploadPct] = useState<number>(0);
@@ -138,7 +146,11 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
         const res = await fetch("/api/me", { cache: "no-store" });
 
         if (res.status === 401) {
-          if (!cancelled) router.replace(`/signin?callbackUrl=${encodeURIComponent("/sell")}`);
+          // Not signed in → show CTA inline (don’t redirect)
+          if (!cancelled) {
+            setAllowed(false);
+            setReady(true);
+          }
           return;
         }
         if (!res.ok) {
@@ -152,8 +164,10 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
         const j = (await res.json().catch(() => null)) as any;
         const me: Me | null = (j && (j.user ?? j)) || null;
 
+        // If profile is incomplete, still allow posting (soft-nudge elsewhere)
         if (!cancelled && me && me.profileComplete === false) {
-          router.replace(`/account/complete-profile?next=${encodeURIComponent("/sell")}`);
+          setAllowed(true);
+          setReady(true);
           return;
         }
 
@@ -168,7 +182,7 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [router, phone]);
+  }, [phone]);
 
   // Zustand store (optional)
   const store = useProducts() as any;
@@ -255,7 +269,10 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
         setPhone(p?.sellerPhone ?? "");
 
         setExistingImage(p?.image ?? null);
-        setExistingGallery(Array.isArray(p?.gallery) ? p.gallery : []);
+
+        // Normalize ANY legacy gallery shape to string[] of URLs
+        const normalized = extractGalleryUrls({ gallery: p?.gallery }, undefined, 50);
+        setExistingGallery(normalized);
       } catch (e: any) {
         console.error(e);
         toast.error("Failed to prefill product.");
@@ -267,7 +284,7 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
     };
   }, [id]);
 
-  /* ------------------------------ File helpers ----------------------------- */
+  /* -------------------------------- File helpers ----------------------------- */
   function filesToAdd(files: FileList | File[]) {
     const next: FilePreview[] = [];
     for (const f of Array.from(files)) {
@@ -330,7 +347,8 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
       toast.error("Please fill all required fields.");
       return;
     }
-    if (previews.length && !CLOUD_NAME) {
+    // If we *do* show the legacy uploader, ensure Cloudinary is configured when files exist
+    if (!hideMedia && previews.length && !CLOUD_NAME) {
       toast.error(
         "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
       );
@@ -341,8 +359,14 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
     setUploadPct(0);
 
     try {
+      // 🔐 1) Allow the host page to commit staged media first (if provided)
+      if (onBeforeSubmitAction) {
+        await onBeforeSubmitAction();
+      }
+
+      // 2) Handle *legacy inline uploads* only when hideMedia === false
       let uploaded: { secure_url: string; public_id: string }[] = [];
-      if (previews.length) {
+      if (!hideMedia && previews.length) {
         const total = previews.length;
         let done = 0;
 
@@ -360,20 +384,9 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
         }
       }
 
-      const computedImage =
-        uploaded[0]?.secure_url ??
-        previews[0]?.url ??
-        existingImage ??
-        "/placeholder/default.jpg";
-
-      const computedGallery =
-        uploaded.length
-          ? uploaded.map((u) => u.secure_url)
-          : previews.length
-          ? previews.map((p) => p.url)
-          : (existingGallery?.length ? existingGallery : []);
-
-      const payload = {
+      // 3) Build payload (🚫 do NOT stomp media)
+      // Base fields (non-media)
+      const payload: Record<string, unknown> = {
         name: name.trim(),
         description: description.trim(),
         category,
@@ -381,12 +394,31 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
         brand: brand || undefined,
         condition,
         price: price === "" ? undefined : Math.max(0, Math.round(Number(price))),
-        image: computedImage,
-        gallery: computedGallery,
         location: location.trim(),
         negotiable,
         sellerPhone: normalizedPhone || undefined,
       };
+
+      // Only include media when we're *not* using the staged media surface.
+      // And never send empty arrays / placeholder image.
+      if (!hideMedia) {
+        const computedImage =
+          uploaded[0]?.secure_url ??
+          (previews[0]?.url || undefined) ??
+          (existingImage || undefined);
+
+        const computedGallery: string[] =
+          uploaded.length
+            ? uploaded.map((u) => u.secure_url)
+            : previews.length
+            ? previews.map((p) => p.url)
+            : (existingGallery?.length ? existingGallery : []);
+
+        if (computedImage) payload["image"] = computedImage;
+        if (computedGallery && computedGallery.length > 0) payload["gallery"] = computedGallery;
+      }
+      // When hideMedia === true we *omit* image/gallery entirely so we never overwrite
+      // the canonical media that was just committed by the MediaManager flow.
 
       let resultId: string | null = null;
 
@@ -395,7 +427,7 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(payload), // undefined props are dropped
         });
         const j = await r.json().catch(() => ({} as any));
         if (!r.ok || (j as any)?.error) {
@@ -404,6 +436,7 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
         resultId = id;
         toast.success("Product updated!");
       } else {
+        // Create path (legacy inline uploader path)
         let created: any = await addProduct(payload);
 
         if (!created) {
@@ -430,7 +463,12 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
         toast.success("Product posted!");
       }
 
-      router.push(resultId ? `/product/${resultId}` : "/");
+      // 4) Navigate
+      if (resultId) {
+        router.push(`/product/${resultId}/edit`);
+      } else {
+        router.push("/sell/product");
+      }
       router.refresh();
     } catch (err: any) {
       console.error(err);
@@ -441,12 +479,35 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
     }
   }
 
-  if (!ready || !allowed) {
+  // Loading gate
+  if (!ready) {
     return (
       <div className="container-page py-10">
         <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
           <h1 className="text-2xl font-bold">{id ? "Edit Product" : "Post a Product"}</h1>
           <p className="text-white/90">Checking your account…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Logged-out CTA (Playwright looks for a visible link whose name matches /sign in|login/i)
+  if (allowed === false) {
+    return (
+      <div className="container-page py-10">
+        <div className="rounded-xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="text-xl font-semibold">You’re not signed in</h2>
+          <p className="mt-2 text-gray-600 dark:text-slate-300">
+            Please sign in to post a product.
+          </p>
+          <div className="mt-4">
+            <Link
+              href={`/signin?callbackUrl=${encodeURIComponent("/sell/product")}`}
+              className="btn-gradient-primary inline-block"
+            >
+              Sign in
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -628,7 +689,7 @@ export default function SellProductClient({ id, hideMedia = false }: Props) {
           />
         </div>
 
-        {/* Images + Uploader (legacy) */}
+        {/* Images + Uploader (legacy). Hidden in staged-edit pages. */}
         {!hideMedia && (
           <div>
             <label className="label">Photos (up to {MAX_FILES})</label>

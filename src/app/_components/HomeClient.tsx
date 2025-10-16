@@ -4,9 +4,9 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useSearchParams, useRouter } from "next/navigation";
-import FavoriteButton from "../components/FavoriteButton";
-import HomeClientHero from "../components/HomeClientHero";
+import { useSearchParams } from "next/navigation";
+import HomeTabs from "@/app/components/HomeTabs";
+import FavoriteButton from "@/app/components/favorites/FavoriteButton";
 
 /* ======================
    Types
@@ -207,16 +207,15 @@ function useDebounced<T>(value: T, delay = 300) {
    Page (client)
    ====================== */
 export default function HomeClient() {
-  const router = useRouter();
   const sp = useSearchParams();
 
-  // Mode from URL (?t=all|products|services). Default: all
-  const [mode, setMode] = React.useState<Mode>(() => {
-    const t = (sp.get("t") || "").toLowerCase();
-    return t === "products" || t === "services" ? (t as Mode) : "all";
-  });
+  // Derive mode directly from URL (?t=all|products|services) OR legacy ?tab=. We never mutate the URL.
+  const mode: Mode = React.useMemo(() => {
+    const raw = (sp.get("t") ?? sp.get("tab") ?? "").toLowerCase();
+    return raw === "products" || raw === "services" ? (raw as Mode) : "all";
+  }, [sp]);
 
-  // URL state (initialize from current query)
+  // URL state (initialize from current query) — NOTE: we never push/replace on mount.
   const [q, setQ] = React.useState(sp.get("q") || "");
   const [category, setCategory] = React.useState(sp.get("category") || "");
   const [subcategory, setSubcategory] = React.useState(sp.get("subcategory") || "");
@@ -244,12 +243,8 @@ export default function HomeClient() {
     );
   }, []);
 
-  // Keep local state in-sync if URL changes externally
+  // Keep local state in-sync if URL changes externally (we still never force the URL ourselves).
   React.useEffect(() => {
-    const t = (sp.get("t") || "").toLowerCase();
-    const nextMode: Mode = t === "products" || t === "services" ? (t as Mode) : "all";
-    if (nextMode !== mode) setMode(nextMode);
-
     const get = (k: string) => sp.get(k) || "";
     if (get("q") !== q) setQ(get("q"));
     if (get("category") !== category) setCategory(get("category"));
@@ -262,8 +257,8 @@ export default function HomeClient() {
     const f = sp.get("featured") === "true";
     if (f !== featuredOnly) setFeaturedOnly(f);
 
-    const s = sp.get("sort") || "newest";
-    if (s !== sort) setSort(s);
+    const s = (sp.get("sort") || "newest") as SortKey;
+    if (s !== sort) setSort(toSortKey(s));
 
     const p = Number(sp.get("page") || 1);
     if (Number.isFinite(p) && p > 0 && p !== page) setPage(p);
@@ -278,7 +273,7 @@ export default function HomeClient() {
     }
   }, [mode, brand, condition]);
 
-  // Debounced inputs
+  // Debounced inputs (mode derived from URL; include to keep fetches calm)
   const dmode = useDebounced<Mode>(mode, DEBOUNCE_MS);
   const dq = useDebounced(q, DEBOUNCE_MS);
   const dcategory = useDebounced(category, DEBOUNCE_MS);
@@ -296,7 +291,7 @@ export default function HomeClient() {
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
 
-  // Build querystring from (debounced) state
+  // Build querystring from (debounced) state — note: *no* `t` here; `t` comes only from URL.
   const queryString = React.useMemo(() => {
     const params = new URLSearchParams();
     if (dq) params.set("q", dq);
@@ -324,17 +319,6 @@ export default function HomeClient() {
     dpage,
     dmode,
   ]);
-
-  // Keep URL in sync (shallow) without spamming history
-  const lastUrlRef = React.useRef<string>("");
-  React.useEffect(() => {
-    const base = `/?t=${dmode}`;
-    const next = queryString ? `${base}&${queryString}` : base;
-    if (next !== lastUrlRef.current) {
-      lastUrlRef.current = next;
-      router.replace(next);
-    }
-  }, [router, queryString, dmode]);
 
   // Fetch from unified home-feed with fallback (products/services → all)
   React.useEffect(() => {
@@ -427,7 +411,7 @@ export default function HomeClient() {
     setPage(1);
   };
 
-  // Distance computer (resolved per item)
+  // Distance computer (resolved per item) — uses the single geolocation state above.
   const computeDistanceText = React.useCallback(
     (loc: string | null | undefined): { place: string; distanceKm?: number } | null => {
       const resolved = resolveKenyaPlace(loc);
@@ -439,45 +423,18 @@ export default function HomeClient() {
     [myLoc]
   );
 
-  // Mode toggle
-  const ModeToggle = () => (
-    <div className="card-surface p-2 sticky top-[64px] z-30">
-      <div className="inline-flex rounded-xl border overflow-hidden shadow-sm" role="tablist" aria-label="Mode">
-        {(["all", "products", "services"] as Mode[]).map((m, i) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => {
-              setMode(m);
-              setPage(1);
-            }}
-            className={`px-4 py-2 text-sm ${i > 0 ? "border-l" : ""} ${
-              mode === m
-                ? "bg-[#161748] text-white"
-                : "bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-200"
-            }`}
-            aria-pressed={mode === m}
-            role="tab"
-            aria-selected={mode === m}
-          >
-            {m === "all" ? "All" : `${m.charAt(0).toUpperCase()}${m.slice(1)}`}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
   return (
     <div className="flex flex-col gap-6">
-      <HomeClientHero />
-
-      <ModeToggle />
+      {/* URL-driven tabs (Links). We do NOT intercept clicks or force t= on mount. */}
+      <div className="sticky top-[64px] z-30 card-surface p-2">
+        <HomeTabs />
+      </div>
 
       {/* =======================
           Sticky Filter Bar
           ======================= */}
       <section
-        className="card-surface p-4 sticky top-[112px] z-20 backdrop-blur supports-[backdrop-filter]:bg-white/75 dark:supports-[backdrop-filter]:bg-slate-900/70"
+        className="card-surface p-4 sticky top=[112px] z-20 backdrop-blur supports-[backdrop-filter]:bg-white/75 dark:supports-[backdrop-filter]:bg-slate-900/70"
         aria-label="Filters"
       >
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
@@ -721,7 +678,8 @@ export default function HomeClient() {
             const href = isProduct ? `/product/${it.id}` : `/service/${it.id}`;
 
             // Accessible label that Playwright tests can target:
-            const priceText = typeof price === "number" && price > 0 ? `KES ${price.toLocaleString()}` : undefined;
+            const priceText =
+              typeof price === "number" && price > 0 ? `KES ${price.toLocaleString()}` : undefined;
             const ariaLabel =
               `${isProduct ? "Product" : "Service"}: ${title}` +
               (priceText ? `, priced at ${priceText}` : "");
@@ -732,6 +690,8 @@ export default function HomeClient() {
                 href={href}
                 className="relative group"
                 aria-label={ariaLabel}
+                data-product-id={isProduct ? it.id : undefined}
+                data-service-id={!isProduct ? it.id : undefined}
               >
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800">
                   <div className="relative">
@@ -778,11 +738,6 @@ export default function HomeClient() {
                         {locInfo?.distanceKm !== undefined && (
                           <span className="inline-flex items-center rounded-full border px-2 py-0.5">
                             ~{locInfo.distanceKm} km away
-                          </span>
-                        )}
-                        {geoDenied && (
-                          <span className="text-[11px] opacity-60">
-                            (enable location for distance)
                           </span>
                         )}
                       </p>

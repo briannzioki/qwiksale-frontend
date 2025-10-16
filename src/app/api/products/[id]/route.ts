@@ -1,13 +1,19 @@
 // src/app/api/products/[id]/route.ts
+import "server-only";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma"; // ⬅️ align with the rest of the app
+import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { extractGalleryUrls as collectUrls } from "@/app/lib/media";
+
+/* ---------------- constants ---------------- */
+const PLACEHOLDER = "/placeholder/default.jpg";
 
 /* ---------------- analytics (console-only for now) ---------------- */
 type AnalyticsEvent =
@@ -32,25 +38,40 @@ type AnalyticsEvent =
 
 function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
   try {
-    // eslint-disable-next-line no-console
     console.log(`[track] ${event}`, { ts: new Date().toISOString(), ...props });
-  } catch {
-    /* no-op */
-  }
+  } catch {}
 }
 
 /* -------------------------- helpers -------------------------- */
+function baseHeaders(h = new Headers()) {
+  h.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
+  return h;
+}
+
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  baseHeaders(res.headers);
+  return res;
+}
+
+/** Prod-only public cache for ACTIVE public hits (keep modest TTLs). */
+function publicCache(json: unknown, init?: ResponseInit) {
+  const res = NextResponse.json(json, init);
+  const prod = process.env.NODE_ENV === "production";
+  if (prod) {
+    res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=60");
+  } else {
+    res.headers.set("Cache-Control", "no-store");
+  }
+  baseHeaders(res.headers);
   return res;
 }
 
 function getId(req: NextRequest): string {
   try {
-    // Prefer NextRequest.nextUrl for robustness
     const segs = req.nextUrl.pathname.split("/");
     const idx = segs.findIndex((s) => s === "products");
     const id = idx >= 0 ? (segs[idx + 1] ?? "") : "";
@@ -60,7 +81,16 @@ function getId(req: NextRequest): string {
   }
 }
 
-// CORS (optional)
+/* ----------------------------- HEAD / CORS ----------------------------- */
+export function HEAD() {
+  const h = baseHeaders(new Headers());
+  h.set("Allow", "GET, PATCH, DELETE, OPTIONS, HEAD");
+  h.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  h.set("Pragma", "no-cache");
+  h.set("Expires", "0");
+  return new Response(null, { status: 204, headers: h });
+}
+
 export function OPTIONS() {
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??
@@ -69,8 +99,8 @@ export function OPTIONS() {
 
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
-  res.headers.set("Vary", "Origin");
-  res.headers.set("Access-Control-Allow-Methods", "GET, PATCH, DELETE, OPTIONS");
+  res.headers.set("Vary", "Origin, Authorization, Cookie, Accept-Encoding");
+  res.headers.set("Access-Control-Allow-Methods", "GET, PATCH, DELETE, OPTIONS, HEAD");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
   res.headers.set("Cache-Control", "no-store");
@@ -95,14 +125,14 @@ const productBaseSelect = {
   featured: true,
   sellerId: true,
 
-  // flattened snapshot (safe)
+  status: true,
+
   sellerName: true,
   sellerLocation: true,
   sellerMemberSince: true,
   sellerRating: true,
   sellerSales: true,
 
-  // linked seller (safe fields only; includes username)
   seller: {
     select: {
       id: true,
@@ -113,27 +143,110 @@ const productBaseSelect = {
   },
 } as const;
 
-/** Runtime-safe shaper: never assume `_count` or `favorites` exist */
+/** Runtime-safe shaper */
 function shapeProduct(p: any) {
   const favoritesCount: number = p?.["_count"]?.favorites ?? 0;
-
-  // only true if we selected the relation and a row exists
   const rel = (p as any)?.favorites;
   const isFavoritedByMe = Array.isArray(rel) && rel.length > 0;
-
   const createdAt =
     p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
-
   const sellerUsername = p?.seller?.username ?? null;
-
   const { _count: _c, favorites: _f, ...rest } = p || {};
   return {
     ...rest,
     createdAt,
     favoritesCount,
     isFavoritedByMe,
-    sellerUsername, // convenience mirror on the root payload
+    sellerUsername,
   };
+}
+
+/* ---------- model helpers (handle Product/Products naming) ------------ */
+function getProductModel() {
+  const any = prisma as any;
+  return any.product ?? any.products ?? any.Product ?? any.Products ?? null;
+}
+
+/* ---------- relation model helpers (ProductImage[]) ------------ */
+function getProductImageModel() {
+  const any = prisma as any;
+  const candidates = ["productImage", "productImages", "ProductImage", "ProductImages"];
+  for (const key of candidates) {
+    const mdl = any?.[key];
+    if (mdl && typeof mdl.findMany === "function") return mdl;
+  }
+  return null;
+}
+
+/**
+ * Fetch related image URLs without selecting non-existent columns.
+ * We avoid `select` entirely and then read from common URL-ish keys.
+ */
+async function fetchProductRelationUrls(productId: string): Promise<string[]> {
+  try {
+    const Model = getProductImageModel();
+    if (!Model) return [];
+
+    // No `select` → Prisma returns only actual model fields (whatever they are).
+    const rows: any[] =
+      (await Model.findMany({
+        where: { productId },
+        orderBy: { id: "asc" },
+        take: 50,
+      }).catch(() => [])) ?? [];
+
+    const urls = new Set<string>();
+    for (const r of rows) {
+      const u =
+        r?.url ??
+        r?.src ??
+        r?.href ??
+        r?.uri ??
+        r?.imageUrl ??
+        r?.image ??
+        r?.path ??
+        r?.location ??
+        "";
+      const t = String(u ?? "").trim();
+      if (t) urls.add(t);
+    }
+    return Array.from(urls);
+  } catch {
+    return [];
+  }
+}
+
+/* -------- gallery normalization using shared util -------- */
+function isPlaceholder(u?: string | null) {
+  if (!u) return false;
+  const s = String(u).trim();
+  if (!s) return false;
+  return s === PLACEHOLDER || s.endsWith("/placeholder/default.jpg");
+}
+
+function normalizeCoverAndGallery(primary: any, fullRow: any, extraUrls: string[] = []) {
+  const merged = { ...(fullRow || {}), ...(primary || {}) };
+  const collected = (collectUrls(merged, undefined) ?? []).slice(0, 50);
+  const extra = extraUrls.map((u) => (u ?? "").toString().trim()).filter(Boolean);
+  const rawCandidates = [
+    merged?.image,
+    merged?.coverImage,
+    merged?.coverImageUrl,
+    ...collected,
+    ...extra,
+  ]
+    .map((u: any) => (u ?? "").toString().trim())
+    .filter(Boolean);
+
+  const firstReal = rawCandidates.find((u) => !isPlaceholder(u));
+  const cover = firstReal || PLACEHOLDER;
+
+  const realGallery = rawCandidates.filter((u) => !isPlaceholder(u));
+  const gallery = realGallery.length
+    ? Array.from(new Set([cover, ...realGallery]))
+    : [PLACEHOLDER];
+
+  return { cover, gallery: gallery.slice(0, 50) };
 }
 
 /* -------------------- GET /api/products/:id ------------------- */
@@ -148,67 +261,88 @@ export async function GET(req: NextRequest) {
       return noStore({ error: "Missing id" }, { status: 400 });
     }
 
-    track("product_read_attempt", { reqId, productId });
-
-    // Resolve current user (optional; improves isFavoritedByMe)
-    const session = await auth().catch(() => null);
-    const sessionUserId = (session?.user as any)?.id as string | undefined;
-    let userId: string | null = sessionUserId ?? null;
-    if (!userId && session?.user?.email) {
-      const u = await prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true },
-      });
-      userId = u?.id ?? null;
+    const Product = getProductModel();
+    if (!Product) {
+      track("product_read_not_found", { reqId, productId, reason: "no_model" });
+      return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    // Build select: always count favorites; only fetch relation when we have userId
-    const select: any = {
+    track("product_read_attempt", { reqId, productId });
+
+    const selectPublic: any = {
       ...productBaseSelect,
       _count: { select: { favorites: true } },
     };
-    if (userId) {
-      select.favorites = {
-        where: { userId },
-        select: { productId: true },
-        take: 1,
-      };
-    }
 
-    // 1) Try public (ACTIVE)
-    const activeItem = await prisma.product.findFirst({
+    // Fetch in parallel
+    const activePromise = Product.findFirst({
       where: { id: productId, status: "ACTIVE" },
-      select,
+      select: selectPublic,
     });
+    const fullRowPromise = Product.findUnique({ where: { id: productId } }).catch(() => null);
+    const relUrlsPromise = fetchProductRelationUrls(productId);
+
+    const [activeItem, fullRow, relUrls] = await Promise.all([
+      activePromise,
+      fullRowPromise,
+      relUrlsPromise,
+    ]);
+
     if (activeItem) {
+      const shaped = shapeProduct(activeItem);
+      const norm = normalizeCoverAndGallery(shaped, fullRow, relUrls);
       track("product_read_public_hit", {
         reqId,
         productId,
         favoritesCount: (activeItem as any)?.["_count"]?.favorites ?? 0,
       });
-      return noStore(shapeProduct(activeItem));
+      return publicCache({ ...shaped, image: norm.cover, gallery: norm.gallery });
     }
 
-    // 2) Owner may view non-ACTIVE
+    // Not public → owner-gated
+    const session = await auth().catch(() => null);
+    const sessionUserId = (session?.user as any)?.id as string | undefined;
+    let userId: string | null = sessionUserId ?? null;
+    if (!userId && (session?.user as any)?.email) {
+      const u = await prisma.user.findUnique({
+        where: { email: (session?.user as any).email },
+        select: { id: true },
+      });
+      userId = u?.id ?? null;
+    }
+
     const ownerId = userId;
     if (!ownerId) {
       track("product_read_unauthorized_owner_check", { reqId, productId });
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    const ownerItem = await prisma.product.findFirst({
+    const selectOwner: any = {
+      ...productBaseSelect,
+      _count: { select: { favorites: true } },
+    };
+    if (userId) {
+      selectOwner.favorites = {
+        where: { userId },
+        select: { productId: true },
+        take: 1,
+      };
+    }
+
+    const ownerItem = await Product.findFirst({
       where: { id: productId, sellerId: ownerId },
-      select,
+      select: selectOwner,
     });
     if (!ownerItem) {
       track("product_read_not_found", { reqId, productId, reason: "no_owner_item" });
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
+    const shapedOwner = shapeProduct(ownerItem);
+    const normOwner = normalizeCoverAndGallery(shapedOwner, fullRow, relUrls);
     track("product_read_owner_hit", { reqId, productId });
-    return noStore(shapeProduct(ownerItem));
+    return noStore({ ...shapedOwner, image: normOwner.cover, gallery: normOwner.gallery });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn("[products/:id GET] error:", e);
     track("product_read_error", {
       reqId,
@@ -230,6 +364,12 @@ export async function PATCH(req: NextRequest) {
       return noStore({ error: "Missing id" }, { status: 400 });
     }
 
+    const Product = getProductModel();
+    if (!Product) {
+      track("product_update_not_found", { reqId, productId, reason: "no_model" });
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
+
     track("product_update_attempt", { reqId, productId });
 
     const session = await auth();
@@ -239,7 +379,7 @@ export async function PATCH(req: NextRequest) {
       return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const existing = await prisma.product.findUnique({
+    const existing = await Product.findUnique({
       where: { id: productId },
       select: { id: true, sellerId: true },
     });
@@ -261,10 +401,10 @@ export async function PATCH(req: NextRequest) {
 
     const normCondition = (() => {
       const t = String(body?.condition ?? "").trim().toLowerCase();
-      if (!t) return undefined; // undefined means "don't touch"
+      if (!t) return undefined;
       if (["brand new", "brand-new", "brand_new", "new"].includes(t)) return "brand new";
       if (["pre-owned", "pre owned", "pre_owned", "used"].includes(t)) return "pre-owned";
-      return undefined; // ignore unknown condition values
+      return undefined;
     })();
 
     const normPrice =
@@ -274,36 +414,51 @@ export async function PATCH(req: NextRequest) {
         ? null
         : undefined;
 
+    const normStatus =
+      body?.status === "ACTIVE" ||
+      body?.status === "SOLD" ||
+      body?.status === "HIDDEN" ||
+      body?.status === "DRAFT" ||
+      body?.status === "ARCHIVED"
+        ? body.status
+        : body?.status == null
+        ? undefined
+        : undefined;
+
     const normGallery = Array.isArray(body?.gallery)
       ? body.gallery.map((x: unknown) => String(x || "")).filter(Boolean)
       : undefined;
 
-    // IMPORTANT: only set keys that are defined (TS exactOptionalPropertyTypes)
     const data: {
       name?: string;
-      description?: string;
+      description?: string | null;
       category?: string;
-      subcategory?: string;
+      subcategory?: string | null;
       brand?: string;
       condition?: string | null;
       price?: number | null;
-      image?: string;
+      image?: string | null;
       gallery?: string[];
-      location?: string;
+      location?: string | null;
       negotiable?: boolean;
+      status?: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT" | "ARCHIVED";
     } = {};
 
     if (typeof body?.name === "string") data.name = body.name.trim().slice(0, 140);
-    if (typeof body?.description === "string") data.description = body.description.slice(0, 5000);
+    if (typeof body?.description === "string" || body?.description === null)
+      data.description = body?.description ?? null;
     if (typeof body?.category === "string") data.category = body.category.slice(0, 64);
-    if (typeof body?.subcategory === "string") data.subcategory = body.subcategory.slice(0, 64);
+    if (typeof body?.subcategory === "string" || body?.subcategory === null)
+      data.subcategory = body?.subcategory ?? null;
     if (typeof body?.brand === "string") data.brand = body.brand.slice(0, 64);
     if (normCondition !== undefined) data.condition = normCondition;
-    if (normPrice !== undefined) data.price = normPrice; // number | null | undefined
-    if (typeof body?.image === "string") data.image = body.image.slice(0, 2048);
+    if (normPrice !== undefined) data.price = normPrice;
+    if (typeof body?.image === "string" || body?.image === null) data.image = body?.image ?? null;
     if (normGallery !== undefined) data.gallery = normGallery;
-    if (typeof body?.location === "string") data.location = body.location.slice(0, 120);
+    if (typeof body?.location === "string" || body?.location === null)
+      data.location = body?.location ?? null;
     if (typeof body?.negotiable === "boolean") data.negotiable = body.negotiable;
+    if (normStatus !== undefined) data.status = normStatus as any;
 
     const select: any = {
       ...productBaseSelect,
@@ -317,13 +472,20 @@ export async function PATCH(req: NextRequest) {
       };
     }
 
-    const updated = await prisma.product.update({
+    const updated = await Product.update({
       where: { id: productId },
       data,
       select,
     });
 
-    // ---- revalidate caches after update ----
+    const [fullRow, relUrls] = await Promise.all([
+      Product.findUnique({ where: { id: productId } }).catch(() => null),
+      fetchProductRelationUrls(productId),
+    ]);
+
+    const shaped = shapeProduct(updated);
+    const norm = normalizeCoverAndGallery({ ...shaped, ...(body || {}) }, fullRow, relUrls);
+
     try {
       revalidateTag("home:active");
       revalidateTag("products:latest");
@@ -332,9 +494,7 @@ export async function PATCH(req: NextRequest) {
       revalidatePath("/");
       revalidatePath(`/product/${productId}`);
       revalidatePath(`/listing/${productId}`);
-    } catch {
-      /* best-effort */
-    }
+    } catch {}
 
     track("product_update_success", {
       reqId,
@@ -342,9 +502,8 @@ export async function PATCH(req: NextRequest) {
       favoritesCount: (updated as any)?.["_count"]?.favorites ?? 0,
     });
 
-    return noStore(shapeProduct(updated));
+    return noStore({ ...shaped, image: norm.cover, gallery: norm.gallery });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn("[products/:id PATCH] error:", e);
     track("product_update_error", {
       reqId,
@@ -366,16 +525,23 @@ export async function DELETE(req: NextRequest) {
       return noStore({ error: "Missing id" }, { status: 400 });
     }
 
+    const Product = getProductModel();
+    if (!Product) {
+      track("product_delete_not_found", { reqId, productId, reason: "no_model" });
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
+
     track("product_delete_attempt", { reqId, productId });
 
     const session = await auth();
     const s: any = session?.user ?? {};
     const userId: string | undefined = s?.id;
-    const email: string | undefined = typeof s?.email === "string" ? s.email : undefined;
+    const email: string | undefined =
+      typeof s?.email === "string" ? s.email : undefined;
     const role: string | undefined = typeof s?.role === "string" ? s.role : undefined;
-    const isAdminFlag: boolean = s?.isAdmin === true || (role?.toUpperCase?.() === "ADMIN");
+    const isAdminFlag: boolean =
+      s?.isAdmin === true || role?.toUpperCase?.() === "ADMIN";
 
-    // Admin allow-list fallback via env
     const adminEmails = (process.env["ADMIN_EMAILS"] ?? "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
@@ -389,16 +555,19 @@ export async function DELETE(req: NextRequest) {
       return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const existing = await prisma.product.findUnique({
+    const existing = await Product.findUnique({
       where: { id: productId },
       select: { id: true, sellerId: true },
     });
     if (!existing) {
-      track("product_delete_not_found", { reqId, productId, reason: "no_existing" });
+      track("product_delete_not_found", {
+        reqId,
+        productId,
+        reason: "no_existing",
+      });
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    // Owner OR Admin can delete
     const isOwner = !!userId && existing.sellerId === userId;
     if (!isOwner && !isAdmin) {
       track("product_delete_forbidden", { reqId, productId });
@@ -407,10 +576,9 @@ export async function DELETE(req: NextRequest) {
 
     await prisma.$transaction([
       prisma.favorite.deleteMany({ where: { productId } }),
-      prisma.product.delete({ where: { id: productId } }),
+      Product.delete({ where: { id: productId } }),
     ]);
 
-    // ---- revalidate caches after delete ----
     try {
       revalidateTag("home:active");
       revalidateTag("products:latest");
@@ -419,15 +587,12 @@ export async function DELETE(req: NextRequest) {
       revalidatePath("/");
       revalidatePath(`/product/${productId}`);
       revalidatePath(`/listing/${productId}`);
-    } catch {
-      /* best-effort */
-    }
+    } catch {}
 
     track("product_delete_success", { reqId, productId });
 
     return noStore({ ok: true });
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn("[products/:id DELETE] error:", e);
     track("product_delete_error", {
       reqId,

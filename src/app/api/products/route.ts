@@ -9,7 +9,7 @@ import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const PRODUCTS_VER = "vDEBUG-PRODUCTS-008";
+const PRODUCTS_VER = "vDEBUG-PRODUCTS-011";
 function attachVersion(h: Headers) {
   h.set("X-Products-Version", PRODUCTS_VER);
 }
@@ -22,7 +22,8 @@ function safe(obj: unknown) {
 }
 
 /* ----------------------------- tiny helpers ----------------------------- */
-function toInt(v: string | null, def: number, min: number, max: number) {
+function toInt(v: string | null | undefined, def: number, min: number, max: number) {
+  if (v == null || v.trim() === "") return def; // treat null/blank as unset
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
   return Math.max(min, Math.min(max, Math.trunc(n)));
@@ -41,7 +42,7 @@ function optStr(v: string | null): string | undefined {
   if (l === "any" || l === "all" || l === "*") return undefined;
   return t;
 }
-function hasNumeric(val: string | null) {
+function hasNumeric(val: string | null | undefined) {
   if (val == null) return false;
   const t = val.trim();
   if (!t) return false;
@@ -66,12 +67,14 @@ const productListSelect = {
   condition: true,
   price: true,
   image: true,
+  gallery: true, // ✅ always include gallery
   location: true,
   negotiable: true,
   createdAt: true,
   featured: true,
   sellerId: true,
 
+  // flattened seller snapshot
   sellerName: true,
   sellerLocation: true,
   sellerMemberSince: true,
@@ -101,7 +104,11 @@ export async function GET(req: NextRequest) {
 
     // Clamp q to avoid expensive scans on huge strings
     const rawQ = (url.searchParams.get("q") || "").trim().slice(0, 64);
-    const tokens = rawQ.split(/\s+/).map((s) => s.trim()).filter((s) => s.length > 1).slice(0, 5);
+    const tokens = rawQ
+      .split(/\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 1)
+      .slice(0, 5);
 
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
@@ -123,7 +130,7 @@ export async function GET(req: NextRequest) {
       if (!uid) {
         const res = jsonPrivate({ error: "Unauthorized" }, { status: 401 });
         attachVersion(res.headers);
-        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
         return res;
       }
       sellerId = uid;
@@ -159,7 +166,7 @@ export async function GET(req: NextRequest) {
 
     const and: any[] = [];
 
-    // ✅ Tokenized AND search
+    // ✅ Tokenized AND search (fallback to rawQ)
     if (tokens.length) {
       for (const t of tokens) {
         and.push({
@@ -172,6 +179,16 @@ export async function GET(req: NextRequest) {
           ],
         });
       }
+    } else if (rawQ) {
+      and.push({
+        OR: [
+          { name: { contains: rawQ, mode: "insensitive" } },
+          { brand: { contains: rawQ, mode: "insensitive" } },
+          { category: { contains: rawQ, mode: "insensitive" } },
+          { subcategory: { contains: rawQ, mode: "insensitive" } },
+          { sellerName: { contains: rawQ, mode: "insensitive" } },
+        ],
+      });
     }
 
     if (category) and.push({ category: { equals: category, mode: "insensitive" } });
@@ -182,6 +199,7 @@ export async function GET(req: NextRequest) {
     if (sellerUsername)
       and.push({ seller: { is: { username: { equals: sellerUsername, mode: "insensitive" } } } });
 
+    // verifiedOnly overrides featured
     if (verifiedOnly === true) {
       and.push({ featured: true });
     } else if (typeof featured === "boolean") {
@@ -210,7 +228,7 @@ export async function GET(req: NextRequest) {
 
     if (and.length) where["AND"] = and;
 
-    const isSearchLike = tokens.length > 0 || !!category || !!subcategory || !!brand;
+    const isSearchLike = tokens.length > 0 || !!rawQ || !!category || !!subcategory || !!brand;
 
     let orderBy: any;
     if (sort === "price_asc") {
@@ -218,7 +236,7 @@ export async function GET(req: NextRequest) {
     } else if (sort === "price_desc") {
       orderBy = [{ price: "desc" }, { createdAt: "desc" }, { id: "desc" }];
     } else if (sort === "featured") {
-      orderBy = [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }];
+      orderBy = [{ featured: "desc" }, { createdAt: "asc" }, { id: "desc" }]; // promote featured first
     } else {
       orderBy = isSearchLike
         ? [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }]
@@ -231,6 +249,7 @@ export async function GET(req: NextRequest) {
       console.log("[/api/products page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
     }
 
+    // If client wants favorite flags/counts, try to resolve user (best-effort)
     let userId: string | null = null;
     if (includeFav) {
       try {
@@ -255,6 +274,7 @@ export async function GET(req: NextRequest) {
       select.favorites = { where: { userId }, select: { productId: true }, take: 1 };
     }
 
+    // Guard result window (skip if using cursor)
     if (!cursor) {
       const skipEst = (page - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
@@ -274,7 +294,7 @@ export async function GET(req: NextRequest) {
         );
         attachVersion(res.headers);
         res.headers.set("X-Total-Count", "0");
-        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
         return res;
       }
     }
@@ -306,10 +326,24 @@ export async function GET(req: NextRequest) {
       const favoritesCount: number = p?._count?.favorites ?? 0;
       const rel = p?.favorites;
       const isFavoritedByMe: boolean = Array.isArray(rel) && rel.length > 0;
+
+      const gallery: string[] = Array.isArray(p?.gallery) ? p.gallery.filter(Boolean) : [];
+      const image: string | null = p?.image ?? (gallery[0] ?? null);
+
       const createdAt =
         p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
-      const { _count, favorites, ...rest } = p;
-      return { ...rest, createdAt, favoritesCount, isFavoritedByMe: !!userId && isFavoritedByMe };
+      const sellerUsername = p?.seller?.username ?? null;
+
+      const { _count, favorites, seller, ...rest } = p;
+      return {
+        ...rest,
+        image,
+        gallery,
+        createdAt,
+        favoritesCount,
+        isFavoritedByMe: !!userId && isFavoritedByMe,
+        sellerUsername,
+      };
     });
 
     const payload = {
@@ -327,13 +361,13 @@ export async function GET(req: NextRequest) {
     const res = userId ? jsonPrivate(payload) : jsonPublic(payload, 60);
     attachVersion(res.headers);
     res.headers.set("X-Total-Count", String(total));
-    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
     return res;
   } catch (e: any) {
     console.warn("[/api/products GET] ERROR:", e?.message, e);
     const res = jsonPrivate({ error: "Server error" }, { status: 500 });
     attachVersion(res.headers);
-    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
     return res;
   }
 }
@@ -389,23 +423,32 @@ async function computeFacets(where: any) {
 function baseHeaders() {
   const h = new Headers();
   attachVersion(h);
-  h.set("Vary", "Authorization, Cookie, Accept-Encoding");
+  h.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
   return h;
 }
 
 export async function HEAD() {
   // NOTE: use a bare Response for 204 to avoid body-related platform quirks.
   const h = baseHeaders();
-  h.set("Allow", "GET, POST, PATCH, HEAD, OPTIONS");
+  h.set("Allow", "GET, POST, HEAD, OPTIONS");
+  h.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  h.set("Pragma", "no-cache");
+  h.set("Expires", "0");
   return new Response(null, { status: 204, headers: h });
 }
 
 export async function OPTIONS() {
-  // NOTE: also bare Response with CORS + Allow. Mirrors /api/services behavior.
+  // NOTE: bare Response with CORS + Allow. Mirrors /api/services behavior.
   const h = baseHeaders();
-  h.set("Allow", "GET, POST, PATCH, HEAD, OPTIONS");
-  h.set("Access-Control-Allow-Methods", "GET, POST, PATCH, HEAD, OPTIONS");
+  const origin =
+    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["APP_ORIGIN"] ??
+    "*";
+  h.set("Allow", "GET, POST, HEAD, OPTIONS");
+  h.set("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
   h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  h.set("Access-Control-Allow-Origin", "*");
+  h.set("Access-Control-Allow-Origin", origin);
+  h.set("Access-Control-Max-Age", "86400");
+  h.set("Cache-Control", "no-store");
   return new Response(null, { status: 204, headers: h });
 }

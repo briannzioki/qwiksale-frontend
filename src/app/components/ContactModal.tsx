@@ -3,6 +3,8 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import toast from "react-hot-toast";
+import IconButton from "@/app/components/IconButton";
 import { normalizeKenyanPhone, makeWhatsAppLink } from "@/app/lib/phone";
 
 /* ----------------------------- Types ----------------------------- */
@@ -67,13 +69,15 @@ export default function ContactModal({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const [saved, setSaved] = useState(false);
+
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   const name = payload?.contact?.name ?? fallbackName ?? "—";
   const phone = payload?.contact?.phone ?? "—";
-  const location = payload?.contact?.location ?? fallbackLocation ?? "—";
+  const sellerLocation = payload?.contact?.location ?? fallbackLocation ?? "—";
 
   const msisdn = useMemo(
     () => (payload?.contact?.phone ? normalizeKenyanPhone(payload.contact.phone) : null),
@@ -90,6 +94,38 @@ export default function ContactModal({
 
   // Use E.164-like tel link (requires +)
   const telLink = useMemo(() => (msisdn ? `tel:+${msisdn}` : null), [msisdn]);
+
+  // ✅ Use window.location.origin; avoid shadowing by local sellerLocation string
+  const shareUrl = useMemo(() => {
+    if (typeof window !== "undefined" && window.location) {
+      return `${window.location.origin}/product/${productId}`;
+    }
+    return `/product/${productId}`;
+  }, [productId]);
+
+  const share = useCallback(async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: productName || payload?.product?.name || "Listing",
+          url: shareUrl,
+        });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Link copied");
+      }
+      track("product_share_click", { productId });
+    } catch {
+      /* user cancelled or not supported — ignore */
+    }
+  }, [productId, productName, payload?.product?.name, shareUrl]);
+
+  const toggleSave = useCallback(() => {
+    const next = !saved;
+    setSaved(next);
+    emit("qs:listing:save_toggled", { kind: "product", id: productId, saved: next });
+    track(next ? "product_saved" : "product_unsaved", { productId });
+  }, [saved, productId]);
 
   const reveal = useCallback(async () => {
     if (!productId || loading) return;
@@ -292,34 +328,68 @@ export default function ContactModal({
                       )}
                     </div>
                     <div>
-                      <span className="font-medium">Location:</span> {location}
+                      <span className="font-medium">Location:</span> {sellerLocation}
                     </div>
                   </div>
 
                   {/* CTAs */}
                   <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    {/* Message (WhatsApp) */}
                     {waLink && (
-                      <a
-                        href={waLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-xl bg-[#25D366] px-3 py-1.5 text-sm text-white hover:opacity-90"
-                        onClick={() => track("contact_whatsapp_click", { productId })}
-                        aria-label="Open WhatsApp chat with seller"
-                      >
-                        WhatsApp
-                      </a>
+                      <IconButton
+                        icon="message"
+                        variant="outline"
+                        labelText="Message"
+                        srLabel="Message on WhatsApp"
+                        onClick={() => {
+                          try {
+                            window.open(waLink, "_blank", "noopener,noreferrer");
+                            track("contact_whatsapp_click", { productId });
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                      />
                     )}
+
+                    {/* Call */}
                     {telLink && (
-                      <a
-                        href={telLink}
-                        className="rounded-xl border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 dark:text-gray-200"
-                        onClick={() => track("contact_call_click", { productId })}
-                        aria-label="Call seller"
-                      >
-                        Call
-                      </a>
+                      <IconButton
+                        icon="phone"
+                        variant="outline"
+                        labelText="Call"
+                        srLabel="Call seller"
+                        onClick={() => {
+                          try {
+                            window.location.href = telLink;
+                            track("contact_call_click", { productId });
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                      />
                     )}
+
+                    {/* Share */}
+                    <IconButton
+                      icon="share"
+                      variant="outline"
+                      labelText="Share"
+                      srLabel="Share listing"
+                      onClick={() => void share()}
+                    />
+
+                    {/* Favorite (renamed from Save) */}
+                    <IconButton
+                      icon="heart"
+                      variant="outline"
+                      labelText={saved ? "Favorited" : "Favorite"}
+                      srLabel={saved ? "Unfavorite listing" : "Favorite listing"}
+                      aria-pressed={saved}
+                      onClick={toggleSave}
+                    />
+
+                    {/* Close */}
                     <button
                       onClick={() => setOpen(false)}
                       type="button"

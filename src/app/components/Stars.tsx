@@ -36,6 +36,11 @@ export default function Stars({
 
   const aria = `${value.toFixed(1)} out of ${total} stars`;
 
+  // Single star path (rounded corners, looks good at small sizes)
+  const StarPath = (
+    <path d="M12 17.27l-5.47 3.2 1.45-6.03L3 9.52l6.19-.53L12 3.5l2.81 5.49 6.19.53-4.98 4.92 1.45 6.03L12 17.27z" />
+  );
+
   return (
     <div
       className={`inline-flex items-center gap-1 ${className}`}
@@ -54,25 +59,32 @@ export default function Stars({
             style={{ width: size, height: size, lineHeight: `${size}px` }}
             aria-hidden="true"
           >
-            {/* Empty/base star */}
-            <span
-              className={`${emptyClassName} select-none`}
-              style={{ fontSize: size, lineHeight: `${size}px` }}
+            {/* Empty/base star (outline) */}
+            <svg
+              viewBox="0 0 24 24"
+              width={size}
+              height={size}
+              className={`${emptyClassName}`}
+              aria-hidden
             >
-              ★
-            </span>
+              {StarPath}
+            </svg>
 
-            {/* Filled overlay (clipped to percentage) */}
+            {/* Filled overlay clipped to percentage */}
             {fill > 0 && (
               <span
-                className={`${fillClassName} absolute inset-0 overflow-hidden select-none`}
-                style={{
-                  width: `${Math.max(0, Math.min(1, fill)) * 100}%`,
-                  fontSize: size,
-                  lineHeight: `${size}px`,
-                }}
+                className="absolute inset-0 overflow-hidden"
+                style={{ width: `${Math.max(0, Math.min(1, fill)) * 100}%` }}
+                aria-hidden
               >
-                ★
+                <svg
+                  viewBox="0 0 24 24"
+                  width={size}
+                  height={size}
+                  className={`${fillClassName}`}
+                >
+                  {StarPath}
+                </svg>
               </span>
             )}
           </span>
