@@ -1,3 +1,4 @@
+// src/app/(marketing)/pricing/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";

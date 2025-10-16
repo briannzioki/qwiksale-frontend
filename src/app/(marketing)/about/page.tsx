@@ -115,13 +115,7 @@ function TeamCard({
   );
 }
 
-function FAQItem({
-  q,
-  a,
-}: {
-  q: string;
-  a: React.ReactNode;
-}) {
+function FAQItem({ q, a }: { q: string; a: React.ReactNode }) {
   return (
     <details className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900 p-4">
       <summary className="cursor-pointer list-none font-medium text-gray-900 dark:text-slate-100">
@@ -146,7 +140,7 @@ export default function AboutPage() {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: "QwikSale",
-    url: process.env['NEXT_PUBLIC_APP_URL'] || "https://qwiksale.app",
+    url: process.env["NEXT_PUBLIC_APP_URL"] || "https://qwiksale.app",
     logo: "/logo.svg",
     sameAs: [
       "https://x.com/qwiksale",
@@ -157,7 +151,7 @@ export default function AboutPage() {
 
   return (
     <main className="min-h-dvh">
-      {/* Hero / Section header (inherits lighter spacing from component) */}
+      {/* Hero */}
       <SectionHeader
         title="About QwikSale"
         subtitle="A faster, safer way to buy & sell locally."
@@ -295,7 +289,7 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* Call to action */}
+        {/* CTA */}
         <section className="mt-10 flex flex-col items-center rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900 p-6 text-center">
           <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">Join the community</h2>
           <p className="mt-1 text-sm text-gray-700 dark:text-slate-300">
@@ -315,7 +309,6 @@ export default function AboutPage() {
       {/* JSON-LD */}
       <script
         type="application/ld+json"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD string injection is intentional and safe here
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
     </main>
