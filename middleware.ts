@@ -14,7 +14,6 @@ function makeUUID(): string {
 }
 
 /* ----------------------- Suggest soft limiter (Edge) ---------------------- */
-/** window+limit can be tuned via env if you like */
 const SUGGEST_WINDOW_MS = Number(process.env.SUGGEST_WINDOW_MS ?? 10_000); // 10s
 const SUGGEST_LIMIT = Number(process.env.SUGGEST_LIMIT ?? 12); // 12 reqs per window
 
@@ -24,7 +23,6 @@ const SUGGEST_STORE: StampStore = g.__QS_SUGGEST_RL__ ?? new Map();
 if (!g.__QS_SUGGEST_RL__) g.__QS_SUGGEST_RL__ = SUGGEST_STORE;
 
 function isSuggestApiPath(p: string) {
-  // Matches /api/suggest, /api/search/suggest, /api/foo/bar/suggest, etc.
   return p.startsWith("/api/") && /(?:^|\/)suggest(?:\/|$)/i.test(p);
 }
 function rlKeyFromReq(req: NextRequest) {
@@ -44,7 +42,6 @@ function buildSecurityHeaders(nonce: string, isDev: boolean, reportOnly: boolean
     "'self'",
     "data:",
     "blob:",
-    // First-party/user media CDNs (match next.config.ts remotePatterns)
     "https://res.cloudinary.com",
     "https://images.unsplash.com",
     "https://plus.unsplash.com",
@@ -52,27 +49,21 @@ function buildSecurityHeaders(nonce: string, isDev: boolean, reportOnly: boolean
     "https://avatars.githubusercontent.com",
     "https://images.pexels.com",
     "https://picsum.photos",
-    // GA beacons sometimes render pixels
     "https://www.google-analytics.com",
   ].join(" ");
 
   const connectSrc = [
     "'self'",
-    // Your APIs / third-parties
     "https://api.resend.com",
     "https://api.africastalking.com",
     "https://api.sandbox.africastalking.com",
-    // Vercel Analytics (historical + current)
     "https://vitals.vercel-insights.com",
     "https://vitals.vercel-analytics.com",
-    // Analytics
     "https://plausible.io",
     "https://www.google-analytics.com",
     "https://region1.google-analytics.com",
-    // Google auth/profile
     "https://accounts.google.com",
     "https://www.googleapis.com",
-    // WebSocket (dev HMR etc.)
     "ws:",
     "wss:",
   ].join(" ");
@@ -84,7 +75,7 @@ function buildSecurityHeaders(nonce: string, isDev: boolean, reportOnly: boolean
     "'self'",
     `'nonce-${nonce}'`,
     "'strict-dynamic'",
-    ...(isDev ? ["'unsafe-eval'"] : []), // dev only
+    ...(isDev ? ["'unsafe-eval'"] : []),
     "https://plausible.io",
     "https://www.googletagmanager.com",
     "https://www.google-analytics.com",
@@ -136,9 +127,8 @@ function mustBeJson(req: NextRequest) {
 /* -------------------- Optional Origin allow-list -------------------- */
 function isAllowedOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
-  if (!origin) return true; // non-CORS or same-origin fetches may omit Origin
+  if (!origin) return true;
 
-  // Same-origin always allowed
   try {
     const o = new URL(origin);
     if (o.host === req.nextUrl.host) return true;
@@ -146,14 +136,9 @@ function isAllowedOrigin(req: NextRequest): boolean {
     return false;
   }
 
-  // Build allow-list
   const raw = process.env.CORS_ALLOW_ORIGINS || process.env.NEXT_PUBLIC_APP_URL || "";
-  const list = raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
 
-  // Match against exact origin (scheme+host+port)
   return list.some((entry) => {
     try {
       return new URL(entry).origin === new URL(origin).origin;
@@ -169,6 +154,9 @@ export default withAuth(
 
     // Allow preflight
     if (req.method === "OPTIONS") return NextResponse.next();
+
+    // Let Sentry tunnel pass without checks (prevents 401/403/502)
+    if (p === "/api/monitoring") return NextResponse.next();
 
     // Skip infra/static/auth/health
     if (
@@ -202,7 +190,7 @@ export default withAuth(
       if (bad) return bad;
     }
 
-    // Origin allow-list for mutating methods (optional; set CORS_ALLOW_ORIGINS)
+    // Origin allow-list for mutating methods
     if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       if (!isAllowedOrigin(req)) {
         return new NextResponse(JSON.stringify({ error: "Origin not allowed" }), {
@@ -212,19 +200,18 @@ export default withAuth(
       }
     }
 
-    /* -------------------- NEW: soft RL for suggest endpoints -------------------- */
+    // Soft RL for suggest endpoints
     if (isApi && isSuggestApiPath(p)) {
       const key = rlKeyFromReq(req);
       const now = Date.now();
       const cutoff = now - SUGGEST_WINDOW_MS;
 
       const arr = SUGGEST_STORE.get(key) ?? [];
-      // prune old hits
       while (arr.length && arr[0] <= cutoff) arr.shift();
 
       if (arr.length >= SUGGEST_LIMIT) {
         const oldest = arr[0] ?? now;
-        const retryMs = Math.max(2000, SUGGEST_WINDOW_MS - (now - oldest)); // min 2s cool-off
+        const retryMs = Math.max(2000, SUGGEST_WINDOW_MS - (now - oldest));
         const retrySec = Math.max(1, Math.ceil(retryMs / 1000));
 
         return new NextResponse(JSON.stringify({ error: "Too many requests. Please slow down." }), {
@@ -241,11 +228,9 @@ export default withAuth(
         });
       }
 
-      // record hit
       arr.push(now);
       SUGGEST_STORE.set(key, arr);
     }
-    /* -------------------------------------------------------------------------- */
 
     // Pass CSP nonce to app on HTML navigations
     const nonce = isHtmlLike && !isApi ? makeNonce() : "";
@@ -313,6 +298,6 @@ export default withAuth(
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|api/health|_vercel|\\.well-known).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|api/auth|api/health|api/monitoring|_vercel|\\.well-known).*)",
   ],
 };

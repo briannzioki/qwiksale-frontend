@@ -60,3 +60,9 @@ prisma.config.ts
 /playwright-report/
 /test-results/
 /blob-report/
+
+# Sentry Config File
+.env.sentry-build-plugin
+
+.vscode/
+
