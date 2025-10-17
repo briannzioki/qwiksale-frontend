@@ -1,13 +1,5 @@
-// src/app/api/auth/[...nextauth]/authOptions.ts
 import { createTransport } from "nodemailer";
-import type {
-  AuthOptions,
-  Session,
-  User,
-  Account,
-  Profile,
-} from "next-auth";
-import type { JWT } from "next-auth/jwt";
+import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -21,8 +13,7 @@ import { verifyPassword, hashPassword } from "@/server/auth";
 const isProd = process.env.NODE_ENV === "production";
 
 // Allow auto-signup for credentials users (env override-able)
-const ALLOW_CREDS_AUTO_SIGNUP =
-  (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
+const ALLOW_CREDS_AUTO_SIGNUP = (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
 
 // Safe in-origin post-auth landings
 const ALLOWED_CALLBACK_PATHS = new Set<string>([
@@ -44,13 +35,11 @@ function deriveHandle(email?: string | null, name?: string | null) {
   return base;
 }
 
-export const authOptions: AuthOptions = {
+export const authOptions: NextAuthOptions = {
   debug: process.env["NEXTAUTH_DEBUG"] === "1",
 
   // Rely on env for secret (do not hard-code)
-  ...(process.env["NEXTAUTH_SECRET"]
-    ? { secret: process.env["NEXTAUTH_SECRET"]! }
-    : {}),
+  ...(process.env["NEXTAUTH_SECRET"] ? { secret: process.env["NEXTAUTH_SECRET"]! } : {}),
 
   adapter: PrismaAdapter(prisma),
 
@@ -58,7 +47,7 @@ export const authOptions: AuthOptions = {
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30d
-    updateAge: 24 * 60 * 60, // refresh JWT claims daily
+    updateAge: 24 * 60 * 60,   // refresh JWT claims daily
   },
 
   // Friendly sign-in page
@@ -127,6 +116,7 @@ export const authOptions: AuthOptions = {
             passwordHash: true,
             subscription: true,
             username: true,
+            referralCode: true,
             role: true,
           },
         });
@@ -147,7 +137,6 @@ export const authOptions: AuthOptions = {
             email: user.email,
             name: user.name ?? null,
             image: user.image ?? null,
-            // username synced in jwt callback
           };
         }
 
@@ -177,7 +166,7 @@ export const authOptions: AuthOptions = {
   ],
 
   callbacks: {
-    async redirect({ url, baseUrl }: { url: string; baseUrl: string }) {
+    async redirect({ url, baseUrl }) {
       try {
         const u = new URL(url, baseUrl);
 
@@ -209,31 +198,19 @@ export const authOptions: AuthOptions = {
       return baseUrl;
     },
 
-    async jwt({
-      token,
-      user,
-      account,
-      profile,
-      trigger,
-    }: {
-      token: JWT;
-      user?: User;
-      account?: Account | null;
-      profile?: Profile | undefined;
-      trigger?: "signIn" | "signUp" | "update";
-    }) {
-      // Persist user id under a stable name
-      if (user?.id) token.id = user.id;
+    async jwt({ token, user, account, profile, trigger }) {
+      // Persist user id
+      if (user?.id) (token as any).uid = user.id;
 
       // Opportunistically capture username on first login from user/profile
-      if (token.username == null) {
+      if ((token as any).username == null) {
         const fromUser = (user as any)?.username ?? null;
         const fromProfile =
           (profile as any)?.preferred_username ??
           (profile as any)?.login ??
           null;
 
-        token.username =
+        (token as any).username =
           fromUser ??
           fromProfile ??
           deriveHandle(user?.email ?? null, user?.name ?? null) ??
@@ -242,22 +219,23 @@ export const authOptions: AuthOptions = {
 
       // Keep JWT in sync with DB on first login and on explicit token updates
       if (user?.id || trigger === "update") {
-        const uid = user?.id || token.id;
+        const uid = (user?.id as string) || (token as any).uid;
         if (uid) {
           const profileRow = await prisma.user.findUnique({
             where: { id: uid },
             select: {
               subscription: true,
               username: true,
+              referralCode: true,
               role: true,
             },
           });
 
           if (profileRow) {
-            token.subscription = (profileRow as any).subscription ?? null;
-            token.username =
-              (profileRow as any).username ?? token.username ?? null;
-            token["role"] = (profileRow as any).role ?? "USER";
+            (token as any).subscription = profileRow.subscription ?? null;
+            (token as any).username = profileRow.username ?? (token as any).username ?? null;
+            (token as any).referralCode = profileRow.referralCode ?? null;
+            (token as any).role = profileRow.role ?? "USER";
           }
         }
       }
@@ -265,22 +243,16 @@ export const authOptions: AuthOptions = {
       return token;
     },
 
-    async session({
-      session,
-      token,
-    }: {
-      session: Session;
-      token: JWT;
-    }) {
+    async session({ session, token }) {
       // Attach id and custom claims onto the session user
-      if (session.user && token?.id) {
-        (session.user as any).id = token.id;
+      if (session.user && (token as any)?.uid) {
+        (session.user as any).id = (token as any).uid as string;
       }
-      (session.user as any).subscription = token.subscription ?? null;
-      (session.user as any).username = token.username ?? null;
+      (session.user as any).subscription = (token as any).subscription ?? null;
+      (session.user as any).username = (token as any).username ?? null;
+      (session.user as any).referralCode = (token as any).referralCode ?? null;
       (session.user as any).role = (token as any).role ?? "USER";
 
-      // (Optional) attach lightweight counts here if needed.
       return session;
     },
   },
@@ -288,15 +260,11 @@ export const authOptions: AuthOptions = {
   events: {
     signIn({ user, account, isNewUser }) {
       // eslint-disable-next-line no-console
-      console.log("[auth] signIn", {
-        uid: user?.id,
-        provider: account?.provider,
-        isNewUser,
-      });
+      console.log("[auth] signIn", { uid: user?.id, provider: account?.provider, isNewUser });
     },
     createUser({ user }) {
       // eslint-disable-next-line no-console
-      console.log("[auth] createUser", { uid: user.id, email: user.email });
+      console.log("[auth] createUser", { uid: user.id, email: (user as any).email });
     },
     linkAccount({ user, account }) {
       // eslint-disable-next-line no-console
