@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 
-/** Best-effort dynamic import that won’t crash in either src/ or app/ layouts */
+/** Best-effort dynamic import that won’t crash whether we’re in src/ or app/ */
 async function tryImport(path: string) {
   try {
     return await import(path);
@@ -9,11 +9,8 @@ async function tryImport(path: string) {
   }
 }
 
-/**
- * Next calls this once on server start. Make sure Sentry configs load for both runtimes
- * and tag helpful metadata.
- */
 export async function register() {
+  // Ensure the appropriate runtime config file runs exactly once
   if (process.env["NEXT_RUNTIME"] === "nodejs") {
     await (
       tryImport("../sentry.server.config") ||
@@ -31,12 +28,8 @@ export async function register() {
   }
 
   try {
-    const environment =
-      process.env["SENTRY_ENV"] || process.env.NODE_ENV || "development";
-    const release =
-      process.env["NEXT_PUBLIC_COMMIT_SHA"] ||
-      process.env["VERCEL_GIT_COMMIT_SHA"] ||
-      undefined;
+    const environment = process.env["SENTRY_ENV"] || process.env.NODE_ENV || "development";
+    const release = process.env["NEXT_PUBLIC_COMMIT_SHA"] || process.env["VERCEL_GIT_COMMIT_SHA"] || undefined;
 
     Sentry.setTag("runtime", process.env["NEXT_RUNTIME"] || "nodejs");
     Sentry.setTag("node_env", environment);
@@ -44,25 +37,17 @@ export async function register() {
   } catch {}
 }
 
-/**
- * Use Sentry v8 helper if present. Next passes only (error), so don’t assume a request arg.
- * Falls back to captureException with minimal context.
- */
 export function onRequestError(...args: unknown[]) {
   const [error, reqMaybe] = args as [unknown, Request | undefined];
-
   const cre = (Sentry as any)?.captureRequestError as
     | ((e: unknown, req?: Request) => void)
     | undefined;
 
   if (typeof cre === "function") {
     try {
-      // Call with 1 arg (what Next provides). If we ever receive a request, pass it through.
       reqMaybe ? cre(error, reqMaybe) : cre(error);
       return;
-    } catch {
-      // fall through to captureException
-    }
+    } catch {}
   }
 
   try {
@@ -78,7 +63,6 @@ export function onRequestError(...args: unknown[]) {
   } catch {}
 }
 
-/** Catch other unhandled server errors (e.g., during rendering) */
 export function onUnhandledError(error: unknown) {
   try {
     Sentry.captureException(error, (scope) => {
@@ -89,11 +73,8 @@ export function onUnhandledError(error: unknown) {
   } catch {}
 }
 
-/** Tiny dev helper: call in server console as `global.__testSentryServer?.("hi")` */
-if (
-  process.env.NODE_ENV !== "production" ||
-  process.env["NEXT_PUBLIC_SENTRY_DEBUG"] === "1"
-) {
+// Dev helper
+if (process.env.NODE_ENV !== "production" || process.env["NEXT_PUBLIC_SENTRY_DEBUG"] === "1") {
   try {
     (globalThis as any).__testSentryServer = (msg?: unknown) => {
       try {
