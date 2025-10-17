@@ -1,5 +1,4 @@
-﻿// src/app/layout.tsx
-export const runtime = "nodejs"; // NextAuth/Prisma need Node runtime
+﻿export const runtime = "nodejs"; // NextAuth/Prisma need Node runtime
 
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
@@ -114,7 +113,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       name: "QwikSale",
       url: siteUrl,
       logo: `${siteUrl}/favicon/android-chrome-512x512.png`,
-      sameAs: [`${siteUrl}/about`, `${siteUrl}/contact`, `${siteUrl}/help`],
+      sameAs: [
+        "https://www.tiktok.com/@qwiksale.sale",   // TikTok
+        "https://www.linkedin.com/company/qwiksale", // LinkedIn (adjust slug if different)
+      ],
     } as const,
     siteJsonLd: {
       "@context": "https://schema.org",
@@ -168,6 +170,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="dns-prefetch" href="//images.pexels.com" />
         <link rel="preconnect" href="https://picsum.photos" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="//picsum.photos" />
+
+        {/* Social identity hints (helps entity matching) */}
+        <link rel="me" href="https://www.tiktok.com/@qwiksale.sale" />
+        <link rel="me" href="https://www.linkedin.com/company/qwiksale" />
 
         {/* Fonts */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -230,12 +236,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <VercelAnalytics />
         <Analytics />
 
-        {PLAUSIBLE_DOMAIN ? (
+        {process.env["NEXT_PUBLIC_PLAUSIBLE_DOMAIN"] ? (
           <Script
             id="plausible"
             strategy="afterInteractive"
             src="https://plausible.io/js/script.js"
-            data-domain={PLAUSIBLE_DOMAIN}
+            data-domain={process.env["NEXT_PUBLIC_PLAUSIBLE_DOMAIN"]}
             nonce={nonce}
           />
         ) : null}

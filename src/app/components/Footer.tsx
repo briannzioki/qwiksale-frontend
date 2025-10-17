@@ -19,7 +19,12 @@ export default function Footer() {
     name: "QwikSale",
     url: `${base}/`,
     slogan: "Buy & sell, faster. Made in Kenya.",
-    sameAs: [`${base}/`, `${base}/press`],
+    sameAs: [
+      `${base}/`,
+      `${base}/press`,
+      "https://www.tiktok.com/@qwiksale.sale",
+      "https://www.linkedin.com/company/qwiksale",
+    ],
     contactPoint: [
       {
         "@type": "ContactPoint",
@@ -256,6 +261,30 @@ export default function Footer() {
             <ul className="space-y-2 text-gray-700 dark:text-slate-400">
               <li>
                 <a
+                  className={`${linkClass} inline-flex items-center gap-1.5`}
+                  href="https://www.tiktok.com/@qwiksale.sale"
+                  target="_blank"
+                  rel="me noopener noreferrer"
+                  aria-label="TikTok — QwikSale"
+                >
+                  <TikTokIcon />
+                  TikTok
+                </a>
+              </li>
+              <li>
+                <a
+                  className={`${linkClass} inline-flex items-center gap-1.5`}
+                  href="https://www.linkedin.com/company/qwiksale"
+                  target="_blank"
+                  rel="me noopener noreferrer"
+                  aria-label="LinkedIn — QwikSale"
+                >
+                  <LinkedInIcon />
+                  LinkedIn
+                </a>
+              </li>
+              <li>
+                <a
                   className={linkClass}
                   href={`${base}/blog`}
                   target="_blank"
@@ -415,6 +444,22 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
       <path d="M3 12h18M12 3c3 4 3 14 0 18M12 3c-3 4-3 14 0 18" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
+/* Social icons */
+function TikTokIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 48 48" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M33.6 12.1c2.4 1.8 5.2 3 8.3 3.3v6.6c-3.5-.1-6.9-1.2-9.8-3.1v12.3c0 7-5.7 12.6-12.6 12.6S6.9 38.2 6.9 31.3c0-6.9 5.6-12.6 12.6-12.6 1 0 2 .1 2.9.4v6.9a6 6 0 00-2.9-.7c-3.2 0-5.7 2.6-5.7 5.8s2.6 5.8 5.7 5.8 5.8-2.6 5.8-5.8V5h6.3c.2 2.7 1.1 5 2.9 7.1z"/>
+    </svg>
+  );
+}
+function LinkedInIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M4.98 3.5C4.98 4.88 3.86 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1 4.98 2.12 4.98 3.5zM.5 8.5h4V23h-4V8.5zM8.5 8.5h3.8v2h.1c.5-.9 1.8-2.2 3.9-2.2 4.2 0 5 2.8 5 6.5V23h-4v-6.5c0-1.5 0-3.5-2.2-3.5s-2.5 1.7-2.5 3.4V23h-4V8.5z"/>
     </svg>
   );
 }
