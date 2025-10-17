@@ -1,5 +1,4 @@
-﻿// src/app/robots.ts
-import type { MetadataRoute } from "next";
+﻿import type { MetadataRoute } from "next";
 
 function siteUrl(): string {
   const raw =
@@ -20,7 +19,6 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: "/",
         disallow: [
-          // non-indexable areas
           "/api/",
           "/signin",
           "/signup",

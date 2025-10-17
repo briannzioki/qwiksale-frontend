@@ -20,39 +20,25 @@ function hasValidDbUrl(): boolean {
   return /^postgres(ql)?:\/\//i.test(u);
 }
 
-/** Keep well under the 50k per-file sitemap limit. */
 const MAX_LINKS = 45_000;
-
-/** Clamp helper */
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
-
-/** Allow tuning via env and keep it small to reduce build memory. */
 const SITEMAP_TAKE = clamp(Number(process.env["SITEMAP_TAKE"] ?? 1200), 100, 5000);
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();
   const now = new Date();
 
-  // Static, always-present URLs
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: `${base}/`, lastModified: now, changeFrequency: "daily", priority: 1 },
     { url: `${base}/search`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${base}/sell`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
-    // Legal pages (indexable)
     { url: `${base}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
     { url: `${base}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
-    // Low-priority account subpage (kept, but crawlers may de-prioritize)
     { url: `${base}/account/billing`, lastModified: now, changeFrequency: "monthly", priority: 0.2 },
   ];
 
-  // Optional fast escape (useful for tight-memory builds)
-  if (process.env["SKIP_SITEMAP_DB"] === "1") {
-    return staticRoutes;
-  }
-
-  if (!hasValidDbUrl()) {
-    return staticRoutes;
-  }
+  if (process.env["SKIP_SITEMAP_DB"] === "1") return staticRoutes;
+  if (!hasValidDbUrl()) return staticRoutes;
 
   try {
     const { prisma } = await import("@/app/lib/prisma");
@@ -64,8 +50,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         take: SITEMAP_TAKE,
         orderBy: { updatedAt: "desc" },
       }) as Promise<Array<{ id: string; updatedAt: Date }>>,
-
-      // Service model is optional across deployments; guard at runtime.
       (async () => {
         try {
           const anyPrisma = prisma as any;
@@ -84,9 +68,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
               orderBy: { updatedAt: "desc" },
             })) as Array<{ id: string; updatedAt: Date }>;
           }
-        } catch {
-          /* ignore and fall through */
-        }
+        } catch {}
         return [] as Array<{ id: string; updatedAt: Date }>;
       })(),
     ]);
@@ -107,7 +89,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const all = [...staticRoutes, ...productUrls, ...serviceUrls];
 
-    // Deduplicate & cap
     const seen = new Set<string>();
     const deduped: MetadataRoute.Sitemap = [];
     for (const item of all) {
