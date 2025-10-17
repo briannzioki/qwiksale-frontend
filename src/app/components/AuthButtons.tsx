@@ -2,11 +2,10 @@
 "use client";
 
 import type { Session } from "next-auth";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import type { SubscriptionTier } from "@/auth"; // type-only; no runtime import
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
-
-type Tier = "FREE" | "GOLD" | "PLATINUM";
 
 /* ------------------------- tiny event/analytics ------------------------- */
 function emit(name: string, detail?: unknown) {
@@ -21,6 +20,9 @@ function track(event: string, payload?: Record<string, unknown>) {
   console.log("[qs:track]", event, payload);
   emit("qs:track", { event, payload });
 }
+
+/* -------------------------------- helpers ------------------------------- */
+const isPaidTier = (t?: SubscriptionTier | null) => t === "GOLD" || t === "PLATINUM";
 
 /* ------------------------------- subparts ------------------------------- */
 function Initials({ name }: { name?: string | null }) {
@@ -41,11 +43,14 @@ function Initials({ name }: { name?: string | null }) {
   );
 }
 
-function TierBadge({ tier }: { tier?: Tier }) {
-  if (!tier || tier === "FREE") {
+function TierBadge({ tier }: { tier?: SubscriptionTier | null }) {
+  if (!tier || tier === "BASIC") {
     return (
-      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide border border-white/20">
-        FREE
+      <span
+        className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide border border-white/20"
+        title="BASIC (free)"
+      >
+        BASIC
       </span>
     );
   }
@@ -135,11 +140,11 @@ export default function AuthButtons() {
 
   // ✅ Correct typing for session.user
   const user = (session?.user ?? null) as (Session["user"] & {
-    subscription?: Tier;
+    subscription?: SubscriptionTier | null;
     name?: string | null;
   }) | null;
 
-  const tier = user?.subscription; // may be undefined
+  const tier = user?.subscription ?? null;
 
   const displayName = useMemo(() => {
     if (user?.name) return user.name;
@@ -195,7 +200,7 @@ export default function AuthButtons() {
           <Initials name={user?.name ?? null} />
         )}
         <span className="hidden sm:inline max-w-[14ch] truncate">{displayName}</span>
-        <TierBadge tier={tier ?? "FREE"} />
+        <TierBadge tier={tier ?? "BASIC"} />
         <svg
           width="16"
           height="16"
@@ -253,7 +258,7 @@ export default function AuthButtons() {
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
             prefetch={false}
           >
-            {tier && tier !== "FREE" ? "Manage subscription" : "Upgrade subscription"}
+            {isPaidTier(tier) ? "Manage subscription" : "Upgrade subscription"}
           </Link>
         </nav>
 
@@ -271,7 +276,7 @@ export default function AuthButtons() {
               setWorking(null);
             }
           }}
-          className="w-full text-left px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 border-t border-gray-200 dark:border-gray-700"
+          className="w-full text-left px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 border-top border-gray-200 dark:border-gray-700"
           disabled={!!working}
         >
           {working === "out" ? "Signing out…" : "Sign out"}

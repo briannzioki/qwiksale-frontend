@@ -1,20 +1,25 @@
 // src/types/next-auth.d.ts
 import type { DefaultSession, DefaultUser } from "next-auth";
 
-/** Keep these unions in one place so they never drift. */
-type SubscriptionTier = "FREE" | "GOLD" | "PLATINUM" | "BASIC";
+/** Single source of truth for these unions. */
+export type SubscriptionTier = "BASIC" | "GOLD" | "PLATINUM";
+export type Role = "USER" | "MODERATOR" | "ADMIN";
 
 declare module "next-auth" {
   interface Session {
-    user: {
-      /** Always prefer `id` (string) on the session's user object */
+    /** next-auth always has this; re-state to satisfy strict TS in consumers */
+    expires: string;
+
+    user: DefaultSession["user"] & {
+      /** Always prefer string id on sessions */
       id: string;
       username?: string | null;
       image?: string | null;
       subscription?: SubscriptionTier | null;
-    } & DefaultSession["user"];
+      role?: Role | string | null;
+    };
 
-    /** Optional profile/verification fields included in your callbacks */
+    /** Optional profile/verification fields added by callbacks as needed */
     verified?: boolean;
     whatsapp?: string | null;
     address?: string | null;
@@ -27,16 +32,18 @@ declare module "next-auth" {
   interface User extends DefaultUser {
     username?: string | null;
     subscription?: SubscriptionTier | null;
+    role?: Role | string | null;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
-    /** Mirror `Session.user.id`; keep name stable (`id`) to avoid confusion */
+    /** Mirror Session.user.id; keep the name `id` (not `uid`) */
     id?: string;
 
     username?: string | null;
     subscription?: SubscriptionTier | null;
+    role?: Role | string | null;
 
     verified?: boolean;
     whatsapp?: string | null;
@@ -48,5 +55,5 @@ declare module "next-auth/jwt" {
   }
 }
 
-/** Important: make this file a module so augmentation is applied */
+/** Make this file a module so augmentation is applied reliably. */
 export {};

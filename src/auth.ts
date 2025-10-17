@@ -1,3 +1,4 @@
+// src/auth.ts
 import "server-only";
 
 import { cache } from "react";
@@ -34,7 +35,7 @@ export const auth = cache(async () => {
   // Derive isAdmin: prefer role from session, otherwise derive from ADMIN_EMAILS list.
   const u = session?.user as SessionUser | undefined;
   if (u?.email) {
-    const fromRole = (u.role === "ADMIN");
+    const fromRole = u.role === "ADMIN";
     const admins = (process.env["ADMIN_EMAILS"] ?? "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
@@ -69,7 +70,9 @@ export async function requireUserIdOrNull(): Promise<string | null> {
  * Require a session; if missing, redirect to sign-in (with callback).
  * NOTE: This assumes `authOptions` session/jwt callbacks include `user.id`.
  */
-export async function requireAuth(callbackUrl?: string): Promise<NonNullable<Session>> {
+export async function requireAuth(
+  callbackUrl?: string
+): Promise<NonNullable<Session>> {
   const s = await auth();
   if (!s?.user?.id) {
     const to = callbackUrl ?? "/";
