@@ -1,5 +1,13 @@
+// src/app/api/auth/[...nextauth]/authOptions.ts
 import { createTransport } from "nodemailer";
-import type { NextAuthOptions } from "next-auth";
+import type {
+  AuthOptions,
+  Session,
+  User,
+  Account,
+  Profile,
+} from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -7,14 +15,14 @@ import EmailProvider from "next-auth/providers/email";
 
 // ✅ Keep prisma import consistent with the rest of the app
 import { prisma } from "@/app/lib/prisma";
-// If your project truly uses "@/lib/db", swap back — this path matches other files you shared.
 
 import { verifyPassword, hashPassword } from "@/server/auth";
 
 const isProd = process.env.NODE_ENV === "production";
 
 // Allow auto-signup for credentials users (env override-able)
-const ALLOW_CREDS_AUTO_SIGNUP = (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
+const ALLOW_CREDS_AUTO_SIGNUP =
+  (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
 
 // Safe in-origin post-auth landings
 const ALLOWED_CALLBACK_PATHS = new Set<string>([
@@ -36,11 +44,13 @@ function deriveHandle(email?: string | null, name?: string | null) {
   return base;
 }
 
-export const authOptions: NextAuthOptions = {
+export const authOptions: AuthOptions = {
   debug: process.env["NEXTAUTH_DEBUG"] === "1",
 
   // Rely on env for secret (do not hard-code)
-  ...(process.env["NEXTAUTH_SECRET"] ? { secret: process.env["NEXTAUTH_SECRET"]! } : {}),
+  ...(process.env["NEXTAUTH_SECRET"]
+    ? { secret: process.env["NEXTAUTH_SECRET"]! }
+    : {}),
 
   adapter: PrismaAdapter(prisma),
 
@@ -48,7 +58,7 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30d
-    updateAge: 24 * 60 * 60,   // refresh JWT claims daily
+    updateAge: 24 * 60 * 60, // refresh JWT claims daily
   },
 
   // Friendly sign-in page
@@ -117,7 +127,6 @@ export const authOptions: NextAuthOptions = {
             passwordHash: true,
             subscription: true,
             username: true,
-            referralCode: true,
             role: true,
           },
         });
@@ -138,7 +147,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             name: user.name ?? null,
             image: user.image ?? null,
-            // Note: username is attached via JWT callback below
+            // username synced in jwt callback
           };
         }
 
@@ -168,7 +177,7 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    async redirect({ url, baseUrl }) {
+    async redirect({ url, baseUrl }: { url: string; baseUrl: string }) {
       try {
         const u = new URL(url, baseUrl);
 
@@ -200,46 +209,55 @@ export const authOptions: NextAuthOptions = {
       return baseUrl;
     },
 
-    async jwt({ token, user, account, profile, trigger }) {
-      // Persist user id
-      if (user?.id) (token as any).uid = user.id;
+    async jwt({
+      token,
+      user,
+      account,
+      profile,
+      trigger,
+    }: {
+      token: JWT;
+      user?: User;
+      account?: Account | null;
+      profile?: Profile | undefined;
+      trigger?: "signIn" | "signUp" | "update";
+    }) {
+      // Persist user id under a stable name
+      if (user?.id) token.id = user.id;
 
       // Opportunistically capture username on first login from user/profile
-      if ((token as any).username == null) {
+      if (token.username == null) {
         const fromUser = (user as any)?.username ?? null;
-        // Some providers expose preferred_username
         const fromProfile =
           (profile as any)?.preferred_username ??
-          (profile as any)?.login ?? // GitHub-style
+          (profile as any)?.login ??
           null;
 
-        (token as any).username =
+        token.username =
           fromUser ??
           fromProfile ??
-          // last resort: a non-persistent derived handle (purely cosmetic until DB has one)
           deriveHandle(user?.email ?? null, user?.name ?? null) ??
           null;
       }
 
       // Keep JWT in sync with DB on first login and on explicit token updates
       if (user?.id || trigger === "update") {
-        const uid = (user?.id as string) || (token as any).uid;
+        const uid = user?.id || token.id;
         if (uid) {
           const profileRow = await prisma.user.findUnique({
             where: { id: uid },
             select: {
               subscription: true,
               username: true,
-              referralCode: true,
               role: true,
             },
           });
 
           if (profileRow) {
-            (token as any).subscription = profileRow.subscription ?? null;
-            (token as any).username = profileRow.username ?? (token as any).username ?? null;
-            (token as any).referralCode = profileRow.referralCode ?? null;
-            (token as any).role = profileRow.role ?? "USER";
+            token.subscription = (profileRow as any).subscription ?? null;
+            token.username =
+              (profileRow as any).username ?? token.username ?? null;
+            token["role"] = (profileRow as any).role ?? "USER";
           }
         }
       }
@@ -247,18 +265,22 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
 
-    async session({ session, token }) {
+    async session({
+      session,
+      token,
+    }: {
+      session: Session;
+      token: JWT;
+    }) {
       // Attach id and custom claims onto the session user
-      if (session.user && (token as any)?.uid) {
-        (session.user as any).id = (token as any).uid as string;
+      if (session.user && token?.id) {
+        (session.user as any).id = token.id;
       }
-      (session.user as any).subscription = (token as any).subscription ?? null;
-      (session.user as any).username = (token as any).username ?? null;
-      (session.user as any).referralCode = (token as any).referralCode ?? null;
+      (session.user as any).subscription = token.subscription ?? null;
+      (session.user as any).username = token.username ?? null;
       (session.user as any).role = (token as any).role ?? "USER";
 
-      // (Optional) You can attach lightweight badge counts here if you add queries.
-      // Keep them small to avoid slowing every request.
+      // (Optional) attach lightweight counts here if needed.
       return session;
     },
   },
@@ -266,7 +288,11 @@ export const authOptions: NextAuthOptions = {
   events: {
     signIn({ user, account, isNewUser }) {
       // eslint-disable-next-line no-console
-      console.log("[auth] signIn", { uid: user?.id, provider: account?.provider, isNewUser });
+      console.log("[auth] signIn", {
+        uid: user?.id,
+        provider: account?.provider,
+        isNewUser,
+      });
     },
     createUser({ user }) {
       // eslint-disable-next-line no-console
