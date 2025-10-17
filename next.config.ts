@@ -35,15 +35,6 @@ const securityHeaders = (): { key: string; value: string }[] => {
     : base;
 };
 
-function getSentryTunnelRewrite() {
-  const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN || "";
-  const m = dsn?.match?.(/^https?:\/\/[^@]+@([^/]+)\/(\d+)$/i);
-  if (!m) return null;
-  const host = m[1];
-  const projectId = m[2];
-  return { source: "/monitoring", destination: `https://${host}/api/${projectId}/envelope/` };
-}
-
 function toRemotePattern(
   input: string,
   opts?: { pathname?: string; protocols?: Array<"http" | "https"> }
@@ -59,9 +50,7 @@ function toRemotePattern(
         pathname: string;
       }>;
     }
-  } catch {
-    /* ignore and fall through */
-  }
+  } catch {}
   return protocols.map((p) => ({ protocol: p, hostname: input, pathname })) as Array<{
     protocol: "http" | "https";
     hostname: string;
@@ -119,7 +108,6 @@ const baseConfig: NextConfig = {
   productionBrowserSourceMaps: !!process.env.SENTRY_AUTH_TOKEN,
 
   images: {
-    // Bypass optimizer in dev unless overridden
     unoptimized: !isProd || process.env.NEXT_IMAGE_UNOPTIMIZED === "1",
     remotePatterns: buildRemotePatterns(),
     formats: ["image/avif", "image/webp"],
@@ -192,10 +180,8 @@ const baseConfig: NextConfig = {
   },
 
   async rewrites() {
-    const list: { source: string; destination: string }[] = [];
-    const tunnel = getSentryTunnelRewrite();
-    if (tunnel) list.push(tunnel);
-    return list;
+    // No need for a legacy tunnel rewrite; we’re using /api/monitoring
+    return [];
   },
 
   experimental: {
@@ -205,9 +191,15 @@ const baseConfig: NextConfig = {
 
 // IMPORTANT: No `distDir` and no `output` override here.
 export default withSentryConfig(withAnalyzer(baseConfig), {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  silent: true,
+  org: "qwiksale",
+  project: "javascript-nextjs",
+  silent: !process.env.CI,
+
   widenClientFileUpload: true,
-  tunnelRoute: "/monitoring",
+
+  // Match the client tunnel
+  tunnelRoute: "/api/monitoring",
+
+  disableLogger: true,
+  automaticVercelMonitors: true,
 });

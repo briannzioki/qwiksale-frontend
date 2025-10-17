@@ -5,7 +5,6 @@ export const revalidate = 0;
 import Link from "next/link";
 import HomeClientNoSSR from "./_components/HomeClientNoSSR";
 import SectionHeader from "@/app/components/SectionHeader";
-import HomeTabs from "@/app/components/HomeTabs";
 import { auth } from "@/auth";
 
 /** Types mirrored from /api/home-feed */
@@ -240,17 +239,7 @@ export default async function HomePage({
               <p id="home-hero-desc" className="mt-2 text-white/90">
                 Phones, cars, services—and everything in between. Safe, simple, Qwik.
               </p>
-
-              {/* Tiny mode chips */}
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-xs uppercase tracking-wide text-white/70">Browse:</span>
-                <Link href="/?t=products" prefetch={false} className="rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15 transition" aria-label="Browse products">
-                  Products
-                </Link>
-                <Link href="/?t=services" prefetch={false} className="rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15 transition" aria-label="Browse services">
-                  Services
-                </Link>
-              </div>
+              {/* Removed ambiguous “Browse: Products / Services” mini chips */}
             </div>
             <div className="sm:pb-1">
               <Link href="/search" prefetch={false} className="inline-flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/25 transition" aria-label="Browse all listings">
@@ -316,11 +305,6 @@ export default async function HomePage({
         </div>
       </section>
 
-      {/* Tabs */}
-      <div className="mx-auto max-w-7xl px-4 mt-8">
-        <HomeTabs />
-      </div>
-
       {/* Featured header */}
       <div className="mx-auto max-w-7xl px-4 mt-6">
         <SectionHeader title="Featured today" subtitle="Fresh picks across products & services." />
@@ -345,7 +329,7 @@ export default async function HomePage({
         )}
       </div>
 
-      {/* Client-owned UI */}
+      {/* Client-owned UI (contains the single, sticky tabs + filters + results) */}
       <HomeClientNoSSR />
     </main>
   );

@@ -19,53 +19,42 @@ const releaseMaybe =
   undefined;
 
 if (dsn) {
-  // Collect optional integrations; keep as unknown[] and merge via function form
   const extraIntegrations: unknown[] = [];
 
   const maybeTracing = (Sentry as any).browserTracingIntegration;
-  if (typeof maybeTracing === "function") {
-    extraIntegrations.push(maybeTracing());
-  }
+  if (typeof maybeTracing === "function") extraIntegrations.push(maybeTracing());
 
+  // Only used if available (you opted out in the wizard, so this will be skipped)
   const maybeReplay = (Sentry as any).replayIntegration;
   if (typeof maybeReplay === "function") {
     extraIntegrations.push(
-      maybeReplay({
-        maskAllInputs: true,
-        blockAllMedia: true,
-      })
+      maybeReplay({ maskAllInputs: true, blockAllMedia: true })
     );
   }
 
   const options: Sentry.BrowserOptions = {
     dsn,
     environment,
-    tunnel: "/monitoring",
+    // Route all browser events through our API tunnel
+    tunnel: "/api/monitoring",
 
     tracesSampleRate: 0.2,
-    replaysSessionSampleRate: 0.1,
+    replaysSessionSampleRate: 0.0,
     replaysOnErrorSampleRate: 1.0,
 
-    // Use function form to avoid array typing headaches
     integrations(defaults) {
       return [...defaults, ...(extraIntegrations as any[])];
     },
 
-    // Correct signature; must return ErrorEvent|null
-    beforeSend(event: Sentry.ErrorEvent, _hint: Sentry.EventHint): Sentry.ErrorEvent | null {
+    beforeSend(event: Sentry.ErrorEvent): Sentry.ErrorEvent | null {
       try {
         const req: any = (event as any).request;
-        const url = typeof req?.["url"] === "string" ? (req["url"] as string) : "";
-        if (url.includes("/api/mpesa")) {
-          delete (event as any).request; // omit instead of undefined (exactOptionalPropertyTypes)
-        }
-      } catch {
-        /* no-op */
-      }
+        const url = typeof req?.url === "string" ? req.url : "";
+        if (url.includes("/api/mpesa")) delete (event as any).request;
+      } catch {}
       return event;
     },
 
-    // Mutable array (not readonly) to satisfy Sentry types
     denyUrls: [
       /^chrome-extension:\/\//,
       /^moz-extension:\/\//,
@@ -73,7 +62,6 @@ if (dsn) {
     ] as Array<string | RegExp>,
   };
 
-  // Only set optional fields when defined
   if (releaseMaybe) options.release = releaseMaybe;
 
   Sentry.init(options);
@@ -81,31 +69,27 @@ if (dsn) {
   try {
     Sentry.setTag("runtime", "browser");
     if (releaseMaybe) Sentry.setTag("release", releaseMaybe);
-  } catch {
-    /* no-op */
-  }
+  } catch {}
 }
 
 /** Safe shim for optional SDK helper */
 export function onRouterTransitionStart(opts?: unknown) {
-  const fn = (Sentry as unknown as {
-    captureRouterTransitionStart?: (o?: unknown) => void;
-  }).captureRouterTransitionStart;
+  const fn = (Sentry as any)?.captureRouterTransitionStart as
+    | ((o?: unknown) => void)
+    | undefined;
   if (typeof fn === "function") fn(opts);
 }
 
-/** Optional console helpers in dev (or when explicitly enabled) */
-const canExpose =
+if (
   process.env["NODE_ENV"] !== "production" ||
-  process.env["NEXT_PUBLIC_SENTRY_DEBUG"] === "1";
-
-if (canExpose) {
+  process.env["NEXT_PUBLIC_SENTRY_DEBUG"] === "1"
+) {
   try {
     (globalThis as any).Sentry = Sentry;
     (globalThis as any).__testSentry = (msg?: unknown) => {
       try {
         Sentry.captureMessage(String(msg ?? "qwiksale: test event"));
-        console.info?.("[Sentry] test message sent");
+        console.info?.("[Sentry] Client instrumentation ready — test message sent.");
         return true;
       } catch (e) {
         console.warn?.("[Sentry] failed to send", e);

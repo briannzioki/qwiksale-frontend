@@ -1,4 +1,3 @@
-// src/app/_components/HomeClient.tsx
 "use client";
 
 import * as React from "react";
@@ -425,8 +424,8 @@ export default function HomeClient() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* URL-driven tabs (Links). We do NOT intercept clicks or force t= on mount. */}
-      <div className="sticky top-[64px] z-30 card-surface p-2">
+      {/* Single tabs bar (sticky) */}
+      <div className="sticky top-[64px] z-30 card-surface p-2" aria-label="Browse type tabs">
         <HomeTabs />
       </div>
 
@@ -677,7 +676,7 @@ export default function HomeClient() {
             const blur = shimmer(800, 440);
             const href = isProduct ? `/product/${it.id}` : `/service/${it.id}`;
 
-            // Accessible label that Playwright tests can target:
+            // Accessible label
             const priceText =
               typeof price === "number" && price > 0 ? `KES ${price.toLocaleString()}` : undefined;
             const ariaLabel =
