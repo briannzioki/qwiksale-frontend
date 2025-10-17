@@ -1,4 +1,4 @@
-// Node.js runtime config
+// Edge runtime config (middleware, edge routes, etc.)
 import * as Sentry from "@sentry/nextjs";
 
 const dsn = process.env.SENTRY_DSN || "";
@@ -14,12 +14,11 @@ if (dsn) {
     tracesSampleRate: 0.2,
     debug: process.env.NEXT_PUBLIC_SENTRY_DEBUG === "1",
 
-    // Consider your privacy posture; leave on if you want user PII in events
     sendDefaultPii: true,
   });
 
   try {
-    Sentry.setTag("runtime", "nodejs");
+    Sentry.setTag("runtime", "edge");
     if (releaseMaybe) Sentry.setTag("release", releaseMaybe);
   } catch {}
 }
