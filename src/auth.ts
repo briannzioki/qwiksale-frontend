@@ -1,4 +1,3 @@
-// src/auth.ts
 import "server-only";
 
 import { cache } from "react";
@@ -6,7 +5,12 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
-export type SubscriptionTier = "FREE" | "GOLD" | "PLATINUM" | "BASIC";
+/**
+ * Keep TS in sync with Prisma:
+ * - DB stores "FREE" but the app uses "BASIC" (via @map in Prisma).
+ */
+export type SubscriptionTier = "BASIC" | "GOLD" | "PLATINUM";
+export type Role = "USER" | "MODERATOR" | "ADMIN";
 
 export interface SessionUser {
   id: string;
@@ -15,7 +19,8 @@ export interface SessionUser {
   image?: string | null;
   username?: string | null;
   subscription?: SubscriptionTier | null;
-  /** True if user email is in ADMIN_EMAILS env list */
+  role?: Role | null;
+  /** True if email is in ADMIN_EMAILS or role === ADMIN */
   isAdmin?: boolean;
 }
 
@@ -25,18 +30,19 @@ export interface SessionUser {
  */
 export const auth = cache(async () => {
   const session = await getServerSession(authOptions);
-  if (session?.user?.email) {
-    const admins = (process.env['ADMIN_EMAILS'] ?? "")
+
+  // Derive isAdmin: prefer role from session, otherwise derive from ADMIN_EMAILS list.
+  const u = session?.user as SessionUser | undefined;
+  if (u?.email) {
+    const fromRole = (u.role === "ADMIN");
+    const admins = (process.env["ADMIN_EMAILS"] ?? "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
-    const userEmail = session.user.email.toLowerCase();
-    if (admins.includes(userEmail)) {
-      (session.user as SessionUser).isAdmin = true;
-    } else {
-      (session.user as SessionUser).isAdmin = false;
-    }
+    const fromList = admins.includes(u.email.toLowerCase());
+    u.isAdmin = Boolean(fromRole || fromList);
   }
+
   return session;
 });
 
@@ -61,7 +67,7 @@ export async function requireUserIdOrNull(): Promise<string | null> {
 
 /**
  * Require a session; if missing, redirect to sign-in (with callback).
- * After the redirect guard, we assert the session is non-null for TS.
+ * NOTE: This assumes `authOptions` session/jwt callbacks include `user.id`.
  */
 export async function requireAuth(callbackUrl?: string): Promise<NonNullable<Session>> {
   const s = await auth();
@@ -74,7 +80,6 @@ export async function requireAuth(callbackUrl?: string): Promise<NonNullable<Ses
 
 /**
  * Require a user and return a strongly-typed `SessionUser`.
- * (We still keep a defensive check, but TS already knows from `requireAuth`.)
  */
 export async function requireUser(callbackUrl?: string): Promise<SessionUser> {
   const s = await requireAuth(callbackUrl);

@@ -14,8 +14,8 @@ function makeUUID(): string {
 }
 
 /* ----------------------- Suggest soft limiter (Edge) ---------------------- */
-const SUGGEST_WINDOW_MS = Number(process.env.SUGGEST_WINDOW_MS ?? 10_000); // 10s
-const SUGGEST_LIMIT = Number(process.env.SUGGEST_LIMIT ?? 12); // 12 reqs per window
+const SUGGEST_WINDOW_MS = Number(process.env.SUGGEST_WINDOW_MS ?? 10_000);
+const SUGGEST_LIMIT = Number(process.env.SUGGEST_LIMIT ?? 12);
 
 type StampStore = Map<string, number[]>;
 const g = globalThis as unknown as { __QS_SUGGEST_RL__?: StampStore };
@@ -148,6 +148,25 @@ function isAllowedOrigin(req: NextRequest): boolean {
   });
 }
 
+/* -------------------- Admin detection helper -------------------- */
+function isAdminFromToken(req: NextRequest): boolean {
+  // withAuth attaches the decoded token on req.nextauth.token
+  const t: any = (req as any).nextauth?.token ?? null;
+  const role = typeof t?.role === "string" ? t.role.toUpperCase() : "";
+  const tokenIsAdmin = t?.isAdmin === true || role === "ADMIN";
+
+  // Optional email allow-list (fallback)
+  const email = (t?.email as string | undefined)?.toLowerCase() ?? "";
+  const adminList =
+    (process.env.ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean) || [];
+
+  const emailIsAdmin = !!email && adminList.includes(email);
+  return tokenIsAdmin || emailIsAdmin;
+}
+
 export default withAuth(
   function middleware(req: NextRequest) {
     const p = req.nextUrl.pathname;
@@ -155,7 +174,7 @@ export default withAuth(
     // Allow preflight
     if (req.method === "OPTIONS") return NextResponse.next();
 
-    // Let Sentry tunnel pass without checks (prevents 401/403/502)
+    // Sentry tunnel: always pass
     if (p === "/api/monitoring") return NextResponse.next();
 
     // Skip infra/static/auth/health
@@ -181,7 +200,7 @@ export default withAuth(
     const isHtmlLike = accept.includes("text/html") || accept.includes("*/*");
     const isApi = p.startsWith("/api/");
 
-    // JSON guard on select endpoints (never /api/auth/**)
+    // JSON guard
     if (
       (p === "/api/billing/upgrade" && req.method === "POST") ||
       (p.startsWith("/api/products/") && p.endsWith("/promote") && req.method === "POST")
@@ -232,6 +251,27 @@ export default withAuth(
       SUGGEST_STORE.set(key, arr);
     }
 
+    /* -------------------- NEW: auto-redirect admins to /admin -------------------- */
+    if (!isApi && isHtmlLike) {
+      const admin = isAdminFromToken(req);
+
+      // Only redirect on a couple of “entry” pages to avoid breaking browsing for admins:
+      // - Home (“/”) and Dashboard (“/dashboard”) → Admin Console (“/admin”).
+      // - Never redirect if we’re already under /admin or if a query asks to skip.
+      const wantsSkip = req.nextUrl.searchParams.get("skipAdmin") === "1";
+
+      if (
+        admin &&
+        !wantsSkip &&
+        (p === "/" || p === "/dashboard") &&
+        !p.startsWith("/admin")
+      ) {
+        const to = new URL("/admin", req.url);
+        return NextResponse.redirect(to);
+      }
+    }
+    /* --------------------------------------------------------------------------- */
+
     // Pass CSP nonce to app on HTML navigations
     const nonce = isHtmlLike && !isApi ? makeNonce() : "";
     const forwarded = new Headers(req.headers);
@@ -265,6 +305,7 @@ export default withAuth(
     callbacks: {
       authorized: ({ req, token }) => {
         const p = req.nextUrl.pathname;
+
         const needsAuth =
           p.startsWith("/sell") ||
           p.startsWith("/account") ||
@@ -276,8 +317,8 @@ export default withAuth(
 
         if (needsAdmin) {
           const t: any = token ?? {};
-          const tokenRole = typeof t.role === "string" ? t.role.toUpperCase() : "";
-          const tokenIsAdmin = t.isAdmin === true || tokenRole === "ADMIN";
+          const role = typeof t.role === "string" ? t.role.toUpperCase() : "";
+          const tokenIsAdmin = t.isAdmin === true || role === "ADMIN";
 
           const email = typeof t.email === "string" ? t.email.toLowerCase() : "";
           const adminList = (process.env.ADMIN_EMAILS ?? "")
