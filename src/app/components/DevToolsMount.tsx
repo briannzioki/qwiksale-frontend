@@ -1,25 +1,7 @@
 // src/app/components/DevToolsMount.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState, Suspense, useCallback } from "react";
-import dynamic from "next/dynamic";
-
-/**
- * Load only on the client, never on the server.
- * Provide a tiny skeleton to avoid layout jank when toggled on.
- */
-const DevSentryTest = dynamic(() => import("./DevSentryTest"), {
-  ssr: false,
-  loading: () => (
-    <div
-      className="fixed bottom-4 right-4 z-[9999] rounded-lg border bg-white/90 dark:bg-zinc-900/90 px-3 py-2 text-xs shadow-md backdrop-blur"
-      role="status"
-      aria-live="polite"
-    >
-      Loading dev tools…
-    </div>
-  ),
-});
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 
 /**
  * Decide whether dev tools should be visible.
@@ -69,13 +51,11 @@ function computeInitialShow(): boolean {
   }
 
   // Env-based defaults (inlined at build time)
-  if (process.env["NEXT_PUBLIC_SHOW_DEV_TEST"] === "1") return true; // ← changed to dot-form
+  if (process.env["NEXT_PUBLIC_SHOW_DEV_TEST"] === "1") return true; // dot-form
   return process.env.NODE_ENV !== "production";
 }
 
-/**
- * Small helper to store the preference.
- */
+/** Store the preference. */
 function persist(show: boolean) {
   try {
     sessionStorage.setItem("qs:devtools", show ? "1" : "0");
@@ -86,7 +66,7 @@ function persist(show: boolean) {
 }
 
 /**
- * Optional floating toggle button for quick on/off:
+ * Floating toggle button for quick on/off:
  * - Ctrl/⌘ + Shift + D toggles
  * - Also listens to window event "qs:devtools:toggle"
  */
@@ -171,11 +151,8 @@ export default function DevToolsMount() {
   return (
     <>
       {Ribbon}
-      {show ? (
-        <Suspense fallback={null}>
-          <DevSentryTest />
-        </Suspense>
-      ) : null}
+      {/* Add your dev widgets here when you have them.
+          Sentry test panel removed. */}
     </>
   );
 }

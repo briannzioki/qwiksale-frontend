@@ -1,6 +1,5 @@
 // next.config.ts (project root)
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
 const withAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === "true" });
@@ -104,8 +103,8 @@ const baseConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
 
-  // Only emit browser source maps if Sentry can upload them
-  productionBrowserSourceMaps: !!process.env.SENTRY_AUTH_TOKEN,
+  // Do NOT emit browser source maps anymore (we're not uploading them)
+  productionBrowserSourceMaps: false,
 
   images: {
     unoptimized: !isProd || process.env.NEXT_IMAGE_UNOPTIMIZED === "1",
@@ -189,17 +188,6 @@ const baseConfig: NextConfig = {
   },
 };
 
-// IMPORTANT: No `distDir` and no `output` override here.
-export default withSentryConfig(withAnalyzer(baseConfig), {
-  org: "qwiksale",
-  project: "javascript-nextjs",
-  silent: !process.env.CI,
-
-  widenClientFileUpload: true,
-
-  // Match the client tunnel
-  tunnelRoute: "/api/monitoring",
-
-  disableLogger: true,
-  automaticVercelMonitors: true,
-});
+// IMPORTANT: No Sentry wrapper here.
+const finalConfig = withAnalyzer(baseConfig);
+export default finalConfig;

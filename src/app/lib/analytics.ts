@@ -1,5 +1,3 @@
-// src/app/lib/analytics.ts
-
 /* ------------------------------- Types -------------------------------- */
 
 export type EventName =
@@ -16,7 +14,7 @@ export type EventName =
   | "payment_initiated"
   | "stk_initiated"
   | "page_view"
-  // App-specific events we already emit in UI:
+  // App-specific events emitted in UI:
   | "product_view"
   | "product_click"
   | "product_share"
@@ -41,11 +39,45 @@ type TrackContext = {
 
 const ENV = process.env.NODE_ENV;
 const IS_PROD = ENV === "production";
+// Vercel will inline this at build time; undefined locally is fine.
 const IS_PREVIEW = process.env["VERCEL_ENV"] === "preview";
+
+/* ----------------------------- DNT / bots ----------------------------- */
+
+function isDoNotTrack(): boolean {
+  if (typeof window === "undefined") return false;
+  // Respect common DNT flags
+  const w: any = window;
+  const n: any = navigator;
+  return (
+    n?.doNotTrack === "1" ||
+    w?.doNotTrack === "1" ||
+    n?.msDoNotTrack === "1"
+  );
+}
+
+function isAutomation(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return !!(navigator as any).webdriver;
+}
 
 /* ------------------------- Client: context utils ---------------------- */
 
 let cachedCtx: TrackContext | null = null;
+
+function getViewport(): string {
+  try {
+    // Prefer VisualViewport when available to account for zoom/OSK
+    const vv = (window as any).visualViewport;
+    if (vv && typeof vv.width === "number" && typeof vv.height === "number") {
+      return `${Math.max(0, Math.round(vv.width))}x${Math.max(0, Math.round(vv.height))}`;
+    }
+  } catch {}
+  try {
+    return `${Math.max(0, window.innerWidth)}x${Math.max(0, window.innerHeight)}`;
+  } catch {}
+  return "";
+}
 
 function getClientContext(): TrackContext {
   if (typeof window === "undefined") return {};
@@ -61,22 +93,28 @@ function getClientContext(): TrackContext {
     }
   } catch {}
 
-  const vp = `${Math.max(0, window.innerWidth)}x${Math.max(0, window.innerHeight)}`;
+  const base: TrackContext = { sessionId, vp: getViewport() };
+  try {
+    if (document.referrer) base.ref = document.referrer;
+  } catch {}
 
-  const base: TrackContext = { sessionId, vp };
-  if (document.referrer) base.ref = document.referrer;
   cachedCtx = base;
-
   return { ...cachedCtx, url: location.href, ts: Date.now() };
 }
 
 /* ---------------------------- PII guardrail --------------------------- */
 
 function sanitizePayload(p: Payload): Payload {
+  // Keep this aggressive; add keys if you see leaks in Sentry/GA logs.
   const banned = /pass(word)?|token|secret|otp|pin|mpesa|phone|msisdn|card/i;
   const out: Payload = {};
   for (const [k, v] of Object.entries(p || {})) {
     if (banned.test(k)) continue;
+    // Avoid shipping gigantic strings
+    if (typeof v === "string" && v.length > 4000) {
+      out[k] = (v as string).slice(0, 4000);
+      continue;
+    }
     out[k] = v;
   }
   return out;
@@ -87,9 +125,9 @@ function sanitizePayload(p: Payload): Payload {
 function trySentryBreadcrumb(event: EventName, payload: Payload & TrackContext) {
   try {
     // @ts-ignore - optional global from @sentry/nextjs client
-    if (window.Sentry?.addBreadcrumb) {
-      // @ts-ignore
-      window.Sentry.addBreadcrumb({
+    const S = (window as any).Sentry;
+    if (S?.addBreadcrumb) {
+      S.addBreadcrumb({
         category: "analytics",
         level: "info",
         message: event,
@@ -101,20 +139,23 @@ function trySentryBreadcrumb(event: EventName, payload: Payload & TrackContext) 
 
 function tryGA(event: EventName, payload: Payload & TrackContext) {
   try {
-    // @ts-ignore
-    if (typeof window.gtag === "function") {
-      // @ts-ignore
-      window.gtag("event", event, payload);
+    const w: any = window;
+    // Prefer gtag; fall back to dataLayer if present
+    if (typeof w.gtag === "function") {
+      w.gtag("event", event, payload);
+      return;
+    }
+    if (Array.isArray(w.dataLayer)) {
+      w.dataLayer.push({ event, ...payload });
     }
   } catch {}
 }
 
 function tryPlausible(event: EventName, payload: Payload & TrackContext) {
   try {
-    // @ts-ignore
-    if (typeof window.plausible === "function") {
-      // @ts-ignore
-      window.plausible(event, { props: payload });
+    const w: any = window;
+    if (typeof w.plausible === "function") {
+      w.plausible(event, { props: payload });
     }
   } catch {}
 }
@@ -123,13 +164,17 @@ function tryPlausible(event: EventName, payload: Payload & TrackContext) {
 
 /**
  * Client-side track:
- * - adds context
+ * - respects Do-Not-Track and webdriver (bots)
+ * - adds context (session, viewport, ref, url, ts)
  * - sanitizes payload
- * - forwards to GA/Plausible/Sentry
+ * - forwards to GA/Plausible/Sentry breadcrumb
  * - dispatches a DOM CustomEvent for in-app listeners (back-compat)
  */
 export function track(event: EventName, payload: Payload = {}) {
   if (typeof window === "undefined") return;
+  if (isAutomation()) return; // skip automation
+  if (isDoNotTrack()) return; // respect DNT
+
   const ctx = getClientContext();
   const safe = sanitizePayload(payload);
   const merged: Payload & TrackContext = { ...safe, ...ctx };
@@ -149,8 +194,11 @@ export function track(event: EventName, payload: Payload = {}) {
   } catch {}
 }
 
-/** Convenience: mark a page view once after hydration. */
+/** Mark a page view once after hydration. */
+let __pvSent = false;
 export function trackPageView(extra?: Payload) {
+  if (__pvSent) return;
+  __pvSent = true;
   track("page_view", extra);
 }
 
