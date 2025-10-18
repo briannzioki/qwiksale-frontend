@@ -1,4 +1,3 @@
-// src/app/lib/auth.ts
 import "server-only";
 import { auth } from "@/auth";
 
@@ -11,22 +10,35 @@ export type SessionUser =
     id?: string;
     role?: string | null;
     isAdmin?: boolean;
+    isSuperAdmin?: boolean;
   }) | null;
 
-/**
- * Resolve ADMIN_EMAILS from env (comma-separated), case-insensitive.
- * Example: ADMIN_EMAILS="alice@example.com, bob@site.io"
- */
+/* ----------------------- Allowlist helpers (env) ----------------------- */
+
+function splitList(v?: string | null) {
+  return (v ?? "")
+    .split(/[,\s]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Emails that grant admin; superadmins imply admin as well */
 export function isAdminEmail(email?: string | null): boolean {
   if (!email) return false;
-  const raw = process.env["ADMIN_EMAILS"] ?? "";
-  if (!raw) return false;
-  const list = raw
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  return list.includes(email.toLowerCase());
+  const e = email.toLowerCase();
+  const admin = new Set(splitList(process.env["ADMIN_EMAILS"]));
+  const superAdmin = new Set(splitList(process.env["SUPERADMIN_EMAILS"]));
+  return admin.has(e) || superAdmin.has(e);
 }
+
+export function isSuperAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const e = email.toLowerCase();
+  const superAdmin = new Set(splitList(process.env["SUPERADMIN_EMAILS"]));
+  return superAdmin.has(e);
+}
+
+/* --------------------- Safe session wrappers (server) -------------------- */
 
 /**
  * Safe wrapper around NextAuth's auth() that never throws.
@@ -45,8 +57,9 @@ export async function safeAuth(): Promise<Session | null> {
  * - Never throws
  * - `isAdmin` true when:
  *   - session.user.isAdmin === true, OR
- *   - role === "ADMIN" (case-insensitive), OR
- *   - email is in ADMIN_EMAILS allow-list
+ *   - role === "ADMIN" | "SUPERADMIN", OR
+ *   - email is in ADMIN_EMAILS/SUPERADMIN_EMAILS allow-lists
+ * - `isSuperAdmin` mirrors the SUPERADMIN checks
  */
 export async function getViewer(): Promise<{
   session: Session | null;
@@ -54,6 +67,7 @@ export async function getViewer(): Promise<{
   email?: string;
   role?: string;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
 }> {
   const session = await safeAuth();
   const u = (session?.user ?? {}) as any;
@@ -61,13 +75,20 @@ export async function getViewer(): Promise<{
   const id = typeof u?.id === "string" ? u.id : undefined;
   const email = typeof u?.email === "string" ? u.email : undefined;
   const role = typeof u?.role === "string" ? u.role : undefined;
+  const roleU = role?.toUpperCase?.();
 
-  const flag =
+  const isSuperAdmin =
+    u?.isSuperAdmin === true ||
+    roleU === "SUPERADMIN" ||
+    isSuperAdminEmail(email);
+
+  const isAdmin =
     u?.isAdmin === true ||
-    (role?.toUpperCase?.() === "ADMIN") ||
+    isSuperAdmin ||
+    roleU === "ADMIN" ||
     isAdminEmail(email);
 
-  return { session, id, email, role, isAdmin: Boolean(flag) };
+  return { session, id, email, role, isAdmin, isSuperAdmin };
 }
 
 /**

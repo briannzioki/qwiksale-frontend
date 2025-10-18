@@ -1,4 +1,3 @@
-// src/app/components/Header.tsx
 "use client";
 
 import * as React from "react";
@@ -10,12 +9,23 @@ import { Button } from "@/app/components/Button";
 import Link from "next/link";
 import { Icon } from "@/app/components/Icon";
 import IconButton from "@/app/components/IconButton";
-import { useRouter } from "next/navigation";
-import AuthButtons from "@/app/components/AuthButtons"; // ✅ present
+import { useRouter, usePathname } from "next/navigation";
+import AuthButtons from "@/app/components/AuthButtons";
+import RoleChip from "@/app/components/RoleChip";
 
 export default function Header() {
   const { status, data: session } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
+  const inAdmin = pathname?.startsWith("/admin");
+
+  // role/subscription for chips + routing
+  const role = (session?.user as any)?.role as string | undefined;
+  const subscription = (session?.user as any)?.subscription as string | undefined;
+  const isAdmin =
+    ((role || "").toUpperCase() === "ADMIN") ||
+    ((role || "").toUpperCase() === "SUPERADMIN") ||
+    ((session?.user as any)?.isAdmin === true);
 
   // Prefer explicit username; fall back to email
   const displayName = React.useMemo(() => {
@@ -58,47 +68,56 @@ export default function Header() {
         <div className="h-8 w-24 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
       ) : status === "authenticated" ? (
         <>
-          {/* Favorites (heart) — anchor, not button; avoids /save|update|edit/i collision */}
-          <Link
-            href="/saved"
-            prefetch={false}
-            aria-label="Favorites"
-            title="Favorites"
-            className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
-          >
-            <Icon name="heart" />
-            {typeof savedCount === "number" ? (
-              <span
-                className="absolute -top-1 -right-1 min-w-[1rem] h-4 rounded-full bg-[#f95d9b] px-1 text-[10px] leading-4 text-white text-center"
-                aria-label={`${savedCount} favorites`}
-              >
-                {savedCount}
-              </span>
-            ) : null}
-            <span className="sr-only">Favorites</span>
-          </Link>
+          {/* Role/Plan chip: ADMIN replaces plan (wrap to control visibility without touching RoleChip props) */}
+          <span className="hidden sm:inline-flex">
+            <RoleChip role={role ?? null} subscription={subscription ?? null} />
+          </span>
 
-          {/* Messages — anchor, not button */}
-          <Link
-            href="/messages"
-            prefetch={false}
-            aria-label="Messages"
-            title="Messages"
-            className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
-          >
-            <Icon name="message" />
-            {typeof unreadCount === "number" ? (
-              <span
-                className="absolute -top-1 -right-1 min-w-[1rem] h-4 rounded-full bg-[#39a0ca] px-1 text-[10px] leading-4 text-white text-center"
-                aria-label={`${unreadCount} unread messages`}
-              >
-                {unreadCount}
-              </span>
-            ) : null}
-            <span className="sr-only">Messages</span>
-          </Link>
+          {/* Favorites (hide inside /admin) */}
+          {!inAdmin && (
+            <Link
+              href="/saved"
+              prefetch={false}
+              aria-label="Favorites"
+              title="Favorites"
+              className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg:white/10 transition"
+            >
+              <Icon name="heart" />
+              {typeof savedCount === "number" ? (
+                <span
+                  className="absolute -top-1 -right-1 min-w-[1rem] h-4 rounded-full bg-[#f95d9b] px-1 text-[10px] leading-4 text-white text-center"
+                  aria-label={`${savedCount} favorites`}
+                >
+                  {savedCount}
+                </span>
+              ) : null}
+              <span className="sr-only">Favorites</span>
+            </Link>
+          )}
 
-          {/* Profile — anchor, not button */}
+          {/* Messages (hide inside /admin) */}
+          {!inAdmin && (
+            <Link
+              href="/messages"
+              prefetch={false}
+              aria-label="Messages"
+              title="Messages"
+              className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
+            >
+              <Icon name="message" />
+              {typeof unreadCount === "number" ? (
+                <span
+                  className="absolute -top-1 -right-1 min-w-[1rem] h-4 rounded-full bg-[#39a0ca] px-1 text-[10px] leading-4 text-white text-center"
+                  aria-label={`${unreadCount} unread messages`}
+                >
+                  {unreadCount}
+                </span>
+              ) : null}
+              <span className="sr-only">Messages</span>
+            </Link>
+          )}
+
+          {/* Profile */}
           <Link
             href="/profile"
             prefetch={false}
@@ -110,17 +129,18 @@ export default function Header() {
             <span className="sr-only">{displayName ? `Profile: ${displayName}` : "Profile"}</span>
           </Link>
 
-          {/* Keep a textual Dashboard affordance (not icon-only) */}
+          {/* Admin/Dashboard smart affordance */}
           <Link
-            href="/dashboard"
+            href={isAdmin ? "/admin" : "/dashboard"}
             prefetch={false}
-            aria-label="Open dashboard"
+            aria-label={isAdmin ? "Open admin" : "Open dashboard"}
             className="hidden md:inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium
                        text-gray-700 hover:text-gray-900 dark:text-slate-200 dark:hover:text-white
                        border border-transparent hover:border-gray-200 dark:hover:border-white/10 transition"
           >
-            <Icon name="settings" />
-            Dashboard
+            {/* ✅ use an allowed icon name */}
+            <Icon name={isAdmin ? "secure" : "settings"} />
+            {isAdmin ? "Admin" : "Dashboard"}
           </Link>
 
           {/* Avatar/menu, sign out, etc. */}

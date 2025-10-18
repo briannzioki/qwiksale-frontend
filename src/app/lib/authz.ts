@@ -1,32 +1,44 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/db"; // ✅ use central prisma client
+
+/** ✅ use central prisma client (kept consistent with app) */
+import { prisma } from "@/app/lib/prisma";
+
 import { getServerSession, getSessionUser } from "@/app/lib/auth";
 
-export type Role = "ADMIN" | "STAFF" | "USER" | null | undefined;
+export type Role = "SUPERADMIN" | "ADMIN" | "MODERATOR" | "USER" | null | undefined;
 
 const ROLE_RANK: Record<Exclude<Role, undefined | null>, number> = {
+  SUPERADMIN: 4,
   ADMIN: 3,
-  STAFF: 2,
+  MODERATOR: 2,
   USER: 1,
 };
 
-// Parse allowlist once
-const ADMIN_EMAILS_ALLOWLIST: ReadonlySet<string> = (() => {
-  const raw = process.env["ADMIN_EMAILS"] || "";
-  return new Set(
-    raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
-  );
-})();
+/* ----------------------- Allowlists from environment ---------------------- */
 
-/** Prefer session.role (fast), fall back to DB (authoritative). Cached per request. */
+function toSet(v?: string | null) {
+  return new Set(
+    (v ?? "")
+      .split(/[,\s]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+const ADMIN_EMAILS_ALLOWLIST: ReadonlySet<string> = toSet(process.env["ADMIN_EMAILS"]);
+const SUPERADMIN_EMAILS_ALLOWLIST: ReadonlySet<string> = toSet(process.env["SUPERADMIN_EMAILS"]);
+
+/* --------------------------- Role resolution ------------------------------ */
+
+/** Prefer session flags (fast), fall back to DB role (authoritative). Cached per request. */
 const getCurrentUserRole = cache(async (): Promise<Role> => {
   const u = await getSessionUser();
   if (!u?.id) return null;
 
-  const roleFromSession = (u as any)?.role as Role | undefined;
-  if (roleFromSession) return roleFromSession;
+  const fromSession = (u as any)?.role as Role | undefined;
+  if (fromSession) return fromSession;
 
   const row = await prisma.user.findUnique({
     where: { id: u.id as string },
@@ -38,25 +50,63 @@ const getCurrentUserRole = cache(async (): Promise<Role> => {
 export async function isAllowlistedAdminEmail(): Promise<boolean> {
   const u = await getSessionUser();
   const email = u?.email?.toLowerCase();
-  return !!(email && ADMIN_EMAILS_ALLOWLIST.has(email));
+  return !!(email && (ADMIN_EMAILS_ALLOWLIST.has(email) || SUPERADMIN_EMAILS_ALLOWLIST.has(email)));
 }
 
+export async function isAllowlistedSuperAdminEmail(): Promise<boolean> {
+  const u = await getSessionUser();
+  const email = u?.email?.toLowerCase();
+  return !!(email && SUPERADMIN_EMAILS_ALLOWLIST.has(email));
+}
+
+/** Returns both flags derived from session, allowlists, and DB role. */
+export const getRoleFlags = cache(async () => {
+  const u = await getSessionUser();
+  const email = u?.email?.toLowerCase() ?? null;
+  const role = (await getCurrentUserRole()) ?? "USER";
+
+  const sessionIsSuper = (u as any)?.isSuperAdmin === true;
+  const sessionIsAdmin = (u as any)?.isAdmin === true;
+
+  const allowSuper = !!(email && SUPERADMIN_EMAILS_ALLOWLIST.has(email));
+  const allowAdmin = !!(email && (ADMIN_EMAILS_ALLOWLIST.has(email) || SUPERADMIN_EMAILS_ALLOWLIST.has(email)));
+
+  const isSuperAdmin = sessionIsSuper || allowSuper || role === "SUPERADMIN";
+  const isAdmin = sessionIsAdmin || isSuperAdmin || role === "ADMIN";
+
+  return { role, isAdmin, isSuperAdmin };
+});
+
 export async function isAdminUser(): Promise<boolean> {
-  if (await isAllowlistedAdminEmail()) return true;
-  return (await getCurrentUserRole()) === "ADMIN";
+  const { isAdmin } = await getRoleFlags();
+  return isAdmin;
+}
+
+export async function isSuperAdminUser(): Promise<boolean> {
+  const { isSuperAdmin } = await getRoleFlags();
+  return isSuperAdmin;
 }
 
 export async function hasRoleAtLeast(min: Exclude<Role, null | undefined>) {
-  if (await isAllowlistedAdminEmail()) return true;
-  const role = await getCurrentUserRole();
+  const { role, isSuperAdmin, isAdmin } = await getRoleFlags();
+  if (isSuperAdmin) return true;
+  if (min === "ADMIN") return isAdmin;
   if (!role) return false;
   return (ROLE_RANK[role] ?? 0) >= (ROLE_RANK[min] ?? 0);
 }
+
+/* ------------------------------ Guards ----------------------------------- */
 
 export async function requireAdmin(orReturnTo = "/admin") {
   const s = await getServerSession();
   if (!s?.user) redirect(`/signin?callbackUrl=${encodeURIComponent(orReturnTo)}`);
   if (!(await isAdminUser())) redirect("/");
+}
+
+export async function requireSuperAdmin(orReturnTo = "/admin") {
+  const s = await getServerSession();
+  if (!s?.user) redirect(`/signin?callbackUrl=${encodeURIComponent(orReturnTo)}`);
+  if (!(await isSuperAdminUser())) redirect("/");
 }
 
 export async function assertAdminOrThrow(message = "Forbidden") {
@@ -74,6 +124,11 @@ export async function assertRoleAtLeast(min: Exclude<Role, null | undefined>, me
   if (!(await hasRoleAtLeast(min))) throw new Error(message);
 }
 
+/* -------------------------- Diagnostics/helpers -------------------------- */
+
 export function getAdminAllowlist(): string[] {
   return Array.from(ADMIN_EMAILS_ALLOWLIST).sort();
+}
+export function getSuperAdminAllowlist(): string[] {
+  return Array.from(SUPERADMIN_EMAILS_ALLOWLIST).sort();
 }

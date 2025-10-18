@@ -10,7 +10,7 @@
     "check:caps": "node scripts/check-caps.js",
     "lint": "echo \"(lint disabled)\"",
     "lint:fix": "echo \"(lint disabled)\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm clean:types && tsc --noEmit",
     "analyze": "ANALYZE=true next build",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -24,17 +24,24 @@
     "db:purge": "tsx scripts/purge.ts",
     "backup": "tsx scripts/backup.ts",
     "health:local": "cross-env NODE_ENV=production curl -s http://localhost:3000/api/health || echo \"health check requires curl\"",
+
     "test": "vitest --run",
     "test:unit": "vitest --run --dir tests/unit",
+    "test:unit-smoke": "vitest --run --dir tests/unit-smoke",
     "test:api": "vitest --run --dir tests/integration",
+
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:install-browsers": "playwright install --with-deps",
-    "ci": "npm run typecheck && npm run test:unit && npm run build && npm run test:e2e",
+
+    "ci": "npm run typecheck && npm run test:unit && npm run test:api && npm run build && npm run test:e2e",
+
     "smoke:db": "tsx scripts/quick-check.ts",
     "smoke:feed": "tsx scripts/smoke-home-feed.ts",
     "prepr": "pnpm typecheck && pnpm smoke:feed && pnpm smoke:db",
-    "prepr:full": "pnpm typecheck && pnpm build && pnpm smoke:feed && pnpm smoke:db"
+    "prepr:full": "pnpm typecheck && pnpm build && pnpm smoke:feed && pnpm smoke:db",
+    "clean:types": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch{}\""
+   
   },
   "engines": {
     "node": "20.x",
@@ -53,6 +60,7 @@
     "@vercel/analytics": "^1.5.0",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.7.0",
+    "clsx": "^2.1.1",
     "lucide-react": "^0.545.0",
     "next": "15.5.0",
     "next-auth": "^4.24.11",

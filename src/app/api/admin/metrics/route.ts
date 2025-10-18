@@ -1,4 +1,5 @@
 // src/app/api/admin/metrics/route.ts
+export const fetchCache = "force-no-store";
 export const runtime = 'nodejs';
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";

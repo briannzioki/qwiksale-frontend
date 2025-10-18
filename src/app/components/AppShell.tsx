@@ -1,4 +1,3 @@
-// src/app/components/AppShell.tsx
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -34,6 +33,7 @@ export default function AppShell({
 }) {
   const [open, setOpen] = useState(false); // categories drawer
   const pathname = usePathname();
+  const inAdmin = pathname?.startsWith("/admin");
 
   // Lazy-load categories only when needed
   const [cats, setCats] = useState<ReadonlyArray<Category> | null>(null);
@@ -183,15 +183,17 @@ export default function AppShell({
         Skip to content
       </a>
 
-      {/* Sticky, glassy top bar; Header controls can open the drawer by dispatching qs:categories:open */}
-      <header
-        ref={headerRef as any}
-        className="sticky top-0 z-header glass supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-slate-900/30"
-      >
-        <div className="container-page py-2">
-          <Header />
-        </div>
-      </header>
+      {/* ✅ Do NOT render site header in /admin — admin has its own layout */}
+      {!inAdmin && (
+        <header
+          ref={headerRef as any}
+          className="sticky top-0 z-header glass supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-slate-900/30"
+        >
+          <div className="container-page py-2">
+            <Header />
+          </div>
+        </header>
+      )}
 
       {/* Optional gradient page header from RootLayout */}
       {headerSlot ? <div className="relative">{headerSlot}</div> : null}
@@ -257,7 +259,7 @@ export default function AppShell({
             <Link
               href="/"
               onClick={closeDrawer}
-              className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 px-3 py-2 border border-gray-200 dark:border-white/10 shadow-sm transition text-gray-800 dark:text-slate-100"
+              className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg:white/5 hover:bg:white dark:hover:bg:white/10 px-3 py-2 border border-gray-200 dark:border-white/10 shadow-sm transition text-gray-800 dark:text-slate-100"
               prefetch={false}
             >
               <span className="inline-block h-2 w-2 rounded-full bg-brandBlue-600" />
@@ -273,7 +275,7 @@ export default function AppShell({
                   return (
                     <li
                       key={c.name}
-                      className="bg-white/80 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10 shadow-sm"
+                      className="bg-white/80 dark:bg:white/5 rounded-xl border border-gray-200 dark:border-white/10 shadow-sm"
                     >
                       <details className="group">
                         <summary className="flex items-center justify-between cursor-pointer px-3 py-2 text-gray-800 dark:text-slate-100">
@@ -297,7 +299,7 @@ export default function AppShell({
                               return (
                                 <li key={s.name} className="pl-2">
                                   <details>
-                                    <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-gray-800 dark:text-slate-100 rounded-md">
+                                    <summary className="flex items-center justify-between cursor-pointer px-3 py-2 hover:bg-slate-50 dark:hover:bg:white/5 text-gray-800 dark:text-slate-100 rounded-md">
                                       <Link
                                         href={categoryHref(s.name)}
                                         onClick={closeDrawer}
@@ -325,7 +327,7 @@ export default function AppShell({
                                             <Link
                                               href={categoryHref(leaf)}
                                               onClick={closeDrawer}
-                                              className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg-white/5 border-l-2 border-transparent hover:border-brandBlue-600 transition"
+                                              className="block pl-3 pr-2 py-1.5 text-sm text-gray-700 dark:text-slate-300 rounded-md hover:bg-slate-50 dark:hover:bg:white/5 border-l-2 border-transparent hover:border-brandBlue-600 transition"
                                               prefetch={false}
                                             >
                                               {leaf}

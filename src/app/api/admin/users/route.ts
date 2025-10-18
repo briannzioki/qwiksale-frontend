@@ -1,4 +1,3 @@
-// src/app/api/admin/users/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -17,13 +16,11 @@ type Out = {
   createdAt: string | null;
 }[];
 
-/* --------------------------- tiny response helpers --------------------------- */
 function noStoreJson(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
-  // ensure admin responses never cache and vary by auth/cookies
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
@@ -34,7 +31,6 @@ function toInt(v: string | null, def: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
 
-/* ----------------------------------- GET ----------------------------------- */
 export async function GET(req: NextRequest) {
   const denied = await assertAdmin();
   if (denied) return denied;
@@ -43,8 +39,8 @@ export async function GET(req: NextRequest) {
     try {
       const url = new URL(req.url);
 
-      // Optional search/pagination
       const q = (url.searchParams.get("q") || "").trim();
+      const role = (url.searchParams.get("role") || "").trim().toUpperCase(); // "ADMIN" | "USER" | "SUPERADMIN" | ""
       const limit = toInt(url.searchParams.get("limit"), 100, 1, 500);
       const page = toInt(url.searchParams.get("page"), 1, 1, 1000);
       const skip = (page - 1) * limit;
@@ -54,9 +50,12 @@ export async function GET(req: NextRequest) {
         where.OR = [
           { email: { contains: q, mode: "insensitive" } },
           { name: { contains: q, mode: "insensitive" } },
-          // If your schema lacks `username`, Prisma will ignore this at runtime due to the `as any` select below
           { username: { contains: q, mode: "insensitive" } },
+          { id: { contains: q } },
         ];
+      }
+      if (role && ["USER", "ADMIN", "SUPERADMIN", "MODERATOR"].includes(role)) {
+        where.role = role;
       }
 
       const [users, total] = await Promise.all([
@@ -69,7 +68,6 @@ export async function GET(req: NextRequest) {
             id: true,
             email: true,
             name: true,
-            // Keep schema-tolerant for installations without these fields:
             username: true as any,
             role: true as any,
             createdAt: true,
@@ -84,15 +82,10 @@ export async function GET(req: NextRequest) {
         name: u.name ?? null,
         username: u.username ?? null,
         role: u.role ?? null,
-        createdAt:
-          u.createdAt instanceof Date
-            ? u.createdAt.toISOString()
-            : u.createdAt
-            ? String(u.createdAt)
-            : null,
+        createdAt: u.createdAt instanceof Date ? u.createdAt.toISOString() : u.createdAt ? String(u.createdAt) : null,
       }));
 
-      log.info({ count: out.length, page, limit, total }, "admin_users_ok");
+      log.info({ count: out.length, page, limit, total, role: role || "any" }, "admin_users_ok");
 
       const res = noStoreJson(out);
       res.headers.set("X-Total-Count", String(total));

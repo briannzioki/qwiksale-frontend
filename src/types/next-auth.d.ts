@@ -1,9 +1,8 @@
-// src/types/next-auth.d.ts
 import type { DefaultSession, DefaultUser } from "next-auth";
 
 /** Single source of truth for these unions. */
 export type SubscriptionTier = "BASIC" | "GOLD" | "PLATINUM";
-export type Role = "USER" | "MODERATOR" | "ADMIN";
+export type AppRole = "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN";
 
 declare module "next-auth" {
   interface Session {
@@ -16,7 +15,11 @@ declare module "next-auth" {
       username?: string | null;
       image?: string | null;
       subscription?: SubscriptionTier | null;
-      role?: Role | string | null;
+      role?: AppRole | string | null;
+
+      /** Convenience flags injected by callbacks */
+      isAdmin?: boolean;
+      isSuperAdmin?: boolean;
     };
 
     /** Optional profile/verification fields added by callbacks as needed */
@@ -32,18 +35,24 @@ declare module "next-auth" {
   interface User extends DefaultUser {
     username?: string | null;
     subscription?: SubscriptionTier | null;
-    role?: Role | string | null;
+    role?: AppRole | string | null;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
-    /** Mirror Session.user.id; keep the name `id` (not `uid`) */
+    /** We store the id internally as `uid`; expose both for DX. */
+    uid?: string;
     id?: string;
 
+    email?: string | null;
     username?: string | null;
     subscription?: SubscriptionTier | null;
-    role?: Role | string | null;
+    role?: AppRole | string | null;
+
+    /** Mirrors the booleans we attach to Session.user */
+    isAdmin?: boolean;
+    isSuperAdmin?: boolean;
 
     verified?: boolean;
     whatsapp?: string | null;
