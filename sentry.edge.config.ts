@@ -1,4 +1,3 @@
-// Edge runtime config (middleware, edge routes, etc.)
 import * as Sentry from "@sentry/nextjs";
 
 const dsn = process.env.SENTRY_DSN || "";
@@ -13,8 +12,9 @@ if (dsn) {
 
     tracesSampleRate: 0.2,
     debug: process.env.NEXT_PUBLIC_SENTRY_DEBUG === "1",
-
     sendDefaultPii: true,
+
+    ...( { telemetry: false } as any ),
   });
 
   try {
