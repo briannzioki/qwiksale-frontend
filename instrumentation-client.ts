@@ -1,21 +1,13 @@
-// Client (browser) runtime config
+"use client";
 import * as Sentry from "@sentry/nextjs";
 
-/** env */
 const dsn =
   process.env.NEXT_PUBLIC_SENTRY_DSN ||
   process.env.SENTRY_DSN ||
   "";
 
-const environment =
-  process.env.SENTRY_ENV ||
-  process.env.NODE_ENV ||
-  "development";
-
-const releaseMaybe =
-  process.env.NEXT_PUBLIC_COMMIT_SHA ||
-  process.env.VERCEL_GIT_COMMIT_SHA ||
-  undefined;
+const environment = process.env.SENTRY_ENV || process.env.NODE_ENV || "development";
+const releaseMaybe = process.env.NEXT_PUBLIC_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || undefined;
 
 if (dsn) {
   const extra: unknown[] = [];
@@ -37,8 +29,6 @@ if (dsn) {
     dsn,
     environment,
     release: releaseMaybe,
-
-    // Route browser events via your tunnel
     tunnel: "/api/monitoring",
 
     tracesSampleRate: 0.2,
@@ -46,6 +36,9 @@ if (dsn) {
     replaysOnErrorSampleRate: 1.0,
 
     debug: process.env.NEXT_PUBLIC_SENTRY_DEBUG === "1",
+
+    // <-- add telemetry OFF at runtime, but avoid TS excess-property check
+    ...( { telemetry: false } as any ),
 
     integrations(defaults) {
       return [...defaults, ...(extra as any[])];
