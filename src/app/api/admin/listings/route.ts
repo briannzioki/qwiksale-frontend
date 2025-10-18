@@ -1,4 +1,3 @@
-// src/app/api/admin/listings/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,7 +7,6 @@ import { prisma } from "@/app/lib/prisma";
 import { assertAdmin } from "../_lib/guard";
 import { withApiLogging, type RequestLog } from "@/app/lib/api-logging";
 
-/* -------------------------------- types -------------------------------- */
 type Row = {
   id: string;
   kind: "product" | "service";
@@ -20,13 +18,11 @@ type Row = {
   sellerId: string | null;
 };
 
-/* ----------------------------- tiny helpers ----------------------------- */
 function noStoreJson(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
-  // ensure admin responses never cache and vary by auth/cookies
   res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
@@ -47,10 +43,17 @@ function buildOrder(sort: string | null) {
   if (t === "price_asc") return [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
   if (t === "price_desc") return [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
   if (t === "featured") return [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
-  return [{ createdAt: "desc" as const }, { id: "desc" as const }]; // newest
+  return [{ createdAt: "desc" as const }, { id: "desc" as const }];
 }
 
-/* ---------------------------------- GET --------------------------------- */
+function parseBool(v: string | null): boolean | undefined {
+  if (v == null) return undefined;
+  const t = v.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(t)) return true;
+  if (["0", "false", "no", "off"].includes(t)) return false;
+  return undefined;
+}
+
 export async function GET(req: NextRequest) {
   const denied = await assertAdmin();
   if (denied) return denied;
@@ -60,23 +63,24 @@ export async function GET(req: NextRequest) {
       const url = new URL(req.url);
 
       const q = (url.searchParams.get("q") || "").trim();
-      const kind = (url.searchParams.get("kind") || "").trim().toLowerCase(); // "", "product", "service"
-      const status = normStatus(url.searchParams.get("status")); // default undefined = any
-      const sort = url.searchParams.get("sort"); // "newest" (default) | "price_asc" | "price_desc" | "featured"
+      // accept both ?type= and ?kind= (client sends "type")
+      const type = (url.searchParams.get("type") || url.searchParams.get("kind") || "").trim().toLowerCase();
+      const status = normStatus(url.searchParams.get("status"));
+      const featured = parseBool(url.searchParams.get("featured"));
+      const sort = url.searchParams.get("sort");
       const limit = toInt(url.searchParams.get("limit"), 200, 1, 500);
       const page = toInt(url.searchParams.get("page"), 1, 1, 1000);
       const skip = (page - 1) * limit;
 
-      // Split the requested page budget across product/service fairly.
-      const wantsProduct = !kind || kind === "product";
-      const wantsService = !kind || kind === "service";
-      const half = Math.max(1, Math.floor(limit / (wantsProduct && wantsService ? 2 : 1)));
-      const takeProducts = wantsProduct ? half : 0;
+      const wantsProduct = !type || type === "product";
+      const wantsService = !type || type === "service";
+      const split = wantsProduct && wantsService ? Math.max(1, Math.floor(limit / 2)) : limit;
+      const takeProducts = wantsProduct ? split : 0;
       const takeServices = wantsService ? limit - takeProducts : 0;
 
-      // Shared "where" builder
       const baseWhere: any = {};
       if (status) baseWhere.status = status;
+      if (typeof featured === "boolean") baseWhere.featured = featured;
       if (q) {
         baseWhere.OR = [
           { name: { contains: q, mode: "insensitive" } },
@@ -85,19 +89,17 @@ export async function GET(req: NextRequest) {
       }
       const orderBy = buildOrder(sort);
 
-      // Product query (always exists)
       const productSelect = {
         id: true,
         name: true,
         price: true,
         featured: true,
         createdAt: true,
-        sellerId: true as any,   // tolerate schema variants
-        sellerName: true as any, // tolerate schema variants
+        sellerId: true as any,
+        sellerName: true as any,
         seller: { select: { id: true, name: true } },
       };
 
-      // Service model might not exist — detect at runtime
       const anyPrisma = prisma as any;
       const serviceModel =
         anyPrisma.service ??
@@ -106,13 +108,11 @@ export async function GET(req: NextRequest) {
         anyPrisma.Services ??
         null;
 
-      // Counts (for headers)
       const [productTotal, serviceTotal] = await Promise.all([
         prisma.product.count({ where: baseWhere }).catch(() => 0),
         serviceModel?.count ? serviceModel.count({ where: baseWhere }).catch(() => 0) : Promise.resolve(0),
       ]);
 
-      // Pagination per kind (apply same skip for both so pages are stable by kind)
       const [productRows, serviceRows] = await Promise.all([
         wantsProduct
           ? prisma.product.findMany({
@@ -150,12 +150,7 @@ export async function GET(req: NextRequest) {
           name: String(p.name ?? ""),
           price: typeof p.price === "number" ? p.price : null,
           featured: typeof p.featured === "boolean" ? p.featured : null,
-          createdAt:
-            p.createdAt instanceof Date
-              ? p.createdAt.toISOString()
-              : p.createdAt
-              ? String(p.createdAt)
-              : null,
+          createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt ? String(p.createdAt) : null,
           sellerName: (p.sellerName as string) ?? p.seller?.name ?? null,
           sellerId: (p.sellerId as string) ?? p.seller?.id ?? null,
         })),
@@ -165,31 +160,16 @@ export async function GET(req: NextRequest) {
           name: String(s.name ?? ""),
           price: typeof s.price === "number" ? s.price : null,
           featured: typeof s.featured === "boolean" ? s.featured : null,
-          createdAt:
-            s.createdAt instanceof Date
-              ? s.createdAt.toISOString()
-              : s.createdAt
-              ? String(s.createdAt)
-              : null,
+          createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt ? String(s.createdAt) : null,
           sellerName: (s.sellerName as string) ?? s.seller?.name ?? null,
           sellerId: (s.sellerId as string) ?? s.seller?.id ?? null,
         })),
       ];
 
-      const combinedTotal =
-        (wantsProduct ? productTotal : 0) + (wantsService ? serviceTotal : 0);
+      const combinedTotal = (wantsProduct ? productTotal : 0) + (wantsService ? serviceTotal : 0);
 
       log.info(
-        {
-          returned: rows.length,
-          page,
-          limit,
-          productTotal,
-          serviceTotal,
-          combinedTotal,
-          kind: kind || "both",
-          hasServiceModel: Boolean(serviceModel),
-        },
+        { returned: rows.length, page, limit, productTotal, serviceTotal, combinedTotal, type: type || "both" },
         "admin_listings_ok",
       );
 
@@ -201,7 +181,6 @@ export async function GET(req: NextRequest) {
       res.headers.set("X-Per-Page", String(limit));
       return res;
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error("[/api/admin/listings GET] error:", err);
       return noStoreJson({ error: "Server error" }, { status: 500 });
     }

@@ -20,15 +20,14 @@ export default defineConfig({
     alias: {
       "@": r("src"),
       "server-only": r("tests/shims/server-only.ts"),
-      "client-only": r("tests/shims/client-only.ts"),
-    },
+      "client-only": r("tests/shims/client-only.ts")
+    }
   },
 
   esbuild: { target: "es2022", jsx: "automatic" },
 
   test: {
     globals: true,
-    // ⬇️ use happy-dom instead of jsdom
     environment: "happy-dom",
     environmentOptions: { url: "http://localhost/" },
 
@@ -40,8 +39,10 @@ export default defineConfig({
       "tests/unit-smoke/**/*.{test,spec}.tsx",
       "tests/unit/**/*.{test,spec}.ts",
       "tests/unit/**/*.{test,spec}.tsx",
+      "tests/integration/**/*.{test,spec}.ts",
+      "tests/integration/**/*.{test,spec}.tsx",
       "src/**/__tests__/**/*.{test,spec}.ts",
-      "src/**/__tests__/**/*.{test,spec}.tsx",
+      "src/**/__tests__/**/*.{test,spec}.tsx"
     ],
     exclude: ["node_modules/**", "dist/**", ".next/**", "coverage/**", "tests/e2e/**"],
 
@@ -55,7 +56,6 @@ export default defineConfig({
     hookTimeout: 30_000,
 
     // Vitest 3 deprecates deps.inline – use server.deps.inline
-    server: { deps: { inline: [/^next\/image$/, /^next\/navigation$/] } },
-  },
+    server: { deps: { inline: [/^next\/image$/, /^next\/navigation$/] } }
+  }
 });
- 

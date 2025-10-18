@@ -1,4 +1,3 @@
-// src/app/admin/users/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -6,6 +5,9 @@ export const revalidate = 0;
 import type { Metadata } from "next";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";
+import { getSessionUser } from "@/app/lib/auth";
+import { isSuperAdminUser } from "@/app/lib/authz";
+import RoleActions from "@/app/admin/users/RoleActions.client";
 
 /* =========================
    Metadata (no indexing)
@@ -28,9 +30,11 @@ type AdminUser = {
   email: string | null;
   name: string | null;
   username: string | null;
-  role: string | null;          // e.g. "ADMIN" | "USER"
-  createdAt: string | null;     // ISO
+  role: string | null; // "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN"
+  createdAt: string | null; // ISO
 };
+
+type RoleFilter = "any" | "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN";
 
 const fmtDateKE = (iso?: string | null) => {
   if (!iso) return "—";
@@ -87,8 +91,13 @@ export default async function Page({
   const sp = await searchParams;
 
   const q = (getParam(sp, "q") || "").trim();
-  const role = (getParam(sp, "role") || "any") as "any" | "ADMIN" | "USER";
+  const role = (getParam(sp, "role") || "any").toUpperCase() as RoleFilter;
   const page = Math.max(1, Number(getParam(sp, "page") || 1));
+
+  // Who is the viewer?
+  const viewer = await getSessionUser().catch(() => null);
+  const viewerIsSuper = await isSuperAdminUser().catch(() => false);
+  const viewerId = viewer?.id ?? null;
 
   // Build API query (backend may ignore unknown params; that's fine)
   const qs = new URLSearchParams();
@@ -98,7 +107,6 @@ export default async function Page({
 
   let all: AdminUser[] | null = null;
   try {
-    // Relative URL so cookies/session are forwarded server-side by Next
     const res = await fetch(`/api/admin/users?${qs.toString()}`, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     all = (await res.json()) as AdminUser[];
@@ -117,12 +125,11 @@ export default async function Page({
   // Client-side fallback filtering (in case API ignores q/role)
   const lowered = q.toLowerCase();
   let users = all.filter((u) => {
-    const roleOk = role === "any" ? true : (u.role ?? "USER").toUpperCase() === role;
+    const r = (u.role ?? "USER").toUpperCase();
+    const roleOk = role === "any" ? true : r === role;
     const qOk =
       !lowered ||
-      [u.id, u.email, u.name, u.username].some((x) =>
-        String(x ?? "").toLowerCase().includes(lowered)
-      );
+      [u.id, u.email, u.name, u.username].some((x) => String(x ?? "").toLowerCase().includes(lowered));
     return roleOk && qOk;
   });
 
@@ -155,19 +162,16 @@ export default async function Page({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-8">
             <label className="label">Search</label>
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="ID, email, name, username…"
-              className="input"
-            />
+            <input name="q" defaultValue={q} placeholder="ID, email, name, username…" className="input" />
           </div>
           <div className="md:col-span-4">
             <label className="label">Role</label>
             <select name="role" defaultValue={role} className="select">
               <option value="any">Any</option>
-              <option value="ADMIN">Admin</option>
               <option value="USER">User</option>
+              <option value="MODERATOR">Moderator</option>
+              <option value="ADMIN">Admin</option>
+              <option value="SUPERADMIN">Super-admin</option>
             </select>
           </div>
           {/* always reset to first page on new query */}
@@ -204,31 +208,54 @@ export default async function Page({
                     <Th>Username</Th>
                     <Th>Role</Th>
                     <Th>Created</Th>
+                    {viewerIsSuper && <Th>Actions</Th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y dark:divide-slate-800">
-                  {pageRows.map((u) => (
-                    <tr key={u.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
-                      <Td className="font-mono text-xs">{u.id}</Td>
-                      <Td>{u.email ?? "—"}</Td>
-                      <Td>{u.name ?? "—"}</Td>
-                      <Td>
-                        {u.username ? (
-                          <Link href={`/store/${u.username}`} className="underline text-[#161748] dark:text-[#39a0ca]">
-                            @{u.username}
-                          </Link>
-                        ) : (
-                          "—"
+                  {pageRows.map((u) => {
+                    const r = (u.role ?? "USER").toUpperCase();
+                    return (
+                      <tr key={u.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
+                        <Td className="font-mono text-xs">{u.id}</Td>
+                        <Td>{u.email ?? "—"}</Td>
+                        <Td>{u.name ?? "—"}</Td>
+                        <Td>
+                          {u.username ? (
+                            <Link href={`/store/${u.username}`} className="underline text-[#161748] dark:text-[#39a0ca]">
+                              @{u.username}
+                            </Link>
+                          ) : (
+                            "—"
+                          )}
+                        </Td>
+                        <Td>
+                          <Badge
+                            tone={
+                              r === "SUPERADMIN"
+                                ? "indigo"
+                                : r === "ADMIN"
+                                ? "green"
+                                : r === "MODERATOR"
+                                ? "amber"
+                                : "slate"
+                            }
+                          >
+                            {r}
+                          </Badge>
+                        </Td>
+                        <Td>{fmtDateKE(u.createdAt)}</Td>
+                        {viewerIsSuper && (
+                          <Td>
+                            <RoleActions
+                              userId={u.id}
+                              currentRole={r as "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN"}
+                              isSelf={viewerId === u.id}
+                            />
+                          </Td>
                         )}
-                      </Td>
-                      <Td>
-                        <Badge tone={(u.role ?? "USER").toUpperCase() === "ADMIN" ? "green" : "slate"}>
-                          {(u.role ?? "USER").toUpperCase()}
-                        </Badge>
-                      </Td>
-                      <Td>{fmtDateKE(u.createdAt)}</Td>
-                    </tr>
-                  ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -242,9 +269,7 @@ export default async function Page({
                 href={safePage > 1 ? keepQuery("/admin/users", sp, { page: String(safePage - 1) }) : "#"}
                 aria-disabled={safePage <= 1}
                 className={`rounded border px-3 py-1 transition ${
-                  safePage > 1
-                    ? "hover:shadow dark:border-slate-800"
-                    : "opacity-50 dark:border-slate-800"
+                  safePage > 1 ? "hover:shadow dark:border-slate-800" : "opacity-50 dark:border-slate-800"
                 }`}
               >
                 ← Prev
@@ -265,9 +290,7 @@ export default async function Page({
                       href={keepQuery("/admin/users", sp, { page: String(p) })}
                       aria-current={isCurrent ? "page" : undefined}
                       className={`rounded px-2 py-1 ${
-                        isCurrent
-                          ? "bg-[#161748] text-white"
-                          : "hover:bg-black/5 dark:hover:bg-white/10"
+                        isCurrent ? "bg-[#161748] text-white" : "hover:bg-black/5 dark:hover:bg-white/10"
                       }`}
                     >
                       {p}
@@ -278,15 +301,11 @@ export default async function Page({
 
               <Link
                 href={
-                  safePage < totalPages
-                    ? keepQuery("/admin/users", sp, { page: String(safePage + 1) })
-                    : "#"
+                  safePage < totalPages ? keepQuery("/admin/users", sp, { page: String(safePage + 1) }) : "#"
                 }
                 aria-disabled={safePage >= totalPages}
                 className={`rounded border px-3 py-1 transition ${
-                  safePage < totalPages
-                    ? "hover:shadow dark:border-slate-800"
-                    : "opacity-50 dark:border-slate-800"
+                  safePage < totalPages ? "hover:shadow dark:border-slate-800" : "opacity-50 dark:border-slate-800"
                 }`}
               >
                 Next →
@@ -324,10 +343,10 @@ function Badge({
   tone?: "slate" | "green" | "amber" | "rose" | "indigo";
 }) {
   const map: Record<string, string> = {
-    slate:  "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-    green:  "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
-    amber:  "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-    rose:   "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
+    slate: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    green: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
+    amber: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+    rose: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
     indigo: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
   };
   return (

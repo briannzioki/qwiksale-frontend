@@ -1,4 +1,3 @@
-// middleware.ts
 import { withAuth } from "next-auth/middleware";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -149,21 +148,29 @@ function isAllowedOrigin(req: NextRequest): boolean {
 }
 
 /* -------------------- Admin detection helper -------------------- */
+function splitSet(v?: string | null) {
+  return (v ?? "")
+    .split(/[,\s]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function isAdminFromToken(req: NextRequest): boolean {
   // withAuth attaches the decoded token on req.nextauth.token
   const t: any = (req as any).nextauth?.token ?? null;
   const role = typeof t?.role === "string" ? t.role.toUpperCase() : "";
-  const tokenIsAdmin = t?.isAdmin === true || role === "ADMIN";
 
-  // Optional email allow-list (fallback)
+  const tokenIsSuper = t?.isSuperAdmin === true || role === "SUPERADMIN";
+  const tokenIsAdmin = t?.isAdmin === true || role === "ADMIN" || tokenIsSuper;
+
+  // Optional email allow-lists
   const email = (t?.email as string | undefined)?.toLowerCase() ?? "";
-  const adminList =
-    (process.env.ADMIN_EMAILS ?? "")
-      .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean) || [];
+  const adminList = new Set(splitSet(process.env.ADMIN_EMAILS));
+  const superList = new Set(splitSet(process.env.SUPERADMIN_EMAILS));
 
-  const emailIsAdmin = !!email && adminList.includes(email);
+  const emailIsSuper = !!email && superList.has(email);
+  const emailIsAdmin = !!email && (adminList.has(email) || emailIsSuper);
+
   return tokenIsAdmin || emailIsAdmin;
 }
 
@@ -251,26 +258,27 @@ export default withAuth(
       SUGGEST_STORE.set(key, arr);
     }
 
-    /* -------------------- NEW: auto-redirect admins to /admin -------------------- */
+    /* -------------------- Role-aware home routing -------------------- */
     if (!isApi && isHtmlLike) {
+      const token: any = (req as any).nextauth?.token ?? null;
+      const loggedIn = !!token;
       const admin = isAdminFromToken(req);
 
-      // Only redirect on a couple of “entry” pages to avoid breaking browsing for admins:
-      // - Home (“/”) and Dashboard (“/dashboard”) → Admin Console (“/admin”).
-      // - Never redirect if we’re already under /admin or if a query asks to skip.
       const wantsSkip = req.nextUrl.searchParams.get("skipAdmin") === "1";
 
-      if (
-        admin &&
-        !wantsSkip &&
-        (p === "/" || p === "/dashboard") &&
-        !p.startsWith("/admin")
-      ) {
+      // Admins landing on / or /dashboard -> /admin
+      if (admin && !wantsSkip && (p === "/" || p === "/dashboard") && !p.startsWith("/admin")) {
         const to = new URL("/admin", req.url);
         return NextResponse.redirect(to);
       }
+
+      // Non-admins landing on / while logged-in -> /dashboard
+      if (loggedIn && !admin && p === "/") {
+        const to = new URL("/dashboard", req.url);
+        return NextResponse.redirect(to);
+      }
     }
-    /* --------------------------------------------------------------------------- */
+    /* ---------------------------------------------------------------- */
 
     // Pass CSP nonce to app on HTML navigations
     const nonce = isHtmlLike && !isApi ? makeNonce() : "";
@@ -318,14 +326,13 @@ export default withAuth(
         if (needsAdmin) {
           const t: any = token ?? {};
           const role = typeof t.role === "string" ? t.role.toUpperCase() : "";
-          const tokenIsAdmin = t.isAdmin === true || role === "ADMIN";
+          const tokenIsSuper = t.isSuperAdmin === true || role === "SUPERADMIN";
+          const tokenIsAdmin = t.isAdmin === true || role === "ADMIN" || tokenIsSuper;
 
           const email = typeof t.email === "string" ? t.email.toLowerCase() : "";
-          const adminList = (process.env.ADMIN_EMAILS ?? "")
-            .split(",")
-            .map((e) => e.trim().toLowerCase())
-            .filter(Boolean);
-          const emailIsAdmin = !!email && adminList.includes(email);
+          const adminList = splitSet(process.env.ADMIN_EMAILS);
+          const superList = splitSet(process.env.SUPERADMIN_EMAILS);
+          const emailIsAdmin = !!email && (adminList.includes(email) || superList.includes(email));
 
           return !!token && (tokenIsAdmin || emailIsAdmin);
         }

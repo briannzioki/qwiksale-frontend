@@ -22,10 +22,18 @@ enum Subscription {
   PLATINUM
 }
 
+/**
+ * Roles:
+ * - USER: default
+ * - MODERATOR: limited moderation tools (kept for compatibility)
+ * - ADMIN: full admin console
+ * - SUPERADMIN: platform owner; can grant/revoke ADMIN/MODERATOR
+ */
 enum Role {
   USER
   MODERATOR
   ADMIN
+  SUPERADMIN
 }
 
 enum PaymentStatus {
@@ -170,8 +178,17 @@ model User {
   threadsSold   Thread[]  @relation("ThreadSeller")
   messagesSent  Message[]
 
+  // Audit logs:
+  // - logs this user authored (actor)
+  auditAsActor  AuditLog[] @relation("AuditActor")
+  // - logs where this user was the target of an action
+  auditAsTarget AuditLog[] @relation("AuditTarget")
+
   sessions Session[]
   accounts Account[]
+
+  // Helpful indexes
+  @@index([role])
 }
 
 model Referral {
@@ -437,6 +454,26 @@ model Report {
   @@index([listingType, listingId])
   @@index([resolved, createdAt])
   @@index([userId])
+}
+
+/**
+ * ---------- Audit Log ----------
+ * Records privileged actions (e.g., role changes).
+ */
+model AuditLog {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+
+  actorId      String?
+  targetUserId String?
+  action       String            // e.g. "role_change"
+  meta         Json?
+
+  actor       User? @relation("AuditActor",  fields: [actorId],      references: [id], onDelete: SetNull)
+  targetUser  User? @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([targetUserId, createdAt(sort: Desc)])
 }
 
 /**
