@@ -1,39 +1,45 @@
+// src/instrumentation.ts
 import * as Sentry from "@sentry/nextjs";
 
-/** Best-effort dynamic import that won’t crash whether we’re in src/ or app/ */
-async function tryImport(path: string) {
-  try {
-    return await import(path);
-  } catch {
-    return undefined;
-  }
-}
-
 export async function register() {
-  // Ensure the appropriate runtime config file runs exactly once
-  if (process.env["NEXT_RUNTIME"] === "nodejs") {
-    await (
-      tryImport("../sentry.server.config") ||
-      tryImport("../../sentry.server.config") ||
-      tryImport("./sentry.server.config")
-    );
-  }
+  const dsn = process.env["SENTRY_DSN"] || process.env["NEXT_PUBLIC_SENTRY_DSN"] || "";
+  if (!dsn) return;
 
-  if (process.env["NEXT_RUNTIME"] === "edge") {
-    await (
-      tryImport("../sentry.edge.config") ||
-      tryImport("../../sentry.edge.config") ||
-      tryImport("./sentry.edge.config")
-    );
-  }
+  const environment = process.env["SENTRY_ENV"] || process.env.NODE_ENV || "development";
+  const releaseMaybe =
+    process.env["VERCEL_GIT_COMMIT_SHA"] || process.env["NEXT_PUBLIC_COMMIT_SHA"] || undefined;
+
+  Sentry.init({
+    dsn,
+    environment,
+    release: releaseMaybe,
+    tunnel: "/api/monitoring",
+
+    tracesSampleRate: 0.2,
+    debug: process.env["SENTRY_DEBUG"] === "1" || process.env["NEXT_PUBLIC_SENTRY_DEBUG"] === "1",
+
+    // turn off Sentry SDK telemetry; cast avoids TS excess-property error
+    ...( { telemetry: false } as any ),
+
+    beforeSend(event: any) {
+      try {
+        const url = (event as any)?.request?.url;
+        if (typeof url === "string" && url.includes("/api/mpesa")) {
+          delete (event as any).request;
+        }
+      } catch {}
+      return event;
+    },
+  });
 
   try {
-    const environment = process.env["SENTRY_ENV"] || process.env.NODE_ENV || "development";
-    const release = process.env["NEXT_PUBLIC_COMMIT_SHA"] || process.env["VERCEL_GIT_COMMIT_SHA"] || undefined;
+    const isEdge =
+      process.env["NEXT_RUNTIME"] === "edge" ||
+      typeof (globalThis as any).EdgeRuntime === "string";
 
-    Sentry.setTag("runtime", process.env["NEXT_RUNTIME"] || "nodejs");
+    Sentry.setTag("runtime", isEdge ? "edge" : "node");
     Sentry.setTag("node_env", environment);
-    if (release) Sentry.setTag("release", release);
+    if (releaseMaybe) Sentry.setTag("release", releaseMaybe);
   } catch {}
 }
 

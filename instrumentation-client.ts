@@ -1,6 +1,9 @@
 "use client";
 import * as Sentry from "@sentry/nextjs";
 
+// ✅ Required by Next 15/Sentry to instrument navigations
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
+
 const dsn =
   process.env.NEXT_PUBLIC_SENTRY_DSN ||
   process.env.SENTRY_DSN ||
@@ -37,7 +40,7 @@ if (dsn) {
 
     debug: process.env.NEXT_PUBLIC_SENTRY_DEBUG === "1",
 
-    // <-- add telemetry OFF at runtime, but avoid TS excess-property check
+    // TS-safe way to turn off SDK telemetry
     ...( { telemetry: false } as any ),
 
     integrations(defaults) {
