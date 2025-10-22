@@ -3,6 +3,13 @@
   "typescript.tsdk": "node_modules\\typescript\\lib",
   "typescript.enablePromptUseWorkspaceTsdk": true,
 
+  // Quiet diagnostics from nested tsconfigs in node_modules (e.g. @vercel/analytics)
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
+  // Also stop the editor from trying to auto-fetch types you don't need
+  "typescript.disableAutomaticTypeAcquisition": true,
+  // (Optional) give TS a bit more memory if your workspace is large
+  // "typescript.tsserver.maxTsServerMemory": 3072,
+
   // Helpful TS/JS suggestions
   "typescript.preferences.preferTypeOnlyAutoImports": true,
   "javascript.suggest.autoImports": true,
@@ -29,5 +36,21 @@
   },
   "tailwindCSS.experimental.classRegex": [
     ["classNames\\(([^)]*)\\)", "(?:'|\"|`)([^'\"`]*)(?:'|\"|`)"]
-  ]
+  ],
+
+  // Keep search and file watchers calm for build artifacts
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/coverage": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/dist/**": true,
+    "**/build/**": true,
+    "**/coverage/**": true
+  }
 }

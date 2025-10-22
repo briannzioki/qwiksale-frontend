@@ -4,7 +4,7 @@ import { isAdminUser } from "@/app/lib/authz";
 
 /**
  * API guard that returns 403 JSON if the current session is not admin (based on
- * your env allowlist + DB role via authz.ts).
+ * env allowlist + DB role via authz.ts).
  */
 export async function assertAdmin() {
   const ok = await isAdminUser();

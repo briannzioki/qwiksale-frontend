@@ -1,9 +1,10 @@
-// next.config.ts (project root)
+// next.config.ts
 import type { NextConfig } from "next";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
 const withAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === "true" });
 
+const isVercel = !!process.env.VERCEL;
 const isProd = process.env.NODE_ENV === "production";
 const isPreview = process.env.VERCEL_ENV === "preview";
 
@@ -22,7 +23,8 @@ const securityHeaders = (): { key: string; value: string }[] => {
     // CSP is handled in middleware.ts via nonce + strict-dynamic
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "X-Content-Type-Options", value: "nosniff" },
-    { key: "X-Frame-Options", value: "DENY" },
+    // Align with middleware (SAMEORIGIN) to avoid header mismatches
+    { key: "X-Frame-Options", value: "SAMEORIGIN" },
     { key: "X-DNS-Prefetch-Control", value: "on" },
     { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
     { key: "X-Download-Options", value: "noopen" },
@@ -141,6 +143,9 @@ const baseConfig: NextConfig = {
   },
 
   async redirects() {
+    // 🔒 Only do domain/HTTPS canonicalization on real prod @ Vercel.
+    if (!(isProd && isVercel) || !APEX_DOMAIN) return [];
+
     const rules: Array<{
       source: string;
       destination: string;
@@ -149,31 +154,26 @@ const baseConfig: NextConfig = {
         | { type: "host"; value: string }
         | { type: "header" | "cookie" | "query"; key: string; value?: string }
       >;
-      missing?: Array<{ type: "header" | "cookie" | "query"; key: string; value?: string }>;
     }> = [];
 
-    // www → apex
-    if (APEX_DOMAIN) {
-      rules.push({
-        source: "/:path*",
-        destination: `https://${APEX_DOMAIN}/:path*`,
-        permanent: true,
-        has: [{ type: "host", value: `www.${APEX_DOMAIN}` }],
-      });
-    }
+    // www → apex (e.g., www.qwiksale.sale → https://qwiksale.sale)
+    rules.push({
+      source: "/:path*",
+      destination: `https://${APEX_DOMAIN}/:path*`,
+      permanent: true,
+      has: [{ type: "host", value: `www.${APEX_DOMAIN}` }],
+    });
 
-    // Force HTTPS only on apex host
-    if (APEX_DOMAIN) {
-      rules.push({
-        source: "/:path*",
-        destination: `https://${APEX_DOMAIN}/:path*`,
-        permanent: true,
-        has: [
-          { type: "host", value: APEX_DOMAIN },
-          { type: "header", key: "x-forwarded-proto", value: "http" },
-        ],
-      });
-    }
+    // Force HTTPS on apex only (x-forwarded-proto == http)
+    rules.push({
+      source: "/:path*",
+      destination: `https://${APEX_DOMAIN}/:path*`,
+      permanent: true,
+      has: [
+        { type: "host", value: APEX_DOMAIN },
+        { type: "header", key: "x-forwarded-proto", value: "http" },
+      ],
+    });
 
     return rules;
   },

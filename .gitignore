@@ -66,3 +66,7 @@ prisma.config.ts
 
 .vscode/
 
+
+# local backups/logs
+.backup/
+.logs/

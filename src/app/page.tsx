@@ -1,4 +1,5 @@
-﻿export const runtime = "nodejs";
+﻿// src/app/page.tsx
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -131,13 +132,27 @@ export default async function HomePage({
 }: {
   searchParams: Promise<any>;
 }) {
+  // Read raw search params once (works for ReadonlyURLSearchParams or a plain object)
+  const spRaw: any = await searchParams;
+
+  // Read legacy + preferred keys
+  const tParam = (typeof spRaw?.get === "function" ? spRaw.get("t") : spRaw?.t) ?? null;
+  const tabParam = (typeof spRaw?.get === "function" ? spRaw.get("tab") : spRaw?.tab) ?? null;
+
+  const desiredMode = normalizeMode(
+    Array.isArray(tParam) ? tParam[0] : tParam ?? (Array.isArray(tabParam) ? tabParam[0] : tabParam)
+  );
+
+  // No canonicalization redirects here — just render.
+
+  // ---- Normal rendering continues below ----
   const session = await auth();
   const isAuthed = Boolean(session?.user);
 
-  const tParam = await readParam(searchParams, "t");
-  const tabParam = await readParam(searchParams, "tab");
-  const mode = normalizeMode(tParam ?? tabParam);
-  const q = await readParam(searchParams, "q");
+  const mode = desiredMode;
+  const q =
+    (typeof spRaw?.get === "function" ? spRaw.get("q") : spRaw?.q) ??
+    (await readParam(Promise.resolve(spRaw), "q"));
 
   let warmErrMsg: string | null = null;
   try {
@@ -160,9 +175,9 @@ export default async function HomePage({
   const ssrServiceIds = mode === "services" ? await fetchServiceIdsForSSR(q) : [];
 
   const retryQS = new URLSearchParams();
-  if (tParam != null) retryQS.set("t", tParam);
-  else if (tabParam != null) retryQS.set("tab", tabParam);
-  if (q != null) retryQS.set("q", q);
+  if (tParam != null) retryQS.set("t", String(tParam));
+  else if (tabParam != null) retryQS.set("tab", String(tabParam));
+  if (q != null) retryQS.set("q", String(q));
   const retryHref = retryQS.toString() ? `/?${retryQS.toString()}` : "/";
 
   const productChips = [
@@ -239,7 +254,6 @@ export default async function HomePage({
               <p id="home-hero-desc" className="mt-2 text-white/90">
                 Phones, cars, services—and everything in between. Safe, simple, Qwik.
               </p>
-              {/* Removed ambiguous “Browse: Products / Services” mini chips */}
             </div>
             <div className="sm:pb-1">
               <Link href="/search" prefetch={false} className="inline-flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/25 transition" aria-label="Browse all listings">

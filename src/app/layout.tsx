@@ -1,26 +1,25 @@
-﻿export const runtime = "nodejs"; // NextAuth/Prisma need Node runtime
+﻿// src/app/layout.tsx
+export const runtime = "nodejs";
 
-import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
+
+import "./globals.css";
+
 import Providers from "./providers";
-import AppShell from "./components/AppShell";
-import DevToolsMount from "./components/DevToolsMount";
-import { fontVars } from "./fonts";
-import ToasterClient from "./components/ToasterClient";
-import { getBaseUrl } from "@/app/lib/url";
-import { getServerSession } from "@/app/lib/auth";
 import { headers } from "next/headers";
-import Analytics from "./components/Analytics";
+import { auth } from "@/auth"; // ← server-side session
+import { fontVars } from "./fonts";
+import SiteHeader from "@/app/components/SiteHeader";
+import Footer from "@/app/components/Footer";
+import Analytics from "@/app/components/Analytics";
+import { getBaseUrl } from "@/app/lib/url";
 
 /* ----------------------------- Site URL helpers ---------------------------- */
 const siteUrl = getBaseUrl().replace(/\/+$/, "");
 const isPreview =
   process.env["VERCEL_ENV"] === "preview" || process.env["NEXT_PUBLIC_NOINDEX"] === "1";
-
-/* Hide any demo/dev error controls by default so tests don’t see generic “error/try again” text. */
-const SHOW_DEV_CONTROLS = process.env["NEXT_PUBLIC_SHOW_DEV_CONTROLS"] === "1";
 
 /* -------------------------------- Viewport -------------------------------- */
 export const viewport: Viewport = {
@@ -37,7 +36,10 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: "QwikSale",
-  title: { default: "QwikSale", template: "%s · QwikSale" },
+  title: {
+    default: "QwikSale — Kenya’s trusted marketplace for all items.",
+    template: "%s · QwikSale",
+  },
   description:
     "QwikSale — Kenya’s trusted marketplace for all items. List your items, find great deals, and contact sellers directly.",
   keywords: ["QwikSale", "Kenya", "marketplace", "buy and sell", "peer to peer", "mpesa"],
@@ -99,14 +101,14 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const session = await getServerSession();
+  // ✅ Server-side session to prevent auth flicker in header
+  const session = await auth();
 
-  // Pull CSP nonce from middleware (x-nonce) so inline/3P scripts satisfy script-src
+  // CSP nonce from middleware for inline/3P scripts
   const h = await headers();
   const nonce = h.get("x-nonce") ?? undefined;
 
   const site = {
-    url: siteUrl,
     orgJsonLd: {
       "@context": "https://schema.org",
       "@type": "Organization",
@@ -114,10 +116,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       url: siteUrl,
       logo: `${siteUrl}/favicon/android-chrome-512x512.png`,
       sameAs: [
-        "https://www.tiktok.com/@qwiksale.sale",   // TikTok
-        "https://www.linkedin.com/company/qwiksale", // LinkedIn (adjust slug if different)
+        "https://www.tiktok.com/@qwiksale.sale",
+        "https://www.linkedin.com/company/qwiksale",
       ],
-    } as const,
+    },
     siteJsonLd: {
       "@context": "https://schema.org",
       "@type": "WebSite",
@@ -128,72 +130,28 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         target: `${siteUrl}/search?q={search_term_string}`,
         "query-input": "required name=search_term_string",
       },
-    } as const,
+    },
   } as const;
-
-  const PLAUSIBLE_DOMAIN = process.env["NEXT_PUBLIC_PLAUSIBLE_DOMAIN"];
-
-  // Gradient header slot
-  const headerSlot = (
-    <header
-      className="bg-spotlight bg-noise text-white"
-      style={{ WebkitMaskImage: "linear-gradient(to bottom, black 80%, transparent)" }}
-    >
-      <div className="container-page pt-10 pb-4 md:pt-12 md:pb-6">
-        <div className="flex items-end justify-between gap-4">
-          <h1 className="text-balance text-2xl md:text-3xl font-extrabold tracking-tight text-gradient">
-            QwikSale
-          </h1>
-          <div id="page-header-actions" className="flex items-center gap-2" />
-        </div>
-      </div>
-    </header>
-  );
 
   return (
     <html lang="en-KE" dir="ltr" className="h-full" suppressHydrationWarning>
       <head>
         <meta name="color-scheme" content="light dark" />
 
-        {/* Preconnect + DNS prefetch for image CDNs */}
-        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//res.cloudinary.com" />
-        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//images.unsplash.com" />
-        <link rel="preconnect" href="https://plus.unsplash.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//plus.unsplash.com" />
-        <link rel="preconnect" href="https://lh3.googleusercontent.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//lh3.googleusercontent.com" />
-        <link rel="preconnect" href="https://avatars.githubusercontent.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//avatars.githubusercontent.com" />
-        <link rel="preconnect" href="https://images.pexels.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//images.pexels.com" />
-        <link rel="preconnect" href="https://picsum.photos" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="//picsum.photos" />
-
-        {/* Social identity hints (helps entity matching) */}
-        <link rel="me" href="https://www.tiktok.com/@qwiksale.sale" />
-        <link rel="me" href="https://www.linkedin.com/company/qwiksale" />
-
-        {/* Fonts */}
+        {/* Fonts/CDNs preconnects (safe globals) */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//res.cloudinary.com" />
 
         {/* Theme bootstrap with nonce — prevents dark/light flash */}
-        <Script
-          id="theme-script"
-          strategy="beforeInteractive"
-          nonce={nonce}
-        >{`(() => {
+        <Script id="theme-script" strategy="beforeInteractive" nonce={nonce}>{`(() => {
   try {
     var m = (localStorage.getItem('theme') || 'system').toLowerCase();
     var isSystem = m === 'system';
     var prefersDark = false;
-    try {
-      prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    } catch {}
+    try { prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; } catch {}
     var dark = (m === 'dark') || (isSystem && prefersDark);
-
     var root = document.documentElement;
     root.classList.toggle('dark', dark);
     root.style.colorScheme = dark ? 'dark' : 'light';
@@ -215,24 +173,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         style={{ fontFeatureSettings: "'kern' 1, 'liga' 1, 'calt' 1" }}
         data-env={isPreview ? "preview" : "prod"}
       >
-        {/* Background foundation */}
-        <div className="relative min-h-screen isolate bg-gradient-to-br from-gray-50 via-[#f9fafb] to-[#eef6ff] dark:from-slate-950 dark:via-[#0b1220] dark:to-black">
-          <div className="absolute inset-0 pointer-events-none bg-noise" aria-hidden />
+        {/* Provide initial session so header renders final auth state */}
+        <Providers session={session}>
+          <SiteHeader />
+          {children}
+          <Footer />
+        </Providers>
 
-          <Providers session={session}>
-            <AppShell headerSlot={headerSlot}>{children}</AppShell>
-
-            {/* Toasts (portal) */}
-            <ToasterClient
-              extraToastOptions={{
-                duration: 3500,
-                style: { borderRadius: "12px" },
-              }}
-            />
-          </Providers>
-        </div>
-
-        {/* Analytics & scripts */}
+        {/* Analytics */}
         <VercelAnalytics />
         <Analytics />
 
@@ -245,8 +193,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             nonce={nonce}
           />
         ) : null}
-
-        {SHOW_DEV_CONTROLS ? <DevToolsMount /> : null}
       </body>
     </html>
   );

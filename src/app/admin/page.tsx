@@ -5,11 +5,10 @@ export const revalidate = 0;
 
 import Link from "next/link";
 import { prisma } from "@/app/lib/prisma";
-import type { Prisma } from "@prisma/client";
 import SectionHeader from "@/app/components/SectionHeader";
 
 /* =========================
-   Selects -> Types from Prisma
+   Selects -> Types (no Prisma import needed)
    ========================= */
 const userSelect = {
   id: true,
@@ -20,7 +19,15 @@ const userSelect = {
   subscription: true,
   createdAt: true,
 } as const;
-type AdminUserRow = Prisma.UserGetPayload<{ select: typeof userSelect }>;
+type AdminUserRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  username: string | null;
+  role: string | null;
+  subscription: string | null;
+  createdAt: Date;
+};
 
 const productSelect = {
   id: true,
@@ -34,7 +41,18 @@ const productSelect = {
   createdAt: true,
   seller: { select: { id: true, username: true, name: true } },
 } as const;
-type AdminProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
+type AdminProductRow = {
+  id: string;
+  name: string;
+  image: string | null;
+  price: number | null;
+  featured: boolean;
+  status: string; // keep flexible; we map it to a badge
+  category: string | null;
+  subcategory: string | null;
+  createdAt: Date;
+  seller: { id: string; username: string | null; name: string | null } | null;
+};
 
 /* =========================
    Helpers
@@ -95,6 +113,7 @@ export default async function AdminPage() {
   const featuredCount = featuredCountR.status === "fulfilled" ? featuredCountR.value : 0;
   const activeCount = activeCountR.status === "fulfilled" ? activeCountR.value : 0;
   const servicesActive = servicesCountR.status === "fulfilled" ? servicesCountR.value : 0;
+
   const recentUsers =
     recentUsersR.status === "fulfilled" ? (recentUsersR.value as AdminUserRow[]) : [];
   const recentProducts =

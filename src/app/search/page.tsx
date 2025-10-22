@@ -1,11 +1,11 @@
 ﻿// src/app/search/page.tsx
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import type { Sort } from "./SearchClient";
 import { InfiniteClient } from "./InfiniteClient";
 import { getBaseUrl } from "@/app/lib/url";
 import SectionHeader from "@/app/components/SectionHeader";
 import NumberInputNoWheel from "@/app/components/ui/NumberInputNoWheel";
+import { redirectIfDifferent } from "@/app/lib/safeRedirect";
 
 // Fallback cards are regular client components—import them statically
 import ProductCard from "@/app/components/ProductCard";
@@ -138,15 +138,21 @@ export default async function SearchPage({
     json ||
     (type === "product" ? emptyProducts : emptyServices);
 
-  // If API adjusted page (e.g., asked for page > totalPages), align URL
+  // If API adjusted page (e.g., asked for page > totalPages), align URL safely
   if ((data as any).page !== page) {
-    const qp = new URLSearchParams();
+    // current URL
+    const currentQP = new URLSearchParams();
     Object.entries(sp).forEach(([k, v]) => {
-      if (Array.isArray(v)) v.forEach((x) => qp.append(k, String(x)));
-      else if (v) qp.set(k, String(v));
+      if (Array.isArray(v)) v.forEach((x) => currentQP.append(k, String(x)));
+      else if (v != null) currentQP.set(k, String(v));
     });
-    qp.set("page", String((data as any).page));
-    redirect(`/search?${qp.toString()}`);
+    const current = `/search?${currentQP.toString()}`;
+
+    // target URL (only page differs)
+    currentQP.set("page", String((data as any).page));
+    const target = `/search?${currentQP.toString()}`;
+
+    redirectIfDifferent(target, current);
   }
 
   const headerTitle = type === "product" ? "Search" : "Search Services";
