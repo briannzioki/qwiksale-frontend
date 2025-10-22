@@ -107,8 +107,10 @@ export default async function Page({
   if (featured !== "any") qs.set("featured", featured === "yes" ? "true" : "false");
 
   let rows: Listing[] | null = null;
+  let lastStatus = 0;
   try {
     const res = await fetch(`/api/admin/listings?${qs.toString()}`, { cache: "no-store" });
+    lastStatus = res.status;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     rows = (await res.json()) as Listing[];
   } catch {
@@ -116,9 +118,13 @@ export default async function Page({
   }
 
   if (!rows) {
+    const msg =
+      lastStatus === 403
+        ? "You need admin access to view this page."
+        : "Failed to load listings.";
     return (
       <div className="rounded-xl border bg-white p-4 text-sm text-rose-600 dark:border-slate-800 dark:bg-slate-900 dark:text-rose-400">
-        Failed to load listings.
+        {msg}
       </div>
     );
   }

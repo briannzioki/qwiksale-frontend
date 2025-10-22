@@ -106,8 +106,10 @@ export default async function Page({
   if (role !== "any") qs.set("role", role);
 
   let all: AdminUser[] | null = null;
+  let lastStatus = 0;
   try {
     const res = await fetch(`/api/admin/users?${qs.toString()}`, { cache: "no-store" });
+    lastStatus = res.status;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     all = (await res.json()) as AdminUser[];
   } catch {
@@ -115,9 +117,13 @@ export default async function Page({
   }
 
   if (!all) {
+    const msg =
+      lastStatus === 403
+        ? "You need admin access to view this page."
+        : "Failed to load users.";
     return (
       <div className="rounded-xl border bg-white p-4 text-sm text-red-600 dark:border-slate-800 dark:bg-slate-900 dark:text-red-400">
-        Failed to load users.
+        {msg}
       </div>
     );
   }

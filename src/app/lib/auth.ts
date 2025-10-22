@@ -1,19 +1,15 @@
 import "server-only";
 import { auth } from "@/auth";
 
-/**
- * Types
- */
 export type Session = Awaited<ReturnType<typeof auth>>;
 export type SessionUser =
   (NonNullable<Session>["user"] & {
     id?: string;
     role?: string | null;
+    subscription?: string | null;
     isAdmin?: boolean;
     isSuperAdmin?: boolean;
   }) | null;
-
-/* ----------------------- Allowlist helpers (env) ----------------------- */
 
 function splitList(v?: string | null) {
   return (v ?? "")
@@ -22,7 +18,6 @@ function splitList(v?: string | null) {
     .filter(Boolean);
 }
 
-/** Emails that grant admin; superadmins imply admin as well */
 export function isAdminEmail(email?: string | null): boolean {
   if (!email) return false;
   const e = email.toLowerCase();
@@ -38,12 +33,6 @@ export function isSuperAdminEmail(email?: string | null): boolean {
   return superAdmin.has(e);
 }
 
-/* --------------------- Safe session wrappers (server) -------------------- */
-
-/**
- * Safe wrapper around NextAuth's auth() that never throws.
- * Returns null if auth provider misconfigures or errors.
- */
 export async function safeAuth(): Promise<Session | null> {
   try {
     return await auth();
@@ -52,15 +41,6 @@ export async function safeAuth(): Promise<Session | null> {
   }
 }
 
-/**
- * Get the current viewer with useful flags precomputed.
- * - Never throws
- * - `isAdmin` true when:
- *   - session.user.isAdmin === true, OR
- *   - role === "ADMIN" | "SUPERADMIN", OR
- *   - email is in ADMIN_EMAILS/SUPERADMIN_EMAILS allow-lists
- * - `isSuperAdmin` mirrors the SUPERADMIN checks
- */
 export async function getViewer(): Promise<{
   session: Session | null;
   id?: string;
@@ -78,22 +58,13 @@ export async function getViewer(): Promise<{
   const roleU = role?.toUpperCase?.();
 
   const isSuperAdmin =
-    u?.isSuperAdmin === true ||
-    roleU === "SUPERADMIN" ||
-    isSuperAdminEmail(email);
-
+    u?.isSuperAdmin === true || roleU === "SUPERADMIN" || isSuperAdminEmail(email);
   const isAdmin =
-    u?.isAdmin === true ||
-    isSuperAdmin ||
-    roleU === "ADMIN" ||
-    isAdminEmail(email);
+    u?.isAdmin === true || isSuperAdmin || roleU === "ADMIN" || isAdminEmail(email);
 
   return { session, id, email, role, isAdmin, isSuperAdmin };
 }
 
-/**
- * Back-compat convenience: same shape you already used elsewhere.
- */
 export async function getServerSession(): Promise<Session | null> {
   return safeAuth();
 }
@@ -112,5 +83,4 @@ export async function isAuthenticated(): Promise<boolean> {
   return (await requireUserId()) != null;
 }
 
-// Re-export for places that import { auth } from "@/app/lib/auth"
 export { auth };

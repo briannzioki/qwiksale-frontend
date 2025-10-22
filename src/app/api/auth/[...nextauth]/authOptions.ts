@@ -1,3 +1,4 @@
+﻿// src/app/api/auth/[...nextauth]/authOptions.ts
 import { createTransport } from "nodemailer";
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
@@ -7,11 +8,11 @@ import EmailProvider from "next-auth/providers/email";
 import { prisma } from "@/app/lib/prisma";
 import { verifyPassword, hashPassword } from "@/server/auth";
 
-const isProd = process.env.NODE_ENV === "production";
 const ALLOW_CREDS_AUTO_SIGNUP = (process.env["ALLOW_CREDS_AUTO_SIGNUP"] ?? "1") === "1";
 
 const ALLOWED_CALLBACK_PATHS = new Set<string>([
   "/",
+  "/dashboard", // allow direct landing, avoids extra hop
   "/sell",
   "/saved",
   "/account/profile",
@@ -19,7 +20,6 @@ const ALLOWED_CALLBACK_PATHS = new Set<string>([
   "/admin",
 ]);
 
-/** quick helpers */
 const splitList = (v?: string | null) =>
   (v ?? "")
     .split(/[,\s]+/)
@@ -41,15 +41,9 @@ function deriveHandle(email?: string | null, name?: string | null) {
 export const authOptions: NextAuthOptions = {
   debug: process.env["NEXTAUTH_DEBUG"] === "1",
   ...(process.env["NEXTAUTH_SECRET"] ? { secret: process.env["NEXTAUTH_SECRET"]! } : {}),
-
   adapter: PrismaAdapter(prisma),
 
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60,
-    updateAge: 24 * 60 * 60,
-  },
-
+  session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
   pages: { signIn: "/signin" },
 
   providers: [
@@ -70,14 +64,7 @@ export const authOptions: NextAuthOptions = {
                   <p><a href="${url}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#161748;color:#fff;text-decoration:none">Click to sign in</a></p>
                   <p style="color:#666;margin-top:12px">If you did not request this email, you can safely ignore it.</p>
                 </div>`;
-              await transport.sendMail({
-                to: identifier,
-                from: provider.from,
-                replyTo: process.env["EMAIL_REPLY_TO"] || undefined,
-                subject,
-                text,
-                html,
-              });
+              await transport.sendMail({ to: identifier, from: provider.from, subject, text, html });
             },
           }),
         ]
@@ -85,14 +72,10 @@ export const authOptions: NextAuthOptions = {
 
     Credentials({
       name: "Email & Password",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
+      credentials: { email: { label: "Email", type: "email" }, password: { label: "Password", type: "password" } },
       async authorize(credentials) {
         const email = credentials?.email?.toLowerCase().trim() || "";
         const password = credentials?.password ?? "";
-
         const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!EMAIL_RE.test(email) || password.length < 6) {
           await new Promise((r) => setTimeout(r, 250));
@@ -101,18 +84,14 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findUnique({
           where: { email },
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            image: true,
-            passwordHash: true,
-          },
+          select: { id: true, email: true, name: true, image: true, passwordHash: true },
         });
 
         if (user) {
+          // Do NOT throw here (throwing can bubble to 500s). Return null for invalid path.
           if (!user.passwordHash) {
-            throw new Error("This email is linked to a social login. Use “Continue with Google”.");
+            await new Promise((r) => setTimeout(r, 250));
+            return null; // “social login only” — UI should show a generic invalid-credentials message
           }
           const ok = await verifyPassword(password, user.passwordHash);
           if (!ok) {
@@ -128,10 +107,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         const passwordHash = await hashPassword(password);
-        const created = await prisma.user.create({
-          data: { email, passwordHash },
-          select: { id: true, email: true },
-        });
+        const created = await prisma.user.create({ data: { email, passwordHash }, select: { id: true, email: true } });
         return { id: created.id, email: created.email };
       },
     }),
@@ -142,41 +118,62 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    async redirect({ url, baseUrl }) {
+    // NOTE: This must be named `redirect` per NextAuth types.
+    async redirect(
+      { url, baseUrl }: { url: string; baseUrl: string }
+    ): Promise<string> {
       try {
+        const base = new URL(baseUrl);
         const u = new URL(url, baseUrl);
-        if (u.origin !== baseUrl) return baseUrl;
+
+        // Only allow same-origin destinations
+        if (u.origin !== base.origin) return baseUrl;
+
+        // Never redirect to signup
         if (u.pathname === "/signup") return baseUrl;
 
-        if (ALLOWED_CALLBACK_PATHS.has(u.pathname) || u.pathname === "/") return u.toString();
-
+        // Prefer explicit callbackUrl if safe & allowed
         const cb = u.searchParams.get("callbackUrl");
         if (cb) {
-          const cbu = new URL(cb, baseUrl);
-          if (cbu.origin === baseUrl && cbu.pathname !== "/signup" && (ALLOWED_CALLBACK_PATHS.has(cbu.pathname) || cbu.pathname === "/")) {
-            return cbu.toString();
+          try {
+            const cbu = new URL(cb, baseUrl);
+            if (
+              cbu.origin === base.origin &&
+              cbu.pathname !== "/signup" &&
+              (ALLOWED_CALLBACK_PATHS.has(cbu.pathname) || cbu.pathname === "/")
+            ) {
+              // Return the actual target (including "/" and query), do NOT normalize to baseUrl
+              return cbu.toString();
+            }
+          } catch {
+            // allow relative callback like "/dashboard"
+            if (typeof cb === "string" && cb.startsWith("/") && (ALLOWED_CALLBACK_PATHS.has(cb) || cb === "/")) {
+              return cb;
+            }
           }
         }
-      } catch {}
+
+        // Allow safe, allowed paths on same origin — return the original absolute URL
+        if (ALLOWED_CALLBACK_PATHS.has(u.pathname) || u.pathname === "/") {
+          return u.toString();
+        }
+      } catch {
+        // allow relative like "/dashboard"
+        if (typeof url === "string" && url.startsWith("/")) return url;
+      }
+      // Fallback
       return baseUrl;
     },
 
     async jwt({ token, user, profile, trigger }) {
-      // Persist id + email
       if (user?.id) (token as any).uid = user.id;
       if ((token as any).email == null && user?.email) (token as any).email = user.email;
 
-      // First-time username derivation
       if ((token as any).username == null) {
-        const fromProfile =
-          (profile as any)?.preferred_username ?? (profile as any)?.login ?? null;
-        (token as any).username =
-          fromProfile ??
-          deriveHandle(user?.email ?? null, user?.name ?? null) ??
-          null;
+        const fromProfile = (profile as any)?.preferred_username ?? (profile as any)?.login ?? null;
+        (token as any).username = fromProfile ?? deriveHandle(user?.email ?? null, user?.name ?? null) ?? null;
       }
 
-      // Sync custom claims on first login and explicit updates
       if (user?.id || trigger === "update") {
         const uid = (user?.id as string) || (token as any).uid;
         if (uid) {
@@ -185,7 +182,6 @@ export const authOptions: NextAuthOptions = {
             select: { subscription: true, username: true, referralCode: true, role: true, email: true },
           });
 
-          // Role from DB, with a conservative env allowlist fallback
           const email = (row?.email ?? (token as any).email ?? "").toLowerCase();
           let role = row?.role ?? "USER";
           if (SUPERADMIN_EMAILS.has(email)) role = "SUPERADMIN";
@@ -195,27 +191,21 @@ export const authOptions: NextAuthOptions = {
           (token as any).username = row?.username ?? (token as any).username ?? null;
           (token as any).referralCode = row?.referralCode ?? null;
           (token as any).role = role;
-
-          // Booleans the app can use without string comparisons
           (token as any).isSuperAdmin = role === "SUPERADMIN";
           (token as any).isAdmin = role === "ADMIN" || role === "SUPERADMIN";
         }
       }
 
-      // If we still haven’t set booleans, derive from role
       if ((token as any).isAdmin == null) {
         const role = (token as any).role ?? "USER";
         (token as any).isSuperAdmin = role === "SUPERADMIN";
         (token as any).isAdmin = role === "ADMIN" || role === "SUPERADMIN";
       }
-
       return token;
     },
 
     async session({ session, token }) {
-      if (session.user && (token as any)?.uid) {
-        (session.user as any).id = (token as any).uid as string;
-      }
+      if (session.user && (token as any)?.uid) (session.user as any).id = (token as any).uid as string;
       (session.user as any).subscription = (token as any).subscription ?? null;
       (session.user as any).username = (token as any).username ?? null;
       (session.user as any).referralCode = (token as any).referralCode ?? null;
@@ -223,21 +213,6 @@ export const authOptions: NextAuthOptions = {
       (session.user as any).isAdmin = Boolean((token as any).isAdmin);
       (session.user as any).isSuperAdmin = Boolean((token as any).isSuperAdmin);
       return session;
-    },
-  },
-
-  events: {
-    signIn({ user, account, isNewUser }) {
-      // eslint-disable-next-line no-console
-      console.log("[auth] signIn", { uid: user?.id, provider: account?.provider, isNewUser });
-    },
-    createUser({ user }) {
-      // eslint-disable-next-line no-console
-      console.log("[auth] createUser", { uid: user.id, email: (user as any).email });
-    },
-    linkAccount({ user, account }) {
-      // eslint-disable-next-line no-console
-      console.log("[auth] linkAccount", { uid: user.id, provider: account.provider });
     },
   },
 };

@@ -1,4 +1,4 @@
-// src/app/dashboard/page.tsx
+﻿// src/app/dashboard/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -102,6 +102,7 @@ function getServiceModel() {
   return anyPrisma.service ?? anyPrisma.services ?? anyPrisma.Service ?? anyPrisma.Services ?? null;
 }
 
+/** Build an origin (protocol + host) from request headers / env without causing redirects. */
 function originFrom(h: MinimalHeaders): string {
   // Strongest override: full URL in env
   const envUrl =
@@ -119,15 +120,22 @@ function originFrom(h: MinimalHeaders): string {
   // Host-only override
   const envHost = process.env["NEXT_PUBLIC_APP_HOST"];
   if (envHost) {
-    const proto = envHost.includes("localhost") || envHost.includes("127.0.0.1") ? "http" : "https";
+    const proto =
+      envHost.includes("localhost") || envHost.includes("127.0.0.1") ? "http" : "https";
     return `${proto}://${envHost}`;
   }
 
-  // Prefer forwarded headers (proxy/Vercel), fallback to host/http
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  // Prefer forwarded headers (proxy/Vercel)
+  const forwardedHostRaw = h.get("x-forwarded-host") ?? "";
+  const forwardedHost = forwardedHostRaw.split(",")[0]?.trim(); // may be list
+  const host = forwardedHost || h.get("host") || "localhost:3000";
+
+  const forwardedProtoRaw = h.get("x-forwarded-proto") ?? "";
+  const forwardedProto = forwardedProtoRaw.split(",")[0]?.trim();
   const proto =
-    h.get("x-forwarded-proto") ??
+    forwardedProto ||
     (host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https");
+
   return `${proto}://${host}`;
 }
 
@@ -152,11 +160,16 @@ async function fetchJsonSafe<T>(
 }
 
 /* -------------------------------- page -------------------------------- */
+/**
+ * IMPORTANT: This page never issues a server-side redirect.
+ * If the user is not signed in, we render a soft prompt instead of redirecting.
+ * This avoids redirect loops in tests and in deployments behind proxies.
+ */
 export default async function DashboardPage({
   searchParams,
 }: {
   // Next 15: searchParams is a Promise
-  searchParams?: Promise<any>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   // Resolve search params once up-front
   const sp = (await searchParams) as Record<string, string | string[] | undefined> | undefined;
@@ -176,7 +189,10 @@ export default async function DashboardPage({
                 <Link href="/signin?callbackUrl=%2Fdashboard" className="btn-gradient-primary">
                   Sign in with email
                 </Link>
-                <Link href="/api/auth/signin/google?callbackUrl=%2Fdashboard" className="btn-outline">
+                <Link
+                  href="/api/auth/signin/google?callbackUrl=%2Fdashboard"
+                  className="btn-outline"
+                >
                   Continue with Google
                 </Link>
               </div>
@@ -273,7 +289,7 @@ export default async function DashboardPage({
     if (!me) {
       return (
         <div className="p-6">
-          <p className="mb-3">We couldn’t load your account. Please sign in again.</p>
+          <p className="mb-3">We couldn't load your account. Please sign in again.</p>
           <Link href="/signin?callbackUrl=%2Fdashboard" className="text-[#39a0ca] underline">
             Sign in
           </Link>
@@ -282,7 +298,9 @@ export default async function DashboardPage({
     }
 
     // Fetch recent items via API — forward cookies & use absolute origin
-    const h = await headers(); // safe to await; returns synchronously if already available
+    const nextH = await headers(); // safe either way
+    const h: MinimalHeaders = { get: (name) => nextH.get(name) ?? null };
+
     const origin = originFrom(h);
     const cookie = h.get("cookie") ?? "";
     const qs = `mine=true&pageSize=6&sort=newest`;
@@ -382,7 +400,7 @@ export default async function DashboardPage({
 
         {/* Soft guardrail banner (matches test copy exactly) */}
         {feedError && (
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-3xl" data-e2e="dashboard-soft-error">
             <ErrorBanner
               title="We hit a dashboard error"
               message="Something went wrong loading your dashboard. You can try again."
@@ -408,11 +426,19 @@ export default async function DashboardPage({
 
         {/* Quick actions */}
         <div className="flex flex-wrap gap-3">
-          <Link href="/sell" className="btn-outline">+ Post a Listing</Link>
-          <Link href="/saved" className="btn-outline">View Saved</Link>
-          <Link href="/settings/billing" className="btn-outline">Billing & Subscription</Link>
+          <Link href="/sell" className="btn-outline">
+            + Post a Listing
+          </Link>
+          <Link href="/saved" className="btn-outline">
+            View Saved
+          </Link>
+          <Link href="/settings/billing" className="btn-outline">
+            Billing & Subscription
+          </Link>
           {/* Server page: use the NextAuth signout route (GET renders a confirm) */}
-          <Link href="/api/auth/signout" className="ml-auto btn-outline">Sign out</Link>
+          <Link href="/api/auth/signout" className="ml-auto btn-outline">
+            Sign out
+          </Link>
         </div>
 
         {/* Metrics */}
@@ -434,13 +460,11 @@ export default async function DashboardPage({
           {topCats30.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/illustrations/chart-empty.svg"
-                alt=""
-                className="h-24 w-24 opacity-90"
-              />
+              <img src="/illustrations/chart-empty.svg" alt="" className="h-24 w-24 opacity-90" />
               <p className="mt-3 text-gray-600 dark:text-slate-300">No data yet.</p>
-              <p className="text-xs text-gray-500 dark:text-slate-400">Post a listing to see insights here.</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                Post a listing to see insights here.
+              </p>
             </div>
           ) : (
             <ul className="grid gap-1 text-sm text-gray-800 dark:text-slate-100 sm:grid-cols-2 lg:grid-cols-3">
@@ -468,7 +492,7 @@ export default async function DashboardPage({
             </Link>
           </div>
 
-        {recentListings.length === 0 ? (
+          {recentListings.length === 0 ? (
             <div className="rounded-xl border bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -483,7 +507,9 @@ export default async function DashboardPage({
                 Post your first item to get started.
               </p>
               <div className="mt-4">
-                <Link href="/sell" className="btn-gradient-primary">Post a Listing</Link>
+                <Link href="/sell" className="btn-gradient-primary">
+                  Post a Listing
+                </Link>
               </div>
             </div>
           ) : (
@@ -519,7 +545,8 @@ export default async function DashboardPage({
                       />
                       <div className="p-4">
                         <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
-                          {item.name || (item.type === "product" ? "Unnamed item" : "Unnamed service")}
+                          {item.name ||
+                            (item.type === "product" ? "Unnamed item" : "Unnamed service")}
                         </h3>
                         <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
                           {[item.category, item.subcategory].filter(Boolean).join(" • ") || "—"}
@@ -528,7 +555,9 @@ export default async function DashboardPage({
                           {fmtKES(item.price)}
                         </p>
                         <p className="mt-1 text-[11px] text-gray-400">
-                          {item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-KE") : ""}
+                          {item.createdAt
+                            ? new Date(item.createdAt).toLocaleDateString("en-KE")
+                            : ""}
                         </p>
                         <div className="mt-3 flex gap-2">
                           <Link
@@ -580,7 +609,9 @@ export default async function DashboardPage({
           Please refresh. If this continues, contact support — the error has been logged.
         </p>
         <div className="mt-3">
-          <Link href="/dashboard" className="btn-outline">Retry</Link>
+          <Link href="/dashboard" className="btn-outline">
+            Retry
+          </Link>
         </div>
       </main>
     );

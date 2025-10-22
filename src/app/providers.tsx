@@ -35,9 +35,11 @@ type Props = {
 };
 
 // Minimal shape we rely on for deriving a stable key
-type SessionLike = {
-  user?: { email?: string | null; id?: string | null } | null;
-} | null;
+type SessionLike =
+  | {
+      user?: { email?: string | null; id?: string | null } | null;
+    }
+  | null;
 
 /* ----------------------- Analytics (console-only stub) ----------------------- */
 

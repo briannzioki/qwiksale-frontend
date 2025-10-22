@@ -2,10 +2,10 @@
 "use client";
 
 import type { Session } from "next-auth";
-import type { SubscriptionTier } from "@/auth"; // type-only; no runtime import
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
+import RoleChip from "@/app/components/RoleChip";
 
 /* ------------------------- tiny event/analytics ------------------------- */
 function emit(name: string, detail?: unknown) {
@@ -22,7 +22,10 @@ function track(event: string, payload?: Record<string, unknown>) {
 }
 
 /* -------------------------------- helpers ------------------------------- */
-const isPaidTier = (t?: SubscriptionTier | null) => t === "GOLD" || t === "PLATINUM";
+const isPaidTier = (t?: string | null) => {
+  const v = (t ?? "").toUpperCase();
+  return v === "GOLD" || v === "PLATINUM";
+};
 
 /* ------------------------------- subparts ------------------------------- */
 function Initials({ name }: { name?: string | null }) {
@@ -39,31 +42,6 @@ function Initials({ name }: { name?: string | null }) {
       className="inline-flex h-7 w-7 select-none items-center justify-center rounded-full bg-white/20 text-xs font-semibold"
     >
       {text}
-    </span>
-  );
-}
-
-function TierBadge({ tier }: { tier?: SubscriptionTier | null }) {
-  if (!tier || tier === "BASIC") {
-    return (
-      <span
-        className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide border border-white/20"
-        title="BASIC (free)"
-      >
-        BASIC
-      </span>
-    );
-  }
-  const cls =
-    tier === "GOLD"
-      ? "bg-yellow-400/20 border-yellow-300/30 text-yellow-900/80 dark:text-yellow-200"
-      : "bg-indigo-300/20 border-indigo-200/30 text-indigo-900/80 dark:text-indigo-200";
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide border ${cls}`}
-      title={`${tier} subscriber`}
-    >
-      {tier}
     </span>
   );
 }
@@ -138,13 +116,18 @@ export default function AuthButtons() {
     if (open) track("auth_dropdown_open");
   }, [open]);
 
-  // ✅ Correct typing for session.user
+  // ✅ Correct typing for session.user, but don’t over-constrain at runtime
   const user = (session?.user ?? null) as (Session["user"] & {
-    subscription?: SubscriptionTier | null;
+    subscription?: string | null;
+    role?: string | null;
     name?: string | null;
+    isAdmin?: boolean;
   }) | null;
 
-  const tier = user?.subscription ?? null;
+  const subscription = user?.subscription ?? null;
+  const roleU = (user?.role ?? "").toUpperCase();
+  const isAdmin = user?.isAdmin === true || roleU === "ADMIN" || roleU === "SUPERADMIN";
+  const dashboardHref = isAdmin ? "/admin" : "/dashboard";
 
   const displayName = useMemo(() => {
     if (user?.name) return user.name;
@@ -200,7 +183,10 @@ export default function AuthButtons() {
           <Initials name={user?.name ?? null} />
         )}
         <span className="hidden sm:inline max-w-[14ch] truncate">{displayName}</span>
-        <TierBadge tier={tier ?? "BASIC"} />
+
+        {/* ✅ single source of truth chip, inside the trigger */}
+        <RoleChip role={user?.role ?? null} subscription={subscription} />
+
         <svg
           width="16"
           height="16"
@@ -224,8 +210,9 @@ export default function AuthButtons() {
         </div>
 
         <nav className="py-1 text-sm">
+          {/* ✅ “Dashboard” goes to /admin for admins, /dashboard for users */}
           <Link
-            href="/dashboard"
+            href={dashboardHref}
             role="menuitem"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -258,7 +245,7 @@ export default function AuthButtons() {
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
             prefetch={false}
           >
-            {isPaidTier(tier) ? "Manage subscription" : "Upgrade subscription"}
+            {isPaidTier(subscription) ? "Manage subscription" : "Upgrade subscription"}
           </Link>
         </nav>
 

@@ -1,15 +1,18 @@
+// src/app/messages/page.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { auth } from "@/auth";
-import { redirect } from "next/navigation";
+import { redirectIfDifferent } from "@/app/lib/safeRedirect";
 import MessagesClient from "./MessagesClient.client";
 
 export default async function MessagesPage() {
   const session = await auth().catch(() => null);
   const uid = (session?.user as any)?.id as string | undefined;
   if (!uid) {
-    redirect(`/signin?callbackUrl=${encodeURIComponent("/messages")}`);
+    const here = "/messages";
+    const target = `/signin?callbackUrl=${encodeURIComponent(here)}`;
+    redirectIfDifferent(target, here);
   }
 
   return (

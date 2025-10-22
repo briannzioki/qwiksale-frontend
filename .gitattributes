@@ -1,2 +1,6 @@
 * text=auto eol=lf
-*.bat text eol=crlf
+
+# keep Windows endings for scripts that need them
+*.bat eol=crlf
+*.cmd eol=crlf
+*.ps1 eol=crlf

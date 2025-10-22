@@ -62,6 +62,8 @@ export function useFavorite(id: string, opts: Options = {}) {
     if (!requireAuth) return;
     try {
       if (typeof window !== "undefined") {
+        // If already on /signin, avoid a redundant reload
+        if (window.location.pathname === "/signin") return;
         const path = window.location.pathname + window.location.search + window.location.hash;
         const cb = encodeURIComponent(path || "/");
         window.location.href = `/signin?callbackUrl=${cb}`;
@@ -79,8 +81,8 @@ export function useFavorite(id: string, opts: Options = {}) {
       id,
     };
     // Back-compat shadow fields so older handlers still work
-    if (entity === "product") body['productId'] = id;
-    if (entity === "service") body['serviceId'] = id;
+    if (entity === "product") body["productId"] = id;
+    if (entity === "service") body["serviceId"] = id;
     return body;
   }, [entity, id]);
 

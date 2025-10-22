@@ -1,11 +1,9 @@
+// src/app/lib/authz.ts
 import "server-only";
 import { cache } from "react";
-import { redirect } from "next/navigation";
-
-/** ✅ use central prisma client (kept consistent with app) */
 import { prisma } from "@/app/lib/prisma";
-
 import { getServerSession, getSessionUser } from "@/app/lib/auth";
+import { redirectIfDifferent } from "@/app/lib/safeRedirect";
 
 export type Role = "SUPERADMIN" | "ADMIN" | "MODERATOR" | "USER" | null | undefined;
 
@@ -99,14 +97,24 @@ export async function hasRoleAtLeast(min: Exclude<Role, null | undefined>) {
 
 export async function requireAdmin(orReturnTo = "/admin") {
   const s = await getServerSession();
-  if (!s?.user) redirect(`/signin?callbackUrl=${encodeURIComponent(orReturnTo)}`);
-  if (!(await isAdminUser())) redirect("/");
+  if (!s?.user) {
+    const target = `/signin?callbackUrl=${encodeURIComponent(orReturnTo)}`;
+    return redirectIfDifferent(target, orReturnTo);
+  }
+  if (!(await isAdminUser())) {
+    return redirectIfDifferent("/", orReturnTo || "/");
+  }
 }
 
 export async function requireSuperAdmin(orReturnTo = "/admin") {
   const s = await getServerSession();
-  if (!s?.user) redirect(`/signin?callbackUrl=${encodeURIComponent(orReturnTo)}`);
-  if (!(await isSuperAdminUser())) redirect("/");
+  if (!s?.user) {
+    const target = `/signin?callbackUrl=${encodeURIComponent(orReturnTo)}`;
+    return redirectIfDifferent(target, orReturnTo);
+  }
+  if (!(await isSuperAdminUser())) {
+    return redirectIfDifferent("/", orReturnTo || "/");
+  }
 }
 
 export async function assertAdminOrThrow(message = "Forbidden") {
@@ -114,10 +122,23 @@ export async function assertAdminOrThrow(message = "Forbidden") {
   if (!s?.user || !(await isAdminUser())) throw new Error(message);
 }
 
-export async function requireRoleOrRedirect(min: Exclude<Role, null | undefined>, returnTo = "/") {
+/**
+ * Require a minimum role or redirect.
+ * Default `returnTo` is `/signin` (non-self) to avoid accidental "/" ↔ "/" loops.
+ */
+export async function requireRoleOrRedirect(
+  min: Exclude<Role, null | undefined>,
+  returnTo = "/signin"
+) {
   const s = await getServerSession();
-  if (!s?.user) redirect(`/signin?callbackUrl=${encodeURIComponent(returnTo)}`);
-  if (!(await hasRoleAtLeast(min))) redirect("/");
+  if (!s?.user) {
+    const target = `/signin?callbackUrl=${encodeURIComponent(returnTo)}`;
+    return redirectIfDifferent(target, returnTo);
+  }
+  if (!(await hasRoleAtLeast(min))) {
+    // Compare against a non-self "current" to dodge self-redirects
+    return redirectIfDifferent("/", returnTo || "/signin");
+  }
 }
 
 export async function assertRoleAtLeast(min: Exclude<Role, null | undefined>, message = "Forbidden") {

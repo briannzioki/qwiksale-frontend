@@ -1,10 +1,12 @@
-// src/auth.ts
+﻿// src/auth.ts
 import "server-only";
 
 import { cache } from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { redirectIfDifferent } from "@/app/lib/safeRedirect";
 
 /**
  * Keep TS in sync with Prisma:
@@ -23,6 +25,31 @@ export interface SessionUser {
   role?: Role | null;
   /** True if email is in ADMIN_EMAILS or role === ADMIN */
   isAdmin?: boolean;
+}
+
+/** Best-effort current href from request context (path + query). */
+async function getCurrentHref(): Promise<string | null> {
+  try {
+    const h = await headers();
+
+    const path =
+      h.get("x-invoke-path") ||
+      h.get("x-matched-path") ||
+      h.get("next-url") ||
+      h.get("x-next-url") ||
+      ""; // e.g. "/signin"
+
+    const rawQuery =
+      h.get("x-invoke-query") ||
+      h.get("x-query") ||
+      ""; // e.g. "callbackUrl=%2Fdashboard"
+
+    if (!path) return null;
+    const qs = rawQuery ? (rawQuery.startsWith("?") ? rawQuery : `?${rawQuery}`) : "";
+    return `${path}${qs}`;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -68,27 +95,43 @@ export async function requireUserIdOrNull(): Promise<string | null> {
 
 /**
  * Require a session; if missing, redirect to sign-in (with callback).
- * NOTE: This assumes `authOptions` session/jwt callbacks include `user.id`.
+ * Uses a "safe redirect" that NO-OPs when already on the same /signin URL.
  */
-export async function requireAuth(
-  callbackUrl?: string
-): Promise<NonNullable<Session>> {
+export async function requireAuth(callbackUrl?: string): Promise<NonNullable<Session>> {
   const s = await auth();
   if (!s?.user?.id) {
     const to = callbackUrl ?? "/";
-    redirect(`/signin?callbackUrl=${encodeURIComponent(to)}`);
+    const target = `/signin?callbackUrl=${encodeURIComponent(to)}`;
+    const current = await getCurrentHref();
+
+    if (current) {
+      // Throws if different; no-ops if identical (prevents /signin ↔ /signin loops)
+      redirectIfDifferent(target, current);
+    } else {
+      // Fallback when we cannot read current path/query
+      redirect(target);
+    }
   }
   return s as NonNullable<Session>;
 }
 
 /**
  * Require a user and return a strongly-typed `SessionUser`.
+ * Same safe-redirect behavior as requireAuth().
  */
 export async function requireUser(callbackUrl?: string): Promise<SessionUser> {
   const s = await requireAuth(callbackUrl);
   const u = s.user as SessionUser | undefined;
   if (!u?.id) {
-    redirect(`/signin?callbackUrl=${encodeURIComponent(callbackUrl ?? "/")}`);
+    const to = callbackUrl ?? "/";
+    const target = `/signin?callbackUrl=${encodeURIComponent(to)}`;
+    const current = await getCurrentHref();
+
+    if (current) {
+      redirectIfDifferent(target, current);
+    } else {
+      redirect(target);
+    }
   }
   return u as SessionUser;
 }
