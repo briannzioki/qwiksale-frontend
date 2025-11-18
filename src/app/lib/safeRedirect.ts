@@ -1,5 +1,4 @@
 ﻿// src/app/lib/safeRedirect.ts
-import "server-only";
 import { redirect } from "next/navigation";
 
 /**
@@ -20,27 +19,19 @@ export function normalizePathAndQuery(href: string | URL): string {
   return `${pathname}${qs ? `?${qs}` : ""}`;
 }
 
-/** Back-compat alias (some callers may import { normalize }). */
-export const normalize = normalizePathAndQuery;
-
 export function samePathAndQuery(a: string | URL, b: string | URL): boolean {
   return normalizePathAndQuery(a) === normalizePathAndQuery(b);
 }
 
 /**
  * Redirect only if `targetHref` differs semantically from `currentHref`.
- * Safe to call in server components/routes; throws to short-circuit the response.
- *
- * If `currentHref` is omitted, we unconditionally redirect to `targetHref`.
  */
-export function redirectIfDifferent(targetHref: string | URL, currentHref?: string | URL): void {
+export function redirectIfDifferent(targetHref: string | URL, currentHref: string | URL): void {
   const t = normalizePathAndQuery(targetHref);
-  if (currentHref !== undefined) {
-    const c = normalizePathAndQuery(currentHref);
-    if (t === c) return;
-    if (t === "/" && c === "/") return; // explicit root guard
-  }
-  redirect(t); // throws
+  const c = normalizePathAndQuery(currentHref);
+  if (t === c) return;
+  if (t === "/" && c === "/") return; // explicit root guard
+  redirect(t); // ✅ call Next's redirect
 }
 
 /**
@@ -60,18 +51,18 @@ export function safeRedirect(to: string | URL, currentPath?: string, currentSear
       const current = normalizePathAndQuery(currURL);
       if (target === current) return;
       if (target === "/" && current === "/") return;
-      redirect(target);
+      redirect(target); // ✅ call Next's redirect
       return;
     }
 
     // No currentPath provided — be conservative to avoid loops.
     if (!allowBlind) {
-      if (!target.includes("?")) return; // only allow "blind" when querystring present
+      if (!target.includes("?")) return; // only allow "blind" when there is a querystring
     }
 
-    redirect(target);
+    redirect(target); // ✅ call Next's redirect
   } catch {
     if (!allowBlind) return;
-    redirect(String(to)); // last resort
+    redirect(String(to)); // ✅ last-resort
   }
 }

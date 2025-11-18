@@ -1,33 +1,15 @@
 // src/app/api/admin/_lib/guard.ts
 import { NextResponse } from "next/server";
-import { getSessionUser, isAdminUser } from "@/app/lib/authz";
+import { isAdminUser } from "@/app/lib/authz";
 
 /**
- * Central admin guard for admin-only API routes.
- *
- * - Uses getSessionUser() + isAdminUser(...) from authz.ts
- * - No inline env parsing or role drift.
- *
- * Returns:
- *   - `null` when authorized (caller continues)
- *   - NextResponse JSON 401/403 when blocked
+ * API guard that returns 403 JSON if the current session is not admin (based on
+ * env allowlist + DB role via authz.ts).
  */
 export async function assertAdmin() {
-  const user = await getSessionUser();
-
-  if (!user?.id) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
+  const ok = await isAdminUser();
+  if (!ok) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
-  if (!isAdminUser(user)) {
-    return NextResponse.json(
-      { error: "Forbidden" },
-      { status: 403 }
-    );
-  }
-
   return null;
 }

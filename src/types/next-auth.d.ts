@@ -1,4 +1,3 @@
-// src/types/next-auth.d.ts
 import type { DefaultSession, DefaultUser } from "next-auth";
 
 export type SubscriptionTier = "BASIC" | "GOLD" | "PLATINUM";
@@ -15,7 +14,6 @@ declare module "next-auth" {
       role?: AppRole | string | null;
       isAdmin?: boolean;
       isSuperAdmin?: boolean;
-      referralCode?: string | null;
     };
   }
 
@@ -23,7 +21,6 @@ declare module "next-auth" {
     username?: string | null;
     subscription?: SubscriptionTier | null;
     role?: AppRole | string | null;
-    referralCode?: string | null;
   }
 }
 
@@ -37,7 +34,6 @@ declare module "next-auth/jwt" {
     role?: AppRole | string | null;
     isAdmin?: boolean;
     isSuperAdmin?: boolean;
-    referralCode?: string | null;
   }
 }
 

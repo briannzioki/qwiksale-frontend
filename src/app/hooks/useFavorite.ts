@@ -1,18 +1,27 @@
-"use client";
 // src/app/hooks/useFavorite.ts
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Entity = "product" | "service";
 
 type Options = {
+  /** Initial favorite state for faster first render (optional). */
   initial?: boolean;
+  /** Initial count shown next to the heart (optional). */
   initialCount?: number;
+  /** Called after a successful toggle/add/remove. */
   onChange?: (isFavorited: boolean, count: number) => void;
+  /** If true, redirect to /signin on 401 with ?callbackUrl=<current>. */
   requireAuth?: boolean;
+  /** Custom unauthorized handler (takes precedence over requireAuth). */
   onUnauthorized?: () => void;
+  /** API base path (default: "/api"). */
   basePath?: string;
+  /** Optional toast shim (e.g., react-hot-toast). */
   toast?: { success(msg: string): void; error(msg: string): void };
+
+  /** New: which entity this id refers to ("product" | "service"). Default "product". */
   entity?: Entity;
 };
 
@@ -25,7 +34,7 @@ export function useFavorite(id: string, opts: Options = {}) {
     onUnauthorized,
     basePath = "/api",
     toast,
-    entity = "product",
+    entity = "product", // back-compat default
   } = opts;
 
   const [isFavorited, setIsFavorited] = useState<boolean>(initial);
@@ -35,7 +44,7 @@ export function useFavorite(id: string, opts: Options = {}) {
 
   const mounted = useRef(true);
   const inFlight = useRef<AbortController | null>(null);
-  const busy = useRef(false);
+  const busy = useRef(false); // simple mutex to avoid overlapping calls
   const stateRef = useRef({ isFavorited: initial, count: initialCount });
   stateRef.current.isFavorited = isFavorited;
   stateRef.current.count = count;
@@ -53,6 +62,7 @@ export function useFavorite(id: string, opts: Options = {}) {
     if (!requireAuth) return;
     try {
       if (typeof window !== "undefined") {
+        // If already on /signin, avoid a redundant reload
         if (window.location.pathname === "/signin") return;
         const path = window.location.pathname + window.location.search + window.location.hash;
         const cb = encodeURIComponent(path || "/");
@@ -63,8 +73,14 @@ export function useFavorite(id: string, opts: Options = {}) {
     }
   }, [onUnauthorized, requireAuth]);
 
+  // Construct a body that’s friendly to both old and new API handlers
   const buildBody = useCallback(() => {
-    const body: Record<string, unknown> = { entity, id };
+    const body: Record<string, unknown> = {
+      // New generic fields
+      entity,
+      id,
+    };
+    // Back-compat shadow fields so older handlers still work
     if (entity === "product") body["productId"] = id;
     if (entity === "service") body["serviceId"] = id;
     return body;
@@ -78,6 +94,7 @@ export function useFavorite(id: string, opts: Options = {}) {
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
+
     const url = `${basePath}/favorites`;
 
     const doFetch = async () => {
@@ -86,7 +103,7 @@ export function useFavorite(id: string, opts: Options = {}) {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(body),
         cache: "no-store",
-        credentials: "include",
+        credentials: "include", // keep session cookies
         signal: controller.signal,
       });
       let json: any = null;
@@ -117,6 +134,7 @@ export function useFavorite(id: string, opts: Options = {}) {
     setLoading(true);
     setError(null);
 
+    // optimistic
     const prevFav = stateRef.current.isFavorited;
     const prevCount = stateRef.current.count;
     if (!prevFav) {
@@ -165,6 +183,7 @@ export function useFavorite(id: string, opts: Options = {}) {
     setLoading(true);
     setError(null);
 
+    // optimistic
     const prevFav = stateRef.current.isFavorited;
     const prevCount = stateRef.current.count;
     if (prevFav) {
@@ -216,13 +235,16 @@ export function useFavorite(id: string, opts: Options = {}) {
   }, [add, remove]);
 
   return {
+    // state
     isFavorited,
     count,
     loading,
     error,
+    // actions
     add,
     remove,
     toggle,
+    // utilities
     setIsFavorited,
     setCount,
   };
