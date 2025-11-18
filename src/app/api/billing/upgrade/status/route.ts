@@ -1,4 +1,4 @@
-// src/app/api/billing/status/route.ts
+// src/app/api/billing/upgrade/status/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,9 +13,8 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-const isDev = process.env.NODE_ENV !== "production";
+const isDev = process.env["NODE_ENV"] !== "production";
 
-/** Only the fields we actually use in this handler */
 type SelectedPay = {
   id: string;
   status: "PENDING" | "PAID" | "FAILED";
@@ -23,9 +22,13 @@ type SelectedPay = {
   createdAt: Date;
   userId: string | null;
   accountRef: string | null; // we sometimes stash the tier here
-  // Optional/experimental columns (may not exist in your DB)
-  // Use `any` with `@ts-expect-error` at select site if needed.
 };
+
+function normalizeTier(raw: unknown): "GOLD" | "PLATINUM" | null {
+  if (!raw) return null;
+  const s = String(raw).trim().toUpperCase();
+  return s === "GOLD" || s === "PLATINUM" ? (s as any) : null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -33,45 +36,38 @@ export async function GET(req: NextRequest) {
     if (!paymentId) return noStore({ error: "Missing paymentId" }, { status: 400 });
 
     // Initial fetch
-    let maybePay = await prisma.payment.findUnique({
+    let pay: SelectedPay | null = await prisma.payment.findUnique({
       where: { id: paymentId },
       select: {
         id: true,
-        status: true,           // "PENDING" | "PAID" | "FAILED"
+        status: true,
         resultDesc: true,
         createdAt: true,
         userId: true,
         accountRef: true,
-        // ts-expect-error optional column depending on your schema
-        targetTier: true,
       },
     });
 
-    if (!maybePay) {
+    if (!pay) {
       return noStore({ error: "Not found" }, { status: 404 });
     }
-    // Narrow to non-null
-    let pay = maybePay as unknown as SelectedPay & { targetTier?: string | null };
 
     // ---------- Dev auto-confirm (optional) ----------
     if (isDev && pay.status === "PENDING") {
       const ageMs = Date.now() - new Date(pay.createdAt).getTime();
       if (ageMs > 20_000) {
-        await prisma.$transaction(async (tx: any) => {
+        await prisma.$transaction(async (tx) => {
           await tx.payment.update({
             where: { id: paymentId },
             data: { status: "PAID", resultDesc: "Auto-confirmed (dev)" },
           });
 
-          const tier =
-            (pay as any).targetTier ||
-            (typeof pay.accountRef === "string" ? pay.accountRef : null);
-
-          if (pay.userId && (tier === "GOLD" || tier === "PLATINUM")) {
+          const tier = normalizeTier(pay!.accountRef);
+          if (pay!.userId && tier) {
             const until = new Date();
             until.setDate(until.getDate() + 30);
             await tx.user.update({
-              where: { id: pay.userId },
+              where: { id: pay!.userId },
               data: { subscription: tier as any, subscriptionUntil: until },
             });
           }
@@ -87,14 +83,15 @@ export async function GET(req: NextRequest) {
             createdAt: true,
             userId: true,
             accountRef: true,
-            // ts-expect-error optional column depending on your schema
-            targetTier: true,
           },
         });
-        if (refreshed) {
-          pay = refreshed as unknown as SelectedPay & { targetTier?: string | null };
-        }
+        if (refreshed) pay = refreshed;
       }
+    }
+
+    // If a refresh path resulted in null (very unlikely), guard again.
+    if (!pay) {
+      return noStore({ error: "Not found" }, { status: 404 });
     }
 
     // ---------- Map DB → hook-friendly statuses ----------
@@ -104,20 +101,14 @@ export async function GET(req: NextRequest) {
     } else if (pay.status === "FAILED") {
       status = "FAILED";
     } else {
-      // Keep it a bit lively for UI
       const age = Date.now() - new Date(pay.createdAt).getTime();
       status = age > 8_000 ? "PROCESSING" : "PENDING";
     }
 
-    return noStore({
-      status,
-      message: pay.resultDesc || null,
-    });
+    return noStore({ status, message: pay.resultDesc || null });
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.warn("[billing/status GET] error:", e);
+    console.warn("[billing/upgrade/status GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
-
-

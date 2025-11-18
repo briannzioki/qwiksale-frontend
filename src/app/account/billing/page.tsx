@@ -1,5 +1,4 @@
-// src/app/account/billing/page.tsx
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -16,6 +15,13 @@ export const metadata: Metadata = {
 
 type SubTier = "FREE" | "BASIC" | "GOLD" | "PLATINUM";
 
+/** Row shape for the billing lookup */
+type BillingRow = {
+  id: string;
+  subscription: SubTier | null;
+  subscriptionUntil: Date | null;
+};
+
 function fmtDate(d?: Date | null) {
   if (!d) return null;
   try {
@@ -26,8 +32,19 @@ function fmtDate(d?: Date | null) {
       timeZone: "Africa/Nairobi",
     }).format(new Date(d));
   } catch {
-    return new Date(d).toISOString().slice(0, 10);
+    return new Date(d as Date).toISOString().slice(0, 10);
   }
+}
+
+/** tiny Promise.race timeout */
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let tid: ReturnType<typeof setTimeout> | null = null;
+  const t = new Promise<T>((resolve) => {
+    tid = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([p.catch(() => fallback), t]).finally(() => {
+    if (tid) clearTimeout(tid);
+  }) as Promise<T>;
 }
 
 export default async function BillingPage() {
@@ -49,17 +66,21 @@ export default async function BillingPage() {
     );
   }
 
-  // Fetch current plan/expiry for context
-  const me = await prisma.user.findUnique({
-    where: { email },
-    select: {
-      id: true,
-      subscription: true,       // "FREE" | "BASIC" | "GOLD" | "PLATINUM"
-      subscriptionUntil: true,  // Date | null
-    },
-  });
+  // Fetch current plan/expiry for context (timeout guarded)
+  const me = await withTimeout<BillingRow | null>(
+    prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        subscription: true,       // "FREE" | "BASIC" | "GOLD" | "PLATINUM" (nullable)
+        subscriptionUntil: true,  // Date | null
+      },
+    }),
+    800,
+    null
+  );
 
-  const tier = ((me?.subscription as SubTier | undefined) ?? "FREE") as SubTier;
+  const tier = ((me?.subscription as SubTier | null) ?? "FREE") as SubTier;
   const until = me?.subscriptionUntil ? fmtDate(me.subscriptionUntil) : null;
 
   const tierLabel =
@@ -80,7 +101,7 @@ export default async function BillingPage() {
           Current plan:&nbsp;<strong>{tierLabel}</strong>
           {until && (
             <>
-              &nbsp;•&nbsp;valid until <strong>{until}</strong>
+              &nbsp;â€¢&nbsp;valid until <strong>{until}</strong>
             </>
           )}
         </div>
@@ -94,7 +115,7 @@ export default async function BillingPage() {
         <h2 className="font-semibold">Need help?</h2>
         <ul className="mt-2 list-disc pl-5 text-sm text-gray-700">
           <li>
-            If the STK prompt doesn’t arrive, confirm your phone is in{" "}
+            If the STK prompt doesnâ€™t arrive, confirm your phone is in{" "}
             <code className="px-1 rounded bg-gray-100">2547XXXXXXXX</code> format and try again.
           </li>
           <li>
@@ -116,3 +137,4 @@ export default async function BillingPage() {
     </main>
   );
 }
+

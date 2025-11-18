@@ -15,40 +15,22 @@ type RenderButton = (
   buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>
 ) => React.ReactNode;
 
-/** Base props shared by all shapes */
 type BaseProps = {
   id?: string;
   productName?: string;
   onDeletedAction?: () => void | Promise<void>;
   holdMs?: number;
-  /** Visible label (optional). If omitted, renders icon-only with SR label. */
   label?: string;
-  /** Additional classes applied to the wrapper (kept for back-compat). */
   className?: string;
   disabled?: boolean;
-
-  /** New prop (preferred) */
   kind?: Kind;
-  /** Legacy prop (back-compat) */
   type?: LegacyType;
-
-  /**
-   * Optional render override for the actual button.
-   * If provided, we’ll pass through handlers/disabled/aria so you can render any control.
-   * Example:
-   *   renderButton={(buttonProps) => (
-   *     <IconButton icon="delete" variant="outline" tone="danger" size="xs" {...buttonProps} />
-   *   )}
-   */
   renderButton?: RenderButton;
-
-  /** Optional IconButton tuning (defaults: outline/danger/xs) */
   buttonSize?: "xs" | "sm" | "md" | "lg";
   buttonVariant?: "ghost" | "outline" | "solid";
   buttonTone?: "default" | "primary" | "danger";
 };
 
-/** Accept any of: id | productId | serviceId (optionally with kind/type) */
 type Props =
   | (BaseProps & { id: string; productId?: never; serviceId?: never })
   | (BaseProps & { productId: string; id?: never; serviceId?: never })
@@ -69,7 +51,6 @@ export default function DeleteListingButton(props: Props) {
     buttonTone = "danger",
   } = props;
 
-  // Normalize kind (prefer new 'kind', fall back to legacy 'type', finally infer from provided id prop)
   const explicitKind: Kind | undefined = props.kind ?? props.type;
 
   const inferredKind: Kind =
@@ -88,8 +69,7 @@ export default function DeleteListingButton(props: Props) {
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
 
-  // --- Long-press state (mouse/touch/pen) ---
-  const [progress, setProgress] = useState(0); // 0..1
+  const [progress, setProgress] = useState(0);
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
   const holdingRef = useRef(false);
@@ -160,7 +140,12 @@ export default function DeleteListingButton(props: Props) {
 
       if (r.status === 401) {
         toast.error("Please sign in.");
-        router.replace(`/signin?callbackUrl=${encodeURIComponent("/dashboard")}`);
+        const here =
+          typeof window !== "undefined"
+            ? window.location.pathname + window.location.search + window.location.hash
+            : "/dashboard";
+        const dest = `/signin?callbackUrl=${encodeURIComponent(here || "/")}`;
+        router.replace(dest);
         return;
       }
 
@@ -172,7 +157,6 @@ export default function DeleteListingButton(props: Props) {
       await onDeletedAction?.();
       toast.success("Deleted.");
 
-      // ✅ Emit specific analytics event per kind
       try {
         const evt: EventName =
           inferredKind === "service" ? "service_deleted" : "product_deleted";
@@ -193,7 +177,6 @@ export default function DeleteListingButton(props: Props) {
   const isDisabled = !!(busy || pending || targetMissing || disabled);
   const showText = typeof label === "string" && label.trim().length > 0;
 
-  // Shared button handlers/attrs passed to either: custom render or our IconButton
   const buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement> = {
     type: "button",
     disabled: isDisabled,
@@ -208,7 +191,6 @@ export default function DeleteListingButton(props: Props) {
       }
     },
     onClick: (e) => {
-      // Simple click -> confirm dialog (no visible tip text)
       if (progress === 0 && !holdingRef.current) {
         e.preventDefault();
         void fallbackConfirmAndDelete();
@@ -222,7 +204,6 @@ export default function DeleteListingButton(props: Props) {
     title: "Delete",
   };
 
-  // Default button is our IconButton; can be overridden by renderButton
   const renderedButton = renderButton ? (
     renderButton(buttonProps)
   ) : (
@@ -232,7 +213,6 @@ export default function DeleteListingButton(props: Props) {
       tone={buttonTone}
       size={buttonSize}
       loading={busy || pending}
-      // Text visible if provided; otherwise SR-only from aria-label above
       labelText={showText ? (isDisabled ? "Deleting…" : label) : undefined}
       className=""
       {...buttonProps}
@@ -241,7 +221,6 @@ export default function DeleteListingButton(props: Props) {
 
   return (
     <span className={cn("relative inline-flex", className)}>
-      {/* progress overlay */}
       <span
         className="pointer-events-none absolute left-0 top-0 h-full bg-rose-500/15"
         style={{ width: `${Math.round(progress * 100)}%`, borderRadius: "9999px" }}
@@ -252,7 +231,6 @@ export default function DeleteListingButton(props: Props) {
   );
 }
 
-// local tiny cn to avoid re-imports if you prefer it here
 function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }

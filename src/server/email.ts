@@ -1,6 +1,7 @@
+// src/server/email.ts
 import { Resend } from "resend";
 
-const ENV = process.env.NODE_ENV ?? "development";
+const ENV = process.env["NODE_ENV"] ?? "development";
 const RESEND_KEY = process.env["RESEND_API_KEY"];
 const DEFAULT_FROM = process.env["EMAIL_FROM"] || "QwikSale <noreply@qwiksale.sale>";
 
@@ -138,7 +139,6 @@ export async function sendMail(
    Convenience templaters
    ----------------------------- */
 
-/** Quick minimal wrapper for simple branded emails. */
 export function renderBasicTemplate(args: {
   title: string;
   body: string;

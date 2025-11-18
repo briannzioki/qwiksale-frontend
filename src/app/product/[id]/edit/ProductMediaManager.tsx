@@ -1,5 +1,5 @@
-// src/app/product/[id]/edit/ProductMediaManager.tsx
 "use client";
+// src/app/product/[id]/edit/ProductMediaManager.tsx
 
 import { useMemo, useCallback, memo, useRef, useState, useEffect } from "react";
 import EditMediaClient, { type EditMediaClientHandle } from "@/app/components/EditMediaClient";

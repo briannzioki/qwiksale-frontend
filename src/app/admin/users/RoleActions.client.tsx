@@ -1,7 +1,26 @@
 "use client";
 
 import * as React from "react";
-import * as Sentry from "@sentry/nextjs";
+
+// Tiny client-safe shim so we don't depend on @sentry/* packages.
+// If Sentry is mounted globally, we'll call into it; otherwise no-ops.
+const sentry = {
+  setTag(key: string, value: unknown) {
+    try {
+      (window as any)?.Sentry?.setTag?.(key, value);
+    } catch {}
+  },
+  addBreadcrumb(b: any) {
+    try {
+      (window as any)?.Sentry?.addBreadcrumb?.(b);
+    } catch {}
+  },
+  captureException(err: unknown, opts?: any) {
+    try {
+      (window as any)?.Sentry?.captureException?.(err, opts);
+    } catch {}
+  },
+};
 
 type Role = "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN";
 
@@ -20,7 +39,6 @@ export default function RoleActions({
     null
   );
 
-  // auto-dismiss toast
   React.useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2600);
@@ -30,15 +48,15 @@ export default function RoleActions({
   async function setRole(next: Role) {
     if (next === optimisticRole) return;
 
-    // UX guard: don't let a SUPERADMIN demote themselves in the UI
+    // Guard: SUPERADMIN can't demote self via UI
     if (isSelf && optimisticRole === "SUPERADMIN" && next !== "SUPERADMIN") {
       setToast({ type: "error", message: "You cannot demote yourself from SUPERADMIN." });
       return;
     }
 
-    // ---- Sentry breadcrumb/tags (client) ----
-    Sentry.setTag("area", "admin");
-    Sentry.addBreadcrumb({
+    // Optional Sentry breadcrumbs (only if Sentry is present)
+    sentry.setTag("area", "admin");
+    sentry.addBreadcrumb({
       category: "admin.action",
       level: "info",
       message: "role.change.request",
@@ -46,7 +64,7 @@ export default function RoleActions({
     });
 
     const prev = optimisticRole;
-    setOptimisticRole(next); // optimistic
+    setOptimisticRole(next);
     setPending(true);
 
     try {
@@ -63,30 +81,31 @@ export default function RoleActions({
           const j = (await r.json()) as any;
           if (j?.error) msg = String(j.error);
         } catch {}
-        // rollback
+
         setOptimisticRole(prev);
 
-        Sentry.addBreadcrumb({
+        sentry.addBreadcrumb({
           category: "admin.action",
           level: "error",
           message: "role.change.failure",
           data: { targetUserId: userId, from: prev, to: next, status: r.status },
         });
+
         setToast({ type: "error", message: `Failed to update role: ${msg}` });
         return;
       }
 
-      Sentry.addBreadcrumb({
+      sentry.addBreadcrumb({
         category: "admin.action",
         level: "info",
         message: "role.change.success",
         data: { targetUserId: userId, from: prev, to: next },
       });
+
       setToast({ type: "success", message: `Role updated → ${next}` });
     } catch (err) {
-      // rollback
       setOptimisticRole(prev);
-      Sentry.captureException(err, { tags: { area: "admin" } });
+      sentry.captureException(err, { tags: { area: "admin" } });
       setToast({ type: "error", message: "Network error updating role." });
     } finally {
       setPending(false);
@@ -133,7 +152,6 @@ export default function RoleActions({
 
   return (
     <>
-      {/* action buttons */}
       <div className="flex flex-wrap items-center gap-1.5" aria-busy={pending}>
         <Btn role="USER" tone="slate" title="Set role to USER" />
         <Btn role="MODERATOR" tone="amber" title="Set role to MODERATOR" />
@@ -141,15 +159,12 @@ export default function RoleActions({
         <Btn role="SUPERADMIN" tone="indigo" title="Set role to SUPERADMIN" />
       </div>
 
-      {/* simple, accessible toast */}
       {toast && (
         <div
           role="status"
           aria-live="polite"
           className={`fixed bottom-4 right-4 z-[2000] max-w-sm rounded-lg px-3 py-2 text-sm shadow-lg ${
-            toast.type === "success"
-              ? "bg-green-600 text-white"
-              : "bg-rose-600 text-white"
+            toast.type === "success" ? "bg-green-600 text-white" : "bg-rose-600 text-white"
           }`}
         >
           {toast.message}
@@ -158,3 +173,4 @@ export default function RoleActions({
     </>
   );
 }
+

@@ -1,5 +1,5 @@
-// src/app/search/InfiniteClient.tsx
 "use client";
+// src/app/search/InfiniteClient.tsx
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

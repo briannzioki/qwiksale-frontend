@@ -1,31 +1,25 @@
-import * as Sentry from "@sentry/nextjs";
+import "server-only";
+import * as Sentry from "@sentry/node";
 
 export function adminBreadcrumb(
   message: string,
   data?: Record<string, unknown>,
-  level: Sentry.SeverityLevel = "info"
+  level: Sentry.SeverityLevel = "info",
 ) {
-  Sentry.setTag("area", "admin");
-  const crumb: Sentry.Breadcrumb = {
-    category: "admin.action",
-    message,
-    level,
-    // do NOT include `data` when undefined (avoids TS error with exactOptionalPropertyTypes)
-  };
-  if (data) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (crumb as any).data = data;
-  }
-  Sentry.addBreadcrumb(crumb);
+  try {
+    Sentry.setTag("area", "admin");
+    const crumb: any = { category: "admin.action", message, level };
+    if (data) crumb.data = data;
+    Sentry.addBreadcrumb?.(crumb);
+  } catch {}
 }
 
 export function adminCapture(err: unknown, extras?: Record<string, unknown>) {
-  Sentry.captureException(err, (scope) => {
-    scope.setTag("area", "admin");
-    if (extras) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scope.setExtras(extras as any);
-    }
-    return scope;
-  });
+  try {
+    Sentry.captureException(err, (scope: any) => {
+      scope.setTag("area", "admin");
+      if (extras) scope.setExtras(extras as any);
+      return scope;
+    });
+  } catch {}
 }

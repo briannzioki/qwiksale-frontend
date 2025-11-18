@@ -1,5 +1,5 @@
-// src/app/components/SuggestInput.tsx
 "use client";
+// src/app/components/SuggestInput.tsx
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import useSuggest, { type Suggestion, type SuggestionType } from "@/app/hooks/useSuggest";

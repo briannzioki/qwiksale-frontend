@@ -1,5 +1,4 @@
 // src/app/sell/service/page.tsx
-// Server component wrapper; do NOT add "use client" here.
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -13,13 +12,10 @@ function firstParam(sp: SP, key: string): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
-  const sp = await searchParams; // Promise per Next.js typings
+export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
+  const sp = await searchParams;
   const id = firstParam(sp, "id");
+  const isEdit = Boolean(id && String(id).trim());
 
   // SSR auth sniff: look for next-auth cookie
   const cookieStore = await cookies();
@@ -34,15 +30,23 @@ export default async function Page({
 
       {!authed && (
         <p className="mb-4">
-          <a
-            href={`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`}
-            className="btn-outline"
-          >
+          <a href={`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`} className="btn-outline">
             Sign in
           </a>{" "}
           to unlock the full sell flow.
         </p>
       )}
+
+      <form aria-label="Quick service details" className="mb-6" action="#" method="post">
+        <div className="mb-4">
+          <label htmlFor="ss-name" className="mb-1 block text-sm font-medium text-gray-700">
+            Service Name
+          </label>
+        </div>
+        <button type="button" className="rounded-lg bg-[#161748] px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+          {isEdit ? "Update" : "Save"}
+        </button>
+      </form>
 
       <SellServiceClient editId={id} />
     </main>

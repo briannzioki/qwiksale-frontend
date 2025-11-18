@@ -1,5 +1,5 @@
-// src/app/account/billing/UpgradePanel.tsx
 "use client";
+// src/app/account/billing/UpgradePanel.tsx
 
 import { useMemo, useRef, useState } from "react";
 import UpgradeWatcher from "@/components/billing/UpgradeWatcher";

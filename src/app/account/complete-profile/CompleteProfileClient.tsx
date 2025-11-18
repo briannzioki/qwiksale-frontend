@@ -1,8 +1,9 @@
-// src/app/account/complete-profile/CompleteProfileClient.tsx
 "use client";
+// src/app/account/complete-profile/CompleteProfileClient.tsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import toast from "react-hot-toast";
 import ProfilePhotoUploader from "@/app/components/account/ProfilePhotoUploader";
 
@@ -18,13 +19,11 @@ type Me = {
   postalCode: string | null;
   city: string | null;
   country: string | null;
-  image?: string | null; // existing avatar, if any
+  image?: string | null;
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-function looksLikeEmail(e?: string) {
-  return !!e && EMAIL_RE.test(e.trim().toLowerCase());
-}
+const looksLikeEmail = (e?: string) => !!e && EMAIL_RE.test(e.trim().toLowerCase());
 
 function normalizeKePhone(raw: string): string {
   const trimmed = (raw || "").trim();
@@ -35,39 +34,33 @@ function normalizeKePhone(raw: string): string {
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-function looksLikeValidKePhone(input: string) {
-  return /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
-}
+const looksLikeValidKePhone = (input: string) => /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
 
 // 3–24; letters/digits/._; no leading/trailing sep; no doubles
 const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
-function looksLikeValidUsername(u: string) {
-  return USERNAME_RE.test(u);
-}
-function isSafePath(p?: string | null): p is string {
-  return !!p && /^\/(?!\/)/.test(p);
-}
+const looksLikeValidUsername = (u: string) => USERNAME_RE.test(u);
+const isSafePath = (p?: string | null): p is string => !!p && /^\/(?!\/)/.test(p);
 
 type NameStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "error";
 
 /* -------------------------------- Component -------------------------------- */
 
 export default function CompleteProfileClient() {
-  const router = useRouter();
   const sp = useSearchParams();
 
-  // Default redirect goes to dashboard (unless a safe ?next/return provided)
-  const ret = useMemo(() => {
+  const ret = (() => {
     const raw = sp.get("next") || sp.get("return");
-    if (isSafePath(raw)) return raw;
-    return "/dashboard";
-  }, [sp]);
+    return isSafePath(raw) ? raw : "/dashboard";
+  })();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [unauth, setUnauth] = useState(false);
+  const [saved, setSaved] = useState(false);
+
   const [me, setMe] = useState<Me | null>(null);
 
-  const [email, setEmail] = useState("");        // <— NEW
+  const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [address, setAddress] = useState("");
@@ -77,7 +70,6 @@ export default function CompleteProfileClient() {
 
   const [nameStatus, setNameStatus] = useState<NameStatus>("idle");
   const usernameAbort = useRef<AbortController | null>(null);
-  const redirectedRef = useRef(false); // prevent ping-pong redirects
 
   const whatsappNormalized = useMemo(
     () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
@@ -98,10 +90,9 @@ export default function CompleteProfileClient() {
           headers: { accept: "application/json" },
         });
         if (r.status === 401) {
-          if (!redirectedRef.current) {
-            redirectedRef.current = true;
-            toast.error("Please sign in.");
-            router.replace(`/signin?callbackUrl=${encodeURIComponent(ret)}`);
+          if (alive) {
+            setUnauth(true);
+            setLoading(false);
           }
           return;
         }
@@ -115,24 +106,21 @@ export default function CompleteProfileClient() {
 
         if (!alive) return;
         if (!u?.email) {
-          if (!redirectedRef.current) {
-            redirectedRef.current = true;
-            toast.error("Please sign in.");
-            router.replace(`/signin?callbackUrl=${encodeURIComponent(ret)}`);
-          }
+          setUnauth(true);
+          setLoading(false);
           return;
         }
 
         setMe(u);
-        setEmail((u.email ?? "").trim());          // <— NEW
+        setEmail((u.email ?? "").trim());
         setUsername((u.username ?? "").trim());
         setWhatsapp(u.whatsapp ?? "");
         setAddress(u.address ?? "");
         setPostal(u.postalCode ?? "");
         setCity(u.city ?? "");
         setCountry(u.country ?? "");
-      } catch (e: any) {
-        if (e?.name !== "AbortError") toast.error("Could not load your account. Try again.");
+      } catch {
+        /* soft-fail */
       } finally {
         alive && setLoading(false);
       }
@@ -142,7 +130,7 @@ export default function CompleteProfileClient() {
       alive = false;
       ctrl.abort();
     };
-  }, [router, ret]);
+  }, []);
 
   /* ------------------- Debounced username availability check ------------------- */
   useEffect(() => {
@@ -194,8 +182,9 @@ export default function CompleteProfileClient() {
   /* ----------------------------------- Save ----------------------------------- */
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
+
     const u = username.trim();
-    const eMail = email.trim().toLowerCase(); // <— NEW
+    const eMail = email.trim().toLowerCase();
 
     if (!looksLikeEmail(eMail)) {
       toast.error("Please enter a valid email address.");
@@ -228,9 +217,8 @@ export default function CompleteProfileClient() {
         credentials: "same-origin",
         cache: "no-store",
         body: JSON.stringify({
-          email: eMail,                               // <— NEW
+          email: eMail,
           username: u,
-          // image is handled via /api/account/profile/photo by the uploader
           whatsapp: whatsappNormalized || null,
           address: address.trim() || null,
           postalCode: postalCode.trim() || null,
@@ -238,17 +226,11 @@ export default function CompleteProfileClient() {
           country: country.trim() || null,
         }),
       });
-      let j: any = null;
-      try {
-        j = await r.json();
-      } catch {
-        /* non-JSON error */
-      }
-      if (!r.ok || j?.error) throw new Error(j?.error || `Failed to save (${r.status})`);
+      const j = await r.json().catch(() => null);
+      if (!r.ok || (j && (j as any).error)) throw new Error((j as any)?.error || `Failed (${r.status})`);
 
-      // Note: session email may be stale until next refresh/sign-in; server is updated.
       toast.success("Profile saved!");
-      router.replace(ret); // default /dashboard
+      setSaved(true); // no auto-redirect
     } catch (err: any) {
       toast.error(err?.message || "Could not save profile");
     } finally {
@@ -293,12 +275,30 @@ export default function CompleteProfileClient() {
           </p>
         </div>
 
+        {unauth ? (
+          <div
+            role="alert"
+            className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
+          >
+            Please{" "}
+            <Link className="underline" href={`/signin?callbackUrl=${encodeURIComponent(ret)}`}>
+              sign in
+            </Link>{" "}
+            to complete your profile.
+          </div>
+        ) : null}
+
+        {saved ? (
+          <div className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
+            Profile saved.{" "}
+            <Link href={ret} className="underline">Continue</Link>
+          </div>
+        ) : null}
+
         <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4" noValidate aria-busy={saving}>
           {/* Email */}
           <div>
-            <label htmlFor="email" className="label">
-              Email
-            </label>
+            <label htmlFor="email" className="label">Email</label>
             <input
               id="email"
               type="email"
@@ -313,16 +313,12 @@ export default function CompleteProfileClient() {
               disabled={saving}
               aria-invalid={email ? (!looksLikeEmail(email) || undefined) : undefined}
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Changing your sign-in email may require verification.
-            </p>
+            <p className="text-xs text-gray-500 mt-1">Changing your sign-in email may require verification.</p>
           </div>
 
           {/* Username */}
           <div>
-            <label htmlFor="username" className="label">
-              Username
-            </label>
+            <label htmlFor="username" className="label">Username</label>
             <input
               id="username"
               className="input"
@@ -352,7 +348,7 @@ export default function CompleteProfileClient() {
             )}
           </div>
 
-          {/* Native photo uploader (Cloudinary-backed) */}
+          {/* Native photo uploader */}
           <div>
             <label className="label">Profile photo</label>
             <ProfilePhotoUploader initialImage={me?.image ?? null} />
@@ -381,21 +377,11 @@ export default function CompleteProfileClient() {
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label className="label">City (optional)</label>
-              <input
-                className="input"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                disabled={saving}
-              />
+              <input className="input" value={city} onChange={(e) => setCity(e.target.value)} disabled={saving} />
             </div>
             <div>
               <label className="label">Country (optional)</label>
-              <input
-                className="input"
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                disabled={saving}
-              />
+              <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} disabled={saving} />
             </div>
           </div>
 
@@ -403,22 +389,11 @@ export default function CompleteProfileClient() {
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <label className="label">Postal code (optional)</label>
-              <input
-                className="input"
-                value={postalCode}
-                onChange={(e) => setPostal(e.target.value)}
-                disabled={saving}
-              />
+              <input className="input" value={postalCode} onChange={(e) => setPostal(e.target.value)} disabled={saving} />
             </div>
             <div>
               <label className="label">Address (optional)</label>
-              <input
-                className="input"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                disabled={saving}
-                placeholder="Street, estate, etc."
-              />
+              <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} disabled={saving} placeholder="Street, estate, etc." />
             </div>
           </div>
 
@@ -429,22 +404,14 @@ export default function CompleteProfileClient() {
               disabled={saving || nameStatus === "checking" || nameStatus === "invalid" || !looksLikeEmail(email)}
               className="btn-gradient-primary"
             >
-              {saving ? "Saving…" : "Save & continue"}
+              {saving ? "Saving…" : "Save"}
             </button>
-            <button
-              type="button"
-              className="btn-outline"
-              onClick={() => router.replace(ret)}
-              disabled={saving}
-            >
+            <Link href={ret} className="btn-outline" aria-disabled={saving}>
               Skip for now
-            </button>
+            </Link>
           </div>
 
-          {/* SR status line for screen readers */}
-          <p className="sr-only" aria-live="polite">
-            {saving ? "Saving profile…" : ""}
-          </p>
+          <p className="sr-only" aria-live="polite">{saving ? "Saving profile…" : ""}</p>
         </form>
       </div>
     </div>

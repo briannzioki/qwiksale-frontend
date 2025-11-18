@@ -1,5 +1,5 @@
-// src/app/service/[id]/edit/CommitBinder.tsx
 "use client";
+// src/app/service/[id]/edit/CommitBinder.tsx
 
 import { useEffect } from "react";
 

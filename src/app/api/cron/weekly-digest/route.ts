@@ -24,7 +24,6 @@ function hasValidDbUrl(): boolean {
 function baseUrl(): string {
   const raw =
     process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
     "https://qwiksale.sale";
   return String(raw).trim().replace(/\/+$/, "");
@@ -46,7 +45,6 @@ type MailerFn = (to: string, subject: string, html: string) => Promise<void>;
 type SellerIdRow = { sellerId: string | null };
 type ProductSlim = { id: string; sellerId: string; createdAt: Date };
 type UserSlim = { id: string; email: string | null; name: string | null; username: string | null };
-type GroupCount = { productId: string; _count: { _all: number } };
 
 /** Resolve a mailer from either `@/server/email` or `@/app/lib/mailer`. */
 async function resolveMailer(): Promise<MailerFn | null> {
@@ -109,9 +107,7 @@ export async function GET(req: NextRequest) {
       take: 100_000,
     })) as SellerIdRow[];
 
-    const allSellerIds = sellerIdRows
-      .map((r) => r.sellerId)
-      .filter((s): s is string => !!s);
+    const allSellerIds = sellerIdRows.map((r) => r.sellerId).filter((s): s is string => !!s);
 
     const CHUNK = 200;
     let processed = 0;
@@ -148,16 +144,17 @@ export async function GET(req: NextRequest) {
         idsBySeller.set(sId, entry);
       }
 
-      const allIds = products.map((p: ProductSlim) => p.id);
+      const allIds = products.map((p) => p.id);
 
       const [favAgg, revealAgg] = await Promise.all([
         (async () => {
           try {
-            const favs = (await prisma.favorite.groupBy({
+            // Use any to avoid Prisma TS inference issue on groupBy generics.
+            const favs = (await (prisma as any).favorite.groupBy({
               by: ["productId"],
               where: { productId: { in: allIds }, createdAt: { gte: since } },
               _count: { _all: true },
-            })) as GroupCount[];
+            })) as Array<{ productId: string; _count: { _all: number } }>;
             const map = new Map<string, number>();
             for (const f of favs) map.set(f.productId, f._count._all ?? 0);
             return map;
@@ -173,7 +170,7 @@ export async function GET(req: NextRequest) {
               by: ["productId"],
               where: { productId: { in: allIds }, createdAt: { gte: since } },
               _count: { _all: true },
-            })) as GroupCount[];
+            })) as Array<{ productId: string; _count: { _all: number } }>;
             const map = new Map<string, number>();
             for (const r of rows) map.set(r.productId, r._count?._all ?? 0);
             return map;
@@ -235,5 +232,3 @@ export async function GET(req: NextRequest) {
     return noStore({ ok: false, error: "Server error" }, { status: 500 });
   }
 }
-
-

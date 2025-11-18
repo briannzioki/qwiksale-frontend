@@ -42,13 +42,12 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Validator expects Promise<{id:string}> for params
     let id = "";
     try {
       const p = await context.params;
       id = (p?.id ?? "").trim();
     } catch {
-      /* ignore */
+      // ignore
     }
     if (!id) id = getIdFromPath(req);
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
@@ -63,55 +62,65 @@ export async function POST(
     });
     if (!me) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    // Determine effective tier (expires => fallback to BASIC)
     const now = Date.now();
-    const expired =
-      me.subscriptionUntil ? new Date(me.subscriptionUntil).getTime() < now : false;
-    const tier = expired ? "BASIC" : normalizeTier(me.subscription as string | null);
+    const expired = me.subscriptionUntil
+      ? new Date(me.subscriptionUntil).getTime() < now
+      : false;
+    const tier = expired
+      ? "BASIC"
+      : normalizeTier(me.subscription as string | null);
     const caps = CAPS[tier];
 
-    // Use a transaction to reduce race conditions around caps
-    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Re-read the listing inside the transaction to avoid stale reads
-      const listingNow = await tx.service.findUnique({
-        where: { id },
-        select: { id: true, sellerId: true, status: true, featured: true },
-      });
-
-      // Ownership + existence check inside txn
-      if (!listingNow || listingNow.sellerId !== uid) {
-        return { ok: false as const, error: "Not found" };
-      }
-
-      // Active listings cap check
-      const activeCount = await tx.service.count({
-        where: { sellerId: uid, status: "ACTIVE" },
-      });
-      if (activeCount > caps.activeListings) {
-        return { ok: false as const, error: `Active listings cap exceeded for ${tier}` };
-      }
-
-      // Featured cap enforcement
-      const featuredCount = await tx.service.count({
-        where: { sellerId: uid, status: "ACTIVE", featured: true },
-      });
-
-      let updated = listingNow;
-
-      if (!listingNow.featured) {
-        if (featuredCount >= caps.featured) {
-          return { ok: false as const, error: `Featured cap reached for ${tier}` };
-        }
-        updated = await tx.service.update({
+    const result = await prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        const listingNow = await tx.service.findUnique({
           where: { id },
-          data: { featured: true },
-          // include sellerId so shape matches listingNow (avoids TS mismatch)
-          select: { id: true, sellerId: true, featured: true, status: true },
+          select: { id: true, sellerId: true, status: true, featured: true },
         });
-      }
 
-      return { ok: true as const, service: updated };
-    });
+        if (!listingNow || listingNow.sellerId !== uid) {
+          return { ok: false as const, error: "Not found" };
+        }
+
+        const activeCount = await tx.service.count({
+          where: { sellerId: uid, status: "ACTIVE" },
+        });
+        if (activeCount >= caps.activeListings) {
+          return {
+            ok: false as const,
+            error: `Active listings cap exceeded for ${tier}`,
+          };
+        }
+
+        const featuredCount = await tx.service.count({
+          where: { sellerId: uid, status: "ACTIVE", featured: true },
+        });
+
+        let updated = listingNow;
+
+        if (!listingNow.featured) {
+          if (featuredCount >= caps.featured) {
+            return {
+              ok: false as const,
+              error: `Featured cap reached for ${tier}`,
+            };
+          }
+
+          updated = await tx.service.update({
+            where: { id },
+            data: { featured: true },
+            select: {
+              id: true,
+              sellerId: true,
+              featured: true,
+              status: true,
+            },
+          });
+        }
+
+        return { ok: true as const, service: updated };
+      }
+    );
 
     if (!result.ok) {
       const status = result.error === "Not found" ? 404 : 403;

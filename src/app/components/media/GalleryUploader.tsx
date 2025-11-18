@@ -1,5 +1,5 @@
-// src/app/components/media/GalleryUploader.tsx
 "use client";
+// src/app/components/media/GalleryUploader.tsx
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import SmartImage from "@/app/components/SmartImage";

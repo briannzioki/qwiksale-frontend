@@ -1,4 +1,3 @@
-// src/app/service/[id]/ServicePageClient.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
@@ -11,15 +10,17 @@ import DeleteListingButton from "@/app/components/DeleteListingButton";
 import { buildServiceSeo } from "@/app/lib/seo";
 import Gallery from "@/app/components/Gallery";
 import ContactModalService from "@/app/components/ContactModalService";
-import { MessageProviderButton } from "@/app/components/MessageActions";
 import { useServices } from "@/app/lib/servicesStore";
-import { extractGalleryUrls, stripPlaceholderIfOthers } from "@/app/lib/media";
+import {
+  extractGalleryUrls,
+  stripPlaceholderIfOthers,
+} from "@/app/lib/media";
 import type { UrlObject as MediaUrlObject } from "@/app/lib/media";
 
-/* -------------------------- Wire type (exported) ------------------------- */
 export type ServiceWire = {
   id: string;
-  name: string;
+  // loosened: allow null/undefined so server shape is assignable
+  name?: string | null;
   description?: string | null;
   category?: string | null;
   subcategory?: string | null;
@@ -27,7 +28,6 @@ export type ServiceWire = {
   price?: number | null;
   rateType?: "hour" | "day" | "fixed" | null;
 
-  // media (various shapes tolerated)
   image?: string | null;
   gallery?: string[];
   images?: Array<string | MediaUrlObject>;
@@ -35,7 +35,6 @@ export type ServiceWire = {
   media?: Array<string | MediaUrlObject>;
   imageUrls?: string[];
 
-  // meta
   serviceArea?: string | null;
   availability?: string | null;
   location?: string | null;
@@ -43,7 +42,6 @@ export type ServiceWire = {
 
   status?: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT" | string | null;
 
-  // seller
   sellerId?: string | null;
   sellerName?: string | null;
   sellerPhone?: string | null;
@@ -64,22 +62,19 @@ export type ServiceWire = {
   } | null;
 };
 
-/* -------------------------------- Types -------------------------------- */
-type ServiceFromStore =
+type StoreRow =
   ReturnType<typeof useServices> extends { services: infer U }
     ? U extends (infer V)[]
       ? V
       : never
     : never;
 
-// Local detail type (kept independent of API store types)
-type ServiceDetail = Partial<ServiceFromStore> & ServiceWire;
+type Detail = Partial<StoreRow> & ServiceWire;
 
-/* ------------------------------- Constants ------------------------------ */
 const PLACEHOLDER = "/placeholder/default.jpg";
-const GALLERY_SIZES = "(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px";
+const GALLERY_SIZES =
+  "(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px";
 
-/* ------------------------------- Utilities ------------------------------ */
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || n <= 0) return "Contact for quote";
   try {
@@ -102,28 +97,6 @@ function isPlaceholder(u?: string | null) {
   return s === PLACEHOLDER || s.endsWith("/placeholder/default.jpg");
 }
 
-async function startThread(
-  sellerUserId: string,
-  listingType: "product" | "service",
-  listingId: string,
-  firstMessage?: string
-) {
-  try {
-    const r = await fetch("/api/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({ toUserId: sellerUserId, listingType, listingId, firstMessage }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j?.threadId) throw new Error(j?.error || "Failed to start chat");
-    window.location.href = "/messages";
-  } catch (e: any) {
-    toast.error(e?.message || "Could not start chat");
-  }
-}
-
-/* -------------------------------- Client -------------------------------- */
 export default function ServicePageClient({
   id,
   initialData,
@@ -133,40 +106,32 @@ export default function ServicePageClient({
 }) {
   const router = useRouter();
   const { data: session } = useSession();
-  const isAuthed = Boolean(session?.user);
   const viewerId = (session?.user as any)?.id as string | undefined;
 
   const { services } = useServices();
 
-  const [fetched, setFetched] = useState<ServiceDetail | null>(
-    (initialData as unknown as ServiceDetail) ?? null
+  const [fetched, setFetched] = useState<Detail | null>(
+    (initialData as unknown as Detail) ?? null
   );
   const [fetching, setFetching] = useState(false);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
-  const [gone, setGone] = useState(!initialData);
+  const [gone, setGone] = useState(false);
 
-  const [origin, setOrigin] = useState<string>("");
-  useEffect(() => {
-    if (typeof window !== "undefined") setOrigin(window.location.origin);
-  }, []);
-
-  // Pull possibly shallow item from store
   const service = useMemo(() => {
     if (!id) return undefined;
-    const s = services.find((x: any) => String(x.id) === String(id)) as
-      | ServiceFromStore
-      | undefined;
-    return (s as ServiceDetail) || undefined;
+    const s = services.find(
+      (x: any) => String(x.id) === String(id)
+    ) as StoreRow | undefined;
+    return (s as Detail) || undefined;
   }, [services, id]);
 
-  // --- helpers to evaluate "real gallery" (non-placeholder) ---
   const hasRealGallery = useCallback((obj: unknown): boolean => {
     const urls = extractGalleryUrls((obj as any) || {}, PLACEHOLDER);
     return urls.some((u) => u && u !== PLACEHOLDER);
   }, []);
 
-  // Fetch detail exactly once when no data at all (no retries here)
   const fetchAbortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     if (!id || gone || fetching || fetched) return;
 
@@ -197,8 +162,8 @@ export default function ServicePageClient({
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
 
-        const maybe: ServiceDetail | null =
-          (j && (("service" in j ? (j as any).service : j) as ServiceDetail)) || null;
+        const maybe: Detail | null =
+          (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
 
         const status = (maybe as any)?.status;
         if (status && String(status).toUpperCase() !== "ACTIVE") {
@@ -208,7 +173,8 @@ export default function ServicePageClient({
 
         if (!ctrl.signal.aborted) setFetched(maybe);
       } catch (e: any) {
-        if (!ctrl.signal.aborted) setFetchErr(e?.message || "Failed to load service");
+        if (!ctrl.signal.aborted)
+          setFetchErr(e?.message || "Failed to load service");
       } finally {
         if (!ctrl.signal.aborted) setFetching(false);
       }
@@ -219,8 +185,6 @@ export default function ServicePageClient({
     };
   }, [id, gone, fetching, fetched]);
 
-  // If SSR/store exists BUT gallery is empty/placeholder-only, do ONE refetch
-  // and ONE backoff retry (no more). Rendering never blocks on this.
   const didRefetchEmpty = useRef(false);
   const hasRealFromCurrent = useMemo(
     () => hasRealGallery(fetched ?? service ?? {}),
@@ -229,9 +193,9 @@ export default function ServicePageClient({
 
   useEffect(() => {
     if (!id || gone || fetching) return;
-    if (!fetched) return; // only when we already have some data
-    if (hasRealFromCurrent) return; // already has real images
-    if (didRefetchEmpty.current) return; // only once
+    if (!fetched) return;
+    if (hasRealFromCurrent) return;
+    if (didRefetchEmpty.current) return;
 
     didRefetchEmpty.current = true;
 
@@ -261,7 +225,6 @@ export default function ServicePageClient({
             signal: ctrl.signal,
           });
 
-        // First refetch
         const r = await request();
 
         if (r.status === 404) {
@@ -272,8 +235,8 @@ export default function ServicePageClient({
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
 
-        const maybe: ServiceDetail | null =
-          (j && (("service" in j ? (j as any).service : j) as ServiceDetail)) || null;
+        const maybe: Detail | null =
+          (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
 
         const status = (maybe as any)?.status;
         if (status && String(status).toUpperCase() !== "ACTIVE") {
@@ -286,9 +249,8 @@ export default function ServicePageClient({
 
         if (!ctrl.signal.aborted) setFetched(maybe);
 
-        // Backoff retry once if fallback/empty
         if ((timedFallback || stillEmpty) && !ctrl.signal.aborted) {
-          await sleep(1200); // ~1.2s backoff
+          await sleep(1200);
           if (ctrl.signal.aborted) return;
 
           const r2 = await request();
@@ -300,8 +262,9 @@ export default function ServicePageClient({
 
           const j2 = await r2.json().catch(() => ({}));
           if (r2.ok) {
-            const maybe2: ServiceDetail | null =
-              (j2 && (("service" in j2 ? (j2 as any).service : j2) as ServiceDetail)) || null;
+            const maybe2: Detail | null =
+              (j2 && (("service" in j2 ? (j2 as any).service : j2) as Detail)) ||
+              null;
 
             const status2 = (maybe2 as any)?.status;
             if (status2 && String(status2).toUpperCase() !== "ACTIVE") {
@@ -315,7 +278,8 @@ export default function ServicePageClient({
           }
         }
       } catch (e: any) {
-        if (!ctrl.signal.aborted) setFetchErr(e?.message || "Failed to load service");
+        if (!ctrl.signal.aborted)
+          setFetchErr(e?.message || "Failed to load service");
       } finally {
         if (backoffTimer) clearTimeout(backoffTimer);
         if (!ctrl.signal.aborted) setFetching(false);
@@ -328,7 +292,6 @@ export default function ServicePageClient({
     };
   }, [id, gone, fetching, fetched, hasRealFromCurrent, hasRealGallery]);
 
-  // If store says non-active, bail fast
   useEffect(() => {
     const status = (service as any)?.status;
     if (status && String(status).toUpperCase() !== "ACTIVE") {
@@ -351,7 +314,11 @@ export default function ServicePageClient({
             <Link href="/" prefetch={false} className="btn-gradient-primary">
               Home
             </Link>
-            <Link href="/search?type=service" prefetch={false} className="btn-gradient-primary">
+            <Link
+              href="/search?type=service"
+              prefetch={false}
+              className="btn-gradient-primary"
+            >
               Browse services
             </Link>
           </div>
@@ -360,51 +327,52 @@ export default function ServicePageClient({
     );
   }
 
-  // Prefer: fetched detail > raw store item > minimal normalized display
-  const displayMaybe = (fetched || service) as ServiceDetail | undefined;
+  const displayMaybe = (fetched || service) as Detail | undefined;
 
-  const display: ServiceDetail = {
-    id: displayMaybe?.id ?? (id || "unknown"),
+  const display: Detail = {
+    id: displayMaybe?.id ?? id ?? "unknown",
     name: displayMaybe?.name ?? "Service",
     description: displayMaybe?.description ?? null,
     category: displayMaybe?.category ?? "General",
     subcategory: displayMaybe?.subcategory ?? null,
-
-    price: typeof displayMaybe?.price === "number" ? displayMaybe?.price : null,
-    ...(displayMaybe?.rateType ? { rateType: normRateType(displayMaybe.rateType) } : {}),
-
+    price: typeof displayMaybe?.price === "number" ? displayMaybe.price : null,
+    ...(displayMaybe?.rateType
+      ? { rateType: normRateType(displayMaybe.rateType) }
+      : {}),
     image: displayMaybe?.image ?? null,
-    gallery: Array.isArray(displayMaybe?.gallery) ? (displayMaybe!.gallery as string[]) : [],
-
+    gallery: Array.isArray(displayMaybe?.gallery)
+      ? (displayMaybe.gallery as string[])
+      : [],
     serviceArea: displayMaybe?.serviceArea ?? null,
     availability: displayMaybe?.availability ?? null,
     location: displayMaybe?.location ?? null,
     featured: Boolean(displayMaybe?.featured),
-
     sellerId: displayMaybe?.sellerId ?? null,
     sellerName: displayMaybe?.sellerName ?? null,
     sellerPhone: displayMaybe?.sellerPhone ?? null,
     sellerLocation: displayMaybe?.sellerLocation ?? null,
     sellerMemberSince: displayMaybe?.sellerMemberSince ?? null,
     sellerRating:
-      typeof displayMaybe?.sellerRating === "number" ? displayMaybe?.sellerRating : null,
+      typeof displayMaybe?.sellerRating === "number"
+        ? displayMaybe.sellerRating
+        : null,
     sellerSales:
-      typeof displayMaybe?.sellerSales === "number" ? displayMaybe?.sellerSales : null,
+      typeof displayMaybe?.sellerSales === "number"
+        ? displayMaybe.sellerSales
+        : null,
     seller: displayMaybe?.seller ?? null,
-
-    ...(displayMaybe && "status" in displayMaybe && displayMaybe.status != null
+    ...(displayMaybe &&
+    "status" in displayMaybe &&
+    displayMaybe.status != null
       ? { status: displayMaybe.status as any }
       : {}),
   };
 
-  /* ---------- Gallery source: ALWAYS build a non-empty array ---------- */
   const galleryToRender = useMemo(() => {
-    // Extract across all tolerated shapes and prefer real images
     const urls = extractGalleryUrls(displayMaybe || {}, PLACEHOLDER);
     const pruned = stripPlaceholderIfOthers(urls, PLACEHOLDER);
 
     if (!pruned || pruned.length === 0) {
-      // Treat `image` as a gallery fallback when it's real
       if (displayMaybe?.image && !isPlaceholder(displayMaybe.image)) {
         return [displayMaybe.image];
       }
@@ -413,13 +381,11 @@ export default function ServicePageClient({
     return pruned;
   }, [displayMaybe]);
 
-  // Enable lightbox only when there's at least one non-placeholder image
   const enableLightbox = useMemo(
     () => galleryToRender.some((u) => u && u !== PLACEHOLDER),
     [galleryToRender]
   );
 
-  // Seller derived view
   const seller = useMemo(() => {
     const nested: any = (display as any)?.seller || {};
     const username = (nested?.username || "").trim() || null;
@@ -435,31 +401,37 @@ export default function ServicePageClient({
         typeof nested?.rating === "number"
           ? nested.rating
           : typeof display?.sellerRating === "number"
-          ? display.sellerRating
+          ? display?.sellerRating
           : null,
       sales:
         typeof nested?.sales === "number"
           ? nested.sales
           : typeof display?.sellerSales === "number"
-          ? display.sellerSales
+          ? display?.sellerSales
           : null,
     };
   }, [display]);
 
   const isOwner = Boolean(viewerId && seller.id && viewerId === seller.id);
 
-  // Deterministic store slug so Visit Store always renders
-  const storeSlug =
-    (seller.username && seller.username.trim()) ||
-    (seller.id ? `u-${String(seller.id).slice(0, 8)}` : "unknown");
+  const storeHref = useMemo(() => {
+    const uname = seller.username;
+    const sid = seller.id;
+    if (uname) return `/store/${encodeURIComponent(uname)}`;
+    if (sid) return `/store/u-${encodeURIComponent(sid)}`;
+    return `/store`;
+  }, [seller.username, seller.id]);
 
-  // SEO (avoid placeholder-only images)
   const seo = useMemo(() => {
-    const nonPlaceholder = galleryToRender.filter((u) => u && u !== PLACEHOLDER);
+    const nonPlaceholder = galleryToRender.filter(
+      (u) => u && u !== PLACEHOLDER
+    );
     return buildServiceSeo({
-      id: display.id,
-      name: display.name,
-      ...(display.description != null ? { description: display.description } : {}),
+      id: display.id!,
+      name: display.name!,
+      ...(display.description != null
+        ? { description: display.description }
+        : {}),
       ...(typeof display.price === "number" ? { price: display.price } : {}),
       ...(nonPlaceholder.length ? { image: nonPlaceholder } : {}),
       ...(display.category ? { category: display.category } : {}),
@@ -474,30 +446,18 @@ export default function ServicePageClient({
   }, [display, galleryToRender]);
 
   const copyLink = useCallback(async () => {
-    if (!origin || !display?.id) return;
+    if (!display?.id) return;
     try {
-      await navigator.clipboard.writeText(`${origin}/service/${display.id}`);
+      const shareUrl =
+        typeof window !== "undefined" && window.location
+          ? `${window.location.origin}/service/${display.id}`
+          : `/service/${display.id}`;
+      await navigator.clipboard.writeText(shareUrl);
       toast.success("Link copied");
     } catch {
       toast.error("Couldn't copy link");
     }
-  }, [origin, display?.id]);
-
-  const onStartMessageAction = useCallback(
-    async (_serviceId: string) => {
-      if (!seller.id) {
-        toast.error("Provider unavailable");
-        return;
-      }
-      await startThread(
-        seller.id,
-        "service",
-        display.id,
-        `Hi ${seller.name || "there"}, I'm interested in "${display.name}".`
-      );
-    },
-    [seller.id, seller.name, display.id, display.name]
-  );
+  }, [display?.id]);
 
   return (
     <>
@@ -505,7 +465,9 @@ export default function ServicePageClient({
         <script
           type="application/ld+json"
           suppressHydrationWarning
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(seo.jsonLd) }}
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(seo.jsonLd),
+          }}
         />
       )}
 
@@ -513,21 +475,26 @@ export default function ServicePageClient({
         {/* Media */}
         <div className="lg:col-span-3">
           <div
-            className="relative overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            className="relative overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-9
+
+00"
             data-gallery-wrap
           >
-            <div className="relative aspect-[4/3] sm:aspect-[16/10]" data-gallery-overlay="true">
+            <div className="relative aspect-[4/3] sm:aspect-[16/10]">
               {display.featured && (
                 <span className="absolute left-3 top-3 z-20 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
                   Featured
                 </span>
               )}
 
-              {/* Always render gallery; component ensures at least one <img> */}
-              <Gallery images={galleryToRender} sizes={GALLERY_SIZES} lightbox={enableLightbox} />
+              <Gallery
+                images={galleryToRender}
+                sizes={GALLERY_SIZES}
+                lightbox={enableLightbox}
+              />
 
-              {/* Hidden mirror for tests to read exact URLs (JSON on attribute) — ALWAYS present */}
-              <ul hidden data-gallery-shadow={JSON.stringify(galleryToRender)}>
+              {/* Hidden mirror for tests if needed */}
+              <ul hidden data-gallery-shadow="true">
                 {galleryToRender.map((src, i) => (
                   <li key={`shadow:${i}`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -535,6 +502,23 @@ export default function ServicePageClient({
                   </li>
                 ))}
               </ul>
+
+              {/* Overlay opener target (for tests) */}
+              <button
+                type="button"
+                data-gallery-overlay="true"
+                aria-label="Open image in fullscreen"
+                className="absolute inset-0 z-[70] h-full w-full bg-transparent"
+                onClick={() => {
+                  const wrap =
+                    document.querySelector<HTMLElement>("[data-gallery-wrap]");
+                  const opener =
+                    wrap?.querySelector<HTMLElement>(
+                      '[data-gallery-opener], button[aria-label="Open image in fullscreen"]'
+                    );
+                  opener?.click();
+                }}
+              />
 
               <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-black/5 dark:ring-white/10" />
             </div>
@@ -544,52 +528,34 @@ export default function ServicePageClient({
               <button
                 type="button"
                 onClick={copyLink}
-                className="btn-gradient-primary px-2 py-1 text-xs inline-flex items-center gap-1"
+                className="btn-gradient-primary inline-flex items-center gap-1 px-2 py-1 text-xs"
                 title="Copy link"
                 aria-label="Copy link"
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M10.5 13.5l3-3M7 17a4 4 0 010-6l3-3a4 4 0 016 6l-1 1"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
                 Copy
               </button>
 
-              <FavoriteButton serviceId={display.id} />
+              <FavoriteButton serviceId={display.id!} />
 
               {isOwner && (
                 <>
                   <Link
                     href={`/service/${display.id}/edit`}
-                    className="btn-gradient-primary px-2 py-1 text-xs inline-flex items-center gap-1"
+                    prefetch={false}
+                    className="btn-gradient-primary inline-flex items-center gap-1 px-2 py-1 text-xs"
                     title="Edit service"
                     aria-label="Edit service"
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M4 20h4l10-10a2.828 2.828 0 10-4-4L4 16v4z"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
                     Edit
                   </Link>
 
                   <DeleteListingButton
-                    serviceId={display.id}
+                    serviceId={display.id!}
                     label="Delete"
                     className="btn-gradient-primary px-2 py-1 text-xs"
                     onDeletedAction={() => {
                       toast.success("Service deleted");
+                      // ✅ Only after explicit user action
                       router.push("/dashboard");
                     }}
                   />
@@ -611,17 +577,30 @@ export default function ServicePageClient({
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
               {display.name || "Service"}
             </h1>
+            <Link
+              href={storeHref}
+              prefetch={false}
+              className="btn-gradient-primary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
+              aria-label="Visit provider store"
+              title="Visit Store"
+            >
+              Visit Store
+            </Link>
           </div>
 
           <div className="space-y-1 rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">
-              {fmtKES(display.price)} {rateSuffix(display.rateType)}
+              {fmtKES(display.price)} {rateSuffix(display.rateType ?? null)}
             </p>
             {display.serviceArea && (
-              <p className="text-sm text-gray-500">Service Area: {display.serviceArea}</p>
+              <p className="text-sm text-gray-500">
+                Service Area: {display.serviceArea}
+              </p>
             )}
             {display.location && (
-              <p className="text-sm text-gray-500">Base Location: {display.location}</p>
+              <p className="text-sm text-gray-500">
+                Base Location: {display.location}
+              </p>
             )}
           </div>
 
@@ -632,27 +611,23 @@ export default function ServicePageClient({
             </p>
           </div>
 
-          {/* Provider */}
+          {/* Provider / Contact */}
           <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <h3 className="mb-3 font-semibold">Provider</h3>
 
             <div className="space-y-1 text-gray-700 dark:text-slate-200">
               <p className="flex items-center gap-2">
                 <span className="font-medium">Name:</span>
-                <span>{(display.sellerName || (display.seller as any)?.name) ?? "Provider"}</span>
-                {seller.username && (
-                  <Link
-                    href={`/store/${seller.username}`}
-                    className="text-sm text-[#39a0ca] hover:underline"
-                    title={`Visit @${seller.username}'s store`}
-                  >
-                    @{seller.username}
-                  </Link>
-                )}
+                <span>
+                  {display.sellerName ||
+                    (display.seller as any)?.name ||
+                    "Provider"}
+                </span>
               </p>
-              {seller.location && (
+              {display.sellerLocation && (
                 <p>
-                  <span className="font-medium">Location:</span> {seller.location}
+                  <span className="font-medium">Location:</span>{" "}
+                  {display.sellerLocation}
                 </p>
               )}
             </div>
@@ -660,33 +635,32 @@ export default function ServicePageClient({
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <ContactModalService
                 className="btn-gradient-primary"
-                serviceId={display.id}
-                serviceName={display.name}
-                fallbackName={seller.name}
-                fallbackLocation={seller.location}
-                buttonLabel="Show Contact"
+                serviceId={display.id!}
+                // force a concrete string; TS 2345 silenced correctly
+                serviceName={display.name ?? "Service"}
+                fallbackName={
+                  display.sellerName ?? (display.seller as any)?.name ?? null
+                }
+                fallbackLocation={
+                  display.sellerLocation ??
+                  (display.seller as any)?.location ??
+                  null
+                }
+                buttonLabel="Message provider"
               />
-
-              <MessageProviderButton
-                serviceId={display.id}
-                isAuthed={isAuthed}
-                onStartMessageAction={onStartMessageAction}
-                className="btn-gradient-primary"
-              />
-
-              {/* Always render Visit Store with fallback slug and stable accessible name */}
               <Link
-                href={`/store/${storeSlug}`}
+                href={storeHref}
+                prefetch={false}
                 className="btn-gradient-primary"
-                title={`Visit @${storeSlug}'s store`}
-                aria-label="Visit Store"
+                aria-label="Visit provider store"
               >
                 Visit Store
               </Link>
             </div>
 
             <div className="mt-4 text-xs text-gray-500 dark:text-slate-400">
-              Safety: meet in public places, verify identity when possible, and avoid prepayments.
+              Safety: meet in public places, verify identity where possible, and
+              avoid prepayments.
             </div>
           </div>
         </div>

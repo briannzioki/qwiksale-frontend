@@ -1,5 +1,5 @@
-// src/app/lib/servicesStore.ts
 "use client";
+// src/app/lib/servicesStore.ts
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { extractGalleryUrls } from "@/app/lib/media";

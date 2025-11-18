@@ -1,5 +1,5 @@
-// src/app/lib/favoritesStore.ts
 "use client";
+// src/app/lib/favoritesStore.ts
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import toast from "react-hot-toast";

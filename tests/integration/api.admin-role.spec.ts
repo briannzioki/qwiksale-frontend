@@ -12,7 +12,12 @@ vi.mock("@/app/lib/prisma", () => ({
 import { requireSuperAdmin } from "@/app/lib/authz";
 import { getSessionUser } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/prisma";
-import { POST } from "@/app/api/admin/users/[id]/role/route";
+import { POST as routePOST } from "@/app/api/admin/users/[id]/role/route";
+
+const POST = routePOST as unknown as (
+  req: Request,
+  ctx: { params: Promise<{ id: string }> },
+) => Promise<Response>;
 
 const makeReq = (body: any) =>
   new Request("http://x/api/admin/users/USER_ID/role", {
@@ -38,7 +43,10 @@ describe("POST /api/admin/users/:id/role", () => {
   });
 
   it("blocks demoting last SUPERADMIN", async () => {
-    (prisma.user.findUnique as any).mockResolvedValue({ id: "USER_ID", role: "SUPERADMIN" });
+    (prisma.user.findUnique as any).mockResolvedValue({
+      id: "USER_ID",
+      role: "SUPERADMIN",
+    });
     (prisma.user.count as any).mockResolvedValue(1);
 
     const res = await POST(makeReq({ role: "ADMIN" }), ctx("USER_ID"));
@@ -48,9 +56,15 @@ describe("POST /api/admin/users/:id/role", () => {
   });
 
   it("updates role and writes audit", async () => {
-    (prisma.user.findUnique as any).mockResolvedValue({ id: "USER_ID", role: "ADMIN" });
+    (prisma.user.findUnique as any).mockResolvedValue({
+      id: "USER_ID",
+      role: "ADMIN",
+    });
     (prisma.user.count as any).mockResolvedValue(2);
-    (prisma.user.update as any).mockResolvedValue({ id: "USER_ID", role: "SUPERADMIN" });
+    (prisma.user.update as any).mockResolvedValue({
+      id: "USER_ID",
+      role: "SUPERADMIN",
+    });
 
     const res = await POST(makeReq({ role: "SUPERADMIN" }), ctx("USER_ID"));
     expect(res.status).toBe(200);

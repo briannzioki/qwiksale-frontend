@@ -1,13 +1,11 @@
-// src/app/api/admin/metrics/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
-export const runtime = 'nodejs';
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { assertAdmin } from "../_lib/guard";
 import { withApiLogging, type RequestLog } from "@/app/lib/api-logging";
-
-export const dynamic = "force-dynamic";
 
 /** tiny helper to ensure proper caching/vary on all JSON */
 function jsonNoStore(payload: unknown, init?: ResponseInit) {
@@ -26,7 +24,6 @@ async function safeServiceCount(where?: any): Promise<number> {
   if (svc && typeof svc.count === "function") {
     return svc.count(where ? { where } : undefined);
   }
-  // No Service model — treat as 0
   return 0;
 }
 
@@ -43,14 +40,12 @@ export async function GET(req: NextRequest) {
       return d;
     });
 
-    // Totals
     const [usersTotal, productsTotal, servicesTotal] = await Promise.all([
       prisma.user.count(),
       prisma.product.count(),
-      safeServiceCount(), // safe even if Service model doesn't exist
+      safeServiceCount(),
     ]);
 
-    // Per-day counts for the last 7 days
     const last7d = await Promise.all(
       days.map(async (d) => {
         const next = new Date(d);
@@ -71,17 +66,14 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    log.info(
-      { totals: { usersTotal, productsTotal, servicesTotal } },
-      "admin_metrics_ok"
-    );
+    log.info({ totals: { usersTotal, productsTotal, servicesTotal } }, "admin_metrics_ok");
 
     return jsonNoStore({
       totals: {
         users: usersTotal,
         products: productsTotal,
         services: servicesTotal,
-        reveals: null, // hook up if/when you track reveals
+        reveals: null,
       },
       last7d,
     });

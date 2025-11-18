@@ -1,5 +1,5 @@
-// src/components/billing/UpgradeWatcher.tsx
 "use client";
+// src/components/billing/UpgradeWatcher.tsx
 
 import React from "react";
 import { usePaymentStatusPoll } from "@/app/hooks/usePaymentStatusPoll";
@@ -40,7 +40,7 @@ export default function UpgradeWatcher({
     );
   }
 
-  // Ensure we only ever call onDone once
+  // Ensure we only ever call onDone once (still passive).
   const doneRef = React.useRef(false);
   const handleOnce = React.useCallback(
     (final: DoneStatus) => {

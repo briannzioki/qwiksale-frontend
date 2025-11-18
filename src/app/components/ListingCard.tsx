@@ -1,5 +1,5 @@
-// src/app/components/ListingCard.tsx
 "use client";
+// src/app/components/ListingCard.tsx
 
 import * as React from "react";
 import Link from "next/link";

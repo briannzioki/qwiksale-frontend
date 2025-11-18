@@ -2,13 +2,11 @@
 // Client-safe shared media helpers used across Product/Service pages.
 // No Node-only imports; safe for both client and server bundles.
 
-/* --------------------------------- Types -------------------------------- */
-
 export type UrlObject = {
   url?: string;
   secureUrl?: string;
   secure_url?: string; // Cloudinary JSON
-  signedUrl?: string;  // GCS/Firebase
+  signedUrl?: string; // GCS/Firebase
   downloadURL?: string; // Firebase
   src?: string;
   location?: string;
@@ -17,9 +15,17 @@ export type UrlObject = {
   imageUrl?: string;
   href?: string;
 };
+
 export type UrlLike = string | UrlObject;
 
-export const MEDIA_ARRAY_KEYS = ["gallery", "images", "photos", "media", "imageUrls"] as const;
+export const MEDIA_ARRAY_KEYS = [
+  "gallery",
+  "images",
+  "photos",
+  "media",
+  "imageUrls",
+] as const;
+
 type MediaArrayKey = (typeof MEDIA_ARRAY_KEYS)[number];
 
 export type MediaResponse = {
@@ -37,11 +43,27 @@ export function urlish(v: unknown): string {
   return (typeof v === "string" ? v : String(v ?? "")).trim();
 }
 
-export function isRenderableImageUrl(s: string): boolean {
+/**
+ * Permissive image URL check:
+ * - Accepts absolute http(s)
+ * - Accepts site-relative `/...`
+ * - Accepts `data:image/*` + blob:
+ * - Accepts common image-like filenames with an extension
+ * Only rejects truly bad/empty strings.
+ */
+export function isRenderableImageUrl(raw: string): boolean {
+  if (!raw) return false;
+  const s = raw.trim();
   if (!s) return false;
+
   if (s.startsWith("/")) return true;
-  return /^https?:\/\//i.test(s);
-  // If you ever need to preview just-uploaded blobs, add: || s.startsWith("blob:")
+  if (/^https?:\/\//i.test(s)) return true;
+  if (/^data:image\//i.test(s)) return true;
+  if (/^blob:/i.test(s)) return true;
+
+  if (/\.(jpe?g|png|gif|webp|avif|svg)(\?.*)?$/i.test(s)) return true;
+
+  return false;
 }
 
 function getArray(obj: unknown, key: MediaArrayKey): unknown[] {
@@ -91,35 +113,76 @@ export function hasRichMedia(obj: unknown, minCount = 2): boolean {
   return false;
 }
 
-export function extractGalleryUrls(obj: unknown, fallback?: string | null, limit = 50): string[] {
+/**
+ * Extract a deterministic gallery:
+ * - Include all gallery-like arrays: gallery/images/photos/media/imageUrls
+ * - Only if those are empty, append primary image/cover fields
+ * - Deduplicate while preserving order
+ * - Filter only truly invalid URLs
+ * - Always return at least one renderable URL (fallback or /og.png)
+ */
+export function extractGalleryUrls(
+  obj: unknown,
+  fallback?: string | null,
+  limit = 50
+): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  const push = (u: string) => {
+
+  const push = (raw: string) => {
+    const u = urlish(raw);
     if (!isRenderableImageUrl(u)) return;
     if (seen.has(u)) return;
     seen.add(u);
-    out.push(u);
+    if (out.length < limit) out.push(u);
   };
 
   if (obj && typeof obj === "object") {
     const rec = obj as Record<string, unknown>;
-    push(urlish(rec["image"]));
-    push(urlish(rec["coverImage"]));
-    push(urlish(rec["coverImageUrl"]));
+
+    // 1. Prefer explicit gallery-style arrays from the API
     for (const key of MEDIA_ARRAY_KEYS) {
       const arr = getArray(rec, key);
       if (!arr.length) continue;
+
       for (const it of arr) {
-        push(typeof it === "string" ? urlish(it) : objectToUrl(it));
+        const u = typeof it === "string" ? urlish(it) : objectToUrl(it);
+        if (u) push(u);
         if (out.length >= limit) break;
       }
+
       if (out.length >= limit) break;
+    }
+
+    // 2. If we didn't find any gallery images, fall back to primary image fields
+    if (out.length === 0) {
+      const primaryCandidates = [
+        "image",
+        "imageUrl",
+        "coverImage",
+        "coverImageUrl",
+      ] as const;
+
+      for (const key of primaryCandidates) {
+        const v = rec[key];
+        const u = urlish(v);
+        if (isRenderableImageUrl(u)) {
+          push(u);
+        }
+        if (out.length >= limit) break;
+      }
     }
   }
 
-  if (out.length === 0 && fallback && isRenderableImageUrl(fallback)) {
-    return [fallback];
+  // 3. Guarantee at least one URL
+  if (out.length === 0) {
+    const fb =
+      fallback && isRenderableImageUrl(fallback)
+        ? urlish(fallback)
+        : "/og.png";
+    return [fb];
   }
+
   return out.slice(0, limit);
 }
 
@@ -134,7 +197,10 @@ export function countValidUrls(obj: unknown, key: MediaArrayKey): number {
   return n;
 }
 
-export function stripPlaceholderIfOthers(urls: string[], placeholder: string): string[] {
+export function stripPlaceholderIfOthers(
+  urls: string[],
+  placeholder: string
+): string[] {
   const real = urls.filter((u) => u && u !== placeholder);
   return real.length ? real : urls;
 }
@@ -158,7 +224,10 @@ export async function apiAddImage(
   if (typeof input === "string") {
     const init: RequestInit = {
       method: "POST",
-      headers: { "content-type": "application/json", Accept: "application/json" },
+      headers: {
+        "content-type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify({ url: input }),
       signal: opts?.signal ?? null,
       credentials: "include",
@@ -183,14 +252,17 @@ export async function apiAddImage(
     const text = await res.text().catch(() => "");
     throw new Error(text || `Add image failed (${res.status})`);
   }
+
   const json = (await res.json()) as Partial<MediaResponse>;
 
   return {
-    image: json?.image ?? null,
-    gallery: Array.isArray(json?.gallery) ? (json!.gallery as string[]) : [],
+    image: json.image ?? null,
+    gallery: Array.isArray(json.gallery) ? (json.gallery as string[]) : [],
     ok: true,
-    ...(typeof json?.url === "string" ? { url: json.url } : {}),
-    ...(typeof json?.publicId === "string" ? { publicId: json.publicId } : {}),
+    ...(typeof json.url === "string" ? { url: json.url } : {}),
+    ...(typeof json.publicId === "string"
+      ? { publicId: json.publicId }
+      : {}),
   };
 }
 
@@ -202,7 +274,9 @@ export async function apiDeleteImage(
 ): Promise<MediaResponse> {
   const base = `/api/${kind}/${encodeURIComponent(id)}/image`;
   const looksUrl = /^https?:\/\//i.test(urlOrPublicId);
-  const reqUrl = looksUrl ? `${base}?url=${encodeURIComponent(urlOrPublicId)}` : base;
+  const reqUrl = looksUrl
+    ? `${base}?url=${encodeURIComponent(urlOrPublicId)}`
+    : base;
 
   const init: RequestInit = {
     method: "DELETE",
@@ -212,8 +286,13 @@ export async function apiDeleteImage(
     ...(looksUrl
       ? { headers: { Accept: "application/json" } }
       : {
-          headers: { "content-type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ publicId: urlOrPublicId }),
+          headers: {
+            "content-type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            publicId: urlOrPublicId,
+          }),
         }),
   };
 
@@ -222,27 +301,36 @@ export async function apiDeleteImage(
     const text = await res.text().catch(() => "");
     throw new Error(text || `Delete image failed (${res.status})`);
   }
+
   const json = (await res.json()) as Partial<MediaResponse>;
 
   return {
-    image: json?.image ?? null,
-    gallery: Array.isArray(json?.gallery) ? (json!.gallery as string[]) : [],
+    image: json.image ?? null,
+    gallery: Array.isArray(json.gallery)
+      ? (json.gallery as string[])
+      : [],
     ok: true,
-    ...(typeof json?.removed === "string" ? { removed: json.removed } : {}),
+    ...(typeof json.removed === "string"
+      ? { removed: json.removed }
+      : {}),
   };
 }
 
-/* --------------------- NEW: persist staged media helper ------------------ */
+/* --------------------- persist staged media helper ------------------ */
 
 export type MediaDraft = {
   image?: UrlLike | null;
   gallery?: (UrlLike | null | undefined)[] | null;
 };
 
-export type PersistResult = { image: string | null; gallery: string[] };
+export type PersistResult = {
+  image: string | null;
+  gallery: string[];
+};
 
-/** Internal: normalize & dedupe into clean URL list */
-function normalizeList(list: (UrlLike | null | undefined)[] | null | undefined): string[] {
+function normalizeList(
+  list: (UrlLike | null | undefined)[] | null | undefined
+): string[] {
   if (!Array.isArray(list)) return [];
   const out: string[] = [];
   const seen = new Set<string>();
@@ -256,24 +344,24 @@ function normalizeList(list: (UrlLike | null | undefined)[] | null | undefined):
   return out;
 }
 
-/** Internal: set difference prev - next (URLs) */
-function removedUrls(prev: string[], next: string[]): string[] {
-  const keep = new Set(next);
-  return prev.filter((u) => !keep.has(u));
-}
-
 /**
- * Commit staged media for a record in one place.
- * - PATCH `/api/{kind}/{id}/media` with the *draft* (omits empty image/gallery)
- * - Optionally DELETE URLs that were removed (cleanup)
- * - Returns `{ image, gallery }` (prefers server response; falls back to draft)
+ * Commit staged media for a record.
+ * - PATCH `/api/{kind}/{id}/media` with normalized draft
+ * - Optionally DELETE URLs that were removed
+ * - Returns `{ image, gallery }`
  */
 export async function persistStagedMedia(
   kind: Kind,
   id: string,
   draft: MediaDraft,
-  initial?: { image?: UrlLike | null; gallery?: (UrlLike | null | undefined)[] | null },
-  opts?: { cleanup?: boolean; signal?: AbortSignal | null }
+  initial?: {
+    image?: UrlLike | null;
+    gallery?: (UrlLike | null | undefined)[] | null;
+  },
+  opts?: {
+    cleanup?: boolean;
+    signal?: AbortSignal | null;
+  }
 ): Promise<PersistResult> {
   const nextImage = toUrlFromAny(draft?.image ?? null);
   const nextGallery = normalizeList(draft?.gallery);
@@ -281,57 +369,89 @@ export async function persistStagedMedia(
   const prevImage = toUrlFromAny(initial?.image ?? null);
   const prevGallery = normalizeList(initial?.gallery);
 
-  // Build PATCH body — never send empty arrays or empty string image
   const body: Record<string, unknown> = {};
   if (isRenderableImageUrl(nextImage)) body["image"] = nextImage;
   if (nextGallery.length > 0) body["gallery"] = nextGallery;
 
-  let patched: PersistResult = { image: null, gallery: [] };
+  let patched: PersistResult = {
+    image: prevImage || null,
+    gallery: prevGallery,
+  };
 
-  // Only PATCH if we have something to say; otherwise skip to cleanup/return
   if (Object.keys(body).length > 0) {
-    const res = await fetch(`/api/${kind}/${encodeURIComponent(id)}/media`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body),
-      credentials: "include",
-      cache: "no-store",
-      signal: opts?.signal ?? null,
-    });
+    const res = await fetch(
+      `/api/${kind}/${encodeURIComponent(id)}/media`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(body),
+        credentials: "include",
+        cache: "no-store",
+        signal: opts?.signal ?? null,
+      }
+    );
 
-    // Try to use server response; fall back to draft if server doesn't return media fields
     if (res.ok) {
-      const j = (await res.json().catch(() => ({}))) as Partial<PersistResult>;
+      const j =
+        ((await res
+          .json()
+          .catch(() => ({}))) as Partial<PersistResult>) ?? {};
+
       const srvImage =
-        typeof (j as any)?.image === "string" ? String((j as any).image) : undefined;
-      const srvGallery = Array.isArray((j as any)?.gallery) ? (j as any).gallery as string[] : undefined;
+        typeof (j as any).image === "string"
+          ? String((j as any).image)
+          : undefined;
+      const srvGallery = Array.isArray((j as any).gallery)
+        ? ((j as any).gallery as string[])
+        : undefined;
 
       patched = {
-        image: (srvImage ?? (isRenderableImageUrl(nextImage) ? nextImage : null)) || null,
+        image:
+          (srvImage ??
+            (isRenderableImageUrl(nextImage)
+              ? nextImage
+              : null)) || null,
         gallery: srvGallery ?? nextGallery,
       };
     } else {
-      // PATCH failed → bubble up with reason text
-      const msg = await res.text().catch(() => "");
-      throw new Error(msg || `Media PATCH failed (${res.status})`);
+      const msg =
+        (await res.text().catch(() => "")) || "";
+      throw new Error(
+        msg || `Media PATCH failed (${res.status})`
+      );
     }
-  } else {
-    // Nothing to patch → preserve previous state as current
-    patched = { image: prevImage || null, gallery: prevGallery };
   }
 
-  // Optional cleanup of removed URLs (best-effort, after a successful PATCH)
   if (opts?.cleanup !== false) {
     const before = new Set(prevGallery);
     const after = new Set(patched.gallery);
-    const toRemove = [...before].filter((u) => !after.has(u));
+    const toRemove = [...before].filter(
+      (u) => !after.has(u)
+    );
+
     if (toRemove.length) {
-      await Promise.allSettled(toRemove.map((u) => apiDeleteImage(kind, id, u, { signal: opts?.signal ?? null })));
+      await Promise.allSettled(
+        toRemove.map((u) =>
+          apiDeleteImage(kind, id, u, {
+            signal: opts?.signal ?? null,
+          })
+        )
+      );
     }
 
-    // If cover changed and previous cover is not in gallery anymore, attempt delete too
-    if (prevImage && prevImage !== patched.image && !after.has(prevImage)) {
-      await Promise.allSettled([apiDeleteImage(kind, id, prevImage, { signal: opts?.signal ?? null })]);
+    if (
+      prevImage &&
+      prevImage !== patched.image &&
+      !after.has(prevImage)
+    ) {
+      await Promise.allSettled([
+        apiDeleteImage(kind, id, prevImage, {
+          signal: opts?.signal ?? null,
+        }),
+      ]);
     }
   }
 

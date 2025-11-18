@@ -1,15 +1,15 @@
 // src/app/lib/prisma.ts
 // Node-only shim: forwards to the central Prisma client in src/lib/db.ts.
-// Avoid importing this file in Edge/Workers code.
+// Safe for server components and route handlers; avoid from Edge.
 
-import { prisma } from "@/lib/db";
+import "server-only";
+import prisma from "@/lib/db";
 
 export { prisma };
 
 /* ------------------------------ Health helpers --------------------------- */
 export async function prismaHealthcheck(): Promise<boolean> {
   try {
-    // Use the safe tagged template; no need for ...Unsafe here.
     await prisma.$queryRaw`SELECT 1`;
     return true;
   } catch {
@@ -26,5 +26,5 @@ export async function prismaEnsureConnected(): Promise<void> {
   }
 }
 
-/** Optional alias for DI/tests (avoid importing PrismaClient type) */
+/** Optional alias for DI/tests */
 export type DB = typeof prisma;

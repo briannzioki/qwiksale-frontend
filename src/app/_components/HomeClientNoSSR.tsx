@@ -4,22 +4,31 @@
 import dynamic from "next/dynamic";
 import * as React from "react";
 
-/** Keep props in sync with the actual HomeClient default export without importing it at runtime */
-type HomeClientProps = React.ComponentPropsWithoutRef<
-  typeof import("./HomeClient").default
->;
+/** With exactOptionalPropertyTypes, optional ≠ includes undefined,
+ *  so we explicitly allow `| undefined`.
+ */
+export type HomeSeedProps = {
+  productId?: string | undefined;
+  serviceId?: string | undefined;
+};
 
-const HomeClientNoSSR = dynamic<HomeClientProps>(() => import("./HomeClient"), {
-  ssr: false,
-  loading: () => (
-    <div
-      role="status"
-      aria-live="polite"
-      className="p-4 text-sm text-gray-500 dark:text-slate-400"
-    >
-      Loading…
-    </div>
-  ),
-});
+/** Dynamically import the real client with SSR disabled. */
+const HomeClient = dynamic<any>(
+  () => import("./HomeClient").then((m: any) => m.default ?? m),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        aria-label="Loading home feed"
+        className="mx-auto max-w-6xl px-4 py-8 text-sm text-gray-500 dark:text-slate-400"
+      >
+        Loading…
+      </div>
+    ),
+  },
+);
 
-export default HomeClientNoSSR;
+/** Properly typed wrapper that accepts seeds. */
+export default function HomeClientNoSSR(props: HomeSeedProps) {
+  return <HomeClient {...props} />;
+}

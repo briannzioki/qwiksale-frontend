@@ -1,5 +1,5 @@
-// src/app/components/Icon.tsx
 "use client";
+// src/app/components/Icon.tsx
 
 import * as React from "react";
 import type { LucideProps } from "lucide-react";

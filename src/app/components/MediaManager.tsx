@@ -1,5 +1,5 @@
-// src/app/components/MediaManager.tsx
 "use client";
+// src/app/components/MediaManager.tsx
 
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

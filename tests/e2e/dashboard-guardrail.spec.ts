@@ -1,3 +1,4 @@
+// tests/e2e/dashboard-guardrail.spec.ts
 import { test, expect } from "@playwright/test";
 
 test("Dashboard shows soft error UI instead of 500", async ({ page }) => {

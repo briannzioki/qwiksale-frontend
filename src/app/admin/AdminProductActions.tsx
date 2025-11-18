@@ -1,5 +1,5 @@
-// src/app/admin/AdminProductActions.tsx
 "use client";
+// src/app/admin/AdminProductActions.tsx
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";

@@ -1,4 +1,4 @@
-// src/app/dashboard/loading.tsx
+﻿// src/app/dashboard/loading.tsx
 import { Skeleton, SkeletonLine, ButtonSkeleton } from "@/app/components/Skeletons";
 
 export default function Loading() {
@@ -36,3 +36,4 @@ export default function Loading() {
     </main>
   );
 }
+

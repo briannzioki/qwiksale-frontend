@@ -1,7 +1,5 @@
 // scripts/promote-admin.ts
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "../src/lib/db";
 
 async function main() {
   const email = process.argv[2];
@@ -12,16 +10,16 @@ async function main() {
 
   const u = await prisma.user.update({
     where: { email },
-    data: { role: "ADMIN" }, // promote via role enum
+    data: { role: "ADMIN" },
     select: { id: true, email: true, role: true },
   });
 
-  console.log("Promoted:", u.id, u.email, "role:", u.role);
+  console.log("✅ Promoted:", u.id, u.email, "role:", u.role);
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error("❌ promote-admin failed:", e);
     process.exit(1);
   })
   .finally(async () => {

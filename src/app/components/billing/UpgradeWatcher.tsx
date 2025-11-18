@@ -1,12 +1,11 @@
-// src/app/components/billing/UpgradeWatcher.tsx
 "use client";
-
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { usePaymentStatusPoll } from "@/app/hooks/usePaymentStatusPoll";
 
 /**
  * Watches an upgrade/payment status and reports progress.
  *
+ * - Passive: never performs navigation or router.refresh().
  * - Callback ends with "Action" (Next.js 15-friendly if passed from Server Components).
  * - Announces changes via `aria-live` for screen readers.
  * - Emits lightweight client events for analytics/debug:
@@ -21,12 +20,10 @@ export default function UpgradeWatcher({
 }: {
   paymentId: string;
   onDoneAction?: (status: "SUCCESS" | "FAILED" | "TIMEOUT") => void | Promise<void>;
-  /** Toggle verbose UI lines (defaults to true) */
   showDetails?: boolean;
 }) {
   const announceRef = useRef<HTMLSpanElement | null>(null);
 
-  // Stable helper to dispatch window events
   const emit = useCallback((name: string, detail?: unknown) => {
     // eslint-disable-next-line no-console
     console.log(`[qs:event] ${name}`, detail);
@@ -35,12 +32,7 @@ export default function UpgradeWatcher({
     }
   }, []);
 
-  const {
-    status,
-    isPolling,
-    attempts,
-    error,
-  } = usePaymentStatusPoll(paymentId, {
+  const { status, isPolling, attempts, error } = usePaymentStatusPoll(paymentId, {
     onSuccess: async () => {
       emit("qs:billing:done", { paymentId, finalStatus: "SUCCESS" });
       try {
@@ -57,13 +49,11 @@ export default function UpgradeWatcher({
         console.error("[UpgradeWatcher] onDoneAction(FAILED) error:", e);
       }
     },
-    // Tweakable polling strategy
     intervalMs: 2000,
     maxIntervalMs: 10000,
     maxAttempts: 60,
   });
 
-  // Keep this in sync with the hook's maxAttempts above
   const maxAttempts = 60;
 
   const pct = useMemo(() => {
@@ -71,7 +61,6 @@ export default function UpgradeWatcher({
     return Number.isFinite(p) ? p : 0;
   }, [attempts, maxAttempts]);
 
-  // Live announcer for status/attempts
   useEffect(() => {
     emit("qs:billing:poll", { paymentId, status, attempts, isPolling });
 
@@ -84,7 +73,7 @@ export default function UpgradeWatcher({
     return () => clearTimeout(t);
   }, [attempts, emit, isPolling, paymentId, status]);
 
-  // TIMEOUT path: when the hook stops polling with an error
+  // TIMEOUT path (still passive)
   useEffect(() => {
     if (error && !isPolling) {
       emit("qs:billing:done", { paymentId, finalStatus: "TIMEOUT", error });
@@ -96,12 +85,10 @@ export default function UpgradeWatcher({
         }
       })();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error, isPolling]);
+  }, [emit, error, isPolling, onDoneAction, paymentId]);
 
   return (
     <div className="text-sm text-gray-700 dark:text-slate-200">
-      {/* SR-only live announcer */}
       <span ref={announceRef} className="sr-only" aria-live="polite" />
 
       <div className="flex items-center gap-2">
@@ -111,7 +98,6 @@ export default function UpgradeWatcher({
         </div>
       </div>
 
-      {/* Progress */}
       <div
         className="mt-2 h-2 w-full max-w-xs overflow-hidden rounded-full border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-white/5"
         role="progressbar"
@@ -122,8 +108,8 @@ export default function UpgradeWatcher({
         title={`${attempts}/${maxAttempts}`}
       >
         <div
-          className="h-full bg-[#39a0ca] dark:bg-sky-500 transition-[width] duration-500 ease-out"
-          style={{ width: `${pct}%` }}
+          className="h-full transition-[width] duration-500 ease-out"
+          style={{ width: `${pct}%`, backgroundColor: "currentColor" }}
         />
       </div>
 
@@ -132,25 +118,14 @@ export default function UpgradeWatcher({
           <div>
             Checks: <span className="tabular-nums">{attempts}</span> / {maxAttempts}
           </div>
-          {error && (
-            <div className="text-red-600 dark:text-red-400">
-              Note: {String(error)}
-            </div>
-          )}
+          {error && <div className="text-red-600 dark:text-red-400">Note: {String(error)}</div>}
         </div>
       )}
     </div>
   );
 }
 
-/* ------------------------- tiny status indicator ------------------------- */
-function StatusDot({
-  running,
-  status,
-}: {
-  running: boolean;
-  status: string;
-}) {
+function StatusDot({ running, status }: { running: boolean; status: string }) {
   const cls = running
     ? "bg-amber-500"
     : status === "SUCCESS"
@@ -158,11 +133,5 @@ function StatusDot({
     : status === "FAILED"
     ? "bg-rose-500"
     : "bg-gray-400";
-
-  return (
-    <span
-      className={`inline-block h-2.5 w-2.5 rounded-full ${cls}`}
-      aria-hidden="true"
-    />
-  );
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${cls}`} aria-hidden="true" />;
 }

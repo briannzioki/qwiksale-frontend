@@ -1,241 +1,287 @@
-// src/app/components/ProductGrid.tsx
 "use client";
 
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
-import ProductCard from "@/app/components/ProductCard";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
+import DeleteListingButton from "@/app/components/DeleteListingButton";
 
-/* --------------------------------- types --------------------------------- */
-
-type Mode = "products" | "all";
-
-type BaseItem = {
+type Props = {
   id: string;
-  name: string;
-  price: number | null;
-  image: string | null;
+  name?: string | null;
+  image?: string | null;
+  price?: number | null;
   featured?: boolean | null;
-  createdAt?: string;
+  position?: number;
+  prefetch?: boolean;
+  className?: string;
+
+  /** Dashboard mode: show Edit/Delete controls */
+  ownerControls?: boolean;
+  /** Optional custom edit href (defaults to /product/:id/edit) */
+  editHref?: string;
+  /** Called after a successful delete */
+  onDeletedAction?: () => void;
 };
 
-type ProductItem = BaseItem;
-type MixedItem = BaseItem & { type: "product" | "service" };
-
-type Props =
-  | {
-      mode?: "products";
-      items: ProductItem[];
-      loading?: boolean;
-      error?: string | null;
-      hasMore?: boolean;
-      onLoadMoreAction?: () => void | Promise<void>;
-      pageSize?: number;
-      prefetchCards?: boolean;
-      className?: string;
-      emptyText?: string;
-      useSentinel?: boolean;
-      showLoadMoreButton?: boolean;
-    }
-  | {
-      mode: "all";
-      items: MixedItem[];
-      loading?: boolean;
-      error?: string | null;
-      hasMore?: boolean;
-      onLoadMoreAction?: () => void | Promise<void>;
-      pageSize?: number;
-      prefetchCards?: boolean;
-      className?: string;
-      emptyText?: string;
-      useSentinel?: boolean;
-      showLoadMoreButton?: boolean;
-    };
-
-/* --------------------------------- utils --------------------------------- */
-
 const PLACEHOLDER = "/placeholder/default.jpg";
-
-// Tiny 1×1 transparent PNG as last-resort blur
 const FALLBACK_BLUR =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAuMB9l9b3a8AAAAASUVORK5CYII=";
 
-// Accept both shimmer(w, h) and shimmer({ width, height })
-function getBlurDataURL(width = 640, height = 360): string {
+function getBlurDataURL(width = 640, height = 640): string {
   try {
-    const fn: any = shimmerMaybe;
+    const fn: unknown = shimmerMaybe;
     if (typeof fn === "function") {
-      if (fn.length >= 2) return fn(width, height); // (w, h)
-      return fn({ width, height }); // ({ width, height })
+      // Support both shimmer(w,h) and shimmer({width,height})
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyFn = fn as any;
+      return anyFn.length >= 2
+        ? anyFn(width, height)
+        : anyFn({ width, height });
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
   return FALLBACK_BLUR;
 }
 
-function fmtKES(n: number | null | undefined) {
-  if (typeof n !== "number" || n <= 0) return "Contact for price";
+function fmtKES(n?: number | null) {
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) {
+    return "Contact for price";
+  }
   try {
-    return `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n)}`;
+    return `KES ${new Intl.NumberFormat("en-KE", {
+      maximumFractionDigits: 0,
+    }).format(n)}`;
   } catch {
     return `KES ${n}`;
   }
 }
 
-/* -------------------------- simple mixed item tile ------------------------- */
+function track(event: string, payload?: Record<string, unknown>) {
+  if (typeof window !== "undefined" && "CustomEvent" in window) {
+    window.dispatchEvent(
+      new CustomEvent("qs:track", { detail: { event, payload } })
+    );
+  }
+}
 
-function MixedTile({
-  it,
-  index,
-  prefetch,
-}: {
-  it: MixedItem;
-  index: number;
-  prefetch: boolean;
-}) {
-  const href = it.type === "service" ? `/service/${it.id}` : `/product/${it.id}`;
-  const url = it.image || PLACEHOLDER;
+function ProductCardImpl({
+  id,
+  name,
+  image,
+  price,
+  featured = false,
+  position,
+  prefetch = true,
+  className = "",
+  ownerControls = false,
+  editHref,
+  onDeletedAction,
+}: Props) {
+  const router = useRouter();
 
-  const priority = index < 8;
+  // Canonical product detail URL
+  const href = useMemo(
+    () => `/product/${encodeURIComponent(id)}`,
+    [id]
+  );
+  const hrefEdit =
+    editHref ?? `/product/${encodeURIComponent(id)}/edit`;
+
+  const anchorRef = useRef<HTMLAnchorElement | null>(null);
+  const seenRef = useRef(false);
+
+  const priority = typeof position === "number" ? position < 8 : false;
+  const src = image || PLACEHOLDER;
+
   const blurProps =
     priority
-      ? ({ placeholder: "blur", blurDataURL: getBlurDataURL(640, 360) } as const)
-      : ({ placeholder: "empty" } as const);
+      ? ({
+          placeholder: "blur" as const,
+          blurDataURL: getBlurDataURL(640, 640),
+        } as const)
+      : ({ placeholder: "empty" as const } as const);
 
-  const alt =
-    it.name
-      ? `${it.type === "service" ? "Service" : "Product"} image for ${it.name}`
-      : it.type === "service"
-      ? "Service image"
-      : "Product image";
+  const priceText = fmtKES(price);
 
-  // Prefer border-only (no heavy shadow) to match lighter glass audit
+  // Impression tracking
+  useEffect(() => {
+    if (!anchorRef.current || seenRef.current || typeof window === "undefined") {
+      return;
+    }
+    const el = anchorRef.current;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !seenRef.current) {
+            seenRef.current = true;
+            track("product_view", {
+              id,
+              name,
+              price,
+              position,
+              href,
+            });
+            io.disconnect();
+            break;
+          }
+        }
+      },
+      { rootMargin: "0px 0px -20% 0px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [id, name, price, position, href]);
+
+  // Prefetch when near viewport
+  useEffect(() => {
+    if (!prefetch || !anchorRef.current) return;
+    let done = false;
+    const el = anchorRef.current;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !done) {
+            done = true;
+            try {
+              (router as unknown as {
+                prefetch?: (u: string) => void;
+              })?.prefetch?.(href);
+            } catch {
+              // ignore
+            }
+            io.disconnect();
+            break;
+          }
+        }
+      },
+      { rootMargin: "300px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [href, prefetch, router]);
+
+  const hoverPrefetch = useCallback(() => {
+    if (!prefetch) return;
+    try {
+      (router as unknown as {
+        prefetch?: (u: string) => void;
+      })?.prefetch?.(href);
+    } catch {
+      // ignore
+    }
+  }, [href, prefetch, router]);
+
+  const onClick = useCallback(() => {
+    track("product_click", {
+      id,
+      name,
+      price,
+      position,
+      href,
+    });
+  }, [id, name, price, position, href]);
+
   return (
-    <Link
-      href={href}
-      prefetch={prefetch}
-      className="group"
-      aria-label={`${it.type === "service" ? "Service" : "Product"}: ${it.name ?? "Listing"}`}
-      title={it.name ?? undefined}
+    <div
+      className={[
+        "group relative overflow-hidden rounded-xl border bg-white shadow-sm transition will-change-transform",
+        "hover:-translate-y-0.5 hover:shadow-md",
+        "border-black/5 dark:border-slate-800 dark:bg-slate-900",
+        className,
+      ].join(" ")}
+      role="article"
+      aria-label={name ?? "Product"}
+      data-product-id={id}
+      data-card="product"
     >
-      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white transition dark:border-white/10 dark:bg-slate-900">
-        {it.featured ? (
-          <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white">
-            Featured
-          </span>
-        ) : null}
+      {/* Owner controls: separate from main link */}
+      {ownerControls && (
+        <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
+          <Link
+            href={hrefEdit}
+            className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:border-slate-700 dark:bg-slate-900"
+            title="Edit product"
+            aria-label="Edit product"
+            prefetch={false}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            Edit
+          </Link>
 
-        <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
+          <div
+            className="contents"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <DeleteListingButton
+              productId={id}
+              label=""
+              className="px-2 py-1"
+              {...(onDeletedAction ? { onDeletedAction } : {})}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Single canonical Link → /product/[id] */}
+      <Link
+        href={href}
+        prefetch={prefetch}
+        onMouseEnter={hoverPrefetch}
+        onFocus={hoverPrefetch}
+        onClick={onClick}
+        ref={anchorRef}
+        title={name ?? "Product"}
+        aria-label={name ? `View product: ${name}` : "View product"}
+        className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#161748]/50"
+      >
+        <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
           <SmartImage
-            src={url}
-            alt={alt}
+            src={src}
+            alt={name || "Product image"}
             fill
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-            sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             priority={priority}
             {...blurProps}
           />
+          {featured && (
+            <span className="absolute left-2 top-2 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
+              Featured
+            </span>
+          )}
         </div>
 
         <div className="p-3">
-          <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-slate-100">{it.name}</h3>
-          <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">{fmtKES(it.price)}</p>
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">
-            {it.type === "service" ? "Service" : "Product"}
-          </p>
+          <div className="line-clamp-1 font-semibold text-gray-900 dark:text-gray-100">
+            {name ?? "Product"}
+          </div>
+          <div className="mt-1 text-[15px] font-bold text-[#161748] dark:text-[#39a0ca]">
+            {priceText}
+          </div>
         </div>
-      </div>
-    </Link>
-  );
-}
-
-/* ---------------------------------- cmp ---------------------------------- */
-
-export default function ProductGrid(props: Props) {
-  const {
-    mode = "products",
-    items,
-    loading = false,
-    error = null,
-    hasMore = false,
-    onLoadMoreAction,
-    pageSize = 24,
-    prefetchCards = true,
-    className = "",
-    emptyText = "No items found. Try adjusting filters.",
-    useSentinel = true,
-    showLoadMoreButton = true,
-  } = props as any;
-
-  const isAll: boolean = mode === "all";
-
-  return (
-    <div className={className}>
-      {/* Grid */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {items.map((p: any, idx: number) =>
-          isAll ? (
-            <MixedTile
-              key={`${(p as MixedItem).type}-${p.id}`}
-              it={p as MixedItem}
-              index={idx}
-              prefetch={prefetchCards}
-            />
-          ) : (
-            <ProductCard
-              key={p.id}
-              {...p}
-              position={idx}
-              prefetch={prefetchCards}
-              // ProductCard already follows the border-first, lighter style after your recent updates
-            />
-          )
-        )}
-
-        {/* Skeletons while loading first page */}
-        {items.length === 0 &&
-          loading &&
-          Array.from({ length: pageSize }).map((_, i) => (
-            <div
-              key={`skeleton-${i}`}
-              className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900"
-            >
-              <div className="h-40 w-full rounded-lg bg-gray-200 dark:bg-slate-800 animate-pulse" />
-              <div className="mt-2 h-4 w-3/4 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
-              <div className="mt-1 h-4 w-1/2 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
-            </div>
-          ))}
-      </div>
-
-      {/* Status / errors / empty */}
-      <div className="mt-4">
-        {error ? (
-          <div className="text-sm text-red-600">{error}</div>
-        ) : !loading && items.length === 0 ? (
-          <div className="text-sm text-gray-600 dark:text-slate-300">{emptyText}</div>
-        ) : null}
-      </div>
-
-      {/* Load more button */}
-      {showLoadMoreButton && hasMore && (
-        <div className="mt-4 flex items-center justify-center">
-          <button
-            onClick={() => onLoadMoreAction && onLoadMoreAction()}
-            disabled={loading}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 disabled:opacity-60"
-          >
-            {loading ? "Loading…" : "Load more"}
-          </button>
-        </div>
-      )}
-
-      {/* Optional sentinel for auto-load (parent controls when to fetch) */}
-      {useSentinel && hasMore && !loading && (
-        <div
-          // Consumers can wrap this div with their own IntersectionObserver if needed
-          data-grid-sentinel
-          className="h-1 w-full"
-        />
-      )}
+      </Link>
     </div>
   );
 }
+
+(ProductCardImpl as unknown as { displayName?: string }).displayName =
+  "ProductCard";
+
+export default memo(ProductCardImpl);

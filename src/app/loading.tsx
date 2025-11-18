@@ -1,4 +1,4 @@
-// src/app/loading.tsx
+﻿// src/app/loading.tsx
 import { HomePageSkeleton } from "@/app/components/Skeletons";
 
 export default function Loading() {
@@ -8,3 +8,4 @@ export default function Loading() {
     </main>
   );
 }
+

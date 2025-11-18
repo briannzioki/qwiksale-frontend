@@ -1,12 +1,17 @@
-// src/app/components/ServiceCard.tsx
 "use client";
 
-import React, { memo, useEffect, useMemo, useRef, useCallback } from "react";
+import React, {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
-import DeleteListingButton from "@/app/components/DeleteListingButton"; // ✅ canonical import
+import DeleteListingButton from "@/app/components/DeleteListingButton";
 
 type Props = {
   id: string;
@@ -30,39 +35,49 @@ type Props = {
 };
 
 const PLACEHOLDER = "/placeholder/default.jpg";
+const FALLBACK_BLUR =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAuMB9l9b3a8AAAAASUVORK5CYII=";
+
+function getBlurDataURL(width = 640, height = 640): string {
+  try {
+    const fn: unknown = shimmerMaybe;
+    if (typeof fn === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyFn = fn as any;
+      return anyFn.length >= 2
+        ? anyFn(width, height)
+        : anyFn({ width, height });
+    }
+  } catch {
+    // ignore
+  }
+  return FALLBACK_BLUR;
+}
 
 function fmtKES(n?: number | null) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "Contact for quote";
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) {
+    return "Contact for quote";
+  }
   try {
-    return `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n)}`;
+    return `KES ${new Intl.NumberFormat("en-KE", {
+      maximumFractionDigits: 0,
+    }).format(n)}`;
   } catch {
     return `KES ${n}`;
   }
 }
+
 function rateSuffix(rt?: Props["rateType"]) {
   if (rt === "hour") return "/hr";
   if (rt === "day") return "/day";
   return "";
 }
 
-const FALLBACK_BLUR =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAuMB9l9b3a8AAAAASUVORK5CYII=";
-
-function getBlurDataURL(width = 640, height = 640): string {
-  try {
-    const fn: any = shimmerMaybe;
-    if (typeof fn === "function") {
-      if (fn.length >= 2) return fn(width, height);
-      return fn({ width, height });
-    }
-  } catch {}
-  return FALLBACK_BLUR;
-}
-
 function track(event: string, payload?: Record<string, unknown>) {
-  console.log("[qs:track]", event, payload);
   if (typeof window !== "undefined" && "CustomEvent" in window) {
-    window.dispatchEvent(new CustomEvent("qs:track", { detail: { event, payload } }));
+    window.dispatchEvent(
+      new CustomEvent("qs:track", { detail: { event, payload } })
+    );
   }
 }
 
@@ -83,8 +98,14 @@ function ServiceCardImpl({
   onDeletedAction,
 }: Props) {
   const router = useRouter();
-  const href = useMemo(() => `/service/${encodeURIComponent(id)}`, [id]);
-  const hrefEdit = editHref ?? `/service/${encodeURIComponent(id)}/edit`; // ← default
+
+  // Canonical service detail URL
+  const href = useMemo(
+    () => `/service/${encodeURIComponent(id)}`,
+    [id]
+  );
+  const hrefEdit =
+    editHref ?? `/service/${encodeURIComponent(id)}/edit`;
 
   const anchorRef = useRef<HTMLAnchorElement | null>(null);
   const seenRef = useRef(false);
@@ -94,24 +115,41 @@ function ServiceCardImpl({
   const priceText = useMemo(() => {
     const base = fmtKES(price);
     const withRate =
-      typeof price === "number" && Number.isFinite(price) && price > 0 ? rateSuffix(rateType) : "";
+      typeof price === "number" &&
+      Number.isFinite(price) &&
+      price > 0
+        ? rateSuffix(rateType)
+        : "";
     return withRate ? `${base} ${withRate}` : base;
   }, [price, rateType]);
 
   const subText = useMemo(
-    () => [serviceArea || "Available", availability].filter(Boolean).join(" • "),
+    () =>
+      [serviceArea || "Available", availability]
+        .filter(Boolean)
+        .join(" • "),
     [serviceArea, availability]
   );
 
+  // Impression tracking
   useEffect(() => {
-    if (!anchorRef.current || seenRef.current || typeof window === "undefined") return;
+    if (!anchorRef.current || seenRef.current || typeof window === "undefined") {
+      return;
+    }
     const el = anchorRef.current;
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting && !seenRef.current) {
             seenRef.current = true;
-            track("service_view", { id, name, price, rateType, position, href });
+            track("service_view", {
+              id,
+              name,
+              price,
+              rateType,
+              position,
+              href,
+            });
             io.disconnect();
             break;
           }
@@ -123,18 +161,23 @@ function ServiceCardImpl({
     return () => io.disconnect();
   }, [id, name, price, rateType, position, href]);
 
+  // Prefetch when near viewport
   useEffect(() => {
     if (!prefetch || !anchorRef.current) return;
-    const el = anchorRef.current;
     let done = false;
+    const el = anchorRef.current;
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting && !done) {
             done = true;
             try {
-              (router as any)?.prefetch?.(href);
-            } catch {}
+              (router as unknown as {
+                prefetch?: (u: string) => void;
+              })?.prefetch?.(href);
+            } catch {
+              // ignore
+            }
             io.disconnect();
             break;
           }
@@ -149,18 +192,33 @@ function ServiceCardImpl({
   const hoverPrefetch = useCallback(() => {
     if (!prefetch) return;
     try {
-      (router as any)?.prefetch?.(href);
-    } catch {}
+      (router as unknown as {
+        prefetch?: (u: string) => void;
+      })?.prefetch?.(href);
+    } catch {
+      // ignore
+    }
   }, [href, prefetch, router]);
 
   const onClick = useCallback(() => {
-    track("service_click", { id, name, price, rateType, position, href });
+    track("service_click", {
+      id,
+      name,
+      price,
+      rateType,
+      position,
+      href,
+    });
   }, [id, name, price, rateType, position, href]);
 
   const src = image || PLACEHOLDER;
-  const blurProps = priority
-    ? { placeholder: "blur" as const, blurDataURL: getBlurDataURL(640, 640) }
-    : { placeholder: "empty" as const };
+  const blurProps =
+    priority
+      ? ({
+          placeholder: "blur" as const,
+          blurDataURL: getBlurDataURL(640, 640),
+        } as const)
+      : ({ placeholder: "empty" as const } as const);
 
   return (
     <div
@@ -170,23 +228,28 @@ function ServiceCardImpl({
         "border-black/5 dark:border-slate-800 dark:bg-slate-900",
         className,
       ].join(" ")}
+      role="article"
+      aria-label={name || "Service"}
       data-service-id={id}
+      data-card="service"
     >
-      {/* Owner actions overlay */}
+      {/* Owner controls overlay, outside main link */}
       {ownerControls && (
         <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
           <Link
             href={hrefEdit}
-            className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:bg-gray-900"
+            className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:border-slate-700 dark:bg-slate-900"
             title="Edit service"
             aria-label="Edit service"
+            prefetch={false}
             onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             Edit
           </Link>
 
-          {/* Stop navigation bubbling when deleting */}
           <div
+            className="contents"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -195,7 +258,6 @@ function ServiceCardImpl({
               e.preventDefault();
               e.stopPropagation();
             }}
-            className="contents"
           >
             <DeleteListingButton
               serviceId={id}
@@ -207,6 +269,7 @@ function ServiceCardImpl({
         </div>
       )}
 
+      {/* Single canonical Link → /service/[id] */}
       <Link
         href={href}
         prefetch={prefetch}
@@ -215,7 +278,8 @@ function ServiceCardImpl({
         onClick={onClick}
         ref={anchorRef}
         title={name}
-        className="block"
+        aria-label={`View service: ${name}`}
+        className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#161748]/50"
       >
         <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
           <SmartImage
@@ -226,7 +290,6 @@ function ServiceCardImpl({
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             priority={priority}
             {...blurProps}
-            unoptimized
           />
           {featured && (
             <span className="absolute left-2 top-2 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
@@ -236,14 +299,24 @@ function ServiceCardImpl({
         </div>
 
         <div className="p-3">
-          <div className="line-clamp-1 font-semibold text-gray-900 dark:text-gray-100">{name}</div>
-          <div className="mt-0.5 text-sm text-gray-600 dark:text-slate-300">{subText}</div>
-          <div className="mt-1 text-[15px] font-bold text-[#161748] dark:text-white">{priceText}</div>
+          <div className="line-clamp-1 font-semibold text-gray-900 dark:text-gray-100">
+            {name}
+          </div>
+          {subText && (
+            <div className="mt-0.5 line-clamp-1 text-xs text-gray-600 dark:text-slate-300">
+              {subText}
+            </div>
+          )}
+          <div className="mt-1 text-[15px] font-bold text-[#161748] dark:text-[#39a0ca]">
+            {priceText}
+          </div>
         </div>
       </Link>
     </div>
   );
 }
 
-(ServiceCardImpl as any).displayName = "ServiceCard";
+(ServiceCardImpl as unknown as { displayName?: string }).displayName =
+  "ServiceCard";
+
 export default memo(ServiceCardImpl);

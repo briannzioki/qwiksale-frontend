@@ -1,5 +1,4 @@
 "use client";
-
 /**
  * Lightweight cookie getter with no RegExp or TS narrowing issues.
  * Safely decodes value and returns null when missing.

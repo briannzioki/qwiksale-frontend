@@ -1,5 +1,5 @@
-// src/app/report/page.tsx
 "use client";
+// src/app/report/page.tsx
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -29,7 +29,7 @@ function ReportPageInner() {
 
   const abortRef = useRef<AbortController | null>(null);
 
-  // Pre-fill current URL
+  // Pre-fill current URL (client-only)
   useEffect(() => {
     if (typeof window !== "undefined") {
       setUrl(String(window.location.href).slice(0, MAX_URL_LEN));

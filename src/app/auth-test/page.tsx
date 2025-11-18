@@ -1,16 +1,21 @@
-// src/app/auth-test/page.tsx
 "use client";
+// src/app/auth-test/page.tsx
 
 import type { Session } from "next-auth";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
 /**
  * Debug page to quickly verify NextAuth session and /api/me.
- * - Uses next-auth signIn/signOut programmatic calls (no full-page jumps)
- * - Copies values to clipboard with feedback
+ * - Uses next-auth/react (client-safe)
  * - Emits tiny analytics events for local debugging
  */
 
@@ -19,7 +24,12 @@ type MeResponse =
   | { authenticated: false }
   | {
       authenticated: true;
-      user: { id: string; email?: string | null; name?: string | null; subscription?: Tier };
+      user: {
+        id: string;
+        email?: string | null;
+        name?: string | null;
+        subscription?: Tier;
+      };
     };
 
 /* --------------------------- tiny analytics utils --------------------------- */
@@ -45,9 +55,9 @@ export default function AuthTest() {
   // Safer typed access to custom fields on session.user
   const u = (session?.user ?? null) as (Session["user"] & {
     id?: string;
-    subscription?: Tier;
+    subscription?: Tier | null;
   }) | null;
-  const sub = u?.subscription;
+  const sub = u?.subscription ?? null;
   const uid = u?.id;
 
   const isAuthed = status === "authenticated";
@@ -56,7 +66,9 @@ export default function AuthTest() {
     const el = liveRef.current;
     if (!el) return;
     el.textContent = msg;
-    const t = setTimeout(() => (el.textContent = ""), 1200);
+    const t = setTimeout(() => {
+      el.textContent = "";
+    }, 1200);
     return () => clearTimeout(t);
   }, []);
 
@@ -82,17 +94,20 @@ export default function AuthTest() {
     }
   }, [announce]);
 
-  const copy = useCallback(async (text?: string) => {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success("Copied");
-      announce("Copied");
-    } catch {
-      toast.error("Copy failed");
-      announce("Copy failed");
-    }
-  }, [announce]);
+  const copy = useCallback(
+    async (text?: string) => {
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.success("Copied");
+        announce("Copied");
+      } catch {
+        toast.error("Copy failed");
+        announce("Copy failed");
+      }
+    },
+    [announce],
+  );
 
   // Pretty JSON of the session for quick visual checks
   const sessionJson = useMemo(() => {
@@ -102,12 +117,12 @@ export default function AuthTest() {
         id: u?.id ?? null,
         email: u?.email ?? null,
         name: u?.name ?? null,
-        subscription: u?.subscription ?? null,
+        subscription: sub ?? null,
       },
       expires: (session as any)?.expires ?? null,
     };
     return JSON.stringify(safe, null, 2);
-  }, [session, u?.id, u?.email, u?.name, u?.subscription]);
+  }, [session, u?.id, u?.email, u?.name, sub]);
 
   // auto-fetch /api/me when authenticated (optional)
   useEffect(() => {
@@ -125,7 +140,10 @@ export default function AuthTest() {
       {/* Header */}
       <div
         className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]"
-        style={{ backgroundImage: "linear-gradient(90deg, #161748 0%, #478559 50%, #39a0ca 100%)" }}
+        style={{
+          backgroundImage:
+            "linear-gradient(90deg, #161748 0%, #478559 50%, #39a0ca 100%)",
+        }}
       >
         <h1 className="text-2xl font-extrabold">Auth Debug</h1>
         <p className="text-white/90">
@@ -140,18 +158,23 @@ export default function AuthTest() {
           <div className="text-sm">
             <div>
               <span className="font-semibold">Status:</span>{" "}
-              <span className={isAuthed ? "text-emerald-700" : "text-rose-700"}>
+              <span
+                className={isAuthed ? "text-emerald-700" : "text-rose-700"}
+              >
                 {status}
               </span>
             </div>
             {isAuthed ? (
               <>
                 <div>
-                  <span className="font-semibold">Email:</span> {u?.email || "—"}
+                  <span className="font-semibold">Email:</span>{" "}
+                  {u?.email || "—"}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">User ID:</span>
-                  <code className="px-2 py-0.5 rounded bg-gray-100">{uid || "—"}</code>
+                  <code className="px-2 py-0.5 rounded bg-gray-100">
+                    {uid || "—"}
+                  </code>
                   {uid && (
                     <button
                       onClick={() => copy(uid)}
@@ -178,7 +201,7 @@ export default function AuthTest() {
               <button
                 onClick={() => {
                   track("auth_debug_signin_click");
-                  // If you have multiple providers, pass { callbackUrl } only
+                  // v5: signIn still accepts callbackUrl
                   signIn(undefined, { callbackUrl: "/auth-test" });
                 }}
                 className="rounded-lg bg-black text-white px-4 py-2 text-sm"
@@ -189,7 +212,8 @@ export default function AuthTest() {
               <button
                 onClick={() => {
                   track("auth_debug_signout_click");
-                  signOut({ callbackUrl: "/auth-test" });
+                  // v5: use redirectTo (NOT callbackUrl)
+                  signOut({ redirectTo: "/auth-test" });
                 }}
                 className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
               >
@@ -240,7 +264,7 @@ export default function AuthTest() {
           </button>
         </div>
         <pre className="text-xs bg-gray-50 rounded p-3 overflow-x-auto">
-{sessionJson}
+          {sessionJson}
         </pre>
       </div>
 
@@ -256,7 +280,7 @@ export default function AuthTest() {
           </button>
         </div>
         <pre className="text-xs bg-gray-50 rounded p-3 overflow-x-auto">
-{JSON.stringify(me ?? { hint: "Click Ping /api/me" }, null, 2)}
+          {JSON.stringify(me ?? { hint: "Click Ping /api/me" }, null, 2)}
         </pre>
       </div>
     </div>

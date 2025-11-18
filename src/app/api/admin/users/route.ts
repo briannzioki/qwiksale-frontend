@@ -5,16 +5,16 @@ export const revalidate = 0;
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { assertAdmin } from "../_lib/guard";
-import { withApiLogging } from "@/app/lib/api-logging";
+import { withApiLogging, type RequestLog } from "@/app/lib/api-logging";
 
-type Out = {
+type AdminUser = {
   id: string;
   email: string | null;
   name: string | null;
   username: string | null;
   role: string | null;
   createdAt: string | null;
-}[];
+};
 
 function noStoreJson(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
@@ -25,67 +25,70 @@ function noStoreJson(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-function toInt(v: string | null, def: number, min: number, max: number) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return def;
-  return Math.max(min, Math.min(max, Math.trunc(n)));
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
 }
+
+function toInt(raw: string | null, def: number, min: number, max: number) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return def;
+  return clamp(Math.trunc(n), min, max);
+}
+
+const ALLOWED_ROLES = new Set(["USER", "MODERATOR", "ADMIN", "SUPERADMIN"]);
 
 export async function GET(req: NextRequest) {
   const denied = await assertAdmin();
   if (denied) return denied;
 
-  return withApiLogging(req, "/api/admin/users", async (log) => {
+  return withApiLogging(req, "/api/admin/users", async (log: RequestLog) => {
     try {
       const url = new URL(req.url);
-
       const q = (url.searchParams.get("q") || "").trim();
-      const role = (url.searchParams.get("role") || "").trim().toUpperCase(); // "ADMIN" | "USER" | "SUPERADMIN" | ""
-      const limit = toInt(url.searchParams.get("limit"), 100, 1, 500);
-      const page = toInt(url.searchParams.get("page"), 1, 1, 1000);
+      const roleRaw = (url.searchParams.get("role") || "").trim().toUpperCase();
+      const limit = toInt(url.searchParams.get("limit"), 200, 1, 500);
+      const page = toInt(url.searchParams.get("page"), 1, 1, 5000);
       const skip = (page - 1) * limit;
 
       const where: any = {};
       if (q) {
-        where.OR = [
-          { email: { contains: q, mode: "insensitive" } },
-          { name: { contains: q, mode: "insensitive" } },
-          { username: { contains: q, mode: "insensitive" } },
-          { id: { contains: q } },
-        ];
+        const like = { contains: q, mode: "insensitive" } as const;
+        where.OR = [{ email: like }, { name: like }, { username: like }];
+        // exact id match (optional — won’t 500 on non-uuid)
+        if (q.length >= 8) where.OR.push({ id: q });
       }
-      if (role && ["USER", "ADMIN", "SUPERADMIN", "MODERATOR"].includes(role)) {
-        where.role = role;
+      if (ALLOWED_ROLES.has(roleRaw)) {
+        where.role = roleRaw;
       }
 
-      const [users, total] = await Promise.all([
+      const [total, rows] = await Promise.all([
+        prisma.user.count({ where }).catch(() => 0),
         prisma.user.findMany({
           where,
-          take: limit,
-          skip,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip,
+          take: limit,
           select: {
             id: true,
             email: true,
             name: true,
-            username: true as any,
-            role: true as any,
+            username: true,
+            role: true,
             createdAt: true,
           },
         }),
-        prisma.user.count({ where }).catch(() => 0),
       ]);
 
-      const out: Out = (users as any[]).map((u) => ({
+      const out: AdminUser[] = rows.map((u) => ({
         id: String(u.id),
         email: u.email ?? null,
         name: u.name ?? null,
         username: u.username ?? null,
         role: u.role ?? null,
-        createdAt: u.createdAt instanceof Date ? u.createdAt.toISOString() : u.createdAt ? String(u.createdAt) : null,
+        createdAt: u.createdAt instanceof Date ? u.createdAt.toISOString() : (u.createdAt as any) ?? null,
       }));
 
-      log.info({ count: out.length, page, limit, total, role: role || "any" }, "admin_users_ok");
+      log.info({ returned: out.length, total, page, limit, q: q || null, role: where.role ?? null }, "admin_users_ok");
 
       const res = noStoreJson(out);
       res.headers.set("X-Total-Count", String(total));
@@ -93,7 +96,7 @@ export async function GET(req: NextRequest) {
       res.headers.set("X-Per-Page", String(limit));
       return res;
     } catch (err) {
-      log.error({ err }, "admin_users_error");
+      console.error("[/api/admin/users GET] error:", err);
       return noStoreJson({ error: "Server error" }, { status: 500 });
     }
   });

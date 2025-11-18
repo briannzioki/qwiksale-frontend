@@ -1,12 +1,28 @@
-// scripts/backfill.cjs
-/* Backfills:
-   1) Product/Service.publishedAt = createdAt (where null)
-   2) SupportTicket.contentHash (if the column exists) without requiring pgcrypto
-*/
-const { PrismaClient } = require("@prisma/client");
+// scripts/backfill.js
+// Backfills:
+//  1) Product/Service.publishedAt = createdAt (where null)
+//  2) SupportTicket.contentHash (if the column exists) without requiring pgcrypto
+
 const crypto = require("node:crypto");
 
-const prisma = new PrismaClient();
+function getPrisma() {
+  try {
+    const db = require("../dist/lib/db.js");
+    if (db.prisma) return db.prisma;
+    if (db.default) return db.default;
+  } catch {}
+
+  try {
+    const db = require("../src/lib/db.ts");
+    if (db.prisma) return db.prisma;
+    if (db.default) return db.default;
+  } catch {}
+
+  const { PrismaClient } = require("@prisma/client");
+  return new PrismaClient();
+}
+
+const prisma = getPrisma();
 const BATCH = 1000;
 
 function hashTicket(message, email, reporterId) {
@@ -17,16 +33,15 @@ function hashTicket(message, email, reporterId) {
 }
 
 async function ensurePublishedAt() {
-  // Raw SQL is fastest and doesn’t care about per-row values
   const prod = await prisma.$executeRawUnsafe(
     `UPDATE "Product"
-     SET "publishedAt" = COALESCE("publishedAt","createdAt")
-     WHERE "publishedAt" IS NULL`
+        SET "publishedAt" = COALESCE("publishedAt","createdAt")
+      WHERE "publishedAt" IS NULL`
   );
   const svc = await prisma.$executeRawUnsafe(
     `UPDATE "Service"
-     SET "publishedAt" = COALESCE("publishedAt","createdAt")
-     WHERE "publishedAt" IS NULL`
+        SET "publishedAt" = COALESCE("publishedAt","createdAt")
+      WHERE "publishedAt" IS NULL`
   );
   console.log(`[Product] publishedAt updated: ${Number(prod) || 0}`);
   console.log(`[Service] publishedAt updated: ${Number(svc) || 0}`);
@@ -49,15 +64,13 @@ async function columnExists(table, column) {
 async function backfillContentHash() {
   const hasCol = await columnExists("SupportTicket", "contentHash");
   if (!hasCol) {
-    console.log(
-      "ℹ️  Skipping contentHash backfill: column not found. Add it to your schema & migrate if you need it."
-    );
+    console.log("ℹ️  Skipping contentHash backfill: column not found.");
     return;
   }
 
   let total = 0;
-  // Use raw SELECT so we can filter by a column that might not be in Prisma schema yet
-  for (;;) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
     const rows = await prisma.$queryRawUnsafe(
       `SELECT "id","message","email","reporterId"
          FROM "SupportTicket"
@@ -69,7 +82,6 @@ async function backfillContentHash() {
 
     if (!rows.length) break;
 
-    // Update in a transaction batch
     await prisma.$transaction(
       rows.map((r) => {
         const digest = hashTicket(r.message, r.email, r.reporterId);

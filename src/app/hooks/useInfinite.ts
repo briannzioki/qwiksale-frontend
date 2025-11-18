@@ -1,5 +1,5 @@
-// src/app/hooks/useInfinite.ts
 "use client";
+// src/app/hooks/useInfinite.ts
 
 import { useEffect, useRef, useState } from "react";
 

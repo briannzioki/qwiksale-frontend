@@ -20,31 +20,28 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/* ----------------------------------------------------------------
- *  Model compat
- * ---------------------------------------------------------------- */
+/* -------------------------- Model compat -------------------------- */
 function getServiceModel() {
   const any = prisma as any;
-  const candidate =
-    any.service ??
-    any.services ??
-    any.Service ??
-    any.Services ??
-    null;
+  const candidate = any.service ?? any.services ?? any.Service ?? any.Services ?? null;
   return candidate && typeof candidate.findUnique === "function" ? candidate : null;
 }
 
-/* ----------------------------------------------------------------
- *  Helpers
- * ---------------------------------------------------------------- */
+/* ------------------------------ Helpers ------------------------------ */
 const PLACEHOLDER = "/placeholder/default.jpg";
-type Img = { id: string; url: string; isCover?: boolean; sort?: number | undefined };
+
+type Img = {
+  id: string;
+  url: string;
+  isCover?: boolean;
+  sort?: number | undefined;
+};
 
 function toUrlish(v: any): string {
   return String(
     v?.url ??
-      v?.secure_url ?? // ✅ handle Cloudinary default key
-      v?.secureUrl ??  // ✅ handle camelCase variant
+      v?.secure_url ??
+      v?.secureUrl ??
       v?.src ??
       v?.location ??
       v?.path ??
@@ -61,14 +58,7 @@ function normalizeImagesFromRow(p: any): Img[] {
     if (!url || seen.has(url)) return;
     seen.add(url);
 
-    const id = String(
-      x?.id ??
-        x?.imageId ??
-        x?.publicId ??
-        x?.key ??
-        url ??
-        `img-${i}`
-    );
+    const id = String(x?.id ?? x?.imageId ?? x?.publicId ?? x?.key ?? url ?? `img-${i}`);
 
     const isCover =
       Boolean(x?.isCover) ||
@@ -78,21 +68,28 @@ function normalizeImagesFromRow(p: any): Img[] {
       Boolean(typeof p?.image === "string" && url === p.image);
 
     const sort =
-      Number.isFinite(x?.sortOrder) ? Number(x.sortOrder) :
-      Number.isFinite(x?.sort) ? Number(x.sort) :
-      Number.isFinite(x?.position) ? Number(x.position) :
-      i;
+      Number.isFinite(x?.sortOrder)
+        ? Number(x.sortOrder)
+        : Number.isFinite(x?.sort)
+        ? Number(x.sort)
+        : Number.isFinite(x?.position)
+        ? Number(x.position)
+        : i;
 
     out.push({ id, url, isCover, sort });
   };
 
-  const arrays =
-    Array.isArray(p?.images) ? p.images :
-    Array.isArray(p?.photos) ? p.photos :
-    Array.isArray(p?.media) ? p.media :
-    Array.isArray(p?.gallery) ? p.gallery :
-    Array.isArray(p?.imageUrls) ? p.imageUrls :
-    [];
+  const arrays = Array.isArray(p?.images)
+    ? p.images
+    : Array.isArray(p?.photos)
+    ? p.photos
+    : Array.isArray(p?.media)
+    ? p.media
+    : Array.isArray(p?.gallery)
+    ? p.gallery
+    : Array.isArray(p?.imageUrls)
+    ? p.imageUrls
+    : [];
 
   arrays.forEach((x: any, i: number) => push(x, i));
 
@@ -117,16 +114,11 @@ function normalizeImagesFromRow(p: any): Img[] {
     .slice(0, 50);
 }
 
-/** single service-image model, QUIET via serviceId */
+/** single service-image model, quiet via serviceId */
 function getServiceImageModel() {
   const any = prisma as any;
-  const candidates = [
-    any.serviceImage,
-    any.serviceImages,
-    any.ServiceImage,
-    any.ServiceImages,
-  ].filter(Boolean);
-  return candidates.find((m) => typeof m?.findMany === "function") || null;
+  const candidates = [any.serviceImage, any.serviceImages, any.ServiceImage, any.ServiceImages].filter(Boolean);
+  return candidates.find((m: any) => typeof m?.findMany === "function") || null;
 }
 
 async function fetchRelatedImageRows(serviceId: string): Promise<any[]> {
@@ -158,11 +150,15 @@ function rowsToImgs(rows: any[], parent: any): Img[] {
       Boolean(typeof parent?.coverImageUrl === "string" && url === parent.coverImageUrl);
 
     const sort =
-      Number.isFinite(x?.sortOrder) ? Number(x.sortOrder) :
-      Number.isFinite(x?.sort) ? Number(x.sort) :
-      Number.isFinite(x?.position) ? Number(x.position) :
-      Number.isFinite(x?.order) ? Number(x.order) :
-      i;
+      Number.isFinite(x?.sortOrder)
+        ? Number(x.sortOrder)
+        : Number.isFinite(x?.sort)
+        ? Number(x.sort)
+        : Number.isFinite(x?.position)
+        ? Number(x.position)
+        : Number.isFinite(x?.order)
+        ? Number(x.order)
+        : i;
 
     out.push({ id, url, isCover, sort });
   }
@@ -171,12 +167,14 @@ function rowsToImgs(rows: any[], parent: any): Img[] {
 
 function mergeImgs(a: Img[], b: Img[], parent: any): Img[] {
   const byUrl = new Map<string, Img>();
+
   const add = (img: Img) => {
     const key = img.url.trim();
     if (!key) return;
     const prev = byUrl.get(key);
-    if (!prev) byUrl.set(key, { ...img });
-    else {
+    if (!prev) {
+      byUrl.set(key, { ...img });
+    } else {
       byUrl.set(key, {
         ...prev,
         isCover: !!(prev.isCover || img.isCover),
@@ -184,6 +182,7 @@ function mergeImgs(a: Img[], b: Img[], parent: any): Img[] {
       });
     }
   };
+
   a.forEach(add);
   b.forEach(add);
 
@@ -201,9 +200,7 @@ function mergeImgs(a: Img[], b: Img[], parent: any): Img[] {
     }
   }
 
-  list = list
-    .sort((x, y) => (x.sort ?? 0) - (y.sort ?? 0) || x.id.localeCompare(y.id))
-    .slice(0, 50);
+  list = list.sort((x, y) => (x.sort ?? 0) - (y.sort ?? 0) || x.id.localeCompare(y.id)).slice(0, 50);
 
   return list;
 }
@@ -211,7 +208,7 @@ function mergeImgs(a: Img[], b: Img[], parent: any): Img[] {
 function briefStatus(p: any): string {
   const s = String(p?.status ?? "").toUpperCase();
   if (["ACTIVE", "DRAFT", "PAUSED", "ARCHIVED"].includes(s)) return s;
-  if (p?.published === true || p?.isActive === true) return "ACTIVE";
+  if (p?.published === true) return "ACTIVE";
   if (p?.published === false) return "DRAFT";
   return "—";
 }
@@ -223,9 +220,7 @@ function fmtDate(d?: Date | string | null) {
   return dd.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-/* ----------------------------------------------------------------
- *  Server Action
- * ---------------------------------------------------------------- */
+/* ---------------------------- Server Action ---------------------------- */
 async function saveQuickAction(formData: FormData) {
   "use server";
   const id = String(formData.get("id") || "");
@@ -239,20 +234,17 @@ async function saveQuickAction(formData: FormData) {
     try {
       await Service.update({
         where: { id },
-        data: {
-          name,
-          title: name, // safe even if 'title' missing (wrapped in try/catch)
-        },
+        data: { name, title: name },
       });
-    } catch {}
+    } catch {
+      // ignore
+    }
   }
 
   revalidatePath(`/service/${id}/edit`);
 }
 
-/* ----------------------------------------------------------------
- *  Page
- * ---------------------------------------------------------------- */
+/* -------------------------------- Page -------------------------------- */
 export default async function EditServicePage({
   params,
 }: {
@@ -264,8 +256,11 @@ export default async function EditServicePage({
   let session: any = null;
   try {
     session = await auth();
-  } catch {}
+  } catch {
+    session = null;
+  }
   const userId = session?.user?.id as string | undefined;
+  const isAdmin = Boolean(session?.user?.isAdmin);
   if (!userId) notFound();
 
   const Service = getServiceModel();
@@ -278,9 +273,10 @@ export default async function EditServicePage({
     service = null;
   }
   if (!service) notFound();
-  if (service.sellerId !== userId) notFound();
 
-  // QUIET relation fetch
+  const isOwner = Boolean(userId && service.sellerId === userId);
+  if (!(isOwner || isAdmin)) notFound();
+
   let relationRows: any[] = [];
   try {
     relationRows = await fetchRelatedImageRows(id);
@@ -288,12 +284,11 @@ export default async function EditServicePage({
     relationRows = [];
   }
 
-  const fromRow = normalizeImagesFromRow(service);
-  const fromRelations = rowsToImgs(relationRows, service);
-  const images: Img[] = mergeImgs(fromRow, fromRelations, service);
+  const images = mergeImgs(normalizeImagesFromRow(service), rowsToImgs(relationRows, service), service);
 
   const lastUpdated = service?.updatedAt ?? service?.createdAt ?? null;
   const serviceName = service?.name ?? service?.title ?? "Service";
+  const canDelete = isOwner || isAdmin;
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6">
@@ -319,15 +314,19 @@ export default async function EditServicePage({
             <Link href="/dashboard" prefetch={false} className="btn-outline" aria-label="Back to dashboard">
               Back
             </Link>
-            <Link href={`/service/${service.id}`} prefetch={false} className="btn-outline" aria-label="View live service">
+            <Link
+              href={`/service/${service.id}`}
+              prefetch={false}
+              className="btn-outline"
+              aria-label="View live service"
+            >
               View live
             </Link>
-            <DeleteListingButton serviceId={service.id} label="Delete" className="btn-danger" />
+            {canDelete && <DeleteListingButton serviceId={service.id} label="Delete" className="btn-danger" />}
           </div>
         }
       />
 
-      {/* Media Manager (staged; no auto-persist) */}
       <section className="mt-6 card p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Photos</h2>
@@ -339,17 +338,17 @@ export default async function EditServicePage({
           serviceId={service.id}
           initial={
             images.length
-              ? images.map(img => ({
+              ? images.map((img) => ({
                   ...img,
                   isCover: !!img.isCover,
                   sort: typeof img.sort === "number" ? img.sort : 0,
                 }))
               : [{ id: "placeholder", url: PLACEHOLDER, isCover: true, sort: 0 }]
           }
+          max={6}
         />
       </section>
 
-      {/* Full editor (commit media first via CommitBinder; ensure it doesn’t send/overwrite media). */}
       <section className="mt-6 card p-5">
         <CommitBinder serviceId={service.id} />
         <div id="sell-form-host">

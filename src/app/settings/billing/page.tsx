@@ -1,8 +1,8 @@
-// src/app/settings/billing/page.tsx
 "use client";
+// src/app/settings/billing/page.tsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { useSession, signIn } from "next-auth/react";
 import toast from "react-hot-toast";
 
 /* ------------------------------------------------------------------ */
@@ -142,7 +142,7 @@ export default function BillingPage() {
         setStatus(`Subscription upgraded to ${targetTier}. Enjoy your perks!`);
       } else {
         setStatus(
-          "Payment is processing. If your tier doesn’t update shortly, refresh this page."
+          "Payment is processing. If your tier doesn’t update shortly, refresh this page.",
         );
       }
     } catch (err: any) {
@@ -166,9 +166,12 @@ export default function BillingPage() {
     <div className="container-page py-8">
       <div className="max-w-3xl mx-auto space-y-6">
         <header className="space-y-1">
-          <h1 className="text-2xl font-semibold text-balance">Upgrade subscription</h1>
+          <h1 className="text-2xl font-semibold text-balance">
+            Upgrade subscription
+          </h1>
           <p className="text-sm text-gray-600 dark:text-slate-400">
-            Secure M-Pesa STK push. Choose a tier below and confirm on your phone.
+            Secure M-Pesa STK push. Choose a tier below and confirm on your
+            phone.
           </p>
         </header>
 
@@ -183,20 +186,25 @@ export default function BillingPage() {
                 </div>
                 {currentTier && (
                   <div className="mt-0.5">
-                    Current tier: <span className="font-medium">{currentTier}</span>
+                    Current tier:{" "}
+                    <span className="font-medium">{currentTier}</span>
                   </div>
                 )}
               </>
             ) : sessionStatus === "loading" ? (
               <div className="skeleton h-4 w-56 rounded" />
             ) : (
-              <div className="text-gray-600 dark:text-slate-400">Not signed in.</div>
+              <div className="text-gray-600 dark:text-slate-400">
+                Not signed in.
+              </div>
             )}
           </div>
 
           {!signedIn && (
             <button
-              onClick={() => signIn(undefined, { callbackUrl: "/settings/billing" })}
+              onClick={() =>
+                signIn(undefined, { callbackUrl: "/settings/billing" })
+              }
               className="btn-gradient-primary"
             >
               Sign in
@@ -244,7 +252,9 @@ export default function BillingPage() {
                 autoComplete="tel"
                 className="input"
                 required
-                aria-invalid={phone ? !validMsisdn(normalizeMsisdn(phone)) : undefined}
+                aria-invalid={
+                  phone ? !validMsisdn(normalizeMsisdn(phone)) : undefined
+                }
               />
               <div className="text-xs text-gray-500 dark:text-slate-400">
                 We’ll send an STK push to this number. Use{" "}
@@ -303,8 +313,8 @@ export default function BillingPage() {
             </button>
 
             <p className="text-xs text-gray-500 dark:text-slate-400">
-              You’ll be redirected only if sign-in is required. Payments are handled
-              securely by Safaricom (Daraja).
+              You’ll be redirected only if sign-in is required. Payments are
+              handled securely by Safaricom (Daraja).
             </p>
           </div>
 
@@ -313,22 +323,26 @@ export default function BillingPage() {
             <div className="mt-2 rounded-lg bg-gray-50 dark:bg-slate-800/60 p-3 text-xs text-gray-600 dark:text-slate-300">
               <ul className="list-disc ml-5 space-y-1">
                 <li>
-                  We send <span className="font-mono">CustomerPayBillOnline</span> STK to
-                  your number.
+                  We send{" "}
+                  <span className="font-mono">CustomerPayBillOnline</span> STK
+                  to your number.
                 </li>
                 <li>
-                  On success, our callback updates your subscription automatically.
+                  On success, our callback updates your subscription
+                  automatically.
                 </li>
                 <li>
-                  If it doesn’t update immediately, refresh — callbacks can take a few
-                  seconds.
+                  If it doesn’t update immediately, refresh — callbacks can
+                  take a few seconds.
                 </li>
               </ul>
             </div>
           )}
 
           {status && (
-            <div className="text-sm text-gray-700 dark:text-slate-200">{status}</div>
+            <div className="text-sm text-gray-700 dark:text-slate-200">
+              {status}
+            </div>
           )}
           {error && <div className="text-sm text-red-600">{error}</div>}
         </form>

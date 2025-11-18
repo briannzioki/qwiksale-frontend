@@ -1,10 +1,32 @@
-/* Backfills:
+/* scripts/backfill.cjs
+   Backfills:
    1) Product/Service.publishedAt = createdAt (where null)
-   2) SupportTicket.contentHash (if the column exists) */
-const { PrismaClient } = require("@prisma/client");
+   2) SupportTicket.contentHash (if the column exists)
+*/
+
 const crypto = require("node:crypto");
 
-const prisma = new PrismaClient();
+function getPrisma() {
+  // Prefer built central client
+  try {
+    const db = require("../dist/lib/db.js");
+    if (db.prisma) return db.prisma;
+    if (db.default) return db.default;
+  } catch {}
+
+  // Fall back to TS source if running via ts-node/tsx
+  try {
+    const db = require("../src/lib/db.ts");
+    if (db.prisma) return db.prisma;
+    if (db.default) return db.default;
+  } catch {}
+
+  // Last resort: direct PrismaClient (still valid for scripts)
+  const { PrismaClient } = require("@prisma/client");
+  return new PrismaClient();
+}
+
+const prisma = getPrisma();
 const BATCH = 1000;
 
 function hashTicket(message, email, reporterId) {
@@ -49,7 +71,8 @@ async function backfillContentHash() {
   }
 
   let total = 0;
-  for (;;) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
     const rows = await prisma.$queryRaw`
       SELECT "id","message","email","reporterId"
         FROM "SupportTicket"
@@ -85,10 +108,10 @@ async function main() {
 main()
   .then(async () => {
     await prisma.$disconnect();
-    console.log(" Backfill complete.");
+    console.log("Backfill complete.");
   })
   .catch(async (e) => {
-    console.error(" Backfill failed:", e);
+    console.error("Backfill failed:", e);
     await prisma.$disconnect();
     process.exit(1);
   });

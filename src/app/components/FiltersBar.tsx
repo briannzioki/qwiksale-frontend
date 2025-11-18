@@ -1,5 +1,5 @@
-// src/app/components/FiltersBar.tsx
 "use client";
+// src/app/components/FiltersBar.tsx
 
 import {
   useCallback,
@@ -29,7 +29,7 @@ export type Filters = {
 
   /** Always visible */
   sort: "newest" | "price_asc" | "price_desc" | "featured";
-  verifiedOnly?: boolean;
+  verifiedOnly?: boolean; // maps to `featured` query param name
 };
 
 type Props = {
@@ -84,7 +84,7 @@ export default function FiltersBar({
         byId.focus();
         return;
       }
-      const byName = document.querySelector<HTMLElement>(`[name="${idSearch}"]`);
+      const byName = document.querySelector<HTMLElement>(`[name="q"]`);
       byName?.focus();
     }
     function onKey(e: KeyboardEvent) {
@@ -285,6 +285,7 @@ export default function FiltersBar({
       role="region"
       aria-label="Listing filters"
       aria-live="polite"
+      data-filter-bar="true"
     >
       {/* Mobile quick actions */}
       <div className="mb-2 flex items-center gap-2 md:hidden">
@@ -305,26 +306,30 @@ export default function FiltersBar({
         />
       </div>
 
-      {/* Row 1: Search / Category / Subcategory + Sort + (optional) Verified */}
+      {/* Row 1: Search / Category / Subcategory + Sort + (optional) Featured */}
       <div className="grid grid-cols-1 gap-2 md:grid-cols-12 md:items-end">
         {/* Search */}
         <div className="md:col-span-4 flex gap-2">
-          <label htmlFor={idSearch} className="sr-only">
-            Search
+          {/* Label: only attach htmlFor when we control an input id */}
+          <label
+            className="sr-only"
+            {...(!suggestEndpoint ? { htmlFor: idSearch } : {})}
+          >
+            Keywords
           </label>
 
           {/* If suggestEndpoint is provided, render SuggestInput; otherwise fallback to a plain input */}
           {suggestEndpoint ? (
             <div className="w-full">
               <SuggestInput
-                name={idSearch}
-                ariaLabel="Search"
+                name="q"                         // ← expected name
+                ariaLabel="Keywords"
                 endpoint={suggestEndpoint}
                 value={qLocal}
                 onChangeAction={async (next) => {
                   setQLocal(next);
                 }}
-                placeholder={placeholder}
+                placeholder="Search by name, brand, category…"
                 disabled={disabled}
                 inputClassName={inputBase}
               />
@@ -332,13 +337,14 @@ export default function FiltersBar({
           ) : (
             <input
               id={idSearch}
+              name="q"                          // ← expected name
               type="text"
               value={qLocal}
               onChange={(e) => setQLocal(e.target.value)}
               onKeyDown={onSearchKeyDown}
               inputMode="search"
               enterKeyHint="search"
-              placeholder={placeholder}
+              placeholder="Search by name, brand, category…"
               disabled={disabled}
               autoCorrect="on"
               spellCheck
@@ -347,6 +353,7 @@ export default function FiltersBar({
           )}
 
           <button
+            type="button"
             onClick={() => void applyNow()}
             disabled={disabled}
             className={buttonBase}
@@ -355,6 +362,7 @@ export default function FiltersBar({
             Search
           </button>
           <button
+            type="button"
             onClick={() => {
               setQLocal("");
               update({ query: "" }, "query");
@@ -374,6 +382,7 @@ export default function FiltersBar({
           </label>
           <input
             id={idCategory}
+            name="category"                   // ← expected name
             type="text"
             value={value.category ?? ""}
             onChange={(e) => update({ category: e.target.value }, "category")}
@@ -390,6 +399,7 @@ export default function FiltersBar({
           </label>
           <input
             id={idSubcategory}
+            name="subcategory"               // ← expected name
             type="text"
             value={value.subcategory ?? ""}
             onChange={(e) => update({ subcategory: e.target.value }, "subcategory")}
@@ -406,6 +416,7 @@ export default function FiltersBar({
           </label>
           <select
             id={idSort}
+            name="sort"                       // ← expected name
             ref={sortRef}
             value={sortValue}
             onChange={(e) => update({ sort: e.target.value as Filters["sort"] }, "sort")}
@@ -420,7 +431,7 @@ export default function FiltersBar({
           </select>
         </div>
 
-        {/* Verified toggle (optional) */}
+        {/* Featured toggle (optional, maps to `featured` query param) */}
         {showVerifiedToggle && (
           <div className="md:col-span-2 md:col-start-11 md:row-start-1 md:justify-self-end hidden md:block">
             <label
@@ -436,6 +447,7 @@ export default function FiltersBar({
             >
               <input
                 id={idVerified}
+                name="featured"               // ← expected name
                 type="checkbox"
                 checked={!!value.verifiedOnly}
                 onChange={(e) => update({ verifiedOnly: e.target.checked }, "verifiedOnly")}
@@ -482,6 +494,7 @@ export default function FiltersBar({
               </label>
               <input
                 id={idBrand}
+                name="brand"                   // ← expected name
                 type="text"
                 value={value.brand ?? ""}
                 onChange={(e) => update({ brand: e.target.value }, "brand")}
@@ -498,6 +511,7 @@ export default function FiltersBar({
               </label>
               <select
                 id={idCond}
+                name="condition"               // ← expected name
                 value={conditionValue}
                 onChange={(e) =>
                   update({ condition: e.target.value as Filters["condition"] }, "condition")
@@ -519,6 +533,7 @@ export default function FiltersBar({
               </label>
               <NumberInputNoWheel
                 id={idMin}
+                name="minPrice"                // ← expected name
                 min={0}
                 step={1}
                 inputMode="numeric"
@@ -541,6 +556,7 @@ export default function FiltersBar({
               </label>
               <NumberInputNoWheel
                 id={idMax}
+                name="maxPrice"                // ← expected name
                 min={0}
                 step={1}
                 inputMode="numeric"
@@ -567,10 +583,10 @@ export default function FiltersBar({
 
       {/* Footer actions */}
       <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={() => void applyNow()} disabled={disabled} className={buttonBase} title="Apply">
+        <button type="button" onClick={() => void applyNow()} disabled={disabled} className={buttonBase} title="Apply">
           Apply filters
         </button>
-        <button onClick={() => void reset()} disabled={disabled} className={buttonBase} title="Reset all">
+        <button type="button" onClick={() => void reset()} disabled={disabled} className={buttonBase} title="Reset all">
           Reset all
         </button>
       </div>

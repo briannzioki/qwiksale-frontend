@@ -1,5 +1,5 @@
-// src/app/providers.tsx
 "use client";
+// src/app/providers.tsx
 
 import React, {
   createContext,
@@ -64,7 +64,7 @@ const AnalyticsContext = createContext<AnalyticsContextValue | null>(null);
 
 function useAnalyticsInternal(): AnalyticsContextValue {
   const track = useCallback((event: AnalyticsEvent, payload: AnalyticsPayload = {}) => {
-    if (process.env.NODE_ENV !== "production") {
+    if (process.env["NODE_ENV"] !== "production") {
       // eslint-disable-next-line no-console
       console.log("[analytics.track]", event, payload);
     }
@@ -82,10 +82,10 @@ type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
 
 type ThemeContextValue = {
-  theme: Theme; // selected theme
-  resolvedTheme: ResolvedTheme; // applied theme
+  theme: Theme;
+  resolvedTheme: ResolvedTheme;
   setTheme: (t: Theme) => void;
-  toggleTheme: () => void; // toggles light<->dark (system resolves first)
+  toggleTheme: () => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -97,14 +97,33 @@ function getSystemTheme(): ResolvedTheme {
 
 function applyHtmlClass(theme: ResolvedTheme) {
   const root = document.documentElement;
-  // Temporarily disable transitions to avoid jank when toggling
-  root.classList.add("[&_*]:!transition-none");
+
+  // Temporarily disable transitions to prevent theme-flash jank
+  const style = document.createElement("style");
+  style.setAttribute("data-disable-transitions", "true");
+  style.appendChild(
+    document.createTextNode(
+      `*{transition:none!important}*::before{transition:none!important}*::after{transition:none!important}`
+    )
+  );
+  document.head.appendChild(style);
+
   if (theme === "dark") root.classList.add("dark");
   else root.classList.remove("dark");
+
   root.setAttribute("data-theme", theme);
-  // Re-enable transitions on next paint
+  try {
+    root.style.colorScheme = theme;
+  } catch {
+    /* ignore */
+  }
+
   requestAnimationFrame(() => {
-    root.classList.remove("[&_*]:!transition-none");
+    try {
+      document.head.removeChild(style);
+    } catch {
+      /* ignore */
+    }
   });
 }
 
@@ -157,14 +176,13 @@ function useThemeInternal({
         applyHtmlClass(sys);
       }
     };
-    // Cross-browser support (older Safari)
     if ("addEventListener" in mql) {
       mql.addEventListener("change", onChange);
       return () => mql.removeEventListener("change", onChange);
     } else {
-      // @ts-expect-error - fallback for older browsers
+      // @ts-expect-error - legacy fallback
       mql.addListener(onChange);
-      // @ts-expect-error - fallback for older browsers
+      // @ts-expect-error - legacy fallback
       return () => mql.removeListener(onChange);
     }
   }, [enableSystemTheme, theme]);

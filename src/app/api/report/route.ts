@@ -7,20 +7,32 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 
-// If you have a shared limiter helper, wire it here. Otherwise this is a noop stub.
-async function allow(ipKey: string) {
+/* ----------------------------------------------------------------------------
+ * Best-effort rate limiter stub
+ * ---------------------------------------------------------------------------- */
+
+async function allow(_ipKey: string): Promise<boolean> {
   try {
-    // Example: checkRateLimit(req.headers, { name: "report", limit: 30, windowMs: 10*60_000 })
+    // Wire your real limiter here if available, e.g.:
+    // await checkRateLimit(ipKey, { name: "report", limit: 30, windowMs: 10 * 60_000 });
     return true;
   } catch {
     return true;
   }
 }
 
+/* ----------------------------------------------------------------------------
+ * Types & constants
+ * ---------------------------------------------------------------------------- */
+
 type SupportType = "REPORT_LISTING" | "REPORT_USER" | "BUG";
 
 const MAX_REASON = 4000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+/* ----------------------------------------------------------------------------
+ * Helpers
+ * ---------------------------------------------------------------------------- */
 
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
@@ -36,8 +48,10 @@ function getIp(req: Request): string {
     req.headers.get("x-vercel-forwarded-for") ||
     "";
   if (xf) return xf.split(",")[0]?.trim() || "0.0.0.0";
+
   const xr = req.headers.get("x-real-ip");
   if (xr) return xr.trim();
+
   return "0.0.0.0";
 }
 
@@ -79,11 +93,16 @@ function normalizeType(v: unknown): SupportType {
   return "REPORT_LISTING";
 }
 
+/* ----------------------------------------------------------------------------
+ * CORS preflight
+ * ---------------------------------------------------------------------------- */
+
 export function OPTIONS() {
   const origin =
-    process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["NEXT_PUBLIC_APP_URL"] ||
+    process.env["APP_ORIGIN"] ||
     "*";
+
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
   res.headers.set("Vary", "Origin");
@@ -94,9 +113,13 @@ export function OPTIONS() {
   return res;
 }
 
+/* ----------------------------------------------------------------------------
+ * Body shape
+ * ---------------------------------------------------------------------------- */
+
 type Body =
   | {
-      // old/plain shape
+      // legacy / simple shape
       listingId?: string;
       reason?: string;
       url?: string;
@@ -106,7 +129,7 @@ type Body =
       hpt?: string;
     }
   | {
-      // new client form shape (what your /report page sends)
+      // new /report form shape
       type?: SupportType;
       productId?: string | null;
       url?: string | null;
@@ -118,12 +141,19 @@ type Body =
       hpt?: string;
     };
 
+/* ----------------------------------------------------------------------------
+ * POST /api/report
+ * ---------------------------------------------------------------------------- */
+
 export async function POST(req: Request) {
   try {
     // Require JSON
     const ctype = (req.headers.get("content-type") || "").toLowerCase();
     if (!ctype.includes("application/json")) {
-      return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
+      return noStore(
+        { error: "Content-Type must be application/json" },
+        { status: 415 }
+      );
     }
 
     // Simple IP-based limiter (best-effort)
@@ -150,7 +180,12 @@ export async function POST(req: Request) {
     const reason = normalizeReason(
       (body as any).reason ?? (body as any).message
     );
-    if (!reason) return noStore({ error: "reason/message is required" }, { status: 400 });
+    if (!reason) {
+      return noStore(
+        { error: "reason/message is required" },
+        { status: 400 }
+      );
+    }
 
     const url = normalizeUrl((body as any).url);
     const email = normalizeEmail((body as any).email);
@@ -165,7 +200,10 @@ export async function POST(req: Request) {
 
     // For listing reports, a product/listing id is required
     if (type === "REPORT_LISTING" && !productId) {
-      return noStore({ error: "listingId/productId is required" }, { status: 400 });
+      return noStore(
+        { error: "listingId/productId is required" },
+        { status: 400 }
+      );
     }
 
     // Verify listing exists when relevant
@@ -174,7 +212,12 @@ export async function POST(req: Request) {
         where: { id: productId },
         select: { id: true },
       });
-      if (!exists) return noStore({ error: "Invalid listingId" }, { status: 400 });
+      if (!exists) {
+        return noStore(
+          { error: "Invalid listingId" },
+          { status: 400 }
+        );
+      }
     }
 
     // Attach reporter if signed in
@@ -183,24 +226,30 @@ export async function POST(req: Request) {
 
     // Soft dedupe: last 10 minutes
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+
+    const orClauses: { reporterId?: string; email?: string }[] = [];
+    if (reporterId) orClauses.push({ reporterId });
+    if (email) orClauses.push({ email });
+
     const dupe = await prisma.supportTicket.findFirst({
       where: {
         type,
-        productId: productId ?? undefined,
+        ...(productId ? { productId } : {}),
         message: reason,
         createdAt: { gte: tenMinAgo },
-        OR: [
-          ...(reporterId ? [{ reporterId }] : []),
-          ...(email ? [{ email }] : []),
-        ],
+        ...(orClauses.length > 0 ? { OR: orClauses } : {}),
       },
       select: { id: true, status: true, createdAt: true },
     });
+
     if (dupe) {
-      return noStore({ ok: true, ticket: dupe, deduped: true }, { status: 200 });
+      return noStore(
+        { ok: true, ticket: dupe, deduped: true },
+        { status: 200 }
+      );
     }
 
-    // Optional request context (only saved if your schema has these columns)
+    // Optional request context (only used if schema supports it)
     const referer = normalizeUrl(req.headers.get("referer"));
     const userAgent = cleanStr(req.headers.get("user-agent"), 300);
 
@@ -216,7 +265,6 @@ export async function POST(req: Request) {
         email,
         subject,
         reporterId: reporterId ?? null,
-        // If you have these columns, uncomment:
         // clientIp: ip,
         // referer,
         // userAgent,
@@ -225,15 +273,15 @@ export async function POST(req: Request) {
       select: { id: true, type: true, status: true, createdAt: true },
     });
 
-    // Optional: email notify (best-effort) via Resend — wire up if needed
-    // (kept out to avoid failing the request path if not configured)
+    // Email notification hook could go here (best-effort, non-blocking)
 
     return noStore({ ok: true, id: ticket.id }, { status: 201 });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[/api/report POST] error:", e);
-    return noStore({ error: "Server error" }, { status: 500 });
+    return noStore(
+      { error: "Server error" },
+      { status: 500 }
+    );
   }
 }
-
-

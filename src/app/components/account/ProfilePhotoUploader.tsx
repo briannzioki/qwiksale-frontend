@@ -1,5 +1,5 @@
-// src/app/components/account/ProfilePhotoUploader.tsx
 "use client";
+// src/app/components/account/ProfilePhotoUploader.tsx
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

@@ -1,4 +1,5 @@
-﻿export const runtime = "nodejs";
+﻿// src/app/api/services/create/route.ts
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -33,15 +34,15 @@ function clampLen(s: string | undefined, max: number) {
 }
 function s(v: unknown, max?: number): string | undefined {
   if (typeof v !== "string") v = v == null ? "" : String(v);
-  const t = (v as string)
-    .replace(/[\u0000-\u0008\u000B-\u001F\u007F]+/g, "")
-    .trim();
+  const t = (v as string).replace(/[\u0000-\u0008\u000B-\u001F\u007F]+/g, "").trim();
   if (!t) return undefined;
   return typeof max === "number" ? clampLen(t, max) : t;
 }
 function nPrice(v: unknown): number | null | undefined {
   if (v === null || v === "") return null;
-  if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.round(v));
+  if (typeof v === "number" && Number.isFinite(v)) {
+    return Math.max(0, Math.round(v));
+  }
   if (typeof v === "string" && v.trim() !== "") {
     const n = Number(v);
     if (Number.isFinite(n)) return nPrice(n);
@@ -140,22 +141,35 @@ async function createServiceSafe(data: any) {
   }
 }
 
+/* -------------------- allowlist (match products/create) -------------------- */
+const ALLOWED_IMAGE_HOSTS = ["res.cloudinary.com", "images.unsplash.com"] as const;
+
+function isAllowedHost(hostname: string): boolean {
+  return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+}
+function isAllowedUrl(u: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(u);
+    if (protocol !== "https:" && protocol !== "http:") return false;
+    return isAllowedHost(hostname);
+  } catch {
+    return false;
+  }
+}
+
 /* ----------------------------- POST ----------------------------- */
 export async function POST(req: NextRequest) {
-  const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
-
-  // Use shared helper to read the key (await it!)
+  const reqId = (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
   const idemKey = await getIdempotencyKey(req);
 
   return withIdempotency(idemKey, async () => {
     try {
       const session = await auth().catch(() => null);
       const userId = (session?.user as any)?.id as string | undefined;
-      if (!userId) return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId, idemKey);
+      if (!userId) {
+        return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId, idemKey);
+      }
 
-      // Per-IP + user throttle
       const rl = await checkRateLimit(req.headers, {
         name: "services_create",
         limit: 6,
@@ -166,13 +180,11 @@ export async function POST(req: NextRequest) {
         return withReqId(tooMany("Too many create attempts. Try again later.", rl.retryAfterSec), reqId, idemKey);
       }
 
-      // Reject non-JSON early
       const ctype = req.headers.get("content-type") || "";
       if (!ctype.toLowerCase().includes("application/json")) {
         return withReqId(noStore({ error: "Content-Type must be application/json" }, { status: 415 }), reqId, idemKey);
       }
 
-      // Snapshot seller
       const me = await prisma.user.findUnique({
         where: { id: userId },
         select: {
@@ -186,27 +198,39 @@ export async function POST(req: NextRequest) {
           country: true,
         },
       });
-      if (!me) return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId, idemKey);
+      if (!me) {
+        return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId, idemKey);
+      }
 
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
       track("service_create_attempt", { reqId, userId: me.id, tier: toTier(me.subscription) });
 
-      // Accept product-like & service-like keys
       const name = s(body["name"], MAX.name) ?? s(body["title"], MAX.name);
       const description = clip(s(body["description"]), MAX.description);
       const category = s(body["category"], MAX.category) ?? "Services";
       const subcategory = s(body["subcategory"], MAX.subcategory);
-      const image = s(body["image"], MAX.imageUrl) ?? s(body["thumbnailUrl"], MAX.imageUrl);
-      const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
 
-      // Rate type
+      const rawImage = s(body["image"], MAX.imageUrl) ?? s(body["thumbnailUrl"], MAX.imageUrl);
+      const image = rawImage && isAllowedUrl(rawImage) ? rawImage : undefined;
+
+      const gallery = nGallery(body["gallery"], MAX.imageUrl, MAX.galleryCount);
+      const galleryAllowed = (gallery ?? []).filter(isAllowedUrl);
+      const finalGallery = Array.from(new Set([...(image ? [image] : []), ...galleryAllowed])).slice(
+        0,
+        MAX.galleryCount
+      );
+
       const hasRateTypeKey = Object.prototype.hasOwnProperty.call(body, "rateType");
       const parsedRateType = nRateType(body["rateType"]);
       const rateType: "hour" | "day" | "fixed" = parsedRateType ?? "fixed";
       if (hasRateTypeKey && !parsedRateType) {
         track("service_create_validation_error", { reqId, userId: me.id, field: "rateType", reason: "invalid" });
-        return withReqId(noStore({ error: "Invalid rateType (use hour, day, or fixed)" }, { status: 400 }), reqId, idemKey);
+        return withReqId(
+          noStore({ error: "Invalid rateType (use hour, day, or fixed)" }, { status: 400 }),
+          reqId,
+          idemKey
+        );
       }
 
       const serviceArea = s(body["serviceArea"], MAX.serviceArea);
@@ -219,14 +243,17 @@ export async function POST(req: NextRequest) {
       let sellerPhone = normalizeMsisdn(s(body["sellerPhone"]));
       if (!sellerPhone && me.whatsapp) sellerPhone = normalizeMsisdn(me.whatsapp);
 
-      // Validation
       if (!name || name.length < 3) {
         track("service_create_validation_error", { reqId, userId: me.id, field: "name" });
         return withReqId(noStore({ error: "Name is required (min 3 chars)" }, { status: 400 }), reqId, idemKey);
       }
       if (!description || description.length < 10) {
         track("service_create_validation_error", { reqId, userId: me.id, field: "description" });
-        return withReqId(noStore({ error: "Description is required (min 10 chars)" }, { status: 400 }), reqId, idemKey);
+        return withReqId(
+          noStore({ error: "Description is required (min 10 chars)" }, { status: 400 }),
+          reqId,
+          idemKey
+        );
       }
       if (hasPriceKey && price === undefined) {
         track("service_create_validation_error", { reqId, userId: me.id, field: "price", reason: "invalid" });
@@ -241,23 +268,14 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Tier enforcement (count only ACTIVE services)
       const tier = toTier(me.subscription);
       const limits = LIMITS[tier];
-      const myActiveCount = await db.service.count({
-        where: { sellerId: me.id, status: "ACTIVE" },
-      });
+      const myActiveCount = await db.service.count({ where: { sellerId: me.id, status: "ACTIVE" } });
       if (myActiveCount >= limits.listingLimit) {
-        track("service_create_limit_reached", {
-          reqId,
-          userId: me.id,
-          tier,
-          limit: limits.listingLimit,
-        });
+        track("service_create_limit_reached", { reqId, userId: me.id, tier, limit: limits.listingLimit });
         return withReqId(noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 }), reqId, idemKey);
       }
 
-      // Create
       const created = await createServiceSafe({
         name,
         description,
@@ -267,25 +285,21 @@ export async function POST(req: NextRequest) {
         rateType,
         serviceArea: serviceArea ?? null,
         availability: availability ?? null,
-        image: image ?? null,
-        gallery: gallery ?? [],
+        image: (image ?? null) as string | null,
+        gallery: finalGallery,
         location: location ?? null,
-
         status: "ACTIVE",
         featured: false,
-        publishedAt: new Date(), // dropped automatically if column doesn't exist
-
+        publishedAt: new Date(), // stripped if column missing
         sellerId: me.id,
         sellerName: me.name ?? null,
-        sellerLocation:
-          me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
+        sellerLocation: me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
         sellerMemberSince: me.createdAt ? me.createdAt.toISOString().slice(0, 10) : null,
         sellerRating: null,
         sellerSales: null,
         sellerPhone: sellerPhone ?? null,
       });
 
-      // Revalidate caches/tags
       try {
         revalidateTag("home:active");
         revalidateTag("services:latest");
@@ -304,7 +318,7 @@ export async function POST(req: NextRequest) {
         tier,
         serviceId: created.id,
         hasPrice: price != null,
-        gallerySize: (gallery ?? []).length,
+        gallerySize: finalGallery.length,
       });
 
       const res = noStore({ ok: true, serviceId: created.id }, { status: 201 });
@@ -323,13 +337,9 @@ export async function POST(req: NextRequest) {
   });
 }
 
-/* ----------------------------- CORS (optional) ----------------------------- */
+/* ----------------------------- CORS ----------------------------- */
 export function OPTIONS() {
-  const origin =
-    process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["APP_ORIGIN"] ??
-    "*";
-
+  const origin = process.env["NEXT_PUBLIC_APP_URL"] ?? process.env["APP_ORIGIN"] ?? "*";
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
   res.headers.set("Vary", "Origin");

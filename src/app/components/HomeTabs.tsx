@@ -1,5 +1,5 @@
-// src/app/components/HomeTabs.tsx
 "use client";
+// src/app/components/HomeTabs.tsx
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";

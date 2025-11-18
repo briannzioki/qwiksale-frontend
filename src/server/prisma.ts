@@ -1,13 +1,8 @@
-import { PrismaClient } from "@prisma/client";
+// src/server/prisma.ts
+// Legacy compatibility for older imports expecting "server/prisma".
+// Delegates to the canonical client.
 
-const g = globalThis as unknown as { prisma?: PrismaClient };
+import { prisma } from "@/app/lib/prisma";
 
-export const prisma =
-  g.prisma ??
-  new PrismaClient({
-    // log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
-  });
-
-if (process.env.NODE_ENV !== "production") {
-  g.prisma = prisma;
-}
+export { prisma };
+export default prisma;

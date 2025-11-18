@@ -1,8 +1,8 @@
 // src/app/reset-password/page.tsx
 "use client";
 
-import { Suspense, useMemo, useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState, useEffect, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
@@ -30,17 +30,16 @@ function strengthLabel(pw: string) {
 /* ------------------------------------------------------------------ */
 
 function ResetPasswordPageInner() {
-  const router = useRouter();
   const sp = useSearchParams();
 
   // If token exists, we’re in "set new password" mode
   const token = sp.get("token") || sp.get("t") || "";
   const hasToken = !!token;
 
-  // Optional return path after success
+  // Optional return path after success (defaults to dashboard to avoid /signin loops)
   const returnTo = useMemo(() => {
-    const r = sp.get("return") || sp.get("callbackUrl") || "/signin";
-    return /^\/(?!\/)/.test(String(r)) ? String(r) : "/signin";
+    const r = sp.get("return") || sp.get("callbackUrl") || "/dashboard";
+    return /^\/(?!\/)/.test(String(r)) ? String(r) : "/dashboard";
   }, [sp]);
 
   /* ---------- Request form state ---------- */
@@ -52,6 +51,7 @@ function ResetPasswordPageInner() {
   const [confirm, setConfirm] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     // Prefill email from localStorage if present (non-blocking)
@@ -72,7 +72,7 @@ function ResetPasswordPageInner() {
 
   /* ---------- Actions ---------- */
 
-  async function onRequest(e: React.FormEvent) {
+  async function onRequest(e: FormEvent) {
     e.preventDefault();
     const em = email.trim().toLowerCase();
     if (!isValidEmail(em)) {
@@ -105,7 +105,7 @@ function ResetPasswordPageInner() {
     return null;
   }
 
-  async function onReset(e: React.FormEvent) {
+  async function onReset(e: FormEvent) {
     e.preventDefault();
     if (!hasToken) {
       toast.error("Missing or invalid reset token.");
@@ -128,8 +128,7 @@ function ResetPasswordPageInner() {
       if (!res.ok || (j as any)?.error) {
         throw new Error((j as any)?.error || `Failed (${res.status})`);
       }
-      toast.success("Password updated. You can sign in now.");
-      router.replace(returnTo);
+      setDone(true); // show success UI; no programmatic redirect
     } catch (err: any) {
       toast.error(err?.message || "Could not reset password.");
     } finally {
@@ -200,7 +199,10 @@ function ResetPasswordPageInner() {
 
             <div className="text-xs text-gray-600 dark:text-slate-400 text-center">
               Remembered it?{" "}
-              <Link href="/signin" className="underline underline-offset-2">
+              <Link
+                href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}
+                className="underline underline-offset-2"
+              >
                 Back to sign in
               </Link>
             </div>
@@ -240,11 +242,7 @@ function ResetPasswordPageInner() {
                 <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800">
                   <div
                     className={`h-full rounded-full transition-all ${
-                      pwBarPct < 35
-                        ? "bg-red-400"
-                        : pwBarPct < 65
-                        ? "bg-yellow-400"
-                        : "bg-green-500"
+                      pwBarPct < 35 ? "bg-red-400" : pwBarPct < 65 ? "bg-yellow-400" : "bg-green-500"
                     }`}
                     style={{ width: `${pwBarPct}%` }}
                   />
@@ -280,9 +278,28 @@ function ResetPasswordPageInner() {
               {resetting ? "Updating…" : "Update password"}
             </button>
 
+            {done && (
+              <div
+                role="status"
+                className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200"
+              >
+                Password updated.{" "}
+                <Link
+                  href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}
+                  className="underline"
+                >
+                  Continue to sign in
+                </Link>
+                .
+              </div>
+            )}
+
             <div className="text-xs text-gray-600 dark:text-slate-400 text-center">
               Done?{" "}
-              <Link href="/signin" className="underline underline-offset-2">
+              <Link
+                href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}
+                className="underline underline-offset-2"
+              >
                 Go to sign in
               </Link>
             </div>

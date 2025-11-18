@@ -7,6 +7,7 @@ import { prisma } from "@/app/lib/prisma";
 import Link from "next/link";
 import ModerationClient from "@/app/admin/moderation/ModerationClient.client";
 import type { Metadata } from "next";
+import { requireAdmin } from "@/app/lib/authz";
 
 export const metadata: Metadata = {
   title: "Moderation · QwikSale",
@@ -138,7 +139,8 @@ export default async function ModerationPage({
   // Next 15 passes a Promise here
   searchParams: Promise<SearchParams>;
 }) {
-  // Admin layout already gates access server-side.
+  await requireAdmin(); // strict SSR gate
+
   const raw = await searchParams;
   const parsed = parseParams(raw);
 

@@ -1,8 +1,12 @@
+// src/app/lib/url.ts
+
 /** ----------------------------------------------------------------
  * Base URL utilities
  * ---------------------------------------------------------------- */
 export function getBaseUrl(): string {
-  // Prefer the unified var; fall back to a legacy var if present.
+  const nodeEnv = process.env["NODE_ENV"] || "development";
+
+  // Public-facing / legacy explicit URL
   const explicit =
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] || // legacy fallback
@@ -10,11 +14,40 @@ export function getBaseUrl(): string {
 
   const vercel = process.env["VERCEL_URL"] || "";
 
-  // Vercel gives domain only; add protocol. Local dev fallback stays explicit.
-  const base =
+  // In dev / test / E2E, avoid pointing internal self-fetches at the public prod URL.
+  // That can cause SSR hangs when the app is running on localhost but the env
+  // is configured with a remote domain.
+  if (nodeEnv !== "production") {
+    // Only trust explicit if it's clearly localhost / 127.0.0.1.
+    const safeExplicit =
+      explicit && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(explicit)
+        ? explicit
+        : "";
+
+    // Optional internal override for more control in dev/E2E.
+    let base =
+      process.env["APP_URL_INTERNAL"] ||
+      process.env["NEXT_PUBLIC_APP_URL_INTERNAL"] ||
+      safeExplicit ||
+      "http://127.0.0.1:3000";
+
+    if (!/^https?:\/\//i.test(base)) {
+      base = `http://${base}`;
+    }
+
+    // Strip trailing slashes
+    return base.replace(/\/+$/, "");
+  }
+
+  // Production: prefer explicit public URL, then Vercel URL, fallback to localhost.
+  let base =
     explicit ||
     (vercel ? (vercel.startsWith("http") ? vercel : `https://${vercel}`) : "") ||
     "http://127.0.0.1:3000";
+
+  if (!/^https?:\/\//i.test(base)) {
+    base = `http://${base}`;
+  }
 
   // Strip trailing slashes
   return base.replace(/\/+$/, "");
@@ -257,27 +290,23 @@ export type SearchHrefOptions = {
   subcategory?: string;
 };
 
-/** Build a clean /search href.
- *  Overloads:
- *    - buildSearchHref()                -> "/search"
- *    - buildSearchHref("iphone")        -> "/search?q=iphone"
- *    - buildSearchHref({ q, type, ...}) -> "/search?..."
- */
+/** Build a clean /search href. */
 export function buildSearchHref(): string;
 export function buildSearchHref(q: string | null | undefined): string;
 export function buildSearchHref(opts: SearchHrefOptions): string;
 export function buildSearchHref(arg?: string | null | SearchHrefOptions): string {
-  // Normalize to an options object
   const opts: SearchHrefOptions =
     typeof arg === "string" || arg == null ? { q: arg ?? "" } : (arg as SearchHrefOptions);
 
   const sp = new URLSearchParams();
 
+  // Stable order: type → q → others (tests expect /search?type=product&q=mix)
+  const type = (opts.type ?? "all").trim();
+  if (type && type !== "all") sp.set("type", type);
+
   const term = String(opts.q ?? "").trim();
   if (term) sp.set("q", term);
 
-  // keep keys minimal; only set when provided
-  if (opts.type && opts.type !== "all") sp.set("type", opts.type);
   if (opts.brand?.trim()) sp.set("brand", opts.brand.trim());
   if (opts.category?.trim()) sp.set("category", opts.category.trim());
   if (opts.subcategory?.trim()) sp.set("subcategory", opts.subcategory.trim());

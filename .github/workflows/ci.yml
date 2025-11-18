@@ -19,9 +19,13 @@ jobs:
       contents: read
       packages: read
 
-    # Make secrets available to all steps
+    # Make secrets + Prisma config available to all steps
     env:
       NEXT_TELEMETRY_DISABLED: "1"
+
+      # Prisma engine checksum workaround for CI
+      PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING: "1"
+
       # App URLs (set these secrets/vars in the repo settings)
       NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
       NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
@@ -69,7 +73,6 @@ jobs:
         run: pnpm lint
 
       # - name: Test
-      #   run: pnpm test -- --run
 
       - name: Build
         run: pnpm build

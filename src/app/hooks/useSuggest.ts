@@ -1,5 +1,5 @@
-// src/app/hooks/useSuggest.ts
 "use client";
+// src/app/hooks/useSuggest.ts
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 

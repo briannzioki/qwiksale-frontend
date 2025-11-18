@@ -9,7 +9,9 @@ import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
 
 /* ----------------------------- debug ----------------------------- */
-const PRODUCTS_VER = "vDEBUG-PRODUCTS-011";
+const PRODUCTS_VER = "vDEBUG-PRODUCTS-012";
+const DB_TIMEOUT_MS = 1800; // soft cap to avoid client hangs
+
 function attachVersion(h: Headers) {
   h.set("X-Products-Version", PRODUCTS_VER);
 }
@@ -19,6 +21,9 @@ function safe(obj: unknown) {
   } catch {
     return String(obj);
   }
+}
+async function softTimeout<T>(work: () => Promise<T>, ms: number, fallback: () => T | Promise<T>): Promise<T> {
+  return Promise.race([work(), new Promise<T>((resolve) => setTimeout(async () => resolve(await fallback()), ms))]);
 }
 
 /* ----------------------------- tiny helpers ----------------------------- */
@@ -236,7 +241,7 @@ export async function GET(req: NextRequest) {
     } else if (sort === "price_desc") {
       orderBy = [{ price: "desc" }, { createdAt: "desc" }, { id: "desc" }];
     } else if (sort === "featured") {
-      orderBy = [{ featured: "desc" }, { createdAt: "asc" }, { id: "desc" }]; // promote featured first
+      orderBy = [{ featured: "desc" }, { createdAt: "asc" }, { id: "desc" }];
     } else {
       orderBy = isSearchLike
         ? [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }]
@@ -312,57 +317,88 @@ export async function GET(req: NextRequest) {
       listArgs.skip = (page - 1) * pageSize;
     }
 
-    const [total, productsRaw, facets] = await Promise.all([
-      prisma.product.count({ where }),
-      prisma.product.findMany(listArgs),
-      wantFacets && !cursor && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
-    ]);
-
-    const hasMore = (productsRaw as unknown[]).length > pageSize;
-    const data = hasMore ? (productsRaw as unknown[]).slice(0, pageSize) : (productsRaw as unknown[]);
-    const nextCursor = hasMore && data.length ? (data[data.length - 1] as any).id : null;
-
-    const items = data.map((p: any) => {
-      const favoritesCount: number = p?._count?.favorites ?? 0;
-      const rel = p?.favorites;
-      const isFavoritedByMe: boolean = Array.isArray(rel) && rel.length > 0;
-
-      const gallery: string[] = Array.isArray(p?.gallery) ? p.gallery.filter(Boolean) : [];
-      const image: string | null = p?.image ?? (gallery[0] ?? null);
-
-      const createdAt =
-        p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
-      const sellerUsername = p?.seller?.username ?? null;
-
-      const { _count, favorites, seller, ...rest } = p;
-      return {
-        ...rest,
-        image,
-        gallery,
-        createdAt,
-        favoritesCount,
-        isFavoritedByMe: !!userId && isFavoritedByMe,
-        sellerUsername,
-      };
-    });
-
-    const payload = {
-      page,
-      pageSize,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
-      sort,
-      items,
-      facets,
-      nextCursor,
-      hasMore,
+    // ------------ heavy work (soft timeout) ------------
+    const fastEmpty = () => {
+      const r = jsonPublic(
+        {
+          page,
+          pageSize,
+          total: 0,
+          totalPages: 1,
+          sort,
+          items: [] as any[],
+          facets: wantFacets ? { categories: [], brands: [], conditions: [] } : undefined,
+          nextCursor: null,
+          hasMore: false,
+        },
+        30
+      );
+      attachVersion(r.headers);
+      r.headers.set("X-Total-Count", "0");
+      r.headers.set("X-Timeout", "1");
+      r.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
+      return r;
     };
 
-    const res = userId ? jsonPrivate(payload) : jsonPublic(payload, 60);
-    attachVersion(res.headers);
-    res.headers.set("X-Total-Count", String(total));
-    res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
-    return res;
+    const response = await softTimeout(async () => {
+      const [total, productsRaw, facets] = await Promise.all([
+        prisma.product.count({ where }),
+        prisma.product.findMany(listArgs),
+        wantFacets && !cursor && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
+      ]);
+
+      const hasMore = (productsRaw as unknown[]).length > pageSize;
+      const data = hasMore ? (productsRaw as unknown[]).slice(0, pageSize) : (productsRaw as unknown[]);
+      const nextCursor = hasMore && data.length ? (data[data.length - 1] as any).id : null;
+
+      const items = data.map((p: any) => {
+        const favoritesCount: number = p?._count?.favorites ?? 0;
+        const rel = p?.favorites;
+        const isFavoritedByMe: boolean = Array.isArray(rel) && rel.length > 0;
+
+        const gallery: string[] = Array.isArray(p?.gallery) ? p.gallery.filter(Boolean) : [];
+        const image: string | null = p?.image ?? (gallery[0] ?? null);
+
+        const createdAt =
+          p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
+        const sellerUsername = p?.seller?.username ?? null;
+
+        const { _count, favorites, seller, ...rest } = p;
+        return {
+          ...rest,
+          image,
+          gallery,
+          // mirrors detail routes for UI merges
+          imageUrls: gallery,
+          images: gallery,
+          photos: gallery,
+          createdAt,
+          favoritesCount,
+          isFavoritedByMe: !!userId && isFavoritedByMe,
+          sellerUsername,
+        };
+      });
+
+      const payload = {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
+        sort,
+        items,
+        facets,
+        nextCursor,
+        hasMore,
+      };
+
+      const res = userId ? jsonPrivate(payload) : jsonPublic(payload, 60);
+      attachVersion(res.headers);
+      res.headers.set("X-Total-Count", String(total));
+      res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
+      return res;
+    }, DB_TIMEOUT_MS, fastEmpty);
+
+    return response;
   } catch (e: any) {
     console.warn("[/api/products GET] ERROR:", e?.message, e);
     const res = jsonPrivate({ error: "Server error" }, { status: 500 });
@@ -428,7 +464,6 @@ function baseHeaders() {
 }
 
 export async function HEAD() {
-  // NOTE: use a bare Response for 204 to avoid body-related platform quirks.
   const h = baseHeaders();
   h.set("Allow", "GET, POST, HEAD, OPTIONS");
   h.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -438,7 +473,6 @@ export async function HEAD() {
 }
 
 export async function OPTIONS() {
-  // NOTE: bare Response with CORS + Allow. Mirrors /api/services behavior.
   const h = baseHeaders();
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??

@@ -1,26 +1,43 @@
-// src/app/components/account/DeleteAccountButton.tsx
 "use client";
+// src/app/components/account/DeleteAccountButton.tsx
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
+
+type Props = {
+  /** Preferred prop name */
+  userEmail?: string;
+  /** Back-compat alias: prefer userEmail */
+  email?: string;
+  onDeletedAction?: () => void | Promise<void>;
+  className?: string;
+  children?: ReactNode;
+  confirmLabel?: string;
+};
 
 export default function DeleteAccountButton({
   userEmail,
+  email,
   onDeletedAction,
   className = "rounded-2xl bg-red-600 px-4 py-2 text-white shadow-sm hover:bg-red-700",
   children,
   confirmLabel = "Delete account",
-}: {
-  userEmail: string;
-  onDeletedAction?: () => void | Promise<void>;
-  className?: string;
-  children?: React.ReactNode;
-  confirmLabel?: string;
-}) {
+}: Props) {
   const router = useRouter();
   const uid = useId();
   const titleId = `delacc-title-${uid}`;
   const descId = `delacc-desc-${uid}`;
+
+  const effectiveEmail = (userEmail ?? email ?? "").trim();
+  const normalizedEmail = useMemo(() => effectiveEmail.toLowerCase(), [effectiveEmail]);
 
   const [open, setOpen] = useState(false);
   const [ack, setAck] = useState(false);
@@ -35,7 +52,6 @@ export default function DeleteAccountButton({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const normalizedEmail = useMemo(() => userEmail.trim().toLowerCase(), [userEmail]);
   const canDelete = ack && typed.trim().toLowerCase() === normalizedEmail;
 
   const emit = useCallback((name: string, detail?: unknown) => {
@@ -49,7 +65,6 @@ export default function DeleteAccountButton({
   const announce = useCallback((msg: string) => {
     const el = liveRef.current;
     if (!el) return;
-    // Clear any previous timeout so messages don’t overlap
     if (liveTimerRef.current) {
       window.clearTimeout(liveTimerRef.current);
       liveTimerRef.current = null;
@@ -61,7 +76,6 @@ export default function DeleteAccountButton({
     }, 1200);
   }, []);
 
-  // abort any in-flight request on unmount
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
@@ -72,7 +86,6 @@ export default function DeleteAccountButton({
     };
   }, []);
 
-  /* --------------------------- open/close effects --------------------------- */
   useEffect(() => {
     if (!open) return;
 
@@ -82,19 +95,14 @@ export default function DeleteAccountButton({
         setOpen(false);
         return;
       }
-
       if (e.key === "Tab" && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
         );
-        if (focusable.length === 0) return;
-
+        if (!focusable.length) return;
         const first = focusable.item(0);
         const last = focusable.item(focusable.length - 1);
-        if (!first || !last) return;
-
         const active = document.activeElement as HTMLElement | null;
-
         if (e.shiftKey && active === first) {
           e.preventDefault();
           last.focus();
@@ -109,7 +117,6 @@ export default function DeleteAccountButton({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Body scroll lock + initial focus
   useEffect(() => {
     const body = document.body;
     if (open) {
@@ -128,12 +135,13 @@ export default function DeleteAccountButton({
     }
   }, [open, announce]);
 
-  /* -------------------------------- actions ------------------------------- */
   const handleDelete = useCallback(async () => {
+    if (!effectiveEmail) return;
     if (!canDelete || loading) return;
+
     setLoading(true);
     setErr(null);
-    emit("qs:account:delete:submit", { email: userEmail });
+    emit("qs:account:delete:submit", { email: effectiveEmail });
 
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -144,19 +152,16 @@ export default function DeleteAccountButton({
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         signal: ac.signal,
-        body: JSON.stringify({ confirm: true, email: userEmail }),
+        body: JSON.stringify({ confirm: true, email: effectiveEmail }),
       });
       const json = await res.json().catch(() => ({} as any));
-
-      if (!res.ok) {
-        throw new Error((json as any)?.error || `Delete failed (${res.status})`);
-      }
+      if (!res.ok) throw new Error((json as any)?.error || `Delete failed (${res.status})`);
 
       setOpen(false);
       setAck(false);
       setTyped("");
       announce("Account deleted");
-      emit("qs:account:delete:success", { email: userEmail });
+      emit("qs:account:delete:success", { email: effectiveEmail });
 
       try {
         await onDeletedAction?.();
@@ -171,13 +176,12 @@ export default function DeleteAccountButton({
       const message = e?.message || "Failed to delete account";
       setErr(message);
       announce("Delete failed");
-      emit("qs:account:delete:error", { email: userEmail, error: message });
+      emit("qs:account:delete:error", { email: effectiveEmail, error: message });
     } finally {
       setLoading(false);
     }
-  }, [announce, canDelete, loading, onDeletedAction, router, userEmail, emit]);
+  }, [effectiveEmail, canDelete, loading, onDeletedAction, announce, emit, router]);
 
-  /* --------------------------------- render -------------------------------- */
   return (
     <>
       <span aria-live="polite" className="sr-only" ref={liveRef} />
@@ -188,7 +192,7 @@ export default function DeleteAccountButton({
         onClick={() => {
           if (open) return;
           setOpen(true);
-          emit("qs:account:delete:open", { email: userEmail });
+          emit("qs:account:delete:open", { email: effectiveEmail });
         }}
         className={className}
       >
@@ -197,16 +201,14 @@ export default function DeleteAccountButton({
 
       {open && (
         <>
-          {/* Backdrop: non-focusable, just a click target */}
           <div
             role="presentation"
             className="fixed inset-0 z-50 bg-black/40"
             onClick={() => {
               setOpen(false);
-              emit("qs:account:delete:cancel", { email: userEmail });
+              emit("qs:account:delete:cancel", { email: effectiveEmail });
             }}
           />
-
           <div
             role="dialog"
             aria-modal="true"
@@ -224,7 +226,8 @@ export default function DeleteAccountButton({
               </h2>
               <p id={descId} className="mt-2 text-sm text-gray-700 dark:text-gray-300">
                 This action is <strong>permanent</strong> and will remove your profile, listings, and data.
-                To confirm, tick the box and type your email <span className="font-mono">{userEmail}</span> below.
+                To confirm, tick the box and type your email{" "}
+                <span className="font-mono">{effectiveEmail}</span> below.
               </p>
 
               <label className="mt-4 flex items-start gap-2 text-sm text-gray-800 dark:text-gray-200">
@@ -234,9 +237,7 @@ export default function DeleteAccountButton({
                   checked={ack}
                   onChange={(e) => setAck(e.target.checked)}
                 />
-                <span>
-                  I understand this action is <strong>irreversible</strong>.
-                </span>
+                <span>I understand this action is <strong>irreversible</strong>.</span>
               </label>
 
               <div className="mt-3">
@@ -246,16 +247,14 @@ export default function DeleteAccountButton({
                 <input
                   type="email"
                   inputMode="email"
-                  placeholder={userEmail}
+                  placeholder={effectiveEmail}
                   className="mt-1 w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-300 dark:focus:ring-red-800"
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
                   aria-invalid={ack && typed.length > 0 && !canDelete}
                 />
                 {ack && typed.length > 0 && !canDelete && (
-                  <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                    Email does not match.
-                  </div>
+                  <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">Email does not match.</div>
                 )}
               </div>
 
@@ -275,13 +274,12 @@ export default function DeleteAccountButton({
                     setAck(false);
                     setTyped("");
                     setErr(null);
-                    emit("qs:account:delete:cancel", { email: userEmail });
+                    emit("qs:account:delete:cancel", { email: effectiveEmail });
                   }}
                   disabled={loading}
                 >
                   Cancel
                 </button>
-
                 <button
                   type="button"
                   onClick={handleDelete}

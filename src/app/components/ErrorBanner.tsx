@@ -6,26 +6,16 @@ import * as React from "react";
 type Variant = "error" | "warning" | "info" | "success";
 
 type Props = {
-  /** Message content (simple) */
   message?: React.ReactNode;
-  /** Or pass rich content via children */
   children?: React.ReactNode;
-  /** Visual / semantic variant (affects colors + role) */
   variant?: Variant;
-  /** Optional retry handler (name ends with “Action” to satisfy Next 15 rule) */
   onRetryAction?: () => void | Promise<void>;
-  /** Label for the retry button */
   retryLabel?: string;
-  /** Extra classes for outer wrapper */
   className?: string;
-  /** Optional title, shown bold before message */
   title?: string;
 };
 
-const STYLES: Record<
-  Variant,
-  { wrap: string; text: string; border: string; iconColor: string }
-> = {
+const STYLES: Record<Variant, { wrap: string; text: string; border: string; iconColor: string }> = {
   error: {
     wrap: "bg-red-50 dark:bg-red-900/20",
     text: "text-red-800 dark:text-red-200",
@@ -57,12 +47,7 @@ function Icon({ variant }: { variant: Variant }) {
   switch (variant) {
     case "error":
       return (
-        <svg
-          className={`h-5 w-5 ${cls}`}
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
+        <svg className={`h-5 w-5 ${cls}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path
             fillRule="evenodd"
             d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-11a1 1 0 1 0-2 0v4a1 1 0 1 0 2 0V7Zm-1 8a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"
@@ -72,34 +57,19 @@ function Icon({ variant }: { variant: Variant }) {
       );
     case "warning":
       return (
-        <svg
-          className={`h-5 w-5 ${cls}`}
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
+        <svg className={`h-5 w-5 ${cls}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M8.257 3.099c.765-1.36 2.72-1.36 3.485 0l6.518 11.58c.75 1.333-.213 2.996-1.742 2.996H3.48c-1.53 0-2.492-1.663-1.742-2.997L8.257 3.1zM11 13a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-1-2a1 1 0 0 1-1-1V7a1 1 0 1 1 2 0v3a1 1 0 0 1-1 1z" />
         </svg>
       );
     case "success":
       return (
-        <svg
-          className={`h-5 w-5 ${cls}`}
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
+        <svg className={`h-5 w-5 ${cls}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.707-9.293a1 1 0 0 0-1.414-1.414L9 10.586 7.707 9.293A1 1 0 0 0 6.293 10.707l2 2a1 1 0 0 0 1.414 0l4-4Z" />
         </svg>
       );
     default:
       return (
-        <svg
-          className={`h-5 w-5 ${cls}`}
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
+        <svg className={`h-5 w-5 ${cls}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M10 3a7 7 0 1 0 .001 14.001A7 7 0 0 0 10 3Zm1 10H9v-2h2v2Zm0-4H9V7h2v2Z" />
         </svg>
       );

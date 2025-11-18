@@ -1,3 +1,4 @@
+// tests/e2e/gallery-ui-vs-api.product.spec.ts
 import { test, expect } from "@playwright/test";
 
 /** Finds a product id by taking the first product link on the home page. */

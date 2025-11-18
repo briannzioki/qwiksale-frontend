@@ -28,8 +28,7 @@ function track(event: string, payload?: Record<string, unknown>) {
 type LeafName = string;
 type Subcategory = { name: string; subsubcategories?: ReadonlyArray<LeafName> };
 type Category = { name: string; subcategories?: ReadonlyArray<Subcategory> };
-const isCategory = (x: unknown): x is Category =>
-  !!x && typeof (x as any).name === "string";
+const isCategory = (x: unknown): x is Category => !!x && typeof (x as any).name === "string";
 
 /* --------------------------- helpers ---------------------------------- */
 const categoryHref = (value: string) => `/?category=${encodeURIComponent(value)}`;
@@ -40,18 +39,22 @@ function pickTopCategoryNames(max = 10) {
     if (isCategory(c)) names.push(c.name);
     if (names.length >= max) break;
   }
-  // Fallbacks if dataset is sparse
-  return (names.length ? names : ["Phones", "Cars", "Laptops", "Furniture", "Home services"]).slice(
-    0,
-    max
-  );
+  return (names.length ? names : ["Phones", "Cars", "Laptops", "Furniture", "Home services"]).slice(0, max);
+}
+
+function getReturnTo(): string {
+  try {
+    const { pathname, search, hash } = window.location;
+    return `${pathname}${search || ""}${hash || ""}` || "/";
+  } catch {
+    return "/";
+  }
 }
 
 /* --------------------------- component -------------------------------- */
 export default function HomeClientHero({ className = "" }: { className?: string }) {
   const { data: session, status } = useSession();
 
-  // Null-safe user (aligns with your auth callbacks)
   const user = (session?.user ?? null) as (Session["user"] & {
     username?: string | null;
   }) | null;
@@ -69,24 +72,25 @@ export default function HomeClientHero({ className = "" }: { className?: string 
   // Prefetch a few high-traffic routes to feel snappy
   useEffect(() => {
     try {
-      // @ts-ignore – app router exposes prefetch on <Link>, and router.prefetch exists at runtime
-      ;(globalThis as any)?.router?.prefetch?.("/search");
+      // @ts-ignore
+      (globalThis as any)?.router?.prefetch?.("/search");
     } catch {}
   }, []);
+
+  const signInHref = `/signin?callbackUrl=${encodeURIComponent(getReturnTo())}`;
 
   return (
     <section
       aria-label="Welcome hero"
       className={[
         "relative overflow-hidden rounded-2xl border border-black/5 dark:border-white/10",
-        // Subtle brandy gradient that works on both themes
         "bg-gradient-to-br from-[#e6f6fd] via-[#eaf7f0] to-[#f0effa] dark:from-slate-900 dark:via-slate-900 dark:to-slate-950",
         "p-5 md:p-6",
         "shadow-soft",
         className,
       ].join(" ")}
     >
-      {/* Decorative blobs (hidden from a11y; reduced motion friendly) */}
+      {/* Decorative blobs */}
       <div
         aria-hidden
         className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full opacity-40 md:blur-3xl"
@@ -107,41 +111,25 @@ export default function HomeClientHero({ className = "" }: { className?: string 
       />
 
       <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-        {/* Copy + actions */}
         <div>
-          <h1
-            className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white text-balance"
-            aria-live="polite"
-          >
+          <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white text-balance" aria-live="polite">
             {greeting} — buy &amp; sell, faster.
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-gray-700 dark:text-slate-300">
             Browse fresh deals across Kenya. Post your own listing in seconds and reach local buyers.
           </p>
 
-          {/* CTAs */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Link
-              href="/sell"
-              prefetch
-              onClick={() => track("hero_sell_click")}
-              className="btn-gradient-hero"
-            >
+            <Link href="/sell" prefetch onClick={() => track("hero_sell_click")} className="btn-gradient-hero">
               + Post a listing
             </Link>
 
-            <Link
-              href="/search"
-              prefetch
-              onClick={() => track("hero_browse_click")}
-              className="btn-outline"
-            >
+            <Link href="/search" prefetch onClick={() => track("hero_browse_click")} className="btn-outline">
               Browse all
             </Link>
 
             {status === "authenticated" ? (
               <>
-                {/* Favorites (icon-only) — make it a real link, not a button */}
                 <Link
                   href="/saved"
                   prefetch
@@ -149,26 +137,12 @@ export default function HomeClientHero({ className = "" }: { className?: string 
                   aria-label="Favorites"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 bg-white/60 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/50 dark:hover:bg-slate-900/70"
                 >
-                  {/* heart icon */}
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    fill="currentColor"
-                    aria-hidden="true"
-                    className="text-pink-600 dark:text-pink-400"
-                  >
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" className="text-pink-600 dark:text-pink-400">
                     <path d="M12 21s-7.5-4.35-10-8.5C-0.5 8 2 4 6 4c2.14 0 3.57 1.07 4.5 2.3C11.43 5.07 12.86 4 15 4c4 0 6.5 4 4 8.5C19.5 16.65 12 21 12 21z" />
                   </svg>
                 </Link>
 
-                {/* Dashboard → outline IconButton (settings icon) */}
-                <Link
-                  href="/dashboard"
-                  prefetch
-                  onClick={() => track("hero_dashboard_click")}
-                  className="contents"
-                >
+                <Link href="/dashboard" prefetch onClick={() => track("hero_dashboard_click")} className="contents">
                   <IconButton icon="settings" variant="outline" labelText="Dashboard" srLabel="Dashboard" />
                 </Link>
 
@@ -186,27 +160,16 @@ export default function HomeClientHero({ className = "" }: { className?: string 
               </>
             ) : (
               <>
-                <Link
-                  href="/signin"
-                  prefetch
-                  onClick={() => track("hero_signin_click")}
-                  className="btn-outline"
-                >
+                <Link href={signInHref} prefetch onClick={() => track("hero_signin_click")} className="btn-outline">
                   Sign in
                 </Link>
-                <Link
-                  href="/signup"
-                  prefetch
-                  onClick={() => track("hero_join_click")}
-                  className="btn-outline"
-                >
+                <Link href="/signup" prefetch onClick={() => track("hero_join_click")} className="btn-outline">
                   Join
                 </Link>
               </>
             )}
           </div>
 
-          {/* Trust mini-row */}
           <ul className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-slate-400">
             <li className="inline-flex items-center gap-1">
               <ShieldIcon /> Buyer safety
@@ -220,7 +183,6 @@ export default function HomeClientHero({ className = "" }: { className?: string 
           </ul>
         </div>
 
-        {/* Quick category chips */}
         <nav aria-label="Popular categories" className="md:justify-self-end">
           <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
             Popular now
@@ -246,7 +208,6 @@ export default function HomeClientHero({ className = "" }: { className?: string 
 }
 
 /* ---------------- tiny inline icons ---------------- */
-
 function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
