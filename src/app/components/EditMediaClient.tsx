@@ -1,5 +1,5 @@
-// src/app/components/EditMediaClient.tsx
 "use client";
+// src/app/components/EditMediaClient.tsx
 
 import React, {
   useCallback,

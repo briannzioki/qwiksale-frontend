@@ -1,5 +1,4 @@
 "use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type PaymentStatus = "PENDING" | "SUCCESS" | "FAILED" | string;

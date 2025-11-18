@@ -1,6 +1,11 @@
+﻿// src/app/help/page.tsx
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import SectionHeader from "@/app/components/SectionHeader";
 
 export const metadata: Metadata = {
   title: "Help Center — QwikSale",
@@ -16,32 +21,56 @@ function Card({
   href,
 }: {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
   href?: string;
 }) {
   const inner = (
     <div className="card group block rounded-xl border p-5 shadow-sm transition hover:shadow-md dark:border-slate-800">
       <h3 className="font-semibold">{title}</h3>
-      <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">{children}</p>
+      <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
+        {children}
+      </p>
     </div>
   );
-  return href ? <Link href={href}>{inner}</Link> : inner;
+  return href ? (
+    <Link href={href} prefetch={false} className="focus:outline-none">
+      {inner}
+    </Link>
+  ) : (
+    inner
+  );
 }
 
 export default function HelpCenterPage() {
   return (
     <main className="container-page py-8">
-      <SectionHeader
-        title="Help Center"
-        subtitle="Find answers fast, or reach the team for personal support."
-        className="bg-spotlight brand-noise"
-        actions={
-          <div className="flex gap-2">
-            <Link href="/contact" className="btn-gradient-primary text-sm">Contact Support</Link>
-            <Link href="/report" className="btn-outline text-sm">Report a Problem</Link>
-          </div>
-        }
-      />
+      {/* Simple, self-contained header (no shared component assumptions) */}
+      <header className="rounded-2xl bg-spotlight brand-noise p-5 text-white">
+        <p className="text-sm/5 opacity-90">Help Center</p>
+        <h1 className="mt-1 text-3xl font-bold tracking-tight">
+          Find answers or reach support
+        </h1>
+        <p className="mt-2 max-w-prose text-sm text-white/90">
+          Common tasks, FAQs, and ways to contact the team. If you’re stuck,
+          message us and we’ll help.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/contact"
+            prefetch={false}
+            className="btn-gradient-primary text-sm"
+          >
+            Contact Support
+          </Link>
+          <Link
+            href="/report"
+            prefetch={false}
+            className="btn-outline text-sm"
+          >
+            Report a Problem
+          </Link>
+        </div>
+      </header>
 
       {/* Quick links */}
       <section className="mt-6 grid gap-4 md:grid-cols-3">
@@ -56,73 +85,122 @@ export default function HelpCenterPage() {
         </Card>
       </section>
 
-      {/* FAQs (no JS; native details/summary) */}
+      {/* FAQs (native details/summary) */}
       <section className="mt-8">
         <h2 className="text-lg font-semibold">Frequently Asked Questions</h2>
         <div className="mt-4 divide-y rounded-xl border bg-white shadow-sm brand-noise dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
               <span className="font-medium">How do I create an account?</span>
-              <span className="text-sm text-gray-500 group-open:hidden">Show</span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">Hide</span>
+              <span className="text-sm text-gray-500 group-open:hidden">
+                Show
+              </span>
+              <span className="hidden text-sm text-gray-500 group-open:inline">
+                Hide
+              </span>
             </summary>
             <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
-              Go to <Link className="underline" href="/signup">Create account</Link>, enter your
-              email & password, or continue with Google. After signing up, complete your{" "}
-              <Link className="underline" href="/account/profile">profile</Link> for better trust.
+              Go to{" "}
+              <Link className="underline" href="/signup" prefetch={false}>
+                Create account
+              </Link>
+              , enter your email & password, or continue with Google. After
+              signing up, complete your{" "}
+              <Link
+                className="underline"
+                href="/account/profile"
+                prefetch={false}
+              >
+                profile
+              </Link>{" "}
+              for better trust.
             </div>
           </details>
 
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
               <span className="font-medium">How do I post a listing?</span>
-              <span className="text-sm text-gray-500 group-open:hidden">Show</span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">Hide</span>
+              <span className="text-sm text-gray-500 group-open:hidden">
+                Show
+              </span>
+              <span className="hidden text-sm text-gray-500 group-open:inline">
+                Hide
+              </span>
             </summary>
             <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
-              Visit <Link className="underline" href="/sell">Post a listing</Link>, choose a
-              category, add photos, price (or leave 0 for “Contact for price”), and publish.
-              Verified listings may get boosted placement.
+              Visit{" "}
+              <Link className="underline" href="/sell" prefetch={false}>
+                Post a listing
+              </Link>
+              , choose a category, add photos, price (or leave 0 for “Contact
+              for price”), and publish. Verified listings may get boosted
+              placement.
             </div>
           </details>
 
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
-              <span className="font-medium">How do I save or share items?</span>
-              <span className="text-sm text-gray-500 group-open:hidden">Show</span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">Hide</span>
+              <span className="font-medium">
+                How do I save or share items?
+              </span>
+              <span className="text-sm text-gray-500 group-open:hidden">
+                Show
+              </span>
+              <span className="hidden text-sm text-gray-500 group-open:inline">
+                Hide
+              </span>
             </summary>
             <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
-              Tap the heart on a product page to save it. Access everything under{" "}
-              <Link className="underline" href="/saved">Saved</Link>. Use the “Copy” button on a
-              product card to share a direct link.
+              Tap the heart on a product page to save it. Access everything
+              under{" "}
+              <Link className="underline" href="/saved" prefetch={false}>
+                Saved
+              </Link>
+              . Use the “Copy” button on a product card to share a direct link.
             </div>
           </details>
 
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
               <span className="font-medium">How do payments work?</span>
-              <span className="text-sm text-gray-500 group-open:hidden">Show</span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">Hide</span>
+              <span className="text-sm text-gray-500 group-open:hidden">
+                Show
+              </span>
+              <span className="hidden text-sm text-gray-500 group-open:inline">
+                Hide
+              </span>
             </summary>
             <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
-              QwikSale is a neutral marketplace. Coordinate with the seller directly. Prefer
-              in-person meetups in public places and confirm item condition before paying. For
-              tips, see <Link className="underline" href="/safety">Safety</Link>.
+              QwikSale is a neutral marketplace. Coordinate with the seller
+              directly. Prefer in-person meetups in public places and confirm
+              item condition before paying. For tips, see{" "}
+              <Link className="underline" href="/safety" prefetch={false}>
+                Safety
+              </Link>
+              .
             </div>
           </details>
 
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
               <span className="font-medium">I can’t sign in / Google loop</span>
-              <span className="text-sm text-gray-500 group-open:hidden">Show</span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">Hide</span>
+              <span className="text-sm text-gray-500 group-open:hidden">
+                Show
+              </span>
+              <span className="hidden text-sm text-gray-500 group-open:inline">
+                Hide
+              </span>
             </summary>
             <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
-              Clear cookies for <span className="font-mono">qwiksale.sale</span>, ensure third-party
-              cookies are allowed, and try again. If you signed up with Google before, use{" "}
-              <strong>Continue with Google</strong>. Still stuck?{" "}
-              <Link className="underline" href="/contact">Contact Support</Link>.
+              Clear cookies for{" "}
+              <span className="font-mono">qwiksale.sale</span>, ensure
+              third-party cookies are allowed, and try again. If you signed up
+              with Google before, use <strong>Continue with Google</strong>.
+              Still stuck?{" "}
+              <Link className="underline" href="/contact" prefetch={false}>
+                Contact Support
+              </Link>
+              .
             </div>
           </details>
         </div>
@@ -138,8 +216,16 @@ export default function HelpCenterPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/contact" className="btn-gradient-primary">Contact Support</Link>
-            <Link href="/report" className="btn-outline">Report a Problem</Link>
+            <Link
+              href="/contact"
+              prefetch={false}
+              className="btn-gradient-primary"
+            >
+              Contact Support
+            </Link>
+            <Link href="/report" prefetch={false} className="btn-outline">
+              Report a Problem
+            </Link>
           </div>
         </div>
       </section>

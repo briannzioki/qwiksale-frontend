@@ -1,5 +1,5 @@
-// src/app/components/InfiniteLoader.tsx
 "use client";
+// src/app/components/InfiniteLoader.tsx
 
 import { useEffect, useRef } from "react";
 

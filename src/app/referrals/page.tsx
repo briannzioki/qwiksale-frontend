@@ -1,5 +1,5 @@
-// src/app/referrals/page.tsx
 "use client";
+// src/app/referrals/page.tsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";

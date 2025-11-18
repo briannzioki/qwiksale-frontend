@@ -10,10 +10,13 @@ import SmartImage from "@/app/components/SmartImage";
 import { makeApiUrl } from "@/app/lib/url";
 
 /* ----------------------------- utils ----------------------------- */
+
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || n <= 0) return "Contact for price";
   try {
-    return `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n)}`;
+    return `KES ${new Intl.NumberFormat("en-KE", {
+      maximumFractionDigits: 0,
+    }).format(n)}`;
   } catch {
     return `KES ${n}`;
   }
@@ -24,41 +27,104 @@ function cleanUsername(raw?: string) {
   return /^[a-z0-9._-]{2,32}$/i.test(v) ? v : "";
 }
 
+function parseSellerId(raw?: string): string | null {
+  const v = decodeURIComponent(String(raw ?? "")).trim();
+  const m = /^u-(.+)$/i.exec(v);
+  if (m && m[1]) return m[1].trim();
+  if (/^[0-9a-f-]{24,36}$/i.test(v)) return v;
+  return null;
+}
+
+async function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
+  let tid: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<T>((resolve) => {
+    tid = setTimeout(() => resolve(fallback), ms);
+  });
+  const result = await Promise.race([p.catch(() => fallback), timeout]);
+  if (tid) clearTimeout(tid);
+  return result;
+}
+
 /* ----------------------------- Metadata ----------------------------- */
+
+type MetaUser = {
+  id: string;
+  username: string | null;
+  name: string | null;
+};
+
+type MetaUserRow = MetaUser | null;
+
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ username: string }>;
 }): Promise<Metadata> {
   const { username: raw } = await params;
-  const username = cleanUsername(raw) || (raw ?? "").trim();
+  const username = cleanUsername(raw);
+  const sellerId = parseSellerId(raw);
 
-  if (!username) return { title: "Store | QwikSale" };
+  if (!username && !sellerId) {
+    return {
+      title: "Store | QwikSale",
+      description: "Browse a seller’s listings on QwikSale.",
+    };
+  }
 
   try {
-    const user = await prisma.user.findFirst({
-      where: { username: { equals: username, mode: "insensitive" } },
-      select: { username: true, name: true },
-    });
+    let user: MetaUserRow = null;
+
+    if (username) {
+      user = await withTimeout<MetaUserRow>(
+        prisma.user.findFirst({
+          where: { username: { equals: username, mode: "insensitive" } },
+          select: { id: true, username: true, name: true },
+        }) as Promise<MetaUserRow>,
+        600,
+        null,
+      );
+    }
+
+    if (!user && sellerId) {
+      user = await withTimeout<MetaUserRow>(
+        prisma.user.findUnique({
+          where: { id: sellerId },
+          select: { id: true, username: true, name: true },
+        }) as Promise<MetaUserRow>,
+        600,
+        null,
+      );
+    }
 
     if (user) {
-      const display = user.name ? `${user.name} (@${user.username})` : `@${user.username}`;
+      const handle = user.username ? `@${user.username}` : `u-${user.id}`;
+      const display = user.name ? `${user.name} (${handle})` : handle;
       return {
         title: `${display} | Store | QwikSale`,
-        description: `Browse listings from ${user.name || `@${user.username}`} on QwikSale.`,
+        description: `Browse listings from ${user.name || handle} on QwikSale.`,
       };
     }
   } catch {
-    /* ignore */
+    // ignore and fall through
   }
 
+  const handle = username
+    ? `@${username}`
+    : sellerId
+    ? `u-${sellerId}`
+    : "store";
   return {
-    title: `@${username} | Store | QwikSale`,
-    description: `Browse listings from @${username} on QwikSale.`,
+    title: `${handle} | Store | QwikSale`,
+    description: `Browse listings from ${handle} on QwikSale.`,
   };
 }
 
 /* ----------------------------- types ----------------------------- */
+
 type ApiListResp<T> = {
   page: number;
   pageSize: number;
@@ -69,7 +135,7 @@ type ApiListResp<T> = {
 
 type StoreProduct = {
   id: string;
-  name: string;
+  name: string | null;
   image: string | null;
   price: number | null;
   featured: boolean | null;
@@ -78,18 +144,30 @@ type StoreProduct = {
   createdAt?: string | null;
 };
 
-type StoreService = {
-  id: string;
-  name: string;
+type StoreService = StoreProduct;
+
+type StoreUser = {
+  id: string | null;
+  name: string | null;
+  username: string | null;
   image: string | null;
-  price: number | null;
-  featured: boolean | null;
-  category: string | null;
-  subcategory: string | null;
-  createdAt?: string | null;
+  city: string | null;
+  country: string | null;
+  createdAt: Date | null;
+};
+
+type DbStoreUser = {
+  id: string;
+  name: string | null;
+  username: string | null;
+  image: string | null;
+  city: string | null;
+  country: string | null;
+  createdAt: Date | null;
 };
 
 /* ----------------------------- Page ----------------------------- */
+
 export default async function StorePage({
   params,
 }: {
@@ -97,68 +175,137 @@ export default async function StorePage({
 }) {
   const { username: raw } = await params;
   const slug = (raw ?? "").trim();
-  const username = cleanUsername(slug) || slug || "unknown";
+  const username = cleanUsername(slug);
+  const sellerId = parseSellerId(slug);
 
-  // Try to resolve seller by username (SSR). If none, fall back to a "ghost" store.
-  const realUser = await prisma.user
-    .findFirst({
-      where: { username: { equals: username, mode: "insensitive" } },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        image: true,
-        city: true,
-        country: true,
-        createdAt: true,
-      },
-    })
-    .catch(() => null);
+  const userSelect = {
+    id: true,
+    name: true,
+    username: true,
+    image: true,
+    city: true,
+    country: true,
+    createdAt: true,
+  } as const;
 
-  const user = realUser ?? {
-    id: null,
-    name: null,
-    username,
-    image: null,
-    city: null as string | null,
-    country: null as string | null,
-    createdAt: null as Date | null,
-  };
+  let realUser: StoreUser | null = null;
 
-  // Only call listing APIs when we have a real user id
-  const shouldFetchListings = Boolean(user.id);
+  if (username) {
+    const dbUser = await withTimeout<DbStoreUser | null>(
+      prisma.user.findFirst({
+        where: { username: { equals: username, mode: "insensitive" } },
+        select: userSelect,
+      }) as Promise<DbStoreUser | null>,
+      800,
+      null,
+    );
+    if (dbUser) {
+      realUser = dbUser;
+    }
+  }
+
+  if (!realUser && sellerId) {
+    const dbUser = await withTimeout<DbStoreUser | null>(
+      prisma.user.findUnique({
+        where: { id: sellerId },
+        select: userSelect,
+      }) as Promise<DbStoreUser | null>,
+      800,
+      null,
+    );
+    if (dbUser) {
+      realUser = dbUser;
+    }
+  }
+
+  const user: StoreUser =
+    realUser || {
+      id: null,
+      name: null,
+      username: username || (sellerId ? `u-${sellerId}` : "unknown"),
+      image: null,
+      city: null,
+      country: null,
+      createdAt: null,
+    };
+
+  const displayHandle =
+    user.username || (realUser?.id ? `u-${realUser.id}` : "unknown");
+
+  const userId = realUser?.id ?? null;
+  const shouldFetchListings = Boolean(userId);
+
   const qs = shouldFetchListings
-    ? `sellerId=${encodeURIComponent(String(user.id))}&pageSize=48&sort=newest`
+    ? `sellerId=${encodeURIComponent(userId!)}&pageSize=48&sort=newest`
     : null;
 
-  const [prodRes, svcRes] = shouldFetchListings
-    ? await Promise.all([
-        fetch(makeApiUrl(`/api/products?${qs}`), {
-          next: { tags: ["products:latest", `user:${user.id}:listings`, `store:${username}`] },
-        }).catch(() => null),
-        fetch(makeApiUrl(`/api/services?${qs}`), {
-          next: { tags: ["services:latest", `user:${user.id}:listings`, `store:${username}`] },
-        }).catch(() => null),
-      ])
-    : [null, null];
+  let prodRes: Response | null = null;
+  let svcRes: Response | null = null;
 
-  const prodOk = Boolean(prodRes?.ok);
-  const svcOk = Boolean(svcRes?.ok);
+  if (shouldFetchListings && qs) {
+    const tagUser = `user:${userId}:listings`;
+    const tagStore = `store:${displayHandle}`;
+
+    prodRes = await fetch(makeApiUrl(`/api/products?${qs}`), {
+      next: { tags: ["products:latest", tagUser, tagStore] },
+    }).catch(() => null as any);
+
+    svcRes = await fetch(makeApiUrl(`/api/services?${qs}`), {
+      next: { tags: ["services:latest", tagUser, tagStore] },
+    }).catch(() => null as any);
+  }
+
+  const prodOk = !!prodRes?.ok;
+  const svcOk = !!svcRes?.ok;
 
   const productsJson: ApiListResp<StoreProduct> = prodOk
-    ? await prodRes!.json().catch(() => ({ page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] }))
-    : { page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] };
+    ? await prodRes!
+        .json()
+        .catch(
+          () =>
+            ({
+              page: 1,
+              pageSize: 0,
+              total: 0,
+              totalPages: 1,
+              items: [],
+            } as ApiListResp<StoreProduct>),
+        )
+    : {
+        page: 1,
+        pageSize: 0,
+        total: 0,
+        totalPages: 1,
+        items: [],
+      };
 
   const servicesJson: ApiListResp<StoreService> = svcOk
-    ? await svcRes!.json().catch(() => ({ page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] }))
-    : { page: 1, pageSize: 0, total: 0, totalPages: 1, items: [] };
+    ? await svcRes!
+        .json()
+        .catch(
+          () =>
+            ({
+              page: 1,
+              pageSize: 0,
+              total: 0,
+              totalPages: 1,
+              items: [],
+            } as ApiListResp<StoreService>),
+        )
+    : {
+        page: 1,
+        pageSize: 0,
+        total: 0,
+        totalPages: 1,
+        items: [],
+      };
 
-  // Normalize nullable bits for UI
   const products = (productsJson.items || []).map((p) => ({
     ...p,
     category: p.category ?? null,
     subcategory: p.subcategory ?? null,
   }));
+
   const services = (servicesJson.items || []).map((s) => ({
     ...s,
     category: s.category ?? null,
@@ -166,23 +313,27 @@ export default async function StorePage({
   }));
 
   const hasAny =
-    (Number(productsJson.total || 0) + Number(servicesJson.total || 0)) > 0;
+    Number(productsJson.total || 0) + Number(servicesJson.total || 0) > 0;
 
   return (
     <div className="space-y-6">
       {/* Store header */}
-      <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow">
         <div className="flex items-center gap-4">
           <UserAvatar
             src={user.image}
-            alt={`${user.username} avatar`}
+            alt={`${displayHandle} avatar`}
             size={56}
             ring
-            fallbackText={(user.name || user.username || "U").slice(0, 1).toUpperCase()}
+            fallbackText={
+              (user.name || displayHandle || "U").slice(0, 1).toUpperCase()
+            }
           />
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold">@{user.username}</h1>
-            <p className="text-white/90 text-sm">
+            <h1 className="text-2xl font-extrabold md:text-3xl">
+              @{displayHandle}
+            </h1>
+            <p className="text-sm text-white/90">
               {user.name ? `${user.name} • ` : ""}
               {user.createdAt
                 ? `Member since ${new Date(user.createdAt).getFullYear()}`
@@ -192,24 +343,27 @@ export default async function StorePage({
                 : ""}
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Link href="/" className="btn-outline">Back to Home</Link>
+          <div className="ml-auto">
+            <Link href="/" className="btn-outline">
+              Back to Home
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* API notice (neutral wording; avoids “error” to keep tests happy) */}
+      {/* Soft warning instead of 500-style error */}
       {shouldFetchListings && (!prodOk || !svcOk) && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
           <p className="font-semibold">Some listings couldn’t be loaded.</p>
           <p className="text-sm opacity-80">
-            {prodOk ? null : "Product listings are temporarily unavailable. "}
-            {svcOk ? null : "Service listings are temporarily unavailable."} Please try again later.
+            {!prodOk && "Product listings are temporarily unavailable. "}
+            {!svcOk && "Service listings are temporarily unavailable. "}
+            Please try again later.
           </p>
         </div>
       )}
 
-      {/* Empty store state (also covers unknown/fallback slugs) */}
+      {/* Empty state */}
       {!hasAny && (
         <div className="rounded-xl border p-8 text-center text-gray-600 dark:border-slate-800 dark:text-slate-300">
           <p className="text-lg font-semibold">No listings yet</p>
@@ -219,7 +373,9 @@ export default async function StorePage({
               : "This store profile isn’t set up yet."}
           </p>
           <div className="mt-4">
-            <Link href="/" className="btn-outline">Browse Home</Link>
+            <Link href="/" className="btn-outline">
+              Browse Home
+            </Link>
           </div>
         </div>
       )}
@@ -229,18 +385,20 @@ export default async function StorePage({
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Products</h2>
-            <span className="text-sm text-gray-500">{productsJson.total} items</span>
+            <span className="text-sm text-gray-500">
+              {productsJson.total} items
+            </span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((p) => (
               <Link key={p.id} href={`/product/${p.id}`} className="group">
                 <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-                  {p.featured ? (
+                  {p.featured && (
                     <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
                       Featured
                     </span>
-                  ) : null}
+                  )}
                   <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
                     <SmartImage
                       src={p.image || undefined}
@@ -273,18 +431,20 @@ export default async function StorePage({
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Services</h2>
-            <span className="text-sm text-gray-500">{servicesJson.total} items</span>
+            <span className="text-sm text-gray-500">
+              {servicesJson.total} items
+            </span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {services.map((s) => (
               <Link key={s.id} href={`/service/${s.id}`} className="group">
                 <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-                  {s.featured ? (
+                  {s.featured && (
                     <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
                       Featured
                     </span>
-                  ) : null}
+                  )}
                   <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
                     <SmartImage
                       src={s.image || undefined}

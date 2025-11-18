@@ -1,5 +1,5 @@
-// src/app/components/SearchCombobox.tsx
 "use client";
+// src/app/components/SearchCombobox.tsx
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -7,39 +7,19 @@ import type { ReactNode } from "react";
 export type ComboItem<TMeta = unknown> = {
   id: string;
   label: string;
-  /** optional metadata you can use onSelectAction (e.g., type:"brand") */
   meta?: TMeta;
 };
 
 export type Props<TMeta = unknown> = {
-  /** Controlled value (text in the input) */
   value?: string;
-
-  /** Called on every input change OR when an item is chosen */
   onChangeAction?: (v: string) => void;
-
-  /** Called when a specific item is chosen (Enter on an option / click) */
   onSelectAction?: (item: ComboItem<TMeta>) => void;
-
-  /**
-   * If you want the combobox to fully manage fetching, provide this.
-   * If you pass `items`, the combobox will render those instead (and skip fetching).
-   */
   fetchSuggestionsAction?: (q: string) => Promise<ComboItem<TMeta>[]>;
-
-  /** Provide static/controlled items (takes precedence over fetchSuggestionsAction if passed) */
   items?: ComboItem<TMeta>[];
-
   placeholder?: string;
   className?: string;
-
-  /** Optional: how many ms to wait before calling fetchSuggestionsAction */
   debounceMs?: number;
-
-  /** Optional custom item renderer */
   renderItemAction?: (item: ComboItem<TMeta>, active: boolean) => ReactNode;
-
-  /** Optional aria-label for the input (if no visible label) */
   ariaLabel?: string;
 };
 
@@ -64,9 +44,10 @@ export default function SearchCombobox<TMeta = unknown>({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<number | null>(null);
   const [q, setQ] = useState(value);
-  const [items, setItems] = useState<ComboItem<TMeta>[]>(controlledItems || []);
+  const [items, setItems] = useState<ComboItem<TMeta>[]>(
+    controlledItems || []
+  );
 
-  // debounce + request race guard
   const timerRef = useRef<number | null>(null);
   const reqTokenRef = useRef(0);
 
@@ -75,7 +56,6 @@ export default function SearchCombobox<TMeta = unknown>({
     [active, listId]
   );
 
-  // keep local input value in sync if parent controls it
   useEffect(() => {
     setQ(value);
   }, [value]);
@@ -90,31 +70,28 @@ export default function SearchCombobox<TMeta = unknown>({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  // Scroll active option into view when navigating with arrows
+  // Scroll active option into view
   useEffect(() => {
     if (!open || active == null) return;
     const el = document.getElementById(`${listId}-opt-${active}`);
     el?.scrollIntoView({ block: "nearest" });
   }, [open, active, listId]);
 
-  // Load suggestions (debounced) only if items not controlled
+  // Suggestions (debounced) when not controlled via `items`
   useEffect(() => {
     if (controlledItems) {
       setItems(controlledItems);
-      // show dropdown only if you have something to show
       setOpen(Boolean(controlledItems.length));
       setActive(controlledItems.length ? 0 : null);
       return;
     }
     if (!fetchSuggestionsAction) return;
 
-    // clear previous debounce
     if (timerRef.current != null) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
     }
 
-    // if query empty, clear items and close list
     if (!q?.trim()) {
       setItems([]);
       setOpen(false);
@@ -126,7 +103,6 @@ export default function SearchCombobox<TMeta = unknown>({
     timerRef.current = window.setTimeout(async () => {
       try {
         const res = await fetchSuggestionsAction(q);
-        // ignore late responses
         if (localToken !== reqTokenRef.current) return;
 
         const next = Array.isArray(res) ? res : [];
@@ -134,7 +110,6 @@ export default function SearchCombobox<TMeta = unknown>({
         setOpen(next.length > 0);
         setActive(next.length ? 0 : null);
       } catch {
-        // ignore errors but keep list closed
         if (localToken === reqTokenRef.current) {
           setItems([]);
           setOpen(false);
@@ -155,8 +130,15 @@ export default function SearchCombobox<TMeta = unknown>({
     onChangeAction?.(item.label);
     onSelectAction?.(item);
     setOpen(false);
-    // restore focus to input for quick follow-up typing
     inputRef.current?.focus();
+
+    // If no explicit onSelectAction is provided, treat as a search submit:
+    if (!onSelectAction && typeof window !== "undefined") {
+      const term = item.label.trim();
+      if (term) {
+        window.location.href = `/search?q=${encodeURIComponent(term)}`;
+      }
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -171,24 +153,49 @@ export default function SearchCombobox<TMeta = unknown>({
       return;
     }
 
+    if (e.key === "Enter") {
+      // If a suggestion is active, select it.
+      if (active != null && items[active]) {
+        e.preventDefault();
+        commit(items[active]);
+        return;
+      }
+      // Otherwise, interpret as a search submit using `q` → /search?q=...
+      const term = q.trim();
+      if (term) {
+        e.preventDefault();
+        if (onSelectAction) {
+          onSelectAction({ id: term, label: term } as ComboItem<TMeta>);
+        } else if (typeof window !== "undefined") {
+          window.location.href = `/search?q=${encodeURIComponent(
+            term
+          )}`;
+        }
+        setOpen(false);
+      }
+      return;
+    }
+
     if (!items.length) return;
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive((i) => (i == null ? 0 : Math.min(items.length - 1, i + 1)));
+      setActive((i) =>
+        i == null ? 0 : Math.min(items.length - 1, i + 1)
+      );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActive((i) => (i == null ? items.length - 1 : Math.max(0, i - 1)));
-    } else if (e.key === "Enter") {
-      if (active != null && items[active]) {
-        e.preventDefault();
-        commit(items[active]);
-      }
+      setActive((i) =>
+        i == null ? items.length - 1 : Math.max(0, i - 1)
+      );
     }
   };
 
   return (
-    <div ref={rootRef} className={["relative w-full", className].join(" ")}>
+    <div
+      ref={rootRef}
+      className={["relative w-full", className].join(" ")}
+    >
       <label htmlFor={inputId} className="sr-only">
         {ariaLabel}
       </label>
@@ -200,25 +207,17 @@ export default function SearchCombobox<TMeta = unknown>({
           const next = e.target.value;
           setQ(next);
           onChangeAction?.(next);
-          // only open if we have something non-empty; actual items will open after fetch
-          setOpen(Boolean(next.trim()));
+          setOpen(Boolean(next.trim()) && items.length > 0);
         }}
         onKeyDown={handleKeyDown}
         onFocus={() => {
           if (items.length) setOpen(true);
         }}
         placeholder={placeholder}
-        className="
-          w-full rounded-lg px-3 py-2
-          text-gray-900 dark:text-slate-100
-          bg-white dark:bg-slate-900
-          border border-gray-200 dark:border-white/10
-          focus:outline-none focus:ring-2 focus:ring-brandBlue
-        "
+        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
         spellCheck
         autoCorrect="on"
         autoComplete="off"
-        // ---- ARIA combobox on the input (recommended) ----
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open}
@@ -232,11 +231,7 @@ export default function SearchCombobox<TMeta = unknown>({
         <ul
           id={listId}
           role="listbox"
-          className="
-            absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg
-            border border-gray-200 dark:border-white/10
-            bg-white dark:bg-slate-900 shadow-md
-          "
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow-md dark:border-white/10 dark:bg-slate-900"
         >
           {items.length === 0 && (
             <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
@@ -249,23 +244,25 @@ export default function SearchCombobox<TMeta = unknown>({
               role="option"
               aria-selected={i === active}
               key={it.id}
-              className={`
-                cursor-pointer px-3 py-2 text-sm
-                text-gray-800 dark:text-slate-100
-                ${i === active ? "bg-gray-100 dark:bg-slate-800" : "bg-transparent"}
-              `}
+              className={`cursor-pointer px-3 py-2 text-sm text-gray-800 dark:text-slate-100 ${
+                i === active
+                  ? "bg-gray-100 dark:bg-slate-800"
+                  : "bg-transparent"
+              }`}
               onMouseEnter={() => setActive(i)}
-              onMouseDown={(e) => e.preventDefault()} /* prevent input blur before click */
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => commit(it)}
             >
-              {renderItemAction ? renderItemAction(it, i === active) : it.label}
+              {renderItemAction
+                ? renderItemAction(it, i === active)
+                : it.label}
             </li>
           ))}
         </ul>
       )}
 
       <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-        Use ↑/↓ to navigate, Enter to select, Esc to dismiss.
+        Use ↑/↓ to navigate, Enter to select or search, Esc to dismiss.
       </p>
     </div>
   );

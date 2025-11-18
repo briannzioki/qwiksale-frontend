@@ -1,5 +1,5 @@
+﻿"use client";
 // src/app/components/ThemeToggle.tsx
-"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -181,7 +181,7 @@ export default function ThemeToggle({
       // `switch` is boolean; keep button semantics + rich label for 3-state
       role="button"
       aria-label={`Theme: ${label}. Click to switch to ${nextMode}.`}
-      title={`Theme: ${label} — click to switch to ${nextMode}`}
+      title={`Theme: ${label} â€” click to switch to ${nextMode}`}
     >
       {mode === "dark" ? (
         // Sun icon (dark mode active)
@@ -205,3 +205,4 @@ export default function ThemeToggle({
     </button>
   );
 }
+

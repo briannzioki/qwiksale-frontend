@@ -203,7 +203,7 @@ const config = {
   plugins: [
     forms({ strategy: "class" }),
     typography,
-    aspectRatio,
+    aspectRatio, // ✅ ensure aspect-ratio utilities are available
     tailwindAnimate,
     containerQueries,
 
@@ -301,14 +301,6 @@ const config = {
       });
     }),
   ],
-
-  // safelist: [
-  //   "grid-cols-1","grid-cols-2","grid-cols-3","grid-cols-4","grid-cols-5","grid-cols-6",
-  //   "shadow-soft","hero-surface","card-surface",
-  //   "btn-gradient-primary","btn-gradient-accent","btn-gradient-hero",
-  //   "text-gradient","glow","ring-focus",
-  //   "z-header","z-backdrop","z-popover","z-drawer","z-toast","z-modal",
-  // ],
 };
 
 module.exports = config;

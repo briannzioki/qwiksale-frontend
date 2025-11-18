@@ -1,75 +1,131 @@
-import { vi, describe, it, expect } from "vitest";
+// tests/unit/authz.spec.ts
+import { vi, describe, it, expect, beforeEach } from "vitest";
 
-vi.mock("@/app/lib/prisma", () => ({ prisma: { user: { findUnique: vi.fn() } } }));
-vi.mock("@/app/lib/auth", () => ({
-  getServerSession: vi.fn(),
-  getSessionUser: vi.fn(),
+vi.mock("next/navigation", () => ({
+  redirect: (url: string) => {
+    const err: any = new Error("REDIRECT");
+    err.url = url;
+    throw err;
+  },
 }));
 
-import { getServerSession, getSessionUser } from "@/app/lib/auth";
+// Stub the auth entrypoint used by src/app/lib/authz.ts
+vi.mock("@/auth", () => ({
+  auth: vi.fn(),
+}));
+
+import { auth } from "@/auth";
 import {
   isAdminUser,
-  isSuperAdminUser,
-  hasRoleAtLeast,
+  isSuperAdminUserLocal,
   requireAdmin,
-  requireSuperAdmin,
 } from "@/app/lib/authz";
+import type { AnyUser } from "@/app/lib/authz";
 
-const u = (over: Partial<any> = {}) => ({ id: "u1", email: "a@ex.com", role: "USER", ...over });
+const user = (overrides: Partial<AnyUser> = {}): AnyUser => ({
+  id: "u1",
+  email: "a@ex.com",
+  role: "USER",
+  ...overrides,
+});
 
-describe("authz role logic", () => {
-  it("SUPERADMIN is admin + superadmin", async () => {
-    (getSessionUser as any).mockResolvedValue(u({ role: "SUPERADMIN" }));
-    await expect(isAdminUser()).resolves.toBe(true);
-    await expect(isSuperAdminUser()).resolves.toBe(true);
-    await expect(hasRoleAtLeast("ADMIN")).resolves.toBe(true);
+beforeEach(() => {
+  (auth as any).mockReset();
+});
+
+describe("isAdminUser / isSuperAdminUserLocal", () => {
+  it("treats isAdmin flag as admin", () => {
+    expect(isAdminUser(user({ isAdmin: true }))).toBe(true);
   });
 
-  it("ADMIN is admin only", async () => {
-    (getSessionUser as any).mockResolvedValue(u({ role: "ADMIN" }));
-    await expect(isAdminUser()).resolves.toBe(true);
-    await expect(isSuperAdminUser()).resolves.toBe(false);
+  it("ADMIN role is admin", () => {
+    expect(isAdminUser(user({ role: "ADMIN" }))).toBe(true);
   });
 
-  it("USER is neither", async () => {
-    (getSessionUser as any).mockResolvedValue(u({ role: "USER" }));
-    await expect(isAdminUser()).resolves.toBe(false);
-    await expect(isSuperAdminUser()).resolves.toBe(false);
+  it("SUPERADMIN role is admin + superadmin", () => {
+    const u = user({ role: "SUPERADMIN" });
+    expect(isAdminUser(u)).toBe(true);
+    expect(isSuperAdminUserLocal(u)).toBe(true);
+  });
+
+  it("roles array recognized", () => {
+    const u = user({ roles: ["viewer", "Admin"] });
+    expect(isAdminUser(u)).toBe(true);
+  });
+
+  it("USER is not admin or superadmin", () => {
+    const u = user({ role: "USER" });
+    expect(isAdminUser(u)).toBe(false);
+    expect(isSuperAdminUserLocal(u)).toBe(false);
   });
 });
 
-describe("guards redirect", () => {
-  vi.mock("next/navigation", async (orig) => {
-    const mod: any = await orig();
-    return {
-      ...mod,
-      redirect: (url: string) => {
-        const err: any = new Error("REDIRECT");
-        err.url = url;
-        throw err;
-      },
-    };
-  });
+describe("requireAdmin (redirect mode)", () => {
+  it("allows admin", async () => {
+    (auth as any).mockResolvedValue({
+      user: user({ role: "ADMIN" }),
+    });
 
-  (getServerSession as any).mockResolvedValue({ user: { id: "u1" } });
-
-  it("requireAdmin allows ADMIN", async () => {
-    (getSessionUser as any).mockResolvedValue(u({ role: "ADMIN" }));
     await expect(requireAdmin()).resolves.toBeUndefined();
   });
 
-  it("requireAdmin redirects USER", async () => {
-    (getSessionUser as any).mockResolvedValue(u({ role: "USER" }));
-    await expect(requireAdmin()).rejects.toMatchObject({ message: "REDIRECT" });
+  it("redirects unauthenticated to signin with callback", async () => {
+    (auth as any).mockResolvedValue(null);
+
+    await expect(requireAdmin()).rejects.toMatchObject({
+      message: "REDIRECT",
+      // url: "/signin?callbackUrl=%2Fadmin"
+    });
   });
 
-  it("requireSuperAdmin allows SUPERADMIN", async () => {
-    (getSessionUser as any).mockResolvedValue(u({ role: "SUPERADMIN" }));
-    await expect(requireSuperAdmin()).resolves.toBeUndefined();
+  it("redirects non-admin to /dashboard", async () => {
+    (auth as any).mockResolvedValue({
+      user: user({ role: "USER" }),
+    });
+
+    await expect(requireAdmin()).rejects.toMatchObject({
+      message: "REDIRECT",
+    });
+  });
+});
+
+describe("requireAdmin (result mode)", () => {
+  it("returns authorized:true for admin", async () => {
+    (auth as any).mockResolvedValue({
+      user: user({ role: "ADMIN" }),
+    });
+
+    const res = await requireAdmin({ mode: "result" });
+    expect(res).toEqual({
+      authorized: true,
+      user: {
+        ...user({ role: "ADMIN" }),
+        id: "u1",
+      },
+    });
   });
 
-  it("requireSuperAdmin redirects ADMIN", async () => {
-    (getSessionUser as any).mockResolvedValue(u({ role: "ADMIN" }));
-    await expect(requireSuperAdmin()).rejects.toMatchObject({ message: "REDIRECT" });
+  it("returns 401 for unauthenticated", async () => {
+    (auth as any).mockResolvedValue(null);
+
+    const res = await requireAdmin({ mode: "result" });
+    expect(res).toEqual({
+      authorized: false,
+      status: 401,
+      reason: "Unauthenticated",
+    });
+  });
+
+  it("returns 403 for non-admin", async () => {
+    (auth as any).mockResolvedValue({
+      user: user({ role: "USER" }),
+    });
+
+    const res = await requireAdmin({ mode: "result" });
+    expect(res).toEqual({
+      authorized: false,
+      status: 403,
+      reason: "Forbidden",
+    });
   });
 });

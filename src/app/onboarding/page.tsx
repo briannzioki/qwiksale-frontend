@@ -1,8 +1,15 @@
 // src/app/onboarding/page.tsx
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
@@ -24,25 +31,11 @@ function isSafePath(p?: string | null): p is string {
 
 // 3–24; letters/digits/._; no leading/trailing sep; no doubles
 const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
-
-function canonicalUsername(raw: string) {
-  // lower-case to avoid case-sensitive dupes backend-side
-  return raw.trim().toLowerCase();
-}
-
-function useDebounced<T>(value: T, delay = 400) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setV(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return v;
-}
+const canonicalUsername = (raw: string) => raw.trim().toLowerCase();
 
 function OnboardingPageInner() {
   const { status } = useSession();
   const sp = useSearchParams();
-  const router = useRouter();
 
   const retRaw = sp.get("return") || sp.get("callbackUrl") || "/dashboard";
   const returnTo = isSafePath(retRaw) ? retRaw : "/dashboard";
@@ -58,53 +51,62 @@ function OnboardingPageInner() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [unauthorized, setUnauthorized] = useState(false);
+  const [saved, setSaved] = useState(false);
 
+  // username availability
   const [unameStatus, setUnameStatus] =
     useState<"idle" | "checking" | "ok" | "taken" | "invalid">("idle");
   const [unameMsg, setUnameMsg] = useState<string>("");
+  const unameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unameAbort = useRef<AbortController | null>(null);
 
-  const debouncedUsername = useDebounced(form.username, 450);
-  const abortRef = useRef<AbortController | null>(null);
-
+  // Initial profile load (no redirect on 401)
   useEffect(() => {
     let alive = true;
+    const ctrl = new AbortController();
     (async () => {
       try {
-        const r = await fetch("/api/me/profile", { cache: "no-store" });
-        if (r.ok) {
-          const j = await r.json();
-          if (alive && j?.user) {
-            setForm({
-              username: j.user.username ?? "",
-              whatsapp: j.user.whatsapp ?? "",
-              city: j.user.city ?? "",
-              country: j.user.country ?? "",
-              postalCode: j.user.postalCode ?? "",
-              address: j.user.address ?? "",
-            });
-          }
-        } else if (r.status === 401) {
-          router.replace(
-            `/signin?callbackUrl=${encodeURIComponent(
-              "/onboarding?return=" + encodeURIComponent(returnTo)
-            )}`
-          );
+        const r = await fetch("/api/me/profile", {
+          cache: "no-store",
+          signal: ctrl.signal,
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        if (r.status === 401) {
+          if (alive) setUnauthorized(true);
           return;
         }
+        if (!r.ok) throw new Error("load failed");
+        const j = await r.json();
+        if (alive && j?.user) {
+          setForm({
+            username: j.user.username ?? "",
+            whatsapp: j.user.whatsapp ?? "",
+            city: j.user.city ?? "",
+            country: j.user.country ?? "",
+            postalCode: j.user.postalCode ?? "",
+            address: j.user.address ?? "",
+          });
+        }
       } catch {
-        /* ignore */
+        /* ignore soft errors */
       } finally {
         if (alive) setLoading(false);
       }
     })();
     return () => {
       alive = false;
+      ctrl.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const raw = debouncedUsername;
+  // Debounced username check (no router, no effect-based nav)
+  const onUsernameChange = (next: string) => {
+    setForm((f) => ({ ...f, username: next }));
+    const raw = next;
+    if (unameTimer.current) clearTimeout(unameTimer.current);
+
     if (!raw) {
       setUnameStatus("idle");
       setUnameMsg("");
@@ -113,23 +115,25 @@ function OnboardingPageInner() {
     const u = canonicalUsername(raw);
     if (!USERNAME_RE.test(u)) {
       setUnameStatus("invalid");
-      setUnameMsg("3–24 chars; letters, numbers, . or _ (no .., no leading/trailing . or _).");
+      setUnameMsg(
+        "3–24 chars; letters, numbers, . or _ (no .., no leading/trailing . or _).",
+      );
       return;
     }
 
     setUnameStatus("checking");
     setUnameMsg("Checking…");
 
-    abortRef.current?.abort();
+    unameAbort.current?.abort();
     const ac = new AbortController();
-    abortRef.current = ac;
+    unameAbort.current = ac;
 
-    (async () => {
+    unameTimer.current = setTimeout(async () => {
       try {
-        const r = await fetch(
-          `/api/username/check?u=${encodeURIComponent(u)}`,
-          { signal: ac.signal, cache: "no-store" }
-        );
+        const r = await fetch(`/api/username/check?u=${encodeURIComponent(u)}`, {
+          signal: ac.signal,
+          cache: "no-store",
+        });
         const j = (await r.json().catch(() => ({}))) as UsernameCheck;
         if (!r.ok) {
           setUnameStatus("idle");
@@ -152,10 +156,8 @@ function OnboardingPageInner() {
           setUnameMsg("");
         }
       }
-    })();
-
-    return () => ac.abort();
-  }, [debouncedUsername]);
+    }, 450);
+  };
 
   const normalizedWa = useMemo(() => {
     const raw = form.whatsapp.trim();
@@ -172,7 +174,7 @@ function OnboardingPageInner() {
     }
   }
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (saving) return;
 
@@ -195,7 +197,7 @@ function OnboardingPageInner() {
 
     const payload = {
       username,
-      whatsapp: wa ? wa : (waRaw ? "" : null),
+      whatsapp: wa ? wa : waRaw ? "" : null,
       city: form.city.trim() || "",
       country: form.country.trim() || "",
       postalCode: form.postalCode.trim() || "",
@@ -207,6 +209,7 @@ function OnboardingPageInner() {
       const r = await fetch("/api/me/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify(payload),
       });
       const j = await r.json().catch(() => ({}));
@@ -215,7 +218,7 @@ function OnboardingPageInner() {
         return;
       }
       toast.success("Profile saved!");
-      router.replace(returnTo);
+      setSaved(true); // no auto-redirect
     } catch {
       toast.error("Network error. Please try again.");
     } finally {
@@ -250,17 +253,48 @@ function OnboardingPageInner() {
           <h1 className="text-2xl md:text-3xl font-extrabold">Finish your profile</h1>
           <p className="mt-1 text-white/90">
             Only <b>username</b> is required now. You can add the rest later in{" "}
-            <Link href="/account/profile" className="underline">Profile</Link>.
+            <Link href="/account/profile" className="underline">
+              Profile
+            </Link>
+            .
           </p>
         </div>
 
+        {unauthorized ? (
+          <div
+            role="alert"
+            className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
+          >
+            Please{" "}
+            <Link
+              className="underline"
+              href={`/signin?callbackUrl=${encodeURIComponent(
+                `/onboarding?return=${encodeURIComponent(returnTo)}`,
+              )}`}
+            >
+              sign in
+            </Link>{" "}
+            to finish onboarding.
+          </div>
+        ) : null}
+
+        {saved ? (
+          <div className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
+            Profile saved.{" "}
+            <Link href={returnTo} className="underline">
+              Continue
+            </Link>
+          </div>
+        ) : null}
+
         <form
           onSubmit={onSubmit}
-          className="rounded-xl border bg-white p-5 mt-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4"
+          className="mt-6 space-y-4 rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          noValidate
         >
           {/* Username */}
           <div>
-            <label htmlFor="username" className="block text-sm font-semibold mb-1">
+            <label htmlFor="username" className="mb-1 block text-sm font-semibold">
               Username <span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -269,7 +303,7 @@ function OnboardingPageInner() {
                 className="w-full rounded-lg border px-3 py-2 pr-24 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="e.g. brian254"
                 value={form.username}
-                onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                onChange={(e) => onUsernameChange(e.target.value)}
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
@@ -284,16 +318,16 @@ function OnboardingPageInner() {
               {unameStatus === "invalid"
                 ? "3–24 letters/numbers, . or _ (no .., no leading/trailing . or _)."
                 : unameStatus === "taken"
-                ? (unameMsg || "Username already taken.")
+                ? unameMsg || "Username already taken."
                 : unameStatus === "ok"
-                ? (unameMsg || "Available ✓")
+                ? unameMsg || "Available ✓"
                 : "This will be visible on your listings and profile."}
             </p>
           </div>
 
           {/* WhatsApp */}
           <div>
-            <label htmlFor="whatsapp" className="block text-sm font-semibold mb-1">
+            <label htmlFor="whatsapp" className="mb-1 block text-sm font-semibold">
               WhatsApp (optional)
             </label>
             <input
@@ -301,7 +335,9 @@ function OnboardingPageInner() {
               className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
               placeholder="07XXXXXXXX or +2547XXXXXXX"
               value={form.whatsapp}
-              onChange={(e) => setForm((f) => ({ ...f, whatsapp: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, whatsapp: e.target.value }))
+              }
               onBlur={snapNormalizeWhatsapp}
               inputMode="tel"
             />
@@ -322,9 +358,9 @@ function OnboardingPageInner() {
           </div>
 
           {/* City/Country */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="city" className="block text-sm font-semibold mb-1">
+              <label htmlFor="city" className="mb-1 block text-sm font-semibold">
                 City (optional)
               </label>
               <input
@@ -332,11 +368,13 @@ function OnboardingPageInner() {
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="Nairobi"
                 value={form.city}
-                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, city: e.target.value }))
+                }
               />
             </div>
             <div>
-              <label htmlFor="country" className="block text-sm font-semibold mb-1">
+              <label htmlFor="country" className="mb-1 block text-sm font-semibold">
                 Country (optional)
               </label>
               <input
@@ -344,15 +382,17 @@ function OnboardingPageInner() {
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="Kenya"
                 value={form.country}
-                onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, country: e.target.value }))
+                }
               />
             </div>
           </div>
 
           {/* Postal/Address */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="postal" className="block text-sm font-semibold mb-1">
+              <label htmlFor="postal" className="mb-1 block text-sm font-semibold">
                 Postal code (optional)
               </label>
               <input
@@ -360,12 +400,14 @@ function OnboardingPageInner() {
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="00100"
                 value={form.postalCode}
-                onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, postalCode: e.target.value }))
+                }
                 inputMode="numeric"
               />
             </div>
             <div>
-              <label htmlFor="address" className="block text-sm font-semibold mb-1">
+              <label htmlFor="address" className="mb-1 block text-sm font-semibold">
                 Address (optional)
               </label>
               <input
@@ -373,7 +415,9 @@ function OnboardingPageInner() {
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
                 placeholder="Street, building, etc."
                 value={form.address}
-                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, address: e.target.value }))
+                }
               />
             </div>
           </div>
@@ -388,24 +432,28 @@ function OnboardingPageInner() {
                 unameStatus === "invalid" ||
                 unameStatus === "taken"
               }
-              className="rounded-xl bg-[#161748] text-white px-4 py-2 font-semibold hover:opacity-95 disabled:opacity-60"
+              className="rounded-xl bg-[#161748] px-4 py-2 font-semibold text-white hover:opacity-95 disabled:opacity-60"
             >
-              {saving ? "Saving…" : "Save & continue"}
+              {saving ? "Saving…" : "Save"}
             </button>
-            <button
-              type="button"
+            <Link
+              href={returnTo}
               className="rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
-              onClick={() => router.replace(returnTo)}
-              disabled={saving}
             >
               Skip for now
-            </button>
+            </Link>
           </div>
 
           <p className="text-[11px] text-gray-500 dark:text-slate-400">
             By continuing you agree to QwikSale’s{" "}
-            <Link href="/terms" className="underline">Terms</Link> and{" "}
-            <Link href="/privacy" className="underline">Privacy Policy</Link>.
+            <Link href="/terms" className="underline">
+              Terms
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="underline">
+              Privacy Policy
+            </Link>
+            .
           </p>
         </form>
       </div>

@@ -1,5 +1,5 @@
-// src/app/components/ProductGrid.tsx
 "use client";
+// src/app/components/ProductGrid.tsx
 
 import Link from "next/link";
 import SmartImage from "@/app/components/SmartImage";

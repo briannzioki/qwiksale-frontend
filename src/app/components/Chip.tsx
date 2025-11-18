@@ -1,5 +1,5 @@
-// src/app/components/Chip.tsx
 "use client";
+// src/app/components/Chip.tsx
 
 import * as React from "react";
 

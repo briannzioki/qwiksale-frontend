@@ -1,4 +1,3 @@
-// src/app/components/SectionHeader.tsx
 "use client";
 
 import * as React from "react";
@@ -6,57 +5,50 @@ import { createPortal } from "react-dom";
 
 type Align = "left" | "center";
 type Gradient = "brand" | "navy" | "blue" | "none";
+type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "div";
 
 export type SectionHeaderProps = {
-  /** Main title (string or node) */
   title: React.ReactNode;
-  /** Optional subtitle/description */
   subtitle?: React.ReactNode;
-  /** Small kicker/eyebrow above the title (e.g., “Dashboard” or a <Badge/>) */
   kicker?: React.ReactNode;
-  /** Optional leading icon/avatar */
   icon?: React.ReactNode;
-  /** Primary actions (buttons, etc.) */
-  actions?: React.ReactNode;
+  actions?: React.ReactNode | React.ReactNode[];
 
-  /** Align text/content */
   align?: Align;
-  /** Gradient style for the strip */
   gradient?: Gradient;
-  /** Make header more compact */
   dense?: boolean;
-  /** Extra class on outer wrapper */
   className?: string;
 
-  /**
-   * If true, renders actions into the layout’s #page-header-actions portal
-   * so the buttons land on the right side of the global header strip.
-   */
   portalActionsToLayout?: boolean;
 
-  /** Test id */
+  /** Heading element to render for the title. Defaults to "h1". */
+  as?: HeadingTag;
+
+  /**
+   * When `as="div"`, controls whether we add ARIA heading semantics.
+   * Default: true. Set false to render a plain container.
+   */
+  semanticHeading?: boolean;
+
+  /** Accessible heading level when `as="div"` + `semanticHeading` is true. */
+  level?: 1 | 2 | 3 | 4 | 5 | 6;
+
   "data-testid"?: string;
-};
+} & Omit<React.HTMLAttributes<HTMLElement>, "title">;
 
 function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
 const stripByGradient: Record<Exclude<Gradient, "none">, string> = {
-  brand:
-    // uses your spotlight + noise base; text stays white inside the strip
-    "bg-spotlight bg-noise text-white",
+  brand: "bg-spotlight bg-noise text-white",
   navy: "text-white shadow-soft",
   blue: "text-white shadow-soft",
 };
 
 const stripInlineByGradient: Partial<Record<Gradient, React.CSSProperties>> = {
-  navy: {
-    backgroundImage: "linear-gradient(90deg, #161748 0%, #1f2a6b 60%, #2b3a8a 100%)",
-  },
-  blue: {
-    backgroundImage: "linear-gradient(90deg, #0b5fad 0%, #39a0ca 100%)",
-  },
+  navy: { backgroundImage: "linear-gradient(90deg, #161748 0%, #1f2a6b 60%, #2b3a8a 100%)" },
+  blue: { backgroundImage: "linear-gradient(90deg, #0b5fad 0%, #39a0ca 100%)" },
 };
 
 export default function SectionHeader({
@@ -70,6 +62,9 @@ export default function SectionHeader({
   dense = false,
   className,
   portalActionsToLayout = false,
+  as = "h1",
+  semanticHeading = true,
+  level,
   ...rest
 }: SectionHeaderProps) {
   const [portalEl, setPortalEl] = React.useState<HTMLElement | null>(null);
@@ -79,18 +74,27 @@ export default function SectionHeader({
     setPortalEl(document.getElementById("page-header-actions"));
   }, [portalActionsToLayout]);
 
-  // Whether we want the fancy gradient strip or a plain container
   const useStrip = gradient !== "none";
+  const HeadingTag = (as || "h1") as React.ElementType;
+
+  const ariaLevel =
+    as === "div"
+      ? (level ?? 1)
+      : (Number(String(as).slice(1)) as 1 | 2 | 3 | 4 | 5 | 6) || 1;
+
+  const headingRoleProps =
+    as === "div" && semanticHeading
+      ? ({ role: "heading", "aria-level": ariaLevel } as const)
+      : ({} as const);
+
+  const headingTitleAttr = typeof title === "string" ? title : undefined;
+
+  const actionsArray = React.Children.toArray(actions); // robust: handles null/one/many, adds keys
 
   return (
     <header
       {...rest}
-      className={cn(
-        // keep spotlight bleed visible (matches layout)
-        useStrip && "relative isolate",
-        className
-      )}
-      // Do not clip spotlight; fade bottom to content
+      className={cn(useStrip && "relative isolate", className)}
       style={
         useStrip
           ? { WebkitMaskImage: "linear-gradient(to bottom, black 85%, transparent)" }
@@ -100,16 +104,9 @@ export default function SectionHeader({
       <div
         className={cn(
           useStrip
-            ? cn(
-                stripByGradient[gradient as Exclude<Gradient, "none">] ??
-                  stripByGradient.brand,
-                "w-full"
-              )
+            ? cn(stripByGradient[gradient as Exclude<Gradient, "none">] ?? stripByGradient.brand, "w-full")
             : "w-full",
-          // ⬇️ Slightly more bottom padding so sections breathe
-          dense
-            ? "pt-4 pb-6 md:pt-5 md:pb-7"
-            : "pt-8 pb-12 md:pt-10 md:pb-14"
+          dense ? "pt-4 pb-6 md:pt-5 md:pb-7" : "pt-8 pb-12 md:pt-10 md:pb-14"
         )}
         style={stripInlineByGradient[gradient]}
       >
@@ -118,12 +115,10 @@ export default function SectionHeader({
             {/* Left: title block */}
             <div
               className={cn(
-                "min-w-0", // allow truncation
-                align === "center" &&
-                  "md:mx-auto md:text-center md:items-center md:justify-center"
+                "min-w-0",
+                align === "center" && "md:mx-auto md:text-center md:items-center md:justify-center"
               )}
             >
-              {/* kicker / icon row */}
               {(kicker || icon) && (
                 <div
                   className={cn(
@@ -137,23 +132,20 @@ export default function SectionHeader({
                 </div>
               )}
 
-              {/* title */}
-              <h1
+              {/* Title (may be div or real heading) */}
+              <HeadingTag
+                {...headingRoleProps}
                 className={cn(
                   "text-balance font-extrabold tracking-tight",
-                  // size
                   dense ? "text-xl md:text-2xl" : "text-2xl md:text-3xl",
-                  // color treatment
                   useStrip ? "text-white" : "text-gray-900 dark:text-slate-100",
-                  // gradient text when not in strip
                   !useStrip && "text-gradient"
                 )}
-                title={typeof title === "string" ? title : undefined}
+                title={headingTitleAttr}
               >
                 {title}
-              </h1>
+              </HeadingTag>
 
-              {/* subtitle */}
               {subtitle ? (
                 <p
                   className={cn(
@@ -167,13 +159,11 @@ export default function SectionHeader({
               ) : null}
             </div>
 
-            {/* Right: actions (either inline or portaled to layout slot) */}
+            {/* Right: actions */}
             <div className={cn("mt-2 md:mt-0", align === "center" ? "md:mx-auto" : "")}>
-              {portalActionsToLayout && portalEl ? (
-                createPortal(<div className="flex items-center gap-2">{actions}</div>, portalEl)
-              ) : (
-                <div className="flex items-center gap-2">{actions}</div>
-              )}
+              {portalActionsToLayout && portalEl
+                ? createPortal(<div className="flex items-center gap-2">{actionsArray}</div>, portalEl)
+                : <div className="flex items-center gap-2">{actionsArray}</div>}
             </div>
           </div>
         </div>

@@ -1,10 +1,10 @@
-// src/app/(marketing)/pricing/page.tsx
+﻿// src/app/(marketing)/pricing/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";
 
 export const metadata: Metadata = {
-  title: "Pricing · QwikSale",
+  title: "Pricing Â· QwikSale",
   description: "Simple pricing that scales with you.",
   robots: { index: true, follow: true },
   alternates: { canonical: "/pricing" },
@@ -53,7 +53,7 @@ function PlanCard({
       <ul className="mt-4 space-y-2 text-sm text-gray-700 dark:text-slate-200">
         {features.map((f) => (
           <li key={f} className="flex items-start gap-2">
-            <span aria-hidden>✔️</span>
+            <span aria-hidden>âœ”ï¸</span>
             <span>{f}</span>
           </li>
         ))}
@@ -80,7 +80,7 @@ export default function PricingPage() {
     <main className="container-page py-8">
       <SectionHeader
         title="Pricing"
-        subtitle="Start free. Upgrade when you’re ready for more visibility."
+        subtitle="Start free. Upgrade when youâ€™re ready for more visibility."
         className="bg-spotlight brand-noise"
       />
       <ul className="mt-3 flex flex-wrap gap-2">
@@ -111,7 +111,7 @@ export default function PricingPage() {
             "Featured badge (1 listing)",
             "Basic insights",
           ]}
-          ctaHref="/settings/billing"
+          ctaHref="/account/billing"   // âœ… FIX
           highlight
         />
         <PlanCard
@@ -123,7 +123,7 @@ export default function PricingPage() {
             "Top-of-search boost windows",
             "Advanced insights",
           ]}
-          ctaHref="/settings/billing"
+          ctaHref="/account/billing"   // âœ… FIX
         />
       </section>
 
@@ -146,7 +146,7 @@ export default function PricingPage() {
           <details className="group rounded-lg border p-4 dark:border-slate-700">
             <summary className="cursor-pointer font-medium">Do boosts guarantee sales?</summary>
             <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
-              Boosts improve visibility but don’t guarantee outcomes. Great photos and clear details help!
+              Boosts improve visibility but donâ€™t guarantee outcomes. Great photos and clear details help!
             </p>
           </details>
         </div>
@@ -154,3 +154,4 @@ export default function PricingPage() {
     </main>
   );
 }
+

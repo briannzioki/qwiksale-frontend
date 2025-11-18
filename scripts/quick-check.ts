@@ -1,8 +1,7 @@
 // scripts/quick-check.ts
 import type { Prisma } from "@prisma/client";
-import { prisma } from "../src/app/lib/prisma"; // adjust if your central client is at ../src/lib/db
+import { prisma } from "../src/app/lib/prisma";
 
-// Narrow selects so we can derive precise row types
 const productSelect = {
   id: true,
   name: true,
@@ -40,10 +39,10 @@ async function main() {
   });
 
   console.table(
-    latestP.map((p: ProductRow) => ({ ...p, galleryLen: p.gallery.length }))
+    latestP.map((p) => ({ ...p, galleryLen: p.gallery.length }))
   );
   console.table(
-    latestS.map((s: ServiceRow) => ({ ...s, galleryLen: s.gallery.length }))
+    latestS.map((s) => ({ ...s, galleryLen: s.gallery.length }))
   );
 }
 
@@ -55,6 +54,8 @@ main()
   .finally(async () => {
     try {
       await prisma.$disconnect();
-    } catch {}
+    } catch {
+      // ignore
+    }
     process.exit(0);
   });

@@ -1,4 +1,3 @@
-// src/app/search/loading.tsx
 import { FiltersBarSkeleton, ProductGridSkeleton } from "@/app/components/Skeletons";
 
 export default function Loading() {

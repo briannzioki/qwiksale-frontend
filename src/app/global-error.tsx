@@ -1,5 +1,4 @@
-// src/app/global-error.tsx
-'use client';
+﻿"use client";
 
 export default function GlobalError({
   error,
@@ -8,17 +7,15 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  // Log to console only; no Sentry
-  // eslint-disable-next-line no-console
-  console.error(error);
-
   return (
-    <html>
+    <html lang="en">
       <body>
-        <div style={{ padding: 24 }}>
-          <h2>Something went wrong</h2>
-          <p>{process.env.NODE_ENV !== 'production' ? String(error?.message ?? '') : null}</p>
-          <button onClick={() => reset()}>Try again</button>
+        <div style={{ padding: "2rem", maxWidth: 720, margin: "0 auto" }}>
+          <h1>Something went wrong</h1>
+          {process.env.NODE_ENV !== "production" && (
+            <pre style={{ whiteSpace: "pre-wrap" }}>{String(error?.message ?? "")}</pre>
+          )}
+          <button onClick={() => reset()} aria-label="Try again">Try again</button>
         </div>
       </body>
     </html>

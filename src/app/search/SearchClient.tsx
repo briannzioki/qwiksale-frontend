@@ -1,4 +1,3 @@
-// src/app/search/SearchClient.tsx
 "use client";
 
 import type { ReactNode } from "react";
@@ -14,10 +13,7 @@ export const SORT_OPTIONS = [
   { value: "price_desc", label: "Price ↓" },
 ] as const satisfies ReadonlyArray<{ value: Sort; label: string }>;
 
-/**
- * Passthrough wrapper (kept for future client-side search enhancements).
- * You can add context, analytics, or keyboard handlers here later.
- */
 export default function SearchClient({ children }: { children?: ReactNode }) {
+  // No router.replace / URL mutation here; purely a pass-through shell.
   return <>{children}</>;
 }

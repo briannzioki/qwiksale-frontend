@@ -1,8 +1,10 @@
 "use client";
+// src/app/messages/MessagesClient.client.tsx
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import toast from "react-hot-toast";
 
 /* ----------------------------- Types (unchanged) ----------------------------- */
@@ -65,7 +67,6 @@ function cn(...xs: Array<string | false | null | undefined>) {
 
 /* -------------------------------- Component -------------------------------- */
 export default function MessagesClient({ meId }: Props) {
-  const router = useRouter();
   const sp = useSearchParams();
 
   // ------------ Threads state ------------
@@ -92,7 +93,11 @@ export default function MessagesClient({ meId }: Props) {
 
   const fetchJSON = useCallback(async (url: string, ac?: AbortController | null) => {
     try {
-      const init: RequestInit = ac ? { cache: "no-store", signal: ac.signal } : { cache: "no-store" };
+      const init: RequestInit = {
+        cache: "no-store",
+        credentials: "same-origin",
+        ...(ac ? { signal: ac.signal } : {}),
+      };
       const r = await fetch(url, init);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error((j as any)?.error || `HTTP ${r.status}`);
@@ -106,9 +111,8 @@ export default function MessagesClient({ meId }: Props) {
   const scrollToBottom = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
-    // smooth only if user is near the bottom; otherwise just jump to bottom
     const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 160;
-    el.scrollTo({ top: el.scrollHeight, behavior: nearBottom ? "smooth" as const : "auto" as const });
+    el.scrollTo({ top: el.scrollHeight, behavior: nearBottom ? "smooth" : "auto" });
   }, []);
 
   /* ------------------------------ Load threads ------------------------------ */
@@ -122,23 +126,25 @@ export default function MessagesClient({ meId }: Props) {
       const j = await fetchJSON("/api/messages", ac);
       if (!j) return;
       const items: Thread[] = Array.isArray((j as any)?.items) ? (j as any).items : [];
-      // order by updatedAt / lastMessageAt desc
       items.sort(
         (a, b) =>
           (new Date(b.updatedAt || b.lastMessageAt).getTime() || 0) -
           (new Date(a.updatedAt || a.lastMessageAt).getTime() || 0)
       );
       setThreads(items);
+
       if (!selected && items.length) {
+        // Select first thread in UI only — no URL/nav mutation on mount
         setSelected(items[0]!.id);
-        router.replace(`/messages?t=${encodeURIComponent(items[0]!.id)}`, { scroll: false });
+      } else if (selected && !items.some((t) => t.id === selected) && items.length) {
+        setSelected(items[0]!.id);
       }
     } catch (e: any) {
       setThreadsErr(e?.message || "Failed to load threads");
     } finally {
       setThreadsLoading(false);
     }
-  }, [fetchJSON, router, selected]);
+  }, [fetchJSON, selected]);
 
   // initial load + gentle polling for thread list
   useEffect(() => {
@@ -176,11 +182,14 @@ export default function MessagesClient({ meId }: Props) {
         arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         setMessages(arr);
         // mark as read (best-effort)
-        fetch(`/api/messages/${encodeURIComponent(id)}/read`, { method: "POST", cache: "no-store" }).catch(() => {});
-        // next tick -> scroll bottom
+        fetch(`/api/messages/${encodeURIComponent(id)}/read`, {
+          method: "POST",
+          cache: "no-store",
+          credentials: "same-origin",
+        }).catch(() => {});
         setTimeout(scrollToBottom, 0);
       } catch (e: any) {
-        setMsgsErr(e?.message || "Failed to load conversation");
+        if (!silent) setMsgsErr(e?.message || "Failed to load conversation");
       } finally {
         if (!silent) setMsgsLoading(false);
       }
@@ -230,17 +239,11 @@ export default function MessagesClient({ meId }: Props) {
     return { label, image: other.image, initials: initials(other.name, other.username) };
   }, [current, meId]);
 
-  const handleSelect = (id: string) => {
-    setSelected(id);
-    router.replace(`/messages?t=${encodeURIComponent(id)}`, { scroll: false });
-  };
-
-  /* ---------------------------------- Send ---------------------------------- */
+  /* --------------------------------- Send ---------------------------------- */
   const send = async () => {
     const trimmed = body.trim();
     if (!selected || !trimmed || sending) return;
 
-    // optimistic append
     const optimistic: Message = {
       id: `tmp-${Date.now()}`,
       senderId: meId || "me",
@@ -258,6 +261,7 @@ export default function MessagesClient({ meId }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "same-origin",
         body: JSON.stringify({ body: trimmed }),
       });
       if (!r.ok) {
@@ -266,7 +270,6 @@ export default function MessagesClient({ meId }: Props) {
       }
       await Promise.all([loadThread(selected, { silent: true }), loadThreads()]);
     } catch (e: any) {
-      // Roll back optimistic and restore text
       setMessages((ms) => ms.filter((m) => m.id !== optimistic.id));
       setBody(trimmed);
       toast.error(e?.message || "Failed to send");
@@ -307,19 +310,18 @@ export default function MessagesClient({ meId }: Props) {
 
             {threads.map((t) => {
               const isSel = selected === t.id;
-              const other =
-                meId && t.buyerId === meId ? t.seller : t.buyer;
+              const other = meId && t.buyerId === meId ? t.seller : t.buyer;
               const label = other.name || other.username || "User";
               const sub = `${t.listingType === "product" ? "Product" : "Service"} • #${t.listingId.slice(0, 6)}…`;
               const when = fmtTime(t.updatedAt || t.lastMessageAt);
 
               return (
-                <button
+                <Link
                   key={t.id}
-                  type="button"
-                  onClick={() => handleSelect(t.id)}
+                  href={`/messages?t=${encodeURIComponent(t.id)}`}
+                  prefetch={false}
                   className={cn(
-                    "w-full px-4 py-3 text-left transition",
+                    "block w-full px-4 py-3 text-left transition",
                     isSel ? "bg-brandBlue/5 dark:bg-white/5" : "hover:bg-black/5 dark:hover:bg-white/5"
                   )}
                 >
@@ -340,7 +342,7 @@ export default function MessagesClient({ meId }: Props) {
                       </div>
                     </div>
                   </div>
-                </button>
+                </Link>
               );
             })}
           </div>
@@ -370,7 +372,7 @@ export default function MessagesClient({ meId }: Props) {
           </div>
 
           {/* Messages list */}
-          <div ref={listRef} className="flex-1 overflow-auto px-3 py-3 space-y-2">
+          <div ref={listRef} aria-live="polite" className="flex-1 overflow-auto px-3 py-3 space-y-2">
             {msgsLoading && messages.length === 0 && (
               <div className="space-y-2">
                 {Array.from({ length: 6 }).map((_, i) => (

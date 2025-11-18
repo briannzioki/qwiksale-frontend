@@ -12,7 +12,6 @@ const r = (p: string) => path.resolve(__dirname, p);
 export default defineConfig({
   plugins: [
     react({ jsxRuntime: "automatic" }),
-    // Make the editor + Vitest both honor tsconfig paths in root and tests/
     tsconfigPaths({ projects: [r("tsconfig.json"), r("tests/tsconfig.json")] }),
   ],
 
@@ -20,8 +19,13 @@ export default defineConfig({
     alias: {
       "@": r("src"),
       "server-only": r("tests/shims/server-only.ts"),
-      "client-only": r("tests/shims/client-only.ts")
-    }
+      "client-only": r("tests/shims/client-only.ts"),
+      // Shims for Next in Vitest:
+      "next/server": r("tests/shims/next-server.ts"),
+      "next/headers": r("tests/shims/next-server.ts"),
+      // Shim for NextAuth to avoid pulling real next/server in tests
+      "next-auth": r("tests/shims/next-auth.ts"),
+    },
   },
 
   esbuild: { target: "es2022", jsx: "automatic" },
@@ -42,7 +46,7 @@ export default defineConfig({
       "tests/integration/**/*.{test,spec}.ts",
       "tests/integration/**/*.{test,spec}.tsx",
       "src/**/__tests__/**/*.{test,spec}.ts",
-      "src/**/__tests__/**/*.{test,spec}.tsx"
+      "src/**/__tests__/**/*.{test,spec}.tsx",
     ],
     exclude: ["node_modules/**", "dist/**", ".next/**", "coverage/**", "tests/e2e/**"],
 
@@ -51,11 +55,18 @@ export default defineConfig({
     mockReset: true,
     passWithNoTests: true,
 
-    coverage: { provider: "v8", reportsDirectory: "./coverage", reporter: ["text", "lcov"] },
+    coverage: {
+      provider: "v8",
+      reportsDirectory: "./coverage",
+      reporter: ["text", "lcov"],
+    },
 
     hookTimeout: 30_000,
 
-    // Vitest 3 deprecates deps.inline – use server.deps.inline
-    server: { deps: { inline: [/^next\/image$/, /^next\/navigation$/] } }
-  }
+    server: {
+      deps: {
+        inline: [/^next\/image$/, /^next\/navigation$/],
+      },
+    },
+  },
 });

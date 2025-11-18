@@ -1,23 +1,11 @@
-// src/app/components/DevToolsMount.tsx
 "use client";
-
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 
 /**
- * Decide whether dev tools should be visible.
- * Priority (highest → lowest):
- * 1) URL param ?dev=1 or ?dev=0  (ephemeral, overrides others for this session)
- * 2) sessionStorage key "qs:devtools" = "1" / "0" (sticky for the tab)
- * 3) localStorage  key "qs:devtools" = "1" / "0" (sticky across sessions)
- * 4) Env flags:
- *    - NEXT_PUBLIC_SHOW_DEV_TEST === "1" (force on)
- *    - NODE_ENV !== "production" (on by default in dev)
+ * Dev tools toggle — strictly passive (no URL/history mutations).
  */
 function computeInitialShow(): boolean {
-  if (typeof window === "undefined") {
-    // During prerender (never happens here because "use client"), but be safe.
-    return false;
-  }
+  if (typeof window === "undefined") return false;
 
   try {
     const url = new URL(window.location.href);
@@ -30,32 +18,24 @@ function computeInitialShow(): boolean {
       sessionStorage.setItem("qs:devtools", "0");
       return false;
     }
-  } catch {
-    /* noop */
-  }
+  } catch {}
 
   try {
     const ses = sessionStorage.getItem("qs:devtools");
     if (ses === "1") return true;
     if (ses === "0") return false;
-  } catch {
-    /* noop */
-  }
+  } catch {}
 
   try {
     const ls = localStorage.getItem("qs:devtools");
     if (ls === "1") return true;
     if (ls === "0") return false;
-  } catch {
-    /* noop */
-  }
+  } catch {}
 
-  // Env-based defaults (inlined at build time)
-  if (process.env["NEXT_PUBLIC_SHOW_DEV_TEST"] === "1") return true; // dot-form
+  if (process.env["NEXT_PUBLIC_SHOW_DEV_TEST"] === "1") return true;
   return process.env.NODE_ENV !== "production";
 }
 
-/** Store the preference. */
 function persist(show: boolean) {
   try {
     sessionStorage.setItem("qs:devtools", show ? "1" : "0");
@@ -65,11 +45,6 @@ function persist(show: boolean) {
   } catch {}
 }
 
-/**
- * Floating toggle button for quick on/off:
- * - Ctrl/⌘ + Shift + D toggles
- * - Also listens to window event "qs:devtools:toggle"
- */
 export default function DevToolsMount() {
   const [show, setShow] = useState<boolean>(() => computeInitialShow());
   const [mounted, setMounted] = useState(false);
@@ -86,7 +61,6 @@ export default function DevToolsMount() {
     });
   }, []);
 
-  // Keyboard: Ctrl/⌘ + Shift + D
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const isMeta = e.ctrlKey || e.metaKey;
@@ -99,7 +73,6 @@ export default function DevToolsMount() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggle]);
 
-  // Event bus: window.dispatchEvent(new CustomEvent("qs:devtools:toggle"))
   useEffect(() => {
     function onToggle() {
       toggle();
@@ -108,7 +81,6 @@ export default function DevToolsMount() {
     return () => window.removeEventListener("qs:devtools:toggle", onToggle as EventListener);
   }, [toggle]);
 
-  // A tiny ribbon to indicate dev tools are active, with a click-to-hide.
   const Ribbon = useMemo(
     () =>
       show ? (
@@ -116,13 +88,7 @@ export default function DevToolsMount() {
           type="button"
           onClick={toggle}
           title="Hide dev tools (Ctrl/⌘+Shift+D)"
-          className="
-            fixed bottom-4 right-4 z-[9998]
-            rounded-full border px-3 py-2 text-xs font-semibold
-            bg-white/90 text-gray-900 dark:bg-zinc-900/90 dark:text-zinc-100
-            border-gray-200 dark:border-zinc-800 shadow-md backdrop-blur
-            hover:bg-white dark:hover:bg-zinc-800 transition
-          "
+          className="fixed bottom-4 right-4 z-[9998] rounded-full border px-3 py-2 text-xs font-semibold bg-white/90 text-gray-900 dark:bg-zinc-900/90 dark:text-zinc-100 border-gray-200 dark:border-zinc-800 shadow-md backdrop-blur hover:bg-white dark:hover:bg-zinc-800 transition"
         >
           Dev tools ON
         </button>
@@ -131,13 +97,7 @@ export default function DevToolsMount() {
           type="button"
           onClick={toggle}
           title="Show dev tools (Ctrl/⌘+Shift+D)"
-          className="
-            fixed bottom-4 right-4 z-[9998]
-            rounded-full border px-3 py-2 text-xs
-            bg-white/70 text-gray-700 dark:bg-zinc-900/70 dark:text-zinc-300
-            border-gray-200 dark:border-zinc-800 shadow-sm backdrop-blur
-            hover:bg-white dark:hover:bg-zinc-800 transition
-          "
+          className="fixed bottom-4 right-4 z-[9998] rounded-full border px-3 py-2 text-xs bg-white/70 text-gray-700 dark:bg-zinc-900/70 dark:text-zinc-300 border-gray-200 dark:border-zinc-800 shadow-sm backdrop-blur hover:bg-white dark:hover:bg-zinc-800 transition"
         >
           Dev tools OFF
         </button>
@@ -145,14 +105,6 @@ export default function DevToolsMount() {
     [show, toggle]
   );
 
-  // Guard against SSR hydration: only render after mount
   if (!mounted) return null;
-
-  return (
-    <>
-      {Ribbon}
-      {/* Add your dev widgets here when you have them.
-          Sentry test panel removed. */}
-    </>
-  );
+  return <>{Ribbon}</>;
 }

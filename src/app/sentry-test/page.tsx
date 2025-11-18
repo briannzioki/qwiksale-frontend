@@ -8,7 +8,7 @@ export const metadata = {
 };
 
 export default function SentryTestPage() {
-  if (process.env.NODE_ENV === "production") {
+  if (process.env["NODE_ENV"] === "production") {
     // Hide this page in production
     return (
       <div className="container-page py-10">

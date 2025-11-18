@@ -1,5 +1,4 @@
 "use client";
-
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -12,7 +11,7 @@ import { getJson } from "@/app/lib/http";
 import { shimmer } from "@/app/lib/blur";
 import ErrorBanner from "@/app/components/ErrorBanner";
 
-/* Types */
+/* -------------------------------- Types -------------------------------- */
 type ApiProduct = {
   id: string;
   name: string;
@@ -33,7 +32,7 @@ type ApiFavorite = {
 
 type ApiResponse = { items: ApiFavorite[]; nextCursor?: string | null };
 
-/* Utils */
+/* -------------------------------- Utils -------------------------------- */
 function fmtKES(n?: number | null) {
   if (!n || n <= 0) return "Contact for price";
   try {
@@ -78,6 +77,7 @@ export default function SavedPage() {
     }
   }, []);
 
+  // Load whenever auth status settles
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -98,6 +98,7 @@ export default function SavedPage() {
     };
   }, [sessionStatus]);
 
+  // Local fallback using store + favourite IDs (works offline / API error)
   const fallbackFavs: ApiFavorite[] = React.useMemo(() => {
     const selected = products.filter((p) => ids.includes(String(p.id)));
     return selected.map((p) => ({
@@ -119,7 +120,7 @@ export default function SavedPage() {
 
   const list: ApiFavorite[] = React.useMemo(() => {
     if (favItems) return favItems;
-    if (err) return fallbackFavs; // Show local fallbacks when API fails
+    if (err) return fallbackFavs; // Graceful fallback
     if (!loading && sessionStatus === "unauthenticated") return [];
     return [];
   }, [favItems, fallbackFavs, err, loading, sessionStatus]);
@@ -144,13 +145,7 @@ export default function SavedPage() {
       </div>
 
       {/* Re-triable fetch error banner (non-blocking; we still render any fallbacks below) */}
-      {err ? (
-        <ErrorBanner
-          message={err}
-          onRetryAction={loadFavorites}
-          className="mt-0"
-        />
-      ) : null}
+      {err ? <ErrorBanner message={err} onRetryAction={loadFavorites} className="mt-0" /> : null}
 
       {sessionStatus === "loading" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -186,8 +181,12 @@ export default function SavedPage() {
             and tap the heart ❤️.
           </div>
           <div className="flex gap-2">
-            <Link href="/" className="btn-outline">Browse listings</Link>
-            <Link href="/sell" className="btn-outline">Post a listing</Link>
+            <Link href="/" className="btn-outline">
+              Browse listings
+            </Link>
+            <Link href="/sell" className="btn-outline">
+              Post a listing
+            </Link>
           </div>
         </div>
       ) : (
@@ -199,7 +198,7 @@ export default function SavedPage() {
               const imgUrl = p.image || fallback;
 
               return (
-                <Link key={p.id} href={`/product/${p.id}`} className="group relative">
+                <Link key={p.id} href={`/product/${p.id}`} className="group relative" prefetch={false}>
                   <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800 group-hover:border-brandBlue/60">
                     <div className="relative">
                       {p.featured ? (
@@ -218,6 +217,7 @@ export default function SavedPage() {
                           blurDataURL={shimmer({ width: 640, height: 360 })}
                           sizes="(max-width: 768px) 100vw, 33vw"
                           onError={makeImageOnError(fallback)}
+                          priority={false}
                         />
                       </div>
 
@@ -231,6 +231,7 @@ export default function SavedPage() {
                           }}
                           className="btn-outline px-2 py-1 text-xs"
                           title="Copy link"
+                          aria-label="Copy link"
                         >
                           Copy
                         </button>

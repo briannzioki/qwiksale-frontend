@@ -1,9 +1,9 @@
-﻿// src/app/sell/success/page.tsx
 "use client";
+// src/app/sell/success/page.tsx
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { track } from "@/app/lib/analytics";
 
@@ -11,15 +11,12 @@ import { track } from "@/app/lib/analytics";
 const ENV_SITE = (process.env["NEXT_PUBLIC_APP_URL"] ?? "").replace(/\/+$/, "");
 const SUBSCRIPTIONS_ENABLED =
   (process.env["NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED"] ?? "1") !== "0";
-const REDIRECT_SECONDS = 6;
 
 function SellSuccessInner() {
   const sp = useSearchParams();
-  const router = useRouter();
 
   const [origin, setOrigin] = useState<string>("");
   const [canNativeShare, setCanNativeShare] = useState<boolean>(false);
-  const [secondsLeft, setSecondsLeft] = useState<number>(REDIRECT_SECONDS);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -34,24 +31,6 @@ function SellSuccessInner() {
     if (!origin || !productId) return "";
     return `${origin}/product/${encodeURIComponent(productId)}`;
   }, [origin, productId]);
-
-  // Auto-redirect to /dashboard with a small countdown
-  useEffect(() => {
-    // tick every second
-    const tick = setInterval(() => {
-      setSecondsLeft((s) => Math.max(0, s - 1));
-    }, 1000);
-
-    // final redirect
-    const t = setTimeout(() => {
-      router.replace("/dashboard");
-    }, REDIRECT_SECONDS * 1000);
-
-    return () => {
-      clearTimeout(t);
-      clearInterval(tick);
-    };
-  }, [router]);
 
   async function copy() {
     if (!productUrl) return;
@@ -98,11 +77,7 @@ function SellSuccessInner() {
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight">Listing Posted 🎉</h1>
           <p className="mt-2 text-white/90">
-            Your item is now live on QwikSale. Share it with buyers and start getting
-            messages.
-          </p>
-          <p className="mt-3 text-sm text-white/90">
-            Redirecting to your dashboard in <strong>{secondsLeft}</strong>s…
+            Your item is now live on QwikSale. Share it with buyers and start getting messages.
           </p>
         </div>
 
@@ -111,8 +86,7 @@ function SellSuccessInner() {
           {productId ? (
             <>
               <div className="text-sm text-gray-700 dark:text-slate-200">
-                Listing URL:{" "}
-                <code className="font-mono break-all">{productUrl || "…"}</code>
+                Listing URL: <code className="font-mono break-all">{productUrl || "…"}</code>
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-3">
@@ -171,7 +145,7 @@ function SellSuccessInner() {
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Link href="/dashboard" className="btn-outline">
-              Go to dashboard now
+              Go to dashboard
             </Link>
             <Link
               href="/sell"
@@ -213,7 +187,6 @@ function SellSuccessInner() {
 }
 
 export default function SellSuccessPage() {
-  // Wrap useSearchParams usage in a Suspense boundary to satisfy Next.js 15 CSR bailout rules.
   return (
     <Suspense fallback={<div />}>
       <SellSuccessInner />

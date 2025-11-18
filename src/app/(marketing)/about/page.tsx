@@ -1,4 +1,4 @@
-// src/app/(marketing)/about/page.tsx
+﻿// src/app/(marketing)/about/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
@@ -219,7 +219,7 @@ export default function AboutPage() {
         {/* Stats */}
         <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="High-level stats">
           <Stat label="Active categories" value="20+" />
-          <Stat label="Avg. time to post" value="≤ 3 min" />
+          <Stat label="Avg. time to post" value="â‰¤ 3 min" />
           <Stat label="Cities covered" value="30+" />
           <Stat label="Median response time" value="&lt; 1 hr" sublabel="for top listings" />
         </section>
@@ -229,9 +229,9 @@ export default function AboutPage() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Our story</h2>
           <p className="mt-2 text-sm text-gray-700 dark:text-slate-300">
             QwikSale started with a simple idea: local marketplaces should feel modern, lightweight,
-            and trustworthy. We’re building tools that help real people find great deals nearby—without
+            and trustworthy. Weâ€™re building tools that help real people find great deals nearbyâ€”without
             friction. From an initial prototype shared with friends to a platform powering thousands of
-            listings, our focus hasn’t changed: speed, clarity, and community safety.
+            listings, our focus hasnâ€™t changed: speed, clarity, and community safety.
           </p>
         </section>
 
@@ -255,8 +255,8 @@ export default function AboutPage() {
         <section className="mt-8">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Team</h2>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <TeamCard name="Alex Kimani" role="Co-founder • Product" />
-            <TeamCard name="Joy Wanjiru" role="Co-founder • Engineering" />
+            <TeamCard name="Alex Kimani" role="Co-founder â€¢ Product" />
+            <TeamCard name="Joy Wanjiru" role="Co-founder â€¢ Engineering" />
             <TeamCard name="Sam Otieno" role="Design & Research" />
           </div>
         </section>
@@ -275,7 +275,7 @@ export default function AboutPage() {
             />
             <FAQItem
               q="Which cities are supported?"
-              a="We’re expanding steadily. You can browse and post in most major towns, with more coming soon."
+              a="Weâ€™re expanding steadily. You can browse and post in most major towns, with more coming soon."
             />
             <FAQItem
               q="How do I contact support?"
@@ -314,3 +314,4 @@ export default function AboutPage() {
     </main>
   );
 }
+

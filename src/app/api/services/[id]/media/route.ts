@@ -59,7 +59,7 @@ for (const base of EXTRA_BASES) {
     const u = new URL(base);
     if (u.hostname) EXTRA_HOSTS.push(u.hostname);
   } catch {
-    /* ignore */
+    // ignore invalid URL
   }
 }
 
@@ -90,11 +90,11 @@ const MAX_GALLERY =
 
 export async function PATCH(
   req: NextRequest,
-  // IMPORTANT: keep params as a Promise to satisfy Next's ParamCheck<RouteContext>
+  // Keep params as Promise to satisfy Next ParamCheck in app router
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: raw } = await context.params; // await the promise param
+    const { id: raw } = await context.params;
     const id = (raw ?? "").trim();
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
@@ -119,10 +119,13 @@ export async function PATCH(
 
     const body = (await req.json().catch(() => null)) as PatchBody | null;
     if (!body || !Array.isArray(body.items)) {
-      return noStore({ error: "Bad request: expected {items: [...]}" }, { status: 400 });
+      return noStore(
+        { error: "Bad request: expected {items: [...]}" },
+        { status: 400 }
+      );
     }
 
-    // Normalize http(s) only, drop disallowed hosts, sort, dedupe by URL.
+    // Normalize HTTP(S) only, filter by allowed hosts, sort + dedupe by URL.
     const prepared = body.items
       .map((x, i) => {
         const url = typeof x?.url === "string" ? x.url.trim() : "";
@@ -132,9 +135,14 @@ export async function PATCH(
         const isCover = !!x?.isCover;
         return { url, sort, isCover, i };
       })
-      .filter(Boolean) as Array<{ url: string; sort: number; isCover: boolean; i: number }>;
+      .filter(Boolean) as Array<{
+      url: string;
+      sort: number;
+      isCover: boolean;
+      i: number;
+    }>;
 
-    // server-side ordering: sort by (sort, i), dedupe by URL
+    // Order by (sort, original index) and dedupe by URL
     prepared.sort((a, b) => a.sort - b.sort || a.i - b.i);
 
     const seen = new Set<string>();
@@ -145,11 +153,14 @@ export async function PATCH(
       unique.push({ url: it.url, isCover: it.isCover });
     }
 
-    // Ensure single cover: explicit cover wins; otherwise first entry is cover.
+    // Ensure a single cover: explicit cover wins; else first.
     const explicitCoverIdx = unique.findIndex((x) => x.isCover);
     const ordered =
       explicitCoverIdx > 0
-        ? [unique[explicitCoverIdx]!, ...unique.filter((_, idx) => idx !== explicitCoverIdx)]
+        ? [
+            unique[explicitCoverIdx]!,
+            ...unique.filter((_, idx) => idx !== explicitCoverIdx),
+          ]
         : unique;
 
     const gallery = ordered.slice(0, MAX_GALLERY).map((x) => x.url);
@@ -160,7 +171,7 @@ export async function PATCH(
       data: { image: coverUrl, gallery },
     });
 
-    // revalidate tags/paths
+    // Revalidate tags/paths (best-effort)
     try {
       revalidateTag("home:active");
       revalidateTag("services:latest");
@@ -169,9 +180,11 @@ export async function PATCH(
       revalidatePath("/services");
       revalidatePath(`/service/${id}`);
       revalidatePath(`/service/${id}/edit`);
-      revalidatePath(`/service-listing/${id}`); // store alias
+      revalidatePath(`/service-listing/${id}`);
       revalidatePath(`/dashboard`);
-    } catch {}
+    } catch {
+      // ignore
+    }
 
     return noStore({ ok: true, cover: coverUrl, gallery });
   } catch (e) {

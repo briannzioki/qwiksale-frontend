@@ -1,5 +1,5 @@
-// src/app/components/IconButton.tsx
 "use client";
+// src/app/components/IconButton.tsx
 
 import * as React from "react";
 import { Icon, type IconName, type IconSize } from "@/app/components/Icon";
@@ -94,7 +94,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
   ) {
     // A11y: require a label of some kind if there’s no visible text
     const needsSr = !labelText && !srLabel && !btn["aria-label"];
-    if (process.env.NODE_ENV !== "production" && needsSr) {
+    if (process.env["NODE_ENV"] !== "production" && needsSr) {
       // eslint-disable-next-line no-console
       console.warn(
         "[IconButton] Provide `srLabel` or `aria-label` when rendering an icon-only button."

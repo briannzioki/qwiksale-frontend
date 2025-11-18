@@ -1,9 +1,17 @@
 // src/app/signup/page.tsx
 "use client";
 
-import { Suspense, useMemo, useState, useEffect } from "react";
+import {
+  Suspense,
+  useMemo,
+  useState,
+  useEffect,
+  type FormEvent,
+  type ReactNode,
+  type SVGProps,
+} from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import toast from "react-hot-toast";
 
@@ -32,15 +40,17 @@ const ERR_COPY: Record<string, string> = {
 
 /* ----------------------------- component --------------------------- */
 function SignUpPageInner() {
-  const router = useRouter();
   const sp = useSearchParams();
   const returnToRaw = sp.get("callbackUrl");
   const returnTo = isSafePath(returnToRaw) ? returnToRaw : "/account/profile";
 
   const urlError = sp.get("error");
   const friendlyError = useMemo(
-    () => (urlError ? ERR_COPY[urlError] ?? "Sign-up failed. Please try again." : null),
-    [urlError]
+    () =>
+      urlError
+        ? ERR_COPY[urlError] ?? "Sign-up failed. Please try again."
+        : null,
+    [urlError],
   );
 
   const [email, setEmail] = useState("");
@@ -55,47 +65,36 @@ function SignUpPageInner() {
 
   function validate(): string | null {
     if (!email) return "Enter your email.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Enter a valid email.";
-    if (password.length < 6) return "Password must be at least 6 characters.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      return "Enter a valid email.";
+    if (password.length < 6)
+      return "Password must be at least 6 characters.";
     if (password !== confirm) return "Passwords do not match.";
     return null;
   }
 
-  async function onCreate(e: React.FormEvent) {
+  async function onCreate(e: FormEvent) {
     e.preventDefault();
     if (working) return;
     const v = validate();
     if (v) return toast.error(v);
 
-    try {
-      setWorking("creds");
-      const res = await signIn("credentials", {
-        email: email.trim().toLowerCase(),
-        password,
-        redirect: false,
-        callbackUrl: returnTo,
-      });
-      if (!res || res.error) {
-        toast.error(
-          res?.error || 'Sign-up failed. Try a different email or use “Continue with Google”.'
-        );
-        return;
-      }
-      toast.success("Welcome to QwikSale! 🎉");
-      router.replace(returnTo);
-    } finally {
-      setWorking(null);
-    }
+    // Delegate navigation to NextAuth (no client router)
+    setWorking("creds");
+    await signIn("credentials", {
+      email: email.trim().toLowerCase(),
+      password,
+      callbackUrl: returnTo,
+      redirect: true,
+    });
+    setWorking(null);
   }
 
   async function onGoogle() {
     if (working) return;
     setWorking("google");
-    try {
-      await signIn("google", { callbackUrl: returnTo });
-    } finally {
-      setWorking(null);
-    }
+    await signIn("google", { callbackUrl: returnTo, redirect: true });
+    setWorking(null);
   }
 
   const pwStrength = strengthLabel(password);
@@ -121,7 +120,8 @@ function SignUpPageInner() {
             Create your QwikSale account
           </h1>
           <p className="mt-2 max-w-prose text-white/90">
-            Buy & sell with confidence across Kenya. It takes less than a minute.
+            Buy & sell with confidence across Kenya. It takes less than a
+            minute.
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/85">
@@ -185,7 +185,9 @@ function SignUpPageInner() {
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-sm font-semibold">Password</span>
+                <span className="mb-1 block text-sm font-semibold">
+                  Password
+                </span>
                 <div className="relative">
                   <input
                     type={showPassword ? "text" : "password"}
@@ -227,7 +229,9 @@ function SignUpPageInner() {
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-sm font-semibold">Confirm password</span>
+                <span className="mb-1 block text-sm font-semibold">
+                  Confirm password
+                </span>
                 <input
                   type="password"
                   className="w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
@@ -250,11 +254,19 @@ function SignUpPageInner() {
 
               <p className="text-xs text-gray-600 dark:text-slate-400">
                 By creating an account, you agree to QwikSale’s{" "}
-                <Link className="underline underline-offset-2" href="/terms" prefetch={false}>
+                <Link
+                  className="underline underline-offset-2"
+                  href="/terms"
+                  prefetch={false}
+                >
                   Terms
                 </Link>{" "}
                 and{" "}
-                <Link className="underline underline-offset-2" href="/privacy" prefetch={false}>
+                <Link
+                  className="underline underline-offset-2"
+                  href="/privacy"
+                  prefetch={false}
+                >
                   Privacy Policy
                 </Link>
                 .
@@ -262,7 +274,11 @@ function SignUpPageInner() {
 
               <p className="text-xs text-gray-600 dark:text-slate-400">
                 Already have an account?{" "}
-                <Link className="underline underline-offset-2" href="/signin" prefetch={false}>
+                <Link
+                  className="underline underline-offset-2"
+                  href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}
+                  prefetch={false}
+                >
                   Sign in
                 </Link>
               </p>
@@ -270,13 +286,17 @@ function SignUpPageInner() {
           </form>
 
           <section className="rounded-2xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h2 className="text-base font-semibold">Why people stay with QwikSale</h2>
+            <h2 className="text-base font-semibold">
+              Why people stay with QwikSale
+            </h2>
             <ul className="mt-3 grid gap-3 text-sm text-gray-700 dark:text-slate-300 md:grid-cols-2">
               <li className="flex items-start gap-2">
-                <Spark /> Smart visibility: verified listings get prime placement.
+                <Spark /> Smart visibility: verified listings get prime
+                placement.
               </li>
               <li className="flex items-start gap-2">
-                <Spark /> Safe contact: your details stay private until you choose.
+                <Spark /> Safe contact: your details stay private until you
+                choose.
               </li>
               <li className="flex items-start gap-2">
                 <Spark /> Local deals first: find buyers & sellers near you.
@@ -292,7 +312,7 @@ function SignUpPageInner() {
   );
 }
 
-function Badge({ children, icon }: { children: React.ReactNode; icon: string }) {
+function Badge({ children, icon }: { children: ReactNode; icon: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] ring-1 ring-white/15 backdrop-blur">
       <span aria-hidden>{icon}</span>
@@ -301,20 +321,37 @@ function Badge({ children, icon }: { children: React.ReactNode; icon: string }) 
   );
 }
 
-function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
+function GoogleIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 48 48" {...props} aria-hidden>
-      <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.826 32.599 29.28 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.152 7.961 3.039l5.657-5.657C33.64 6.053 28.999 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.651-.389-3.917z" />
-      <path fill="#FF3D00" d="M6.306 14.691l6.571 4.817C14.48 16.064 18.883 14 24 14c3.059 0 5.842 1.152 7.961 3.039l5.657-5.657C33.64 6.053 28.999 4 24 4 16.318 4 9.657 8.337 6.306 14.691z" />
-      <path fill="#4CAF50" d="M24 44c5.227 0 9.941-1.997 13.515-5.261l-6.231-5.274C29.24 34.737 26.747 36 24 36c-5.255 0-9.79-3.381-11.396-8.078l-6.52 5.02C9.386 39.63 16.13 44 24 44z" />
-      <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-1.151 3.247-3.557 5.833-6.519 7.382l.003-.002 6.231 5.274C37.617 38.079 40 32.666 40 27c0-2.356-.389-4.621-1.111-6.917z" />
+      <path
+        fill="#FFC107"
+        d="M43.611 20.083H42V20H24v8h11.303C33.826 32.599 29.28 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.152 7.961 3.039l5.657-5.657C33.64 6.053 28.999 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.651-.389-3.917z"
+      />
+      <path
+        fill="#FF3D00"
+        d="M6.306 14.691l6.571 4.817C14.48 16.064 18.883 14 24 14c3.059 0 5.842 1.152 7.961 3.039l5.657-5.657C33.64 6.053 28.999 4 24 4 16.318 4 9.657 8.337 6.306 14.691z"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.227 0 9.941-1.997 13.515-5.261l-6.231-5.274C29.24 34.737 26.747 36 24 36c-5.255 0-9.79-3.381-11.396-8.078l-6.52 5.02C9.386 39.63 16.13 44 24 44z"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.611 20.083H42V20H24v8h11.303c-1.151 3.247-3.557 5.833-6.519 7.382l.003-.002 6.231 5.274C37.617 38.079 40 32.666 40 27c0-2.356-.389-4.621-1.111-6.917z"
+      />
     </svg>
   );
 }
 
 function Spark() {
   return (
-    <svg viewBox="0 0 20 20" className="mt-0.5 h-4 w-4 text-brandBlue" fill="currentColor" aria-hidden>
+    <svg
+      viewBox="0 0 20 20"
+      className="mt-0.5 h-4 w-4 text-brandBlue"
+      fill="currentColor"
+      aria-hidden
+    >
       <path d="M10 2l1.8 4.2L16 8l-4.2 1.8L10 14l-1.8-4.2L4 8l4.2-1.8L10 2z" />
     </svg>
   );

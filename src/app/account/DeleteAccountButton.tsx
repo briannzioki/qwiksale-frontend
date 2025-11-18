@@ -1,4 +1,5 @@
 "use client";
+// src/app/account/DeleteAccountButton.tsx
 
 import { useState } from "react";
 import { signOut } from "next-auth/react";
@@ -37,18 +38,16 @@ export default function DeleteAccountButton({ email }: Props) {
       if (!r.ok) {
         const msg =
           (j as any)?.error ||
-          (r.status === 401
-            ? "Please sign in again."
-            : "Failed to delete account.");
+          (r.status === 401 ? "Please sign in again." : "Failed to delete account.");
         toast.error(msg);
         return;
       }
 
       toast.success("Account deleted. Signing you out…");
 
-      // Best effort: sign out and send to goodbye page.
+      // Best effort: sign out and send to goodbye page (v5: redirectTo)
       try {
-        await signOut({ callbackUrl: "/goodbye" });
+        await signOut({ redirectTo: "/goodbye" });
       } catch {
         // Fallback hard redirect if signOut hiccups
         window.location.href = "/goodbye?signout=1";
@@ -61,7 +60,7 @@ export default function DeleteAccountButton({ email }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-testid="delete-account">
       {!open ? (
         <button
           type="button"
@@ -83,6 +82,7 @@ export default function DeleteAccountButton({ email }: Props) {
               onChange={(e) => setConfirmEmail(e.target.value)}
               disabled={busy}
               inputMode="email"
+              autoComplete="email"
             />
           </div>
 
@@ -122,8 +122,8 @@ export default function DeleteAccountButton({ email }: Props) {
           </div>
 
           <p className="text-xs text-gray-500 dark:text-slate-400">
-            Your listings, favorites, and related data will be removed. You can create a new account later,
-            but your current data will not be recoverable.
+            Your listings, favorites, and related data will be removed. You can create a new
+            account later, but your current data will not be recoverable.
           </p>
         </div>
       )}

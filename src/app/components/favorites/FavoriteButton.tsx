@@ -1,5 +1,4 @@
 "use client";
-
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFavorite } from "@/app/hooks/useFavorite";
@@ -82,7 +81,7 @@ export default function FavoriteButton({
 
   // Final guard (don’t crash the tree; just render a disabled icon)
   if (!resolvedEntity || !resolvedId) {
-    if (process.env.NODE_ENV !== "production") {
+    if (process.env["NODE_ENV"] !== "production") {
       // eslint-disable-next-line no-console
       console.warn(
         "[FavoriteButton] Missing entity/entityId (or productId/serviceId). Button will render disabled."

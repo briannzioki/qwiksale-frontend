@@ -1,5 +1,5 @@
-// src/app/components/Button.tsx
 "use client";
+// src/app/components/Button.tsx
 
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
@@ -36,16 +36,14 @@ const sizeMap: Record<Size, string> = {
 
 const variantMap: Record<Variant, string> = {
   // keep gradient primary as-is
-  primary:
-    "text-white shadow-soft btn-gradient-primary hover:opacity-90 active:opacity-100",
+  primary: "text-white shadow-soft btn-gradient-primary hover:opacity-90 active:opacity-100",
 
-  // lighten borders to match the lighter glass header
+  // lighter borders to match the lighter glass header
   outline:
     "bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 " +
     "border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700",
 
-  ghost:
-    "bg-transparent text-gray-800 dark:text-slate-100 hover:bg-gray-100/60 dark:hover:bg-white/10",
+  ghost: "bg-transparent text-gray-800 dark:text-slate-100 hover:bg-gray-100/60 dark:hover:bg-white/10",
 
   subtle:
     "bg-white/80 dark:bg-white/5 text-gray-900 dark:text-slate-100 " +
@@ -83,15 +81,21 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     // Split out `type` so we only pass it when we render a real <button>
     const { type, ...restProps } = props;
 
-    const classes = cn(base, sizeMap[size], variantMap[variant], fullWidth && "w-full", className);
+    const classes = cn(
+      base,
+      sizeMap[size],
+      variantMap[variant],
+      fullWidth && "w-full",
+      // Make non-button elements reflect disabled state visually
+      "aria-disabled:opacity-60 aria-disabled:cursor-not-allowed",
+      className
+    );
 
     if (useSlot) {
-      // IMPORTANT: Slot must receive EXACTLY ONE valid React element child.
-      // We cannot inject extra wrappers or siblings here (spinner/icons),
-      // so if you need icons with `asChild`, include them inside the child element.
+      // Slot path: cannot inject spinner/icons; include them inside the child when using `asChild`.
       return (
         <Slot
-          // ts-expect-error: Slot may forward to non-button; ref type is fine at runtime
+          // ts-expect-error Slot can forward to non-button; ref is fine at runtime
           ref={ref}
           className={classes}
           aria-busy={loading ? "true" : "false"}
@@ -104,7 +108,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       );
     }
 
-    // Normal <button> path (we can render spinner + icon wrappers safely)
+    // Native <button> path (we can render spinner + icon wrappers safely)
     return (
       <button
         ref={ref}
@@ -116,30 +120,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       >
         {/* Loading overlay spinner */}
         {loading && (
-          <span
-            className="absolute inset-0 grid place-items-center rounded-inherit"
-            aria-hidden="true"
-          >
-            <svg
-              className="h-4 w-4 animate-spin-slow"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="9"
-                stroke="currentColor"
-                strokeWidth="3"
-                opacity="0.25"
-              />
-              <path
-                d="M21 12a9 9 0 0 0-9-9"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
+          <span className="absolute inset-0 grid place-items-center rounded-[inherit]" aria-hidden="true">
+            <svg className="h-4 w-4 animate-spin-slow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+              <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
             </svg>
           </span>
         )}

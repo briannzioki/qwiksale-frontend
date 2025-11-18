@@ -1,5 +1,5 @@
-// src/app/components/Skeleton.tsx
 "use client";
+// src/app/components/Skeleton.tsx
 
 import * as React from "react";
 

@@ -1,3 +1,4 @@
+// tests/e2e/admin-auth.spec.ts
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,14 +10,6 @@ const USER_STATE = path.join(AUTH_DIR, "user.json");
 const hasAdminState = fs.existsSync(ADMIN_STATE);
 const hasUserState = fs.existsSync(USER_STATE);
 
-/**
- * NOTE:
- * Some apps don’t auto-redirect "/" or "/dashboard" after sign-in.
- * These tests assert capabilities instead of exact redirect behavior:
- *   - Admin can access /admin (and it renders)
- *   - Normal user is blocked from /admin (redirect OR 401/403 OR visible unauthorized UI)
- */
-
 test.describe("Admin auth/redirects", () => {
   test.skip(!hasAdminState, "Missing admin auth storage state.");
   test.use({ storageState: ADMIN_STATE });
@@ -24,8 +17,6 @@ test.describe("Admin auth/redirects", () => {
   test("admin can reach /admin and it renders", async ({ page }) => {
     const res = await page.goto("/admin", { waitUntil: "domcontentloaded" });
     expect(res?.ok()).toBeTruthy();
-
-    // sanity checks for admin UI chrome
     await expect(page.getByRole("heading", { name: /admin/i })).toBeVisible();
   });
 
@@ -33,8 +24,9 @@ test.describe("Admin auth/redirects", () => {
     const r1 = await page.goto("/", { waitUntil: "domcontentloaded" });
     expect(r1?.status()).toBeLessThan(500);
 
-    const r2 = await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
-    expect(r2?.status()).toBeLessThan(500);
+    // Tolerate a quick client reroute (dashboard → admin) during hydration
+    await page.goto("/dashboard", { waitUntil: "domcontentloaded" }).catch(() => null);
+    await page.waitForURL(/\/(dashboard|admin)(\/|$)/, { timeout: 5000 });
 
     const r3 = await page.goto("/admin", { waitUntil: "domcontentloaded" });
     expect(r3?.ok()).toBeTruthy();
@@ -53,15 +45,13 @@ test.describe("User auth/redirects", () => {
     const d = await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
     expect(d?.status()).toBeLessThan(500);
 
-    // Less brittle: prove the session is valid via API instead of relying on a heading
     const me = await page.request.get("/api/me", { failOnStatusCode: false });
     expect(me.status(), await me.text()).toBe(200);
   });
 
   test("trying to open /admin is hard-blocked (redirect, 401/403, or unauthorized UI)", async ({ page }) => {
-    const res = await page.goto("/admin", { waitUntil: "domcontentloaded" });
+    const res = await page.goto("/admin", { waitUntil: "domcontentloaded" }).catch(() => null);
 
-    // Accept ANY valid block behavior
     const urlIsAdmin = /\/admin(\/|$)/.test(page.url());
     const status = res?.status() ?? 0;
 
@@ -72,7 +62,6 @@ test.describe("User auth/redirects", () => {
     const blocked = !urlIsAdmin || status === 401 || status === 403 || unauthorizedUI > 0;
     expect(blocked).toBeTruthy();
 
-    // And definitely do not show obvious admin UI when blocked
     await expect(page.getByRole("heading", { name: /admin/i })).toHaveCount(0);
   });
 });

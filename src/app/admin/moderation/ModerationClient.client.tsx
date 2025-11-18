@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 export type ReportRow = {
   id: string;
@@ -91,10 +92,7 @@ export default function ModerationClient({
           </thead>
           <tbody>
             {items.map((r) => (
-              <tr
-                key={r.id}
-                className="align-top border-t hover:bg-gray-50/50 dark:border-slate-800 dark:hover:bg-slate-800/40"
-              >
+              <tr key={r.id} className="align-top border-t hover:bg-gray-50/50 dark:border-slate-800 dark:hover:bg-slate-800/40">
                 <td className="px-3 py-2">
                   <input type="checkbox" name="select" value={r.id} aria-label={`Select report ${r.id}`} />
                 </td>
@@ -139,12 +137,7 @@ export default function ModerationClient({
                   {r.resolved ? <Badge tone="green">Yes</Badge> : <Badge tone="rose">No</Badge>}
                 </td>
                 <td className="px-3 py-2">
-                  <RowActions
-                    listingId={r.listingId}
-                    type={r.listingType}
-                    resolved={r.resolved}
-                    reportId={r.id}
-                  />
+                  <RowActions listingId={r.listingId} type={r.listingType} resolved={r.resolved} reportId={r.id} />
                 </td>
               </tr>
             ))}
@@ -176,6 +169,7 @@ function RowActions({
   reportId: string;
 }) {
   const [pending, start] = useTransition();
+  const router = useRouter();
 
   const patchStatus = (status: "ACTIVE" | "HIDDEN") => {
     const msg =
@@ -206,7 +200,7 @@ function RowActions({
           alert(`Failed: ${msg}`);
           return;
         }
-        location.reload();
+        router.refresh();
       } catch {
         alert("Network error");
       }
@@ -228,7 +222,7 @@ function RowActions({
           cache: "no-store",
           credentials: "same-origin",
         });
-        location.reload();
+        router.refresh();
       } catch {
         alert("Network error");
       }
@@ -280,6 +274,7 @@ function BulkActions({
 }) {
   const [pending, start] = useTransition();
   const [selectedCount, setSelectedCount] = useState(0);
+  const router = useRouter();
 
   useEffect(() => {
     const master = document.querySelector<HTMLInputElement>('input[data-check="all"]');
@@ -337,7 +332,7 @@ function BulkActions({
         cache: "no-store",
         credentials: "same-origin",
       });
-      location.reload();
+      router.refresh();
     });
 
   const doVisibility = (status: "ACTIVE" | "HIDDEN") =>
@@ -367,7 +362,7 @@ function BulkActions({
           }).catch(() => {});
         })
       );
-      location.reload();
+      router.refresh();
     });
 
   return (

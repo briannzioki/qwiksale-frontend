@@ -1,5 +1,5 @@
-// src/app/hooks/useOutsideClick.ts
 "use client";
+// src/app/hooks/useOutsideClick.ts
 
 import { useEffect } from "react";
 

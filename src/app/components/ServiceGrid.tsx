@@ -1,5 +1,5 @@
-// src/app/components/ServiceGrid.tsx
 "use client";
+// src/app/components/ServiceGrid.tsx
 
 import Link from "next/link";
 import Image from "next/image";

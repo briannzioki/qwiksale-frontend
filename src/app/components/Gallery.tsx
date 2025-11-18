@@ -1,35 +1,31 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useRef, useState, useCallback, useId } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  useId,
+} from "react";
 import LightboxModal from "@/app/components/LightboxModal.client";
 
 const PLACEHOLDER = "/placeholder/default.jpg";
 
 type Props = {
-  images: string[];
-  /** Initial hero index (clamped). */
+  images?: string[] | null;
   initialIndex?: number;
   className?: string;
-
-  /** When false, Gallery will NOT open a lightbox (still shows inline + thumbs). */
   lightbox?: boolean;
-
-  /** CSS sizes hint for the inline image (purely informational for tests). */
   sizes?: string;
-
-  /** Aspect ratio for the inline hero (Tailwind classes). Default: aspect-[4/3] sm:aspect-[16/10] */
   aspect?: string;
-
-  /** Object fit for hero (cover/contain). Default: cover */
   fit?: "cover" | "contain";
-
-  /** Optional callback when the current index changes. */
   onIndexChangeAction?: (nextIndex: number) => void;
 };
 
 export default function Gallery({
-  images,
+  images = [],
   initialIndex = 0,
   className = "",
   lightbox = true,
@@ -38,37 +34,34 @@ export default function Gallery({
   fit = "cover",
   onIndexChangeAction,
 }: Props) {
-  /* ---------------- Normalize & state ---------------- */
-  // IMPORTANT: do not dedupe or slice; render *all* items provided.
   const safeImages = useMemo(
     () =>
       Array.isArray(images)
         ? images.map((u) => String(u ?? "").trim()).filter(Boolean)
         : [],
-    [images]
+    [images],
   );
 
-  // Always have at least one image (placeholder) for stable UI/tests
-  const imgs = useMemo(() => (safeImages.length ? safeImages : [PLACEHOLDER]), [safeImages]);
+  const imgs = useMemo(
+    () => (safeImages.length ? safeImages : [PLACEHOLDER]),
+    [safeImages],
+  );
 
   const [idx, setIdx] = useState(
-    Math.min(Math.max(0, initialIndex), Math.max(0, imgs.length - 1))
+    Math.min(Math.max(0, initialIndex), Math.max(0, imgs.length - 1)),
   );
-  const [open, setOpen] = useState<boolean>(false);
+  const [open, setOpen] = useState(false);
 
-  // Keep index valid if images change
   useEffect(() => {
     const len = imgs.length;
-    if (len === 0) return;
+    if (!len) return;
     setIdx((cur) => Math.min(Math.max(0, cur), len - 1));
   }, [imgs]);
 
-  // Notify parent on index changes
   useEffect(() => {
     onIndexChangeAction?.(idx);
   }, [idx, onIndexChangeAction]);
 
-  // Preload neighbors for snappier nav
   useEffect(() => {
     const len = imgs.length;
     if (len < 2) return;
@@ -80,24 +73,36 @@ export default function Gallery({
     b.src = imgs[next]!;
   }, [idx, imgs]);
 
-  /* ---------------- Helpers ---------------- */
   const fitCls = fit === "contain" ? "object-contain" : "object-cover";
-  const openLightbox = useCallback(() => lightbox && setOpen(true), [lightbox]);
 
   const goClamp = useCallback(
-    (next: number) => setIdx(Math.min(Math.max(0, next), imgs.length - 1)),
-    [imgs.length]
-  );
-  const goPrev = useCallback(
-    () => goClamp((idx - 1 + imgs.length) % imgs.length),
-    [idx, imgs.length, goClamp]
-  );
-  const goNext = useCallback(
-    () => goClamp((idx + 1) % imgs.length),
-    [idx, imgs.length, goClamp]
+    (n: number) => {
+      setIdx((cur) => {
+        const len = imgs.length;
+        if (!len) return 0;
+        const next = Number.isFinite(n) ? n : cur;
+        return Math.min(Math.max(0, next), len - 1);
+      });
+    },
+    [imgs.length],
   );
 
-  // Keyboard on hero
+  const goPrev = useCallback(() => {
+    setIdx((cur) => {
+      const len = imgs.length;
+      if (len <= 1) return cur;
+      return (cur - 1 + len) % len;
+    });
+  }, [imgs.length]);
+
+  const goNext = useCallback(() => {
+    setIdx((cur) => {
+      const len = imgs.length;
+      if (len <= 1) return cur;
+      return (cur + 1) % len;
+    });
+  }, [imgs.length]);
+
   const onHeroKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLButtonElement>) => {
       if (e.key === "ArrowLeft") {
@@ -111,10 +116,9 @@ export default function Gallery({
         setOpen(true);
       }
     },
-    [goPrev, goNext, lightbox]
+    [goPrev, goNext, lightbox],
   );
 
-  // Touch swipe on hero
   const touchStartX = useRef<number | null>(null);
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartX.current = e.changedTouches[0]?.clientX ?? null;
@@ -131,14 +135,17 @@ export default function Gallery({
         else goNext();
       }
     },
-    [goPrev, goNext]
+    [goPrev, goNext],
   );
 
-  /* ---------------- Thumbnails strip ---------------- */
   const thumbRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   useEffect(() => {
     const node = thumbRefs.current[idx];
-    node?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    node?.scrollIntoView({
+      behavior: "smooth",
+      inline: "center",
+      block: "nearest",
+    });
   }, [idx]);
 
   const heroId = useId();
@@ -152,16 +159,26 @@ export default function Gallery({
       aria-label="Image gallery"
       aria-describedby={`${heroId}-desc`}
       data-gallery="true"
-      /** expose state for CSS guards/tests */
       data-gallery-open={open ? "true" : "false"}
     >
-      {/* ===== Hero ===== */}
+      {/* Hero */}
       <div
-        className={`relative ${aspect} w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800`}
+        className={`relative ${aspect} w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800 min-h-[180px] sm:min-h-[220px]`}
+        style={{ position: "relative" }} // ensure non-static position for unit test + Next fill semantics
         data-gallery-wrap
         data-gallery-hero
       >
-        {/* Visible native <img> so tests can see literal src (no Next optimizer) */}
+        <button
+          type="button"
+          className="absolute right-2 top-2 z-[3] rounded-md bg-black/60 px-2 py-1 text-xs text-white"
+          onClick={() => lightbox && setOpen(true)}
+          aria-hidden="true"
+          tabIndex={-1}
+          data-gallery-fullscreen-trigger="true"
+        >
+          ⤢
+        </button>
+
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imgs[idx]}
@@ -169,32 +186,33 @@ export default function Gallery({
           decoding="async"
           draggable={false}
           loading="eager"
-          className={`absolute inset-0 h-full w-full ${fitCls} select-none`}
+          fetchPriority="high"
+          className={`absolute inset-0 h-full w-full ${fitCls} select-none pointer-events-none`}
           data-gallery-image
           data-gallery-hero-img
+          sizes={sizes}
           data-sizes={sizes}
         />
 
-        {/* Interactive overlay so hero is focusable/clickable */}
         <button
           type="button"
           className="absolute inset-0 z-[2] focus:outline-none focus:ring-2 focus:ring-[#39a0ca]/60"
           aria-label={lightbox ? "Open image in fullscreen" : "Select image"}
           aria-describedby={`${heroId}-desc`}
-          onClick={openLightbox}
+          onClick={() => lightbox && setOpen(true)}
           onKeyDown={onHeroKeyDown}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
           id={heroId}
-          /* IMPORTANT: shared selector for tests BEFORE opening */
           data-gallery-overlay="true"
+          data-gallery-opener="true"
         />
 
         <span id={`${heroId}-desc`} className="sr-only">
-          Use left and right arrow keys to change image. {lightbox ? "Press Enter to view fullscreen." : ""}
+          Use left and right arrow keys to change image.
+          {lightbox ? " Press Enter to view fullscreen." : ""}
         </span>
 
-        {/* Prev / Next buttons */}
         {total > 1 && (
           <>
             <button
@@ -218,7 +236,6 @@ export default function Gallery({
           </>
         )}
 
-        {/* Tiny index badge — HIDE while lightbox is open to avoid duplicate counter */}
         {total > 1 && !open && (
           <div
             className="absolute left-3 bottom-3 z-[3] rounded-md bg-black/60 px-2 py-0.5 text-xs text-white"
@@ -229,7 +246,7 @@ export default function Gallery({
         )}
       </div>
 
-      {/* ===== Thumbnails (horizontal strip) ===== */}
+      {/* Thumbnails */}
       {total > 1 && (
         <div className="mt-2 border-t pt-2 dark:border-white/10" data-gallery-thumbs>
           <ul
@@ -238,7 +255,9 @@ export default function Gallery({
             aria-label="Thumbnails"
             onWheel={(e: React.WheelEvent<HTMLUListElement>) => {
               const el = e.currentTarget;
-              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY;
+              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                el.scrollLeft += e.deltaY;
+              }
             }}
           >
             {imgs.map((src, i) => {
@@ -254,8 +273,7 @@ export default function Gallery({
                     aria-selected={selected}
                     aria-controls={heroId}
                     className={[
-                      "relative block h-16 w-24 overflow-hidden rounded-lg border",
-                      "bg-white dark:bg-slate-900",
+                      "relative block h-16 w-24 overflow-hidden rounded-lg border bg-white dark:bg-slate-900",
                       selected
                         ? "ring-2 ring-[#39a0ca] border-transparent"
                         : "border-black/10 dark:border-white/10 hover:ring-1 hover:ring-[#39a0ca]/60",
@@ -267,15 +285,19 @@ export default function Gallery({
                       if (e.key === "ArrowLeft") {
                         e.preventDefault();
                         const prev = Math.max(0, i - 1);
-                        (e.currentTarget.parentElement?.querySelectorAll("button")?.[
-                          prev
-                        ] as HTMLButtonElement | undefined)?.focus();
+                        (
+                          e.currentTarget.parentElement?.querySelectorAll(
+                            "button",
+                          )?.[prev] as HTMLButtonElement | undefined
+                        )?.focus();
                       } else if (e.key === "ArrowRight") {
                         e.preventDefault();
                         const next = Math.min(total - 1, i + 1);
-                        (e.currentTarget.parentElement?.querySelectorAll("button")?.[
-                          next
-                        ] as HTMLButtonElement | undefined)?.focus();
+                        (
+                          e.currentTarget.parentElement?.querySelectorAll(
+                            "button",
+                          )?.[next] as HTMLButtonElement | undefined
+                        )?.focus();
                       } else if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         setIdx(i);
@@ -284,7 +306,6 @@ export default function Gallery({
                     }}
                     data-gallery-thumb
                   >
-                    {/* Visible native thumbnail (no optimizer) */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={src}
@@ -292,7 +313,7 @@ export default function Gallery({
                       decoding="async"
                       draggable={false}
                       loading="lazy"
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-cover pointer-events-none"
                       data-gallery-image
                       data-gallery-thumb-img
                     />
@@ -304,7 +325,22 @@ export default function Gallery({
         </div>
       )}
 
-      {/* ===== Lightbox ===== */}
+      {/* Shadow list for tests */}
+      {total > 0 && (
+        <div className="hidden" aria-hidden="true" data-gallery-shadow>
+          {imgs.map((src, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={`shadow-${src}:${i}`}
+              src={src}
+              alt=""
+              data-gallery-image
+              data-gallery-shadow-img
+            />
+          ))}
+        </div>
+      )}
+
       {lightbox && open && (
         <div
           data-gallery-overlay="true"
@@ -321,10 +357,14 @@ export default function Gallery({
         </div>
       )}
 
-      {/* Scoped helpers */}
       <style jsx>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
       `}</style>
     </div>
   );

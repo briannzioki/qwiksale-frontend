@@ -1,27 +1,36 @@
 // src/app/sell/product/SellProductClient.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type FormEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { categories, type CategoryNode } from "@/app/data/categories";
 import { useProducts } from "@/app/lib/productsStore";
 import { toast } from "@/app/components/ToasterClient";
-import { normalizeKenyanPhone, validateKenyanPhone } from "@/app/lib/phone";
-import { extractGalleryUrls } from "@/app/lib/media"; // normalize legacy gallery shapes to plain URLs
+import {
+  normalizeKenyanPhone,
+  validateKenyanPhone,
+} from "@/app/lib/phone";
+import { extractGalleryUrls } from "@/app/lib/media";
 
 type FilePreview = { file: File; url: string; key: string };
-type Me = { id: string; email: string | null; profileComplete?: boolean; whatsapp?: string | null };
+type Me = {
+  id: string;
+  email: string | null;
+  profileComplete?: boolean;
+  whatsapp?: string | null;
+};
 
 type Props = {
-  /** If present, the form opens in EDIT mode and prefills from the server. */
   id?: string | undefined;
-  /** Hide legacy media section when a single media surface is already shown on the page. */
   hideMedia?: boolean;
-  /**
-   * Optional hook that runs *before* we submit.
-   * Use it to commit staged media (e.g., ProductMediaManager.commitDraft()).
-   */
   onBeforeSubmitAction?: () => Promise<void>;
 };
 
@@ -29,11 +38,10 @@ const MAX_FILES = 6;
 const MAX_MB = 5;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-// Cloudinary (client-safe)
 const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
-const UPLOAD_PRESET = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? "";
+const UPLOAD_PRESET =
+  process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? "";
 
-/* ----------------------------- Money helper ----------------------------- */
 function fmtKES(n: number) {
   try {
     return new Intl.NumberFormat("en-KE").format(n);
@@ -42,10 +50,9 @@ function fmtKES(n: number) {
   }
 }
 
-/* --------------------------- Cloudinary uploader -------------------------- */
 async function uploadToCloudinary(
   file: File,
-  opts?: { onProgress?: (pct: number) => void; folder?: string }
+  opts?: { onProgress?: (pct: number) => void; folder?: string },
 ): Promise<{ secure_url: string; public_id: string }> {
   if (!CLOUD_NAME) throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
   const folder = opts?.folder || "qwiksale";
@@ -64,12 +71,16 @@ async function uploadToCloudinary(
     return { secure_url: json.secure_url, public_id: json.public_id };
   }
 
-  const sigRes = await fetch(`/api/upload/sign?folder=${encodeURIComponent(folder)}`, {
-    method: "GET",
-    cache: "no-store",
-  });
+  const sigRes = await fetch(
+    `/api/upload/sign?folder=${encodeURIComponent(folder)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
   const sigJson: any = await sigRes.json();
-  if (!sigRes.ok) throw new Error(sigJson?.error || "Failed to get upload signature");
+  if (!sigRes.ok)
+    throw new Error(sigJson?.error || "Failed to get upload signature");
 
   fd.append("api_key", sigJson.apiKey);
   fd.append("timestamp", String(sigJson.timestamp));
@@ -77,29 +88,42 @@ async function uploadToCloudinary(
   fd.append("folder", folder);
 
   const xhr = new XMLHttpRequest();
-  const p = new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-    xhr.upload.onprogress = (evt) => {
-      if (evt.lengthComputable && opts?.onProgress) {
-        opts.onProgress(Math.round((evt.loaded / evt.total) * 100));
-      }
-    };
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState === 4) {
-        try {
-          const j = JSON.parse(xhr.responseText);
-          if (xhr.status >= 200 && xhr.status < 300 && j.secure_url) {
-            resolve({ secure_url: j.secure_url, public_id: j.public_id });
-          } else {
-            reject(new Error(j?.error?.message || `Cloudinary upload failed (${xhr.status})`));
-          }
-        } catch (e: any) {
-          reject(new Error(e?.message || "Cloudinary response parse error"));
+  const p = new Promise<{ secure_url: string; public_id: string }>(
+    (resolve, reject) => {
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable && opts?.onProgress) {
+          opts.onProgress(Math.round((evt.loaded / evt.total) * 100));
         }
-      }
-    };
-    xhr.open("POST", endpoint, true);
-    xhr.send(fd);
-  });
+      };
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          try {
+            const j = JSON.parse(xhr.responseText);
+            if (
+              xhr.status >= 200 &&
+              xhr.status < 300 &&
+              j.secure_url
+            ) {
+              resolve({ secure_url: j.secure_url, public_id: j.public_id });
+            } else {
+              reject(
+                new Error(
+                  j?.error?.message ||
+                    `Cloudinary upload failed (${xhr.status})`,
+                ),
+              );
+            }
+          } catch (e: any) {
+            reject(
+              new Error(e?.message || "Cloudinary response parse error"),
+            );
+          }
+        }
+      };
+      xhr.open("POST", endpoint, true);
+      xhr.send(fd);
+    },
+  );
   return p;
 }
 
@@ -110,15 +134,15 @@ export default function SellProductClient({
 }: Props) {
   const router = useRouter();
 
-  // ---------------------- Profile Gate (no server redirects) ----------------------
-  const [ready, setReady] = useState(false);
+  // We no longer gate rendering on "ready" – the form is always rendered
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
-  // ----------------------------- Form state -----------------------------
   const [name, setName] = useState<string>("");
   const [price, setPrice] = useState<number | "">("");
   const [negotiable, setNegotiable] = useState<boolean>(false);
-  const [condition, setCondition] = useState<"brand new" | "pre-owned">("brand new");
+  const [condition, setCondition] = useState<"brand new" | "pre-owned">(
+    "brand new",
+  );
 
   const [category, setCategory] = useState<string>("");
   const [subcategory, setSubcategory] = useState<string>("");
@@ -128,17 +152,16 @@ export default function SellProductClient({
   const [phone, setPhone] = useState<string>("");
   const [description, setDescription] = useState<string>("");
 
-  // Images (legacy local uploader — not used when hideMedia === true)
   const [previews, setPreviews] = useState<FilePreview[]>([]);
   const [existingImage, setExistingImage] = useState<string | null>(null);
-  const [existingGallery, setExistingGallery] = useState<string[]>([]); // always string[]
+  const [existingGallery, setExistingGallery] = useState<string[]>([]);
 
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Prefill phone from profile + gate checks (supports {user:{...}} or top-level)
+  // Auth & /api/me – used for prefill and sign-in hint only, never to hide the form
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -146,17 +169,14 @@ export default function SellProductClient({
         const res = await fetch("/api/me", { cache: "no-store" });
 
         if (res.status === 401) {
-          // Not signed in → show CTA inline (don’t redirect)
           if (!cancelled) {
             setAllowed(false);
-            setReady(true);
           }
           return;
         }
         if (!res.ok) {
           if (!cancelled) {
             setAllowed(true);
-            setReady(true);
           }
           return;
         }
@@ -164,19 +184,15 @@ export default function SellProductClient({
         const j = (await res.json().catch(() => null)) as any;
         const me: Me | null = (j && (j.user ?? j)) || null;
 
-        // If profile is incomplete, still allow posting (soft-nudge elsewhere)
         if (!cancelled && me && me.profileComplete === false) {
           setAllowed(true);
-          setReady(true);
           return;
         }
 
         if (!cancelled && !phone && me?.whatsapp) setPhone(me.whatsapp);
         if (!cancelled) setAllowed(true);
       } catch {
-        if (!cancelled) setAllowed(true); // fail-open
-      } finally {
-        if (!cancelled) setReady(true);
+        if (!cancelled) setAllowed(true);
       }
     })();
     return () => {
@@ -184,12 +200,12 @@ export default function SellProductClient({
     };
   }, [phone]);
 
-  // Zustand store (optional)
   const store = useProducts() as any;
   const addProduct: (payload: any) => Promise<any> | any =
-    store && typeof store.addProduct === "function" ? store.addProduct : async () => undefined;
+    store && typeof store.addProduct === "function"
+      ? store.addProduct
+      : async () => undefined;
 
-  // ----- Strong typing for categories to avoid "implicit any" -----
   const cats: readonly CategoryNode[] = categories;
 
   const subcats: readonly { name: string }[] = useMemo(() => {
@@ -197,7 +213,6 @@ export default function SellProductClient({
     return (found?.subcategories ?? []).map((s) => ({ name: s.name }));
   }, [cats, category]);
 
-  // Initialize default category/subcategory once categories are known (guard cats[0])
   useEffect(() => {
     if (!category) {
       const first = cats[0];
@@ -216,15 +231,16 @@ export default function SellProductClient({
     }
   }, [subcats, subcategory]);
 
-  // Cleanup object URLs
   useEffect(() => {
     return () => {
       previews.forEach((p) => URL.revokeObjectURL(p.url));
     };
   }, [previews]);
 
-  const phoneValidation = phone ? validateKenyanPhone(phone) : { ok: true as const };
-  const normalizedPhone = phone ? (normalizeKenyanPhone(phone) ?? "") : "";
+  const phoneValidation = phone
+    ? validateKenyanPhone(phone)
+    : { ok: true as const };
+  const normalizedPhone = phone ? normalizeKenyanPhone(phone) ?? "" : "";
   const phoneOk = !phone || phoneValidation.ok;
 
   const priceNum = price === "" ? 0 : Number(price);
@@ -244,7 +260,10 @@ export default function SellProductClient({
 
     (async () => {
       try {
-        const r = await fetch(`/api/products/${encodeURIComponent(id)}`, { cache: "no-store" });
+        const r = await fetch(
+          `/api/products/${encodeURIComponent(id)}`,
+          { cache: "no-store" },
+        );
         if (!r.ok) {
           toast.error("Unable to load product for editing.");
           return;
@@ -259,19 +278,24 @@ export default function SellProductClient({
         setSubcategory(p?.subcategory ?? "");
         setBrand(p?.brand ?? "");
         setCondition(
-          (String(p?.condition || "").toLowerCase().includes("brand") ? "brand new" : "pre-owned") as
-            | "brand new"
-            | "pre-owned"
+          (String(p?.condition || "")
+            .toLowerCase()
+            .includes("brand")
+            ? "brand new"
+            : "pre-owned") as "brand new" | "pre-owned",
         );
         setPrice(typeof p?.price === "number" ? p.price : "");
         setNegotiable(Boolean(p?.negotiable));
-        setLocation(p?.location ?? (p?.sellerLocation ?? "Nairobi"));
+        setLocation(p?.location ?? p?.sellerLocation ?? "Nairobi");
         setPhone(p?.sellerPhone ?? "");
 
         setExistingImage(p?.image ?? null);
 
-        // Normalize ANY legacy gallery shape to string[] of URLs
-        const normalized = extractGalleryUrls({ gallery: p?.gallery }, undefined, 50);
+        const normalized = extractGalleryUrls(
+          { gallery: p?.gallery },
+          undefined,
+          50,
+        );
         setExistingGallery(normalized);
       } catch (e: any) {
         console.error(e);
@@ -284,7 +308,6 @@ export default function SellProductClient({
     };
   }, [id]);
 
-  /* -------------------------------- File helpers ----------------------------- */
   function filesToAdd(files: FileList | File[]) {
     const next: FilePreview[] = [];
     for (const f of Array.from(files)) {
@@ -298,7 +321,11 @@ export default function SellProductClient({
         continue;
       }
       const key = `${f.name}:${f.size}:${f.lastModified}`;
-      if (previews.some((p) => p.key === key) || next.some((p) => p.key === key)) continue;
+      if (
+        previews.some((p) => p.key === key) ||
+        next.some((p) => p.key === key)
+      )
+        continue;
       const url = URL.createObjectURL(f);
       next.push({ file: f, url, key });
     }
@@ -309,10 +336,10 @@ export default function SellProductClient({
   function onFileInputChange(files: FileList | null) {
     if (!files || !files.length) return;
     filesToAdd(files);
-    if (inputRef.current) inputRef.current.value = ""; // reset synchronously
+    if (inputRef.current) inputRef.current.value = "";
   }
 
-  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+  function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer?.files?.length) filesToAdd(e.dataTransfer.files);
@@ -341,16 +368,15 @@ export default function SellProductClient({
   }
 
   /* -------------------------------- Submit -------------------------------- */
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit) {
       toast.error("Please fill all required fields.");
       return;
     }
-    // If we *do* show the legacy uploader, ensure Cloudinary is configured when files exist
     if (!hideMedia && previews.length && !CLOUD_NAME) {
       toast.error(
-        "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
+        "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET).",
       );
       return;
     }
@@ -359,12 +385,10 @@ export default function SellProductClient({
     setUploadPct(0);
 
     try {
-      // 🔐 1) Allow the host page to commit staged media first (if provided)
       if (onBeforeSubmitAction) {
         await onBeforeSubmitAction();
       }
 
-      // 2) Handle *legacy inline uploads* only when hideMedia === false
       let uploaded: { secure_url: string; public_id: string }[] = [];
       if (!hideMedia && previews.length) {
         const total = previews.length;
@@ -374,7 +398,9 @@ export default function SellProductClient({
           const item = await uploadToCloudinary(p.file, {
             folder: "qwiksale/products",
             onProgress: (pct) => {
-              const overall = Math.round(((done + pct / 100) / total) * 100);
+              const overall = Math.round(
+                ((done + pct / 100) / total) * 100,
+              );
               setUploadPct(overall);
             },
           });
@@ -384,8 +410,6 @@ export default function SellProductClient({
         }
       }
 
-      // 3) Build payload (🚫 do NOT stomp media)
-      // Base fields (non-media)
       const payload: Record<string, unknown> = {
         name: name.trim(),
         description: description.trim(),
@@ -393,50 +417,55 @@ export default function SellProductClient({
         subcategory,
         brand: brand || undefined,
         condition,
-        price: price === "" ? undefined : Math.max(0, Math.round(Number(price))),
+        price:
+          price === "" ? undefined : Math.max(0, Math.round(Number(price))),
         location: location.trim(),
         negotiable,
         sellerPhone: normalizedPhone || undefined,
       };
 
-      // Only include media when we're *not* using the staged media surface.
-      // And never send empty arrays / placeholder image.
       if (!hideMedia) {
         const computedImage =
           uploaded[0]?.secure_url ??
-          (previews[0]?.url || undefined) ??
-          (existingImage || undefined);
+          previews[0]?.url ??
+          existingImage ??
+          undefined;
 
         const computedGallery: string[] =
           uploaded.length
             ? uploaded.map((u) => u.secure_url)
             : previews.length
             ? previews.map((p) => p.url)
-            : (existingGallery?.length ? existingGallery : []);
+            : existingGallery?.length
+            ? existingGallery
+            : [];
 
         if (computedImage) payload["image"] = computedImage;
-        if (computedGallery && computedGallery.length > 0) payload["gallery"] = computedGallery;
+        if (computedGallery && computedGallery.length > 0)
+          payload["gallery"] = computedGallery;
       }
-      // When hideMedia === true we *omit* image/gallery entirely so we never overwrite
-      // the canonical media that was just committed by the MediaManager flow.
 
       let resultId: string | null = null;
 
       if (id) {
-        const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify(payload), // undefined props are dropped
-        });
+        const r = await fetch(
+          `/api/products/${encodeURIComponent(id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify(payload),
+          },
+        );
         const j = await r.json().catch(() => ({} as any));
         if (!r.ok || (j as any)?.error) {
-          throw new Error((j as any)?.error || `Failed to update (${r.status})`);
+          throw new Error(
+            (j as any)?.error || `Failed to update (${r.status})`,
+          );
         }
         resultId = id;
         toast.success("Product updated!");
       } else {
-        // Create path (legacy inline uploader path)
         let created: any = await addProduct(payload);
 
         if (!created) {
@@ -448,7 +477,9 @@ export default function SellProductClient({
           });
           const j = await r.json().catch(() => ({} as any));
           if (!r.ok || (j as any)?.error) {
-            throw new Error((j as any)?.error || `Failed to create (${r.status})`);
+            throw new Error(
+              (j as any)?.error || `Failed to create (${r.status})`,
+            );
           }
           created = { id: (j as any).productId };
         }
@@ -456,354 +487,316 @@ export default function SellProductClient({
         resultId =
           typeof created === "string"
             ? created
-            : created && typeof created === "object" && "id" in created
+            : created &&
+              typeof created === "object" &&
+              "id" in created
             ? String((created as any).id)
             : null;
 
         toast.success("Product posted!");
       }
 
-      // 4) Navigate
+      // Single navigation after a deliberate user action only.
       if (resultId) {
-        router.push(`/product/${resultId}/edit`);
+        router.replace(`/product/${resultId}/edit`);
       } else {
-        router.push("/sell/product");
+        router.replace("/sell/product");
       }
-      router.refresh();
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.message || (id ? "Failed to update product." : "Failed to post product."));
+      toast.error(
+        err?.message ||
+          (id
+            ? "Failed to update product."
+            : "Failed to post product."),
+      );
     } finally {
       setSubmitting(false);
       setUploadPct(0);
     }
   }
 
-  // Loading gate
-  if (!ready) {
-    return (
-      <div className="container-page py-10">
-        <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
-          <h1 className="text-2xl font-bold">{id ? "Edit Product" : "Post a Product"}</h1>
-          <p className="text-white/90">Checking your account…</p>
-        </div>
-      </div>
-    );
-  }
+  const notSignedIn = allowed === false;
 
-  // Logged-out CTA (Playwright looks for a visible link whose name matches /sign in|login/i)
-  if (allowed === false) {
-    return (
-      <div className="container-page py-10">
-        <div className="rounded-xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h2 className="text-xl font-semibold">You’re not signed in</h2>
-          <p className="mt-2 text-gray-600 dark:text-slate-300">
-            Please sign in to post a product.
+  return (
+    // Full client-side flow; no mount-time URL normalization, and form is always rendered.
+    <div className="container-page py-6">
+      {/* Optional inline sign-in warning, but we ALWAYS render the form + CTA */}
+      {notSignedIn && (
+        <div className="mb-4 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="text-lg font-semibold">You’re not signed in</h2>
+          <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
+            You can draft your listing, but you’ll need to sign in before it can
+            be posted.
           </p>
-          <div className="mt-4">
+          <div className="mt-2">
             <Link
-              href={`/signin?callbackUrl=${encodeURIComponent("/sell/product")}`}
-              className="btn-gradient-primary inline-block"
+              href={`/signin?callbackUrl=${encodeURIComponent(
+                "/sell/product",
+              )}`}
+              className="btn-gradient-primary inline-block text-sm"
             >
               Sign in
             </Link>
           </div>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <div className="container-page py-6">
       {/* Header card */}
       <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
         <h1 className="text-2xl font-bold text-balance">
           {id ? "Edit Product" : "Post a Product"}
         </h1>
         <p className="text-white/90">
-          {id ? "Update your listing details." : "List your item — it takes less than 2 minutes."}
+          {id
+            ? "Update your listing details."
+            : "List your item — it takes less than 2 minutes."}
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-6" noValidate>
-        {/* Title & Price (consistent order) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2">
-            <label className="label" htmlFor="name">Title</label>
+      {/* Form */}
+      <form
+        className="mt-6 space-y-4 rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        onSubmit={onSubmit}
+      >
+        {/* Basic fields */}
+        <div>
+          <label className="label">
+            Name
             <input
-              id="name"
-              name="name"
-              className="input"
+              className="input mt-1"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. iPhone 13 Pro 256GB"
-              required
               minLength={3}
+              required
             />
-          </div>
-
-          <div>
-            <label className="label" htmlFor="price">Price (KES)</label>
-            <input
-              id="price"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              className="input"
-              value={price}
-              onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
-              placeholder="e.g. 35000"
-              aria-describedby="price-help"
-              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-            />
-            <p id="price-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              Leave empty for <em>Contact for price</em>.
-            </p>
-
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                id="negotiable"
-                type="checkbox"
-                className="rounded border-gray-300 dark:border-slate-600"
-                checked={negotiable}
-                onChange={(e) => setNegotiable(e.target.checked)}
-              />
-              <label htmlFor="negotiable" className="text-sm text-gray-700 dark:text-slate-200">
-                Negotiable price
-              </label>
-            </div>
-
-            {typeof price === "number" && price > 0 && (
-              <div className="text-xs mt-1 text-gray-600 dark:text-slate-400">
-                You entered: KES {fmtKES(priceNum)}
-              </div>
-            )}
-          </div>
+          </label>
         </div>
 
-        {/* Condition, Category, Subcategory (consistent order) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="label" htmlFor="condition">Condition</label>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="label">
+            Category
             <select
-              id="condition"
-              className="select"
-              value={condition}
-              onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
-            >
-              <option value="brand new">Brand New</option>
-              <option value="pre-owned">Pre-Owned</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="label" htmlFor="category">Category</label>
-            <select
-              id="category"
-              className="select"
+              className="select mt-1"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
-              {categories.map((c) => (
+              {cats.map((c) => (
                 <option key={c.name} value={c.name}>
                   {c.name}
                 </option>
               ))}
             </select>
-          </div>
-
-          <div>
-            <label className="label" htmlFor="subcategory">Subcategory</label>
+          </label>
+          <label className="label">
+            Subcategory
             <select
-              id="subcategory"
-              className="select"
+              className="select mt-1"
               value={subcategory}
               onChange={(e) => setSubcategory(e.target.value)}
             >
-              {(categories.find((c) => c.name === category)?.subcategories ?? []).map((s) => (
+              {subcats.map((s) => (
                 <option key={s.name} value={s.name}>
                   {s.name}
                 </option>
               ))}
             </select>
-          </div>
+          </label>
         </div>
 
-        {/* Brand, Location, Phone (consistent order) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="label" htmlFor="brand">Brand (optional)</label>
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="label">
+            Price (KES)
             <input
-              id="brand"
-              className="input"
+              className="input mt-1"
+              inputMode="numeric"
+              value={price === "" ? "" : String(price)}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^\d]/g, "");
+                setPrice(v === "" ? "" : Number(v));
+              }}
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+              Leave blank for “Contact for price”.
+            </p>
+          </label>
+          <label className="label">
+            Negotiable
+            <input
+              type="checkbox"
+              className="ml-2 h-4 w-4 rounded border-gray-300 text-brandNavy"
+              checked={negotiable}
+              onChange={(e) => setNegotiable(e.target.checked)}
+            />
+          </label>
+          <label className="label">
+            Condition
+            <select
+              className="select mt-1"
+              value={condition}
+              onChange={(e) =>
+                setCondition(e.target.value as "brand new" | "pre-owned")
+              }
+            >
+              <option value="brand new">Brand New</option>
+              <option value="pre-owned">Pre-Owned</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="label">
+            Brand (optional)
+            <input
+              className="input mt-1"
               value={brand}
               onChange={(e) => setBrand(e.target.value)}
-              placeholder="e.g. Samsung"
             />
-          </div>
-
-          <div>
-            <label className="label" htmlFor="location">Location</label>
+          </label>
+          <label className="label">
+            Location
             <input
-              id="location"
-              className="input"
+              className="input mt-1"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g. Nairobi"
             />
-          </div>
-
-          <div>
-            <label className="label" htmlFor="phone">Phone (WhatsApp, optional)</label>
-            <input
-              id="phone"
-              className="input"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="07XXXXXXXX or +2547XXXXXXXX"
-              aria-invalid={!!phone && !phoneOk}
-              aria-describedby="phone-help"
-            />
-            <div id="phone-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-              {phone
-                ? phoneOk
-                  ? <>Normalized: <code className="font-mono">{normalizedPhone}</code></>
-                  : <>Please enter a valid Kenyan mobile.</>
-                : <>Optional. We'll format it for WhatsApp.</>}
-            </div>
-          </div>
+          </label>
         </div>
 
-        {/* Description */}
-        <div>
-          <label className="label" htmlFor="description">Description</label>
+        <label className="label">
+          WhatsApp / Phone
+          <input
+            className="input mt-1"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="07XXXXXXXX / 2547XXXXXXXX"
+          />
+          {!phoneOk && (
+            <p className="mt-1 text-xs text-red-600">
+              Enter a valid Kenyan phone number.
+            </p>
+          )}
+        </label>
+
+        <label className="label">
+          Description
           <textarea
-            id="description"
-            className="textarea"
-            rows={5}
+            className="textarea mt-1"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe the item, condition, accessories, warranty, etc."
-            required
             minLength={10}
+            required
           />
-        </div>
+        </label>
 
-        {/* Images + Uploader (legacy). Hidden in staged-edit pages. */}
+        {/* Media */}
         {!hideMedia && (
-          <div>
-            <label className="label">Photos (up to {MAX_FILES})</label>
-
-            {id && (existingImage || (existingGallery?.length ?? 0) > 0) && (
-              <p className="text-xs text-gray-600 dark:text-slate-400 mb-2">
-                Existing photos will be kept if you don’t upload new ones.
-              </p>
-            )}
-
+          <section className="space-y-3">
             <div
+              className="rounded-lg border border-dashed p-4 text-sm text-gray-600 dark:border-slate-700 dark:text-slate-300"
+              onDrop={onDrop}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
               }}
-              onDrop={onDrop}
-              className="card p-4 border-dashed border-2 border-gray-200 dark:border-slate-700/70"
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <p className="text-sm text-gray-600 dark:text-slate-400">
-                  Drag & drop images here, or choose files.
-                  <span className="ml-2 text-xs">(JPG/PNG/WebP/GIF, up to {MAX_MB}MB each)</span>
-                </p>
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    accept={ACCEPTED_TYPES.join(",")}
-                    multiple
-                    onChange={(e) => onFileInputChange(e.target.files)}
-                    className="hidden"
-                    id="file-input"
-                  />
-                  <label htmlFor="file-input" className="btn-outline cursor-pointer">
-                    Choose files
-                  </label>
-                </div>
-              </div>
-
-              {previews.length > 0 && (
-                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {previews.map((p, i) => (
-                    <div key={p.key} className="relative group">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={p.url}
-                        alt={`Photo ${i + 1}`}
-                        className="w-full h-32 object-cover rounded-lg border dark:border-slate-700"
-                        loading="lazy"
-                      />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
-                      <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                        <button
-                          type="button"
-                          onClick={() => move(i, -1)}
-                          disabled={i === 0}
-                          className="btn-outline px-2 py-1 text-xs"
-                          title="Move left"
-                          aria-label="Move image left"
-                        >
-                          ◀
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => move(i, +1)}
-                          disabled={i === previews.length - 1}
-                          className="btn-outline px-2 py-1 text-xs"
-                          title="Move right"
-                          aria-label="Move image right"
-                        >
-                          ▶
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeAt(i)}
-                          className="btn-danger px-2 py-1 text-xs"
-                          title="Remove"
-                          aria-label="Remove image"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {submitting && uploadPct > 0 && (
-                <div className="mt-3" aria-live="polite">
-                  <div className="h-2 w-full bg-gray-200 rounded">
-                    <div
-                      className="h-2 bg-emerald-500 rounded transition-all"
-                      style={{ width: `${uploadPct}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">Uploading images… {uploadPct}%</p>
-                </div>
-              )}
+              <p className="font-medium">Photos</p>
+              <p className="text-xs">
+                Drag & drop up to {MAX_FILES} images ({MAX_MB}MB each), or
+                click to select.
+              </p>
+              <input
+                ref={inputRef}
+                type="file"
+                accept={ACCEPTED_TYPES.join(",")}
+                multiple
+                className="mt-2 block text-xs"
+                onChange={(e) => onFileInputChange(e.target.files)}
+              />
             </div>
-          </div>
+
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              {existingImage && existingGallery.length === 0 && (
+                <div className="rounded border p-2 text-xs">
+                  Existing cover image
+                </div>
+              )}
+              {existingGallery.map((url) => (
+                <div
+                  key={url}
+                  className="rounded border p-2 text-xs"
+                >
+                  Existing photo
+                </div>
+              ))}
+              {previews.map((p, idx) => (
+                <div
+                  key={p.key}
+                  className="space-y-1 rounded border p-2 text-xs"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.url}
+                    alt=""
+                    className="h-24 w-full rounded object-cover"
+                  />
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="truncate">
+                      {fmtKES(p.file.size / 1024)} KB
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => move(idx, -1)}
+                        className="rounded border px-1"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => move(idx, 1)}
+                        className="rounded border px-1"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeAt(idx)}
+                        className="rounded border px-1 text-red-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {uploadPct > 0 && submitting && (
+              <div className="text-xs text-gray-600 dark:text-slate-300">
+                Uploading photos… {uploadPct}%
+              </div>
+            )}
+          </section>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 pt-2">
           <button
             type="submit"
-            disabled={!canSubmit || submitting}
-            className={`btn-gradient-primary ${(!canSubmit || submitting) ? "opacity-60" : ""}`}
-            aria-label={id ? "Update product" : "Post product"}
+            disabled={submitting || !canSubmit}
+            className="btn-gradient-primary"
           >
-            {submitting ? (id ? "Updating…" : "Posting…") : (id ? "Update Product" : "Post Product")}
+            {submitting
+              ? id
+                ? "Updating…"
+                : "Posting…"
+              : id
+              ? "Update listing"
+              : "Post listing"}
           </button>
-          <button type="button" onClick={() => router.back()} className="btn-outline" aria-label="Cancel">
-            Cancel
-          </button>
+          <p className="text-xs text-gray-500 dark:text-slate-400">
+            You can edit this listing later from your dashboard.
+          </p>
         </div>
       </form>
     </div>

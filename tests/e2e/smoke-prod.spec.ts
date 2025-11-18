@@ -1,3 +1,4 @@
+// tests/e2e/smoke-prod.spec.ts
 import { test, expect } from "@playwright/test";
 import { waitForServerReady, gotoHome } from "./utils/server";
 import type { Page } from "@playwright/test"; // type-only import to satisfy verbatimModuleSyntax

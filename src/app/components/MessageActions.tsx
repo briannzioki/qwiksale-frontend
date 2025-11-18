@@ -2,7 +2,6 @@
 "use client";
 
 import * as React from "react";
-import { usePathname } from "next/navigation";
 
 /** Shared base props (optional, exact types) */
 type BaseProps = {
@@ -13,9 +12,13 @@ type BaseProps = {
   className?: string;
 };
 
-function useNextParam() {
-  const pathname = usePathname();
-  return pathname || "/";
+function getReturnTo(): string {
+  try {
+    const { pathname, search } = window.location;
+    return `${pathname}${search || ""}` || "/";
+  } catch {
+    return "/";
+  }
 }
 
 /** Internal base with shared behavior */
@@ -26,8 +29,6 @@ function MessageButtonBase({
   onStartMessageAction,
   className = "",
 }: BaseProps) {
-  const next = useNextParam();
-
   const [open, setOpen] = React.useState(false);
   const [body, setBody] = React.useState<React.ReactNode>(null);
 
@@ -37,8 +38,9 @@ function MessageButtonBase({
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = React.useRef<HTMLButtonElement | null>(null);
+  const prevOpen = React.useRef<boolean>(open);
 
-  // When dialog opens, lock body scroll & focus Close
+  // Lock body scroll & focus Close on open
   React.useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -80,13 +82,15 @@ function MessageButtonBase({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Restore focus to trigger when dialog closes
+  // Restore focus to trigger when dialog closes (but not on first mount)
   React.useEffect(() => {
-    if (!open) triggerRef.current?.focus();
+    if (prevOpen.current && !open) {
+      triggerRef.current?.focus();
+    }
+    prevOpen.current = open;
   }, [open]);
 
   async function handleClick() {
-    // Always open a dialog; decide content based on auth + handler outcome
     if (isAuthed === true && typeof onStartMessageAction === "function") {
       try {
         await onStartMessageAction(targetId);
@@ -124,17 +128,19 @@ function MessageButtonBase({
       return;
     }
 
-    // Guest: prompt to sign in (always visible CTA still works)
-    const loginHref = `/signin?callbackUrl=${encodeURIComponent(next)}`;
+    // Guest: prompt to sign in
+    const signInHref = `/signin?callbackUrl=${encodeURIComponent(getReturnTo())}`;
     setBody(
       <div className="space-y-3 text-sm" aria-live="polite">
         <p>Please sign in to message the {label}.</p>
         <div className="flex gap-2">
           <a
             className="rounded-md border px-3 py-1.5 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900"
-            href={loginHref}
+            href={signInHref}
+            aria-label="Sign in"
+            title="Sign in"
           >
-            Continue to sign in
+            Sign in
           </a>
           <button
             type="button"
@@ -162,7 +168,8 @@ function MessageButtonBase({
         aria-expanded={open ? "true" : "false"}
         onClick={handleClick}
         className={[
-          "w-full rounded-lg bg-[#161748] text-white px-4 py-2 font-medium hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#39a0ca]",
+          "w-full rounded-lg bg-[#161748] text-white px-4 py-2 font-medium hover:opacity-95",
+          "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#39a0ca]",
           className,
         ].join(" ")}
       >

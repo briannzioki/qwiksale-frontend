@@ -1,5 +1,5 @@
-// src/app/components/UserAvatar.tsx
 "use client";
+// src/app/components/UserAvatar.tsx
 
 import * as React from "react";
 

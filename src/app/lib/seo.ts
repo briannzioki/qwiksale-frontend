@@ -6,7 +6,7 @@
 
 function resolveSiteUrl(): string {
   const raw =
-    process.env["NEXT_PUBLIC_APP_URL"] ||
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
     "https://qwiksale.sale";
@@ -150,7 +150,6 @@ export function safeDesc(s?: string | null, fallback = "QwikSale — Kenya’s t
 /* JSON-LD builders                                                           */
 /* -------------------------------------------------------------------------- */
 
-/** Organization JSON-LD (site-wide) */
 export function organizationJsonLd(opts?: {
   name?: string;
   url?: string;
@@ -168,7 +167,6 @@ export function organizationJsonLd(opts?: {
   };
 }
 
-/** WebSite JSON-LD with SearchAction */
 export function websiteJsonLd(opts?: { name?: string; url?: string; searchParam?: string }) {
   const url = opts?.url || SITE_URL;
   const qp = opts?.searchParam || "q";
@@ -179,13 +177,12 @@ export function websiteJsonLd(opts?: { name?: string; url?: string; searchParam?
     url,
     potentialAction: {
       "@type": "SearchAction",
-      target: `${url}/?${qp}={search_term_string}`,
+      target: `${url}/search?${qp}={search_term_string}`,
       "query-input": "required name=search_term_string",
     },
   };
 }
 
-/** BreadcrumbList JSON-LD */
 export function breadcrumbJsonLd(crumbs: Array<{ name: string; url: string }>) {
   return {
     "@context": "https://schema.org",
@@ -199,7 +196,6 @@ export function breadcrumbJsonLd(crumbs: Array<{ name: string; url: string }>) {
   };
 }
 
-/** ItemList JSON-LD for category/search pages */
 export function itemListJsonLd(items: Array<{ id?: string; name: string; url: string; image?: string }>) {
   return {
     "@context": "https://schema.org",
@@ -219,7 +215,6 @@ export function itemListJsonLd(items: Array<{ id?: string; name: string; url: st
   };
 }
 
-/** Map common condition/status to schema.org values */
 function mapCondition(cond?: string | null) {
   const c = (cond || "").toLowerCase();
   if (c.includes("brand")) return "https://schema.org/NewCondition";
@@ -231,7 +226,6 @@ function mapAvailability(status?: string | null) {
   return "https://schema.org/InStock";
 }
 
-/** Product JSON-LD */
 export function productJsonLd(p: {
   id: string;
   name: string;
@@ -302,7 +296,6 @@ export function productJsonLd(p: {
   return out;
 }
 
-/** Service JSON-LD */
 export function serviceJsonLd(s: {
   id: string;
   name: string;
@@ -355,7 +348,6 @@ export function serviceJsonLd(s: {
     ...(s.sellerName
       ? { provider: { "@type": "Organization", name: s.sellerName, url: s.sellerUrl || SITE_URL } }
       : {}),
-    // Non-standard but useful hint; search engines safely ignore unknown keys
     ...(s.rateType ? { rateType: s.rateType } : {}),
   };
 
@@ -363,7 +355,7 @@ export function serviceJsonLd(s: {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Open Graph/Twitter helpers (framework-agnostic objects)                    */
+/* Open Graph/Twitter helpers                                                 */
 /* -------------------------------------------------------------------------- */
 
 export function buildOg(meta: {
@@ -404,9 +396,6 @@ export function buildTwitter(meta: {
 /* Page-level convenience                                                     */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Build a consistent SEO bundle for a product page.
- */
 export function buildProductSeo(p: {
   id: string;
   name: string;
@@ -422,7 +411,6 @@ export function buildProductSeo(p: {
   const url = p.urlPath ? absUrl(p.urlPath) : `${SITE_URL}/product/${encodeURIComponent(p.id)}`;
   const canonical = url;
 
-  // Only include `image` when defined to satisfy exactOptionalPropertyTypes
   const singleImage = Array.isArray(p.image) ? p.image[0] : p.image || undefined;
 
   const og = buildOg({
@@ -438,7 +426,6 @@ export function buildProductSeo(p: {
     ...(singleImage ? { image: singleImage } : {}),
   });
 
-  // Omit keys instead of passing `undefined`
   const jsonLd = productJsonLd({
     id: p.id,
     name: p.name,
@@ -455,9 +442,6 @@ export function buildProductSeo(p: {
   return { canonical, og, twitter, jsonLd };
 }
 
-/**
- * Build a consistent SEO bundle for a service page.
- */
 export function buildServiceSeo(s: {
   id: string;
   name: string;

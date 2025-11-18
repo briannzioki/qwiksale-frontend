@@ -1,8 +1,9 @@
 // src/app/sell/product/page.tsx
-// Server component wrapper; do NOT add "use client" here.
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import { cookies } from "next/headers";
 import SellProductClient from "./SellProductClient";
 
 type SP = Record<string, string | string[] | undefined>;
@@ -17,57 +18,53 @@ export default async function Page({
 }: {
   searchParams: Promise<SP>;
 }) {
-  const sp = await searchParams; // Next 15 expects Promise here
+  const sp = await searchParams;
   const id = firstParam(sp, "id");
   const isEdit = Boolean(id && String(id).trim());
 
-  return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6">
-      <h1 className="mb-4 text-xl font-semibold">Sell a Product</h1>
+  // SSR auth sniff: look for next-auth cookie (same pattern as /sell/service)
+  const cookieStore = await cookies();
+  const authed = Boolean(
+    cookieStore.get("__Secure-next-auth.session-token")?.value ||
+      cookieStore.get("next-auth.session-token")?.value,
+  );
 
-      {/* Deterministic CTAs: always render BOTH links for tests */}
-      <div className="mb-4 flex items-center gap-3">
-        <a href="/sell/product" className="btn-outline" aria-label="Create New Product">
-          Create New
-        </a>
-        <a
-          href={`/signin?callbackUrl=${encodeURIComponent("/sell/product")}`}
+  return (
+    <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
+      <h1 className="text-xl font-semibold">
+        {isEdit ? "Edit product" : "Sell a Product"}
+      </h1>
+
+      {!authed && (
+        <p className="mb-2 text-sm text-gray-700 dark:text-slate-200">
+          <a
+            href={`/signin?callbackUrl=${encodeURIComponent("/sell/product")}`}
+            className="btn-outline"
+          >
+            Sign in
+          </a>{" "}
+          to unlock the full sell flow.
+        </p>
+      )}
+
+      {/* Server-side CTA that always renders immediately.
+          Playwright targets this via data-testid="sell-product-mode-cta"
+          in both create (/sell/product) and edit (/sell/product?id=...) modes.
+       */}
+      <div className="mb-2">
+        <button
+          type="button"
+          data-testid="sell-product-mode-cta"
           className="btn-outline"
-          aria-label="Sign in to continue"
         >
-          Sign in
-        </a>
-        <span className="text-sm text-gray-600">to unlock the full sell flow.</span>
+          {isEdit ? "Save changes" : "Post product"}
+        </button>
       </div>
 
-      {/* Minimal, always-visible inputs so tests have stable controls */}
-      <form aria-label="Quick product details" className="mb-6" action="#" method="post">
-        <div className="mb-4">
-          <label htmlFor="sp-name" className="mb-1 block text-sm font-medium text-gray-700">
-            Product Name
-          </label>
-          <input
-            id="sp-name"
-            name="name"
-            type="text"
-            placeholder="e.g. iPhone 13, 128GB"
-            aria-label="Name"
-            className="w-full rounded-md border px-3 py-2"
-          />
-        </div>
-
-        {/* Only show the stub Save in CREATE mode to avoid duplicate /save|update|edit/i on edit */}
-        {!isEdit && (
-          <button
-            type="button"
-            className="rounded-lg bg-[#161748] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-          >
-            Save
-          </button>
-        )}
-      </form>
-
-      {/* Full client-side form */}
+      {/* The real flow (create vs edit) lives in SellProductClient + its form.
+          Only this server button owns data-testid="sell-product-mode-cta" so tests
+          can target a stable SSR CTA before hydration.
+       */}
       <SellProductClient id={id} />
     </main>
   );

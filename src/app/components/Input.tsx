@@ -1,5 +1,5 @@
-// src/app/components/Input.tsx
 "use client";
+// src/app/components/Input.tsx
 
 import * as React from "react";
 

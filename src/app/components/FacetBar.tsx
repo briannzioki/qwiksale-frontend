@@ -1,5 +1,5 @@
-// src/app/components/FacetBar.tsx
 "use client";
+// src/app/components/FacetBar.tsx
 
 type Facet = { value: string; count: number };
 export type Facets = {

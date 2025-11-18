@@ -282,7 +282,9 @@ export default function ProductForm(props: Props) {
         {/* Title & Price (match edit page grouping) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
-            <label className="text-sm font-medium" htmlFor="pf-title">Title</label>
+            <label className="text-sm font-medium" htmlFor="pf-title">
+              Title
+            </label>
             <input
               id="pf-title"
               value={name}
@@ -295,7 +297,9 @@ export default function ProductForm(props: Props) {
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-price">Price (KES)</label>
+            <label className="text-sm font-medium" htmlFor="pf-price">
+              Price (KES)
+            </label>
             <input
               id="pf-price"
               type="number"
@@ -323,7 +327,10 @@ export default function ProductForm(props: Props) {
                 checked={negotiable}
                 onChange={(e) => setNegotiable(e.currentTarget.checked)}
               />
-              <label htmlFor="pf-negotiable" className="text-sm text-gray-700 dark:text-slate-200">
+              <label
+                htmlFor="pf-negotiable"
+                className="text-sm text-gray-700 dark:text-slate-200"
+              >
                 Negotiable price
               </label>
             </div>
@@ -339,11 +346,15 @@ export default function ProductForm(props: Props) {
         {/* Condition, Category, Subcategory (same order as edit page) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-condition">Condition</label>
+            <label className="text-sm font-medium" htmlFor="pf-condition">
+              Condition
+            </label>
             <select
               id="pf-condition"
               value={condition}
-              onChange={(e) => setCondition(e.currentTarget.value as "brand new" | "pre-owned")}
+              onChange={(e) =>
+                setCondition(e.currentTarget.value as "brand new" | "pre-owned")
+              }
               className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
             >
               <option value="brand new">Brand new</option>
@@ -352,7 +363,9 @@ export default function ProductForm(props: Props) {
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-category">Category</label>
+            <label className="text-sm font-medium" htmlFor="pf-category">
+              Category
+            </label>
             <select
               id="pf-category"
               value={category}
@@ -368,7 +381,9 @@ export default function ProductForm(props: Props) {
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-subcategory">Subcategory</label>
+            <label className="text-sm font-medium" htmlFor="pf-subcategory">
+              Subcategory
+            </label>
             <select
               id="pf-subcategory"
               value={subcategory}
@@ -387,7 +402,9 @@ export default function ProductForm(props: Props) {
         {/* Brand, Location, Phone (same order) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-brand">Brand (optional)</label>
+            <label className="text-sm font-medium" htmlFor="pf-brand">
+              Brand (optional)
+            </label>
             <input
               id="pf-brand"
               value={brand}
@@ -398,7 +415,9 @@ export default function ProductForm(props: Props) {
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-location">Location</label>
+            <label className="text-sm font-medium" htmlFor="pf-location">
+              Location
+            </label>
             <input
               id="pf-location"
               value={location}
@@ -409,7 +428,9 @@ export default function ProductForm(props: Props) {
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-phone">Phone (WhatsApp, optional)</label>
+            <label className="text-sm font-medium" htmlFor="pf-phone">
+              Phone (WhatsApp, optional)
+            </label>
             <input
               id="pf-phone"
               value={phone}
@@ -420,10 +441,18 @@ export default function ProductForm(props: Props) {
               aria-invalid={!!phone && !phoneOk}
               aria-describedby="pf-phone-help"
             />
-            <div id="pf-phone-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            <div
+              id="pf-phone-help"
+              className="mt-1 text-xs text-gray-600 dark:text-gray-400"
+            >
               {phone
                 ? phoneOk
-                  ? <>Normalized: <code className="font-mono">{normalizedPhone}</code></>
+                  ? (
+                    <>
+                      Normalized:{" "}
+                      <code className="font-mono">{normalizedPhone}</code>
+                    </>
+                    )
                   : "Please enter a valid Kenyan mobile."
                 : "Optional. Buyers can call or WhatsApp."}
             </div>
@@ -432,7 +461,9 @@ export default function ProductForm(props: Props) {
 
         {/* Description */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-description">Description</label>
+          <label className="text-sm font-medium" htmlFor="pf-description">
+            Description
+          </label>
           <textarea
             id="pf-description"
             value={description}
@@ -457,7 +488,10 @@ export default function ProductForm(props: Props) {
             accept="image/*,.jpg,.jpeg,.png,.webp"
             maxSizeMB={10}
           />
-          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
+          <div
+            className="mt-2 text-xs text-gray-600 dark:text-gray-400"
+            aria-live="polite"
+          >
             {pendingFiles.length
               ? `${pendingFiles.length} new selected (to upload on save)`
               : "No new files selected"}
@@ -474,8 +508,15 @@ export default function ProductForm(props: Props) {
             !canSubmit || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"
           }`}
           aria-busy={busy ? "true" : "false"}
+          data-testid="product-form-submit"
         >
-          {busy ? (isEdit ? "Saving…" : "Posting…") : isEdit ? "Save changes" : "Post product"}
+          {busy
+            ? isEdit
+              ? "Saving…"
+              : "Posting…"
+            : isEdit
+            ? "Save changes"
+            : "Post product"}
         </button>
       </div>
     </form>

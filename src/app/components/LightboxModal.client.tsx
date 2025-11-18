@@ -1,7 +1,13 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 
 type Props = {
   images: string[];
@@ -20,7 +26,7 @@ export default function LightboxModal({
 }: Props) {
   const len = Math.max(0, images.length);
   const safeIndex = len ? Math.min(Math.max(0, index), len - 1) : 0;
-  const src = images[safeIndex] ?? images[0];
+  const src = len > 0 ? images[safeIndex] ?? images[0] : "";
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -28,14 +34,15 @@ export default function LightboxModal({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
 
-  // mount animation
   const [mounted, setMounted] = useState(false);
+
+  // Mount animation
   useEffect(() => {
     const t = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(t);
   }, []);
 
-  // Remember the element that had focus and restore on close/unmount
+  // Remember opener focus & restore on unmount
   useEffect(() => {
     openerRef.current = (document.activeElement as HTMLElement) || null;
     return () => {
@@ -47,19 +54,25 @@ export default function LightboxModal({
     };
   }, []);
 
-  // Initial focus to the Close button
+  // Initial focus to Close button
   useEffect(() => {
-    const id = requestAnimationFrame(() => closeBtnRef.current?.focus());
+    const id = requestAnimationFrame(() => {
+      closeBtnRef.current?.focus();
+    });
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Announce changes for screen readers
+  // Live region for SR announcements
   useEffect(() => {
     if (!liveRef.current) return;
-    liveRef.current.textContent = len ? `Image ${safeIndex + 1} of ${len}` : "No images";
+    if (!len) {
+      liveRef.current.textContent = "No images";
+      return;
+    }
+    liveRef.current.textContent = `Image ${safeIndex + 1} of ${len}`;
   }, [safeIndex, len]);
 
-  // Focus trap (Tab cycles inside the modal)
+  // Focus trap (Tab cycles inside modal)
   useEffect(() => {
     const node = rootRef.current;
     if (!node) return;
@@ -89,13 +102,22 @@ export default function LightboxModal({
     return () => node.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Esc / Arrow keys + wheel navigation
+  // ESC + Arrow keys + wheel nav
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseAction();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCloseAction();
+        return;
+      }
       if (len > 1) {
-        if (e.key === "ArrowRight") onIndexAction((safeIndex + 1) % len);
-        if (e.key === "ArrowLeft") onIndexAction((safeIndex - 1 + len) % len);
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          onIndexAction((safeIndex + 1) % len);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          onIndexAction((safeIndex - 1 + len) % len);
+        }
       }
     };
 
@@ -105,7 +127,11 @@ export default function LightboxModal({
       const magX = Math.abs(e.deltaX);
       const delta = magX > magY ? e.deltaX : e.deltaY;
       if (Math.abs(delta) < 10) return;
-      onIndexAction(delta > 0 ? (safeIndex + 1) % len : (safeIndex - 1 + len) % len);
+      const next =
+        delta > 0
+          ? (safeIndex + 1) % len
+          : (safeIndex - 1 + len) % len;
+      onIndexAction(next);
     };
 
     window.addEventListener("keydown", onKey);
@@ -118,7 +144,7 @@ export default function LightboxModal({
     };
   }, [safeIndex, len, onCloseAction, onIndexAction]);
 
-  // Prevent page scroll while open
+  // Disable page scroll while open
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -127,7 +153,7 @@ export default function LightboxModal({
     };
   }, []);
 
-  // Basic swipe support
+  // Basic swipe support on the image wrapper
   useEffect(() => {
     const node = wrapRef.current;
     if (!node || len < 2) return;
@@ -148,7 +174,11 @@ export default function LightboxModal({
       const dx = e.clientX - downX;
       const dy = e.clientY - downY;
       if (Math.abs(dx) > Math.max(40, Math.abs(dy) * 1.2)) {
-        onIndexAction(dx < 0 ? (safeIndex + 1) % len : (safeIndex - 1 + len) % len);
+        const next =
+          dx < 0
+            ? (safeIndex + 1) % len
+            : (safeIndex - 1 + len) % len;
+        onIndexAction(next);
       }
     };
     const onPointerCancel = () => {
@@ -158,6 +188,7 @@ export default function LightboxModal({
     node.addEventListener("pointerdown", onPointerDown);
     node.addEventListener("pointerup", onPointerUp);
     node.addEventListener("pointercancel", onPointerCancel);
+
     return () => {
       node.removeEventListener("pointerdown", onPointerDown);
       node.removeEventListener("pointerup", onPointerUp);
@@ -165,7 +196,7 @@ export default function LightboxModal({
     };
   }, [safeIndex, len, onIndexAction]);
 
-  // Preload neighbors (snappier nav)
+  // Preload neighbors
   useEffect(() => {
     if (len < 2) return;
     const prevIdx = (safeIndex - 1 + len) % len;
@@ -176,20 +207,25 @@ export default function LightboxModal({
     b.src = images[nextIdx]!;
   }, [safeIndex, len, images]);
 
-  const goPrev = useCallback(
-    () => onIndexAction((safeIndex - 1 + len) % len),
-    [safeIndex, len, onIndexAction]
-  );
-  const goNext = useCallback(
-    () => onIndexAction((safeIndex + 1) % len),
-    [safeIndex, len, onIndexAction]
+  const goPrev = useCallback(() => {
+    if (len < 2) return;
+    onIndexAction((safeIndex - 1 + len) % len);
+  }, [safeIndex, len, onIndexAction]);
+
+  const goNext = useCallback(() => {
+    if (len < 2) return;
+    onIndexAction((safeIndex + 1) % len);
+  }, [safeIndex, len, onIndexAction]);
+
+  const dots = useMemo(
+    () => Array.from({ length: len }, (_, i) => i),
+    [len]
   );
 
-  const dots = useMemo(() => Array.from({ length: len }, (_, i) => i), [len]);
-
-  const stopClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-  }, []);
+  const stopClick = useCallback(
+    (e: React.MouseEvent) => e.stopPropagation(),
+    []
+  );
 
   return (
     <div
@@ -205,23 +241,28 @@ export default function LightboxModal({
       aria-label="Image viewer"
       data-lightbox-root
       data-visible="true"
-      /* OPTIONAL redundancy: same selector also present AFTER open */
       data-gallery-overlay="true"
     >
-      {/* a11y announcer */}
-      <span ref={liveRef} className="sr-only" aria-live="polite" />
+      {/* SR announcer */}
+      <span
+        ref={liveRef}
+        className="sr-only"
+        aria-live="polite"
+      />
 
-      {/* click-outside/backdrop to close */}
+      {/* Backdrop click → close (not tabbable) */}
       <button
         type="button"
         className="absolute inset-0 cursor-default"
         aria-label="Close"
         onClick={onCloseAction}
         tabIndex={-1}
-        style={{ background: "transparent" }}
+        style={{
+          background: "transparent",
+        }}
       />
 
-      {/* header controls */}
+      {/* Header: index + Close */}
       <div className="absolute left-0 right-0 top-0 z-[101] flex items-center justify-between px-4 py-3">
         <div className="rounded bg-black/30 px-2 py-1 text-xs font-medium text-white/90">
           {len ? `${safeIndex + 1} / ${len}` : "0 / 0"}
@@ -237,7 +278,7 @@ export default function LightboxModal({
         </button>
       </div>
 
-      {/* image area */}
+      {/* Image area */}
       <div
         ref={wrapRef}
         onClick={stopClick}
@@ -268,7 +309,7 @@ export default function LightboxModal({
         )}
       </div>
 
-      {/* left/right nav */}
+      {/* Prev/Next */}
       {len > 1 && (
         <>
           <button
@@ -290,7 +331,7 @@ export default function LightboxModal({
         </>
       )}
 
-      {/* index dots */}
+      {/* Index dots */}
       {len > 1 && (
         <div className="absolute bottom-3 left-1/2 z-[101] -translate-x-1/2 flex items-center gap-2">
           {dots.map((i) => (
@@ -301,7 +342,9 @@ export default function LightboxModal({
               onClick={() => onIndexAction(i)}
               className={[
                 "h-2.5 w-2.5 rounded-full border border-white/40 transition",
-                i === safeIndex ? "bg-white" : "bg-white/20 hover:bg-white/40",
+                i === safeIndex
+                  ? "bg-white"
+                  : "bg-white/20 hover:bg-white/40",
               ].join(" ")}
             />
           ))}

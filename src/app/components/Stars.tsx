@@ -1,5 +1,5 @@
-// src/app/components/Stars.tsx
 "use client";
+// src/app/components/Stars.tsx
 
 type StarsProps = {
   /** Current rating value (can be fractional) */

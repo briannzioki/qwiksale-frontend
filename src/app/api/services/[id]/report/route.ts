@@ -14,6 +14,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
   return res;
 }
 
@@ -72,11 +73,6 @@ type Reason = (typeof REASONS)[number];
 const REASON_SET = new Set<Reason>(REASONS);
 
 /* -------------------- prisma alias (type fallback) -------------------- */
-/**
- * If your generated @prisma/client is out-of-date, TS may complain that
- * `prisma.report` doesn't exist. This alias avoids the TS error while still
- * calling the correct runtime method once you've run `prisma generate`.
- */
 const db = prisma as unknown as typeof prisma & {
   report: {
     count: (args: any) => Promise<number>;
@@ -95,7 +91,7 @@ export async function POST(req: NextRequest) {
     const session = await auth().catch(() => null);
     const reporterId = (session?.user as any)?.id as string | undefined;
 
-    const body = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({} as any));
     const reason = s(body?.reason) as Reason | undefined;
     const details = clip(s(body?.details), 4000);
 
@@ -121,7 +117,7 @@ export async function POST(req: NextRequest) {
       },
     });
     if (recentSame > 0) {
-      return noStore({ ok: true, deduped: true });
+      return noStore({ ok: true, deduped: true }, { status: 200 });
     }
 
     // Global anti-abuse: no more than 20 reports/day per user/ip
@@ -138,7 +134,6 @@ export async function POST(req: NextRequest) {
       return noStore({ error: "Rate limit exceeded" }, { status: 429 });
     }
 
-    // Create report
     const created = await db.report.create({
       data: {
         listingId: id,
@@ -151,7 +146,10 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
 
-    return noStore({ ok: true, reportId: created.id }, { status: 201 });
+    return noStore(
+      { ok: true, reportId: created.id },
+      { status: 201 }
+    );
   } catch (e) {
     // eslint-disable-next-line no-console
     console.warn("[services/:id/report POST] error:", e);
@@ -159,11 +157,11 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/* ----------------------------- CORS (optional) ----------------------------- */
+/* ----------------------------- CORS ----------------------------- */
 export function OPTIONS() {
   const origin =
     process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
+    process.env["APP_ORIGIN"] ??
     "*";
 
   const res = new NextResponse(null, { status: 204 });

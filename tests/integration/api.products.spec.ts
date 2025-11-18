@@ -10,14 +10,14 @@ async function callRoute(fn: unknown, req: Request, ctx?: { params?: Record<stri
   const handler = fn as (r: Request, c?: any) => Promise<Response>;
   // If the function is declared with 2 params we pass ctx; otherwise just req.
   // (length is a runtime hint; cast keeps TS quiet.)
-  //ts-expect-error: we intentionally allow both signatures here 
+  //ts-expect-error: we intentionally allow both signatures here
   return handler.length >= 2 ? handler(req, ctx) : handler(req);
 }
 
 function makeReq(url: string, init?: RequestInit): Request {
   return new Request(url, {
     ...init,
-    headers: { ...(init?.headers || {}), "content-type": "application/json" }
+    headers: { ...(init?.headers || {}), "content-type": "application/json" },
   });
 }
 
@@ -25,47 +25,61 @@ describe("Products API (integration)", () => {
   beforeAll(() => {
     expect(
       process.env["DATABASE_URL"],
-      "DATABASE_URL must be set for integration tests"
+      "DATABASE_URL must be set for integration tests",
     ).toBeTruthy();
   });
 
   it("search returns envelope", async () => {
-    const req = makeReq("http://localhost/api/products/search?q=phone&page=1&pageSize=5");
+    const req = makeReq(
+      "http://localhost/api/products/search?q=phone&page=1&pageSize=5",
+    );
     const res = await callRoute(searchGET, req);
-    expect([200,404,400]).toContain(res.status);
+    expect([200, 404, 400]).toContain(res.status);
     const json = await res.json();
     expect(json).toHaveProperty("items");
     expect(Array.isArray(json.items)).toBe(true);
   });
 
   it("show returns a single product", async () => {
-    const reqSearch = makeReq("http://localhost/api/products/search?page=1&pageSize=1");
+    const reqSearch = makeReq(
+      "http://localhost/api/products/search?page=1&pageSize=1",
+    );
     const resSearch = await callRoute(searchGET, reqSearch);
     const list = await resSearch.json();
     const first = list.items?.[0];
     expect(first?.id).toBeTruthy();
 
-    const req = makeReq(`http://localhost/api/products/${encodeURIComponent(first.id)}`);
-    const res = await callRoute(showGET, req, { params: { id: String(first.id) } });
-    expect([200,404,400]).toContain(res.status);
+    const req = makeReq(
+      `http://localhost/api/products/${encodeURIComponent(first.id)}`,
+    );
+    const res = await callRoute(showGET, req, {
+      params: { id: String(first.id) },
+    });
+    expect([200, 404, 400]).toContain(res.status);
     const json = await res.json();
-if (res.status === 200) {
-  expect(json).toHaveProperty("id", first.id);
-} else {
-  // In CI we often have an empty DB (no seed) ? 400/404 with an error payload
-  expect(json).toHaveProperty("error");
-}});
+    if (res.status === 200) {
+      expect(json).toHaveProperty("id", first.id);
+    } else {
+      // In CI we often have an empty DB (no seed) → 400/404 with an error payload
+      expect(json).toHaveProperty("error");
+    }
+  });
 
   it("contact endpoint responds (may require auth depending on your guard)", async () => {
-    const reqSearch = makeReq("http://localhost/api/products/search?page=1&pageSize=1");
+    const reqSearch = makeReq(
+      "http://localhost/api/products/search?page=1&pageSize=1",
+    );
     const resSearch = await callRoute(searchGET, reqSearch);
     const list = await resSearch.json();
     const first = list.items?.[0];
     expect(first?.id).toBeTruthy();
 
-    const req = makeReq(`http://localhost/api/products/${encodeURIComponent(first.id)}/contact`);
-    const res = await callRoute(contactGET, req, { params: { id: String(first.id) } });
-    expect([200,401,403,400]).toContain(res.status);
+    const req = makeReq(
+      `http://localhost/api/products/${encodeURIComponent(first.id)}/contact`,
+    );
+    const res = await callRoute(contactGET, req, {
+      params: { id: String(first.id) },
+    });
+    expect([200, 401, 403, 400]).toContain(res.status);
   });
 });
-

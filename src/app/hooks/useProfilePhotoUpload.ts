@@ -1,5 +1,5 @@
-// src/app/hooks/useProfilePhotoUpload.ts
 "use client";
+// src/app/hooks/useProfilePhotoUpload.ts
 
 import { useCallback, useRef, useState } from "react";
 
