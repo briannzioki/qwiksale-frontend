@@ -1,15 +1,25 @@
+// src/app/lib/auth.ts
 import "server-only";
-import { auth } from "@/auth";
+import { auth as coreAuth } from "@/auth";
+import type { Session as NextAuthSession } from "next-auth";
 
-export type Session = Awaited<ReturnType<typeof auth>>;
+/**
+ * Re-export canonical auth helper for server code.
+ * This is the single entry point for reading the NextAuth session.
+ */
+export const auth = coreAuth;
+
+/** App-wide session type (nullable for convenience). */
+export type Session = NextAuthSession | null;
+
+/** User type from session; null when unauthenticated. */
 export type SessionUser =
-  (NonNullable<Session>["user"] & {
-    id?: string;
-    role?: string | null;
-    subscription?: string | null;
-    isAdmin?: boolean;
-    isSuperAdmin?: boolean;
-  }) | null;
+  | NonNullable<NonNullable<NextAuthSession["user"]>>
+  | null;
+
+/* ------------------------------------------------------------------ */
+/* ------------------------- Small helpers --------------------------- */
+/* ------------------------------------------------------------------ */
 
 function splitList(v?: string | null) {
   return (v ?? "")
@@ -18,22 +28,39 @@ function splitList(v?: string | null) {
     .filter(Boolean);
 }
 
-export function isAdminEmail(email?: string | null): boolean {
-  if (!email) return false;
-  const e = email.toLowerCase();
+function getAdminEmailSets() {
   const admin = new Set(splitList(process.env["ADMIN_EMAILS"]));
   const superAdmin = new Set(splitList(process.env["SUPERADMIN_EMAILS"]));
-  return admin.has(e) || superAdmin.has(e);
+  return { admin, superAdmin };
 }
+
+/* ------------------------------------------------------------------ */
+/* --------------------- Admin email allowlists ---------------------- */
+/* ------------------------------------------------------------------ */
 
 export function isSuperAdminEmail(email?: string | null): boolean {
   if (!email) return false;
-  const e = email.toLowerCase();
-  const superAdmin = new Set(splitList(process.env["SUPERADMIN_EMAILS"]));
-  return superAdmin.has(e);
+  const { superAdmin } = getAdminEmailSets();
+  return superAdmin.has(email.toLowerCase());
 }
 
-export async function safeAuth(): Promise<Session | null> {
+export function isAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const e = email.toLowerCase();
+  const { admin, superAdmin } = getAdminEmailSets();
+  return admin.has(e) || superAdmin.has(e);
+}
+
+/* ------------------------------------------------------------------ */
+/* --------------------------- Safe wrappers ------------------------- */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Safe session getter.
+ * - Never throws.
+ * - Returns `null` on any failure.
+ */
+export async function safeAuth(): Promise<Session> {
   try {
     return await auth();
   } catch {
@@ -41,8 +68,13 @@ export async function safeAuth(): Promise<Session | null> {
   }
 }
 
+/**
+ * Rich viewer snapshot used by UI & logs.
+ * - Normalizes id/email/role.
+ * - Derives isAdmin / isSuperAdmin using the same rules as auth.config.ts.
+ */
 export async function getViewer(): Promise<{
-  session: Session | null;
+  session: Session;
   id?: string;
   email?: string;
   role?: string;
@@ -52,35 +84,65 @@ export async function getViewer(): Promise<{
   const session = await safeAuth();
   const u = (session?.user ?? {}) as any;
 
-  const id = typeof u?.id === "string" ? u.id : undefined;
+  const id =
+    typeof u?.id === "string"
+      ? u.id
+      : u?.id != null
+      ? String(u.id)
+      : undefined;
+
   const email = typeof u?.email === "string" ? u.email : undefined;
-  const role = typeof u?.role === "string" ? u.role : undefined;
-  const roleU = role?.toUpperCase?.();
+
+  const role = typeof u?.role === "string" ? u.role : "USER";
+  const roleU = role.toUpperCase();
+
+  const viaAllowlistAdmin = isAdminEmail(email);
+  const viaAllowlistSuper = isSuperAdminEmail(email);
 
   const isSuperAdmin =
-    u?.isSuperAdmin === true || roleU === "SUPERADMIN" || isSuperAdminEmail(email);
+    u?.isSuperAdmin === true ||
+    roleU === "SUPERADMIN" ||
+    viaAllowlistSuper;
+
   const isAdmin =
-    u?.isAdmin === true || isSuperAdmin || roleU === "ADMIN" || isAdminEmail(email);
+    u?.isAdmin === true ||
+    isSuperAdmin ||
+    roleU === "ADMIN" ||
+    viaAllowlistAdmin;
 
-  return { session, id, email, role, isAdmin, isSuperAdmin };
+  return {
+    session,
+    id,
+    email,
+    role,
+    isAdmin,
+    isSuperAdmin,
+  };
 }
 
-export async function getServerSession(): Promise<Session | null> {
-  return safeAuth();
-}
-
+/**
+ * Legacy-style convenience: returns `session.user` or null.
+ * Prefer `getViewer` or `getSessionUser` from authz for new code.
+ */
 export async function getSessionUser(): Promise<SessionUser> {
   const s = await safeAuth();
   return (s?.user as SessionUser) ?? null;
 }
 
+/**
+ * Returns authenticated user id or null.
+ */
 export async function requireUserId(): Promise<string | null> {
   const v = await getViewer();
   return v.id ?? null;
 }
 
+/**
+ * True if there is any authenticated user.
+ */
 export async function isAuthenticated(): Promise<boolean> {
   return (await requireUserId()) != null;
 }
 
-export { auth };
+/** Keep default export for legacy imports (`import auth from "@/app/lib/auth"`). */
+export { auth as default };

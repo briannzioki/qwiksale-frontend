@@ -3,6 +3,7 @@
 import * as dotenv from "dotenv";
 import path from "node:path";
 
+dotenv.config({ path: path.resolve(process.cwd(), ".env.e2e.local") });
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 dotenv.config();
 
@@ -21,7 +22,11 @@ async function ensureDir(dir: string) {
 
 function env(name: string, fallback?: string) {
   if (name === "E2E_SUPERADMIN_EMAIL") {
-    return process.env["E2E_SUPERADMIN_EMAIL"] || (process.env as any)["2E_SUPERADMIN_EMAIL"] || fallback;
+    return (
+      process.env["E2E_SUPERADMIN_EMAIL"] ||
+      (process.env as any)["2E_SUPERADMIN_EMAIL"] ||
+      fallback
+    );
   }
   return (process.env as Record<string, string | undefined>)[name] ?? fallback;
 }
@@ -37,39 +42,83 @@ async function hasSession(ctx: BrowserContext): Promise<boolean> {
   }
 }
 
+/* ------------------------------- CSRF retry -------------------------------- */
+async function getCsrfWithRetry(ctx: BrowserContext, attempts = 3, delayMs = 400): Promise<string | null> {
+  for (let i = 0; i < attempts; i++) {
+    const res = await ctx.request.get("/api/auth/csrf", { failOnStatusCode: false });
+    if (res.status() === 200) {
+      try {
+        const body = await res.json();
+        const token = (body as any)?.csrfToken;
+        if (token) return token as string;
+      } catch {
+        /* fall through */
+      }
+    } else {
+      console.warn(`[global-setup] csrf GET failed (${res.status()}) [attempt ${i + 1}/${attempts}]`);
+    }
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
+}
+
+async function validateStoredState(baseURL: string, statePath: string): Promise<boolean> {
+  try {
+    await fs.promises.access(statePath, fs.constants.R_OK);
+  } catch {
+    return false;
+  }
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ baseURL, storageState: statePath });
+
+  try {
+    const ok = await hasSession(context);
+    if (ok) {
+      console.log(`[global-setup] validated existing auth state: ${path.basename(statePath)}`);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+}
+
 /**
  * Credentials login via NextAuth without UI.
- * IMPORTANT: callbackUrl points to /api/auth/session to avoid any / → / loops.
+ * IMPORTANT: callbackUrl points to /api/auth/session to avoid / → /admin loops.
  */
-async function loginAndSave(baseURL: string, email: string, password: string, outFile: string): Promise<boolean> {
+async function loginAndSave(
+  baseURL: string,
+  email: string,
+  password: string,
+  outFile: string
+): Promise<boolean> {
   if (!email || !password) return false;
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ baseURL });
 
   try {
-    // Health ping so server is warm
+    // Warm up server
     await context.request.get("/api/health").catch(() => {});
 
-    // 1) Get CSRF
-    const csrfRes = await context.request.get("/api/auth/csrf", { failOnStatusCode: false });
-    if (csrfRes.status() !== 200) {
-      console.warn(`[global-setup] csrf GET failed (${csrfRes.status()}) for ${email}`);
-      return false;
-    }
-    const csrf = (await csrfRes.json()) as any;
-    const csrfToken: string | undefined = csrf?.csrfToken;
+    // CSRF with small retry/backoff
+    const csrfToken = await getCsrfWithRetry(context, 3, 400);
     if (!csrfToken) {
-      console.warn("[global-setup] no csrfToken in response");
+      console.warn(`[global-setup] csrf GET failed (no token) for ${email}`);
       return false;
     }
 
-    // 2) Credentials sign-in -> redirect to /api/auth/session (NOT /)
+    // Credentials sign-in -> redirect to /api/auth/session (NOT /)
     const form = new URLSearchParams();
     form.set("csrfToken", csrfToken);
     form.set("email", email);
     form.set("password", password);
-    form.set("callbackUrl", "/api/auth/session"); // 👈 avoid / redirect
+    form.set("callbackUrl", "/api/auth/session");
 
     const signRes = await context.request.post("/api/auth/callback/credentials", {
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -79,14 +128,16 @@ async function loginAndSave(baseURL: string, email: string, password: string, ou
 
     if (signRes.status() >= 400) {
       let detail = "";
-      try { detail = JSON.stringify(await signRes.json()); } catch {}
+      try {
+        detail = JSON.stringify(await signRes.json());
+      } catch {}
       console.warn(
         `[global-setup] sign-in POST failed for ${email}: ${signRes.status()} ${detail || "(no body)"}`
       );
       return false;
     }
 
-    // 3) Verify
+    // Verify session
     const ok = await hasSession(context);
     if (!ok) {
       console.warn("[global-setup] session not detected via /api/auth/session");
@@ -106,22 +157,12 @@ async function loginAndSave(baseURL: string, email: string, password: string, ou
   }
 }
 
-async function copyIfExists(src: string, dst: string): Promise<boolean> {
-  try {
-    await fs.promises.copyFile(src, dst);
-    console.log(`[global-setup] wrote default storage: ${dst} (copied from ${path.basename(src)})`);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function writeEmptyDefault(): Promise<void> {
   await ensureDir(AUTH_DIR);
-  const emptyState = { cookies: [], origins: [] };
+  const emptyState = { cookies: [], origins: [] as any[] };
   await fs.promises.writeFile(DEFAULT_FILE, JSON.stringify(emptyState, null, 2), "utf8");
   console.warn(
-    `[global-setup] no auth states created — wrote EMPTY default storage at ${DEFAULT_FILE} (logged-out mode)`
+    `[global-setup] wrote EMPTY default storage at ${DEFAULT_FILE} (logged-out mode)`
   );
 }
 
@@ -141,19 +182,28 @@ export default async function globalSetup(config: FullConfig) {
   console.log("[global-setup] baseURL:", baseURL);
   console.log("[global-setup] admin present:", !!ADMIN_EMAIL, "user present:", !!USER_EMAIL);
 
-  const adminOk = ADMIN_EMAIL && ADMIN_PASSWORD
-    ? await loginAndSave(baseURL, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_FILE)
-    : false;
+  // Try to reuse/refresh dedicated states for admin and user
+  const adminValid =
+    (await validateStoredState(baseURL, ADMIN_FILE)) ||
+    (!!ADMIN_EMAIL &&
+      !!ADMIN_PASSWORD &&
+      (await loginAndSave(baseURL, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_FILE)));
 
-  const userOk = USER_EMAIL && USER_PASSWORD
-    ? await loginAndSave(baseURL, USER_EMAIL, USER_PASSWORD, USER_FILE)
-    : false;
+  const userValid =
+    (await validateStoredState(baseURL, USER_FILE)) ||
+    (!!USER_EMAIL && !!USER_PASSWORD && (await loginAndSave(baseURL, USER_EMAIL, USER_PASSWORD, USER_FILE)));
 
-  if (!adminOk) { try { await fs.promises.rm(ADMIN_FILE, { force: true }); } catch {} }
-  if (!userOk) { try { await fs.promises.rm(USER_FILE, { force: true }); } catch {} }
+  if (!adminValid) {
+    try {
+      await fs.promises.rm(ADMIN_FILE, { force: true });
+    } catch {}
+  }
+  if (!userValid) {
+    try {
+      await fs.promises.rm(USER_FILE, { force: true });
+    } catch {}
+  }
 
-  if (userOk && (await copyIfExists(USER_FILE, DEFAULT_FILE))) return;
-  if (adminOk && (await copyIfExists(ADMIN_FILE, DEFAULT_FILE))) return;
-
+  // Always start suites in logged-out mode to avoid cookie bleed-through.
   await writeEmptyDefault();
 }
