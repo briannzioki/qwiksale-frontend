@@ -17,7 +17,6 @@ import Footer from "@/app/components/Footer";
 import Analytics from "@/app/components/Analytics";
 import { getBaseUrl } from "@/app/lib/url";
 import SearchHotkeyClient from "@/app/_components/SearchHotkeyClient";
-import NavPatch from "@/app/_debug/NavPatch.client";
 
 /* ------------------ headers polyfill (Next 15) ------------------ */
 async function readHeaders(): Promise<Headers> {
@@ -31,17 +30,6 @@ const siteUrl = getBaseUrl().replace(/\/+$/, "");
 const isPreview =
   process.env["VERCEL_ENV"] === "preview" ||
   process.env["NEXT_PUBLIC_NOINDEX"] === "1";
-
-/**
- * Dev-only navigation/reload tracer:
- * - Requires NEXT_PUBLIC_DEBUG_NAV=1
- * - Never runs in E2E (NEXT_PUBLIC_E2E=1) or production
- * - Must not interfere with soft-nav Playwright tests
- */
-const enableNavDebug =
-  process.env["NEXT_PUBLIC_DEBUG_NAV"] === "1" &&
-  process.env["NEXT_PUBLIC_E2E"] !== "1" &&
-  process.env["NODE_ENV"] !== "production";
 
 export const viewport: Viewport = {
   themeColor: [
@@ -170,9 +158,6 @@ export default async function RootLayout({
       >
         {/* Slash hotkey → search. No mount-time URL mutation. */}
         <SearchHotkeyClient />
-
-        {/* Dev-only navigation/reload tracer; never active in E2E or prod. */}
-        {enableNavDebug ? <NavPatch /> : null}
 
         <Providers
           session={session}
