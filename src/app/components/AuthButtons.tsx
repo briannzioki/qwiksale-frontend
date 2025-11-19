@@ -27,7 +27,6 @@ const isPaidTier = (t?: string | null) => {
   return v === "GOLD" || v === "PLATINUM";
 };
 
-/* ------------------------------- subparts ------------------------------- */
 function Initials({ name }: { name?: string | null }) {
   const text =
     (name || "")
@@ -46,20 +45,27 @@ function Initials({ name }: { name?: string | null }) {
   );
 }
 
+function getReturnTo(): string {
+  try {
+    const { pathname, search, hash } = window.location;
+    return `${pathname}${search || ""}${hash || ""}` || "/";
+  } catch {
+    return "/";
+  }
+}
+
 /* --------------------------------- main --------------------------------- */
 export default function AuthButtons() {
   const { data: session, status } = useSession();
   const [working, setWorking] = useState<"out" | null>(null);
   const [open, setOpen] = useState(false);
 
-  // close on hash/navigation changes
   useEffect(() => {
     const onHash = () => setOpen(false);
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // close on outside click
   const rootRef = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -73,7 +79,6 @@ export default function AuthButtons() {
     return () => window.removeEventListener("click", onClick);
   }, [open]);
 
-  // close on Escape + simple menu keyboard nav
   const menuRef = useRef<HTMLDivElement | null>(null);
   const focusablesRef = useRef<HTMLElement[]>([]);
   useEffect(() => {
@@ -85,9 +90,7 @@ export default function AuthButtons() {
         return;
       }
       if (!menuRef.current) return;
-      const els = Array.from(
-        menuRef.current.querySelectorAll<HTMLElement>('a[href],button:not([disabled])')
-      );
+      const els = Array.from(menuRef.current.querySelectorAll<HTMLElement>('a[href],button:not([disabled])'));
       focusablesRef.current = els;
       const current = document.activeElement as HTMLElement | null;
       const idx = els.findIndex((el) => el === current);
@@ -111,12 +114,10 @@ export default function AuthButtons() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // robust tracking that doesn't rely on native <details> toggle
   useEffect(() => {
     if (open) track("auth_dropdown_open");
   }, [open]);
 
-  // ✅ Correct typing for session.user, but don’t over-constrain at runtime
   const user = (session?.user ?? null) as (Session["user"] & {
     subscription?: string | null;
     role?: string | null;
@@ -144,10 +145,11 @@ export default function AuthButtons() {
   }
 
   if (!session) {
+    const signInHref = `/signin?callbackUrl=${encodeURIComponent(getReturnTo())}`;
     return (
       <Link
-        href="/signin"
-        className="px-3 py-2 rounded bg-white/10 border border-white/30 ring-1 ring-white/20 text-sm hover:bg-white/20 transition"
+        href={signInHref}
+        className="px-3 py-2 rounded bg:white/10 border border:white/30 ring-1 ring:white/20 text-sm hover:bg:white/20 transition"
         data-testid="auth-signin"
         title="Sign in"
         prefetch={false}
@@ -161,12 +163,11 @@ export default function AuthButtons() {
   return (
     <details ref={rootRef} className="relative group" open={open}>
       <summary
-        className="list-none inline-flex items-center gap-2 rounded-lg bg-white/10 px-2.5 py-1.5 text-sm border border-white/30 ring-1 ring-white/20 hover:bg-white/20 transition cursor-pointer select-none"
+        className="list-none inline-flex items-center gap-2 rounded-lg bg:white/10 px-2.5 py-1.5 text-sm border border:white/30 ring-1 ring:white/20 hover:bg:white/20 transition cursor-pointer select-none"
         aria-haspopup="menu"
         aria-expanded={open}
         role="button"
         onClick={(e) => {
-          // prevent page jump with <summary>
           e.preventDefault();
           setOpen((v) => !v);
         }}
@@ -183,18 +184,8 @@ export default function AuthButtons() {
           <Initials name={user?.name ?? null} />
         )}
         <span className="hidden sm:inline max-w-[14ch] truncate">{displayName}</span>
-
-        {/* ✅ single source of truth chip, inside the trigger */}
         <RoleChip role={user?.role ?? null} subscription={subscription} />
-
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          className={`ml-1 transition-transform ${open ? "rotate-180" : ""}`}
-          fill="currentColor"
-          aria-hidden="true"
-        >
+        <svg width="16" height="16" viewBox="0 0 24 24" className={`ml-1 transition-transform ${open ? "rotate-180" : ""}`} fill="currentColor" aria-hidden="true">
           <path d="M7 10l5 5 5-5H7z" />
         </svg>
       </summary>
@@ -210,7 +201,6 @@ export default function AuthButtons() {
         </div>
 
         <nav className="py-1 text-sm">
-          {/* ✅ “Dashboard” goes to /admin for admins, /dashboard for users */}
           <Link
             href={dashboardHref}
             role="menuitem"
@@ -239,7 +229,7 @@ export default function AuthButtons() {
             Saved items
           </Link>
           <Link
-            href="/settings/billing"
+            href="/account/billing"
             role="menuitem"
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -249,7 +239,6 @@ export default function AuthButtons() {
           </Link>
         </nav>
 
-        {/* The ONLY action that clears session */}
         <button
           data-testid="auth-signout"
           role="menuitem"

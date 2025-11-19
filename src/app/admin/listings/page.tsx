@@ -13,7 +13,11 @@ export const metadata: Metadata = {
     index: false,
     follow: false,
     noarchive: true,
-    googleBot: { index: false, follow: false, noimageindex: true },
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
   },
 };
 
@@ -23,13 +27,43 @@ type Listing = {
   name: string;
   price: number | null;
   featured: boolean | null;
-  createdAt: string | null; // ISO
+  createdAt: string | null;
   sellerName: string | null;
   sellerId: string | null;
 };
 
+const FETCH_TIMEOUT_MS = 2500;
+const PAGE_SIZE = 50;
+
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T | (() => T)): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((resolve) =>
+      setTimeout(
+        () => resolve(typeof fallback === "function" ? (fallback as any)() : fallback),
+        ms
+      )
+    ),
+  ]);
+}
+
+async function fetchWithTimeout(input: string, init: RequestInit, ms: number) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 function fmtKES(n?: number | null) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "—";
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) {
+    return "—";
+  }
   try {
     return `KES ${new Intl.NumberFormat("en-KE").format(n)}`;
   } catch {
@@ -45,18 +79,19 @@ const fmtDateKE = (iso?: string | null) => {
       timeZone: "Africa/Nairobi",
     }).format(new Date(iso));
   } catch {
-    return new Date(iso).toLocaleDateString();
+    return new Date(iso!).toLocaleDateString();
   }
 };
 
-/* ------------------------- search param helpers ------------------------- */
 type SearchParams = Record<string, string | string[] | undefined>;
+type PageProps = {
+  searchParams?: Promise<SearchParams>;
+};
+
 function getParam(sp: SearchParams, k: string): string | undefined {
   const v = sp[k];
   return Array.isArray(v) ? v[0] : (v as string | undefined);
 }
-
-const PAGE_SIZE = 50;
 
 function keepQuery(
   base: string,
@@ -77,81 +112,109 @@ function keepQuery(
   if (page) qp.set("page", page);
 
   Object.entries(overrides).forEach(([k, v]) => {
-    if (v == null || v === "") qp.delete(k);
-    else qp.set(k, v);
+    if (v == null || v === "") {
+      qp.delete(k);
+    } else {
+      qp.set(k, v);
+    }
   });
 
   const qs = qp.toString();
   return qs ? `${base}?${qs}` : base;
 }
 
-/* --------------------------------- Page --------------------------------- */
-export default async function Page({
-  searchParams,
-}: {
-  // Next 15: searchParams is a Promise
-  searchParams: Promise<SearchParams>;
-}) {
-  const sp = await searchParams;
+/**
+ * Admin-only listings view.
+ * Access enforced by:
+ * - /admin/layout via requireAdmin()
+ * - middleware for /api/admin/listings
+ */
+export default async function Page({ searchParams }: PageProps) {
+  const sp: SearchParams = ((await searchParams) ?? {}) as SearchParams;
 
   const q = (getParam(sp, "q") || "").trim();
   const type = (getParam(sp, "type") || "any") as "any" | "product" | "service";
   const featured = (getParam(sp, "featured") || "any") as "any" | "yes" | "no";
   const page = Math.max(1, Number(getParam(sp, "page") || 1));
 
-  // Build API query (server returns a flat array; we paginate locally)
   const qs = new URLSearchParams();
   qs.set("limit", "200");
   if (q) qs.set("q", q);
   if (type !== "any") qs.set("type", type);
-  if (featured !== "any") qs.set("featured", featured === "yes" ? "true" : "false");
+  if (featured !== "any") {
+    qs.set("featured", featured === "yes" ? "true" : "false");
+  }
 
   let rows: Listing[] | null = null;
   let lastStatus = 0;
+
   try {
-    const res = await fetch(`/api/admin/listings?${qs.toString()}`, { cache: "no-store" });
+    const res = await fetchWithTimeout(
+      `/api/admin/listings?${qs.toString()}`,
+      {
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+        },
+      },
+      FETCH_TIMEOUT_MS
+    );
     lastStatus = res.status;
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    rows = (await res.json()) as Listing[];
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    rows = await withTimeout<Listing[]>(res.json(), 500, []);
   } catch {
     rows = null;
   }
 
-  if (!rows) {
-    const msg =
-      lastStatus === 403
-        ? "You need admin access to view this page."
-        : "Failed to load listings.";
-    return (
-      <div className="rounded-xl border bg-white p-4 text-sm text-rose-600 dark:border-slate-800 dark:bg-slate-900 dark:text-rose-400">
-        {msg}
-      </div>
-    );
-  }
+  const softError =
+    rows === null
+      ? lastStatus === 403
+        ? "You need admin access to view listings."
+        : "Failed to load listings. Showing an empty list."
+      : null;
 
-  const total = rows.length;
+  const source = Array.isArray(rows) ? rows : [];
+  const total = source.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const start = (safePage - 1) * PAGE_SIZE;
   const end = start + PAGE_SIZE;
-  const pageRows = rows.slice(start, end);
+  const pageRows = source.slice(start, end);
 
   return (
     <div className="space-y-6">
       <SectionHeader
+        as="h2"
         title="Admin · Listings"
         subtitle={`Products & services across the marketplace. Showing ${total.toLocaleString()}.`}
         actions={
           <div className="flex gap-2">
-            <Link href="/admin" className="btn-outline text-sm">
+            <Link href="/admin" className="btn-outline text-sm" prefetch={false}>
               Admin home
             </Link>
-            <Link href="/admin/moderation" className="btn-gradient-primary text-sm">
+            <Link
+              href="/admin/moderation"
+              className="btn-gradient-primary text-sm"
+              prefetch={false}
+            >
               Moderation
             </Link>
           </div>
         }
       />
+
+      <h1 className="text-2xl font-bold">All Listings</h1>
+
+      {softError && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          {softError}
+        </div>
+      )}
 
       {/* Filters */}
       <form
@@ -162,7 +225,12 @@ export default async function Page({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-6">
             <label className="label">Search</label>
-            <input name="q" defaultValue={q} placeholder="Name, seller…" className="input" />
+            <input
+              name="q"
+              defaultValue={q}
+              placeholder="Name, seller…"
+              className="input"
+            />
           </div>
           <div className="md:col-span-3">
             <label className="label">Type</label>
@@ -180,7 +248,6 @@ export default async function Page({
               <option value="no">No</option>
             </select>
           </div>
-          {/* preserve the page only if set; form submit will recompute anyway */}
           <input type="hidden" name="page" value="1" />
           <div className="md:col-span-12 flex items-end gap-2 pt-1">
             <button className="btn-gradient-primary">Apply</button>
@@ -194,14 +261,16 @@ export default async function Page({
       {/* Table */}
       <section className="overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b px-4 py-3 dark:border-slate-800">
-          <h2 className="font-semibold">All Listings</h2>
+          <h2 className="font-semibold">Listings</h2>
           <span className="text-xs text-gray-500 dark:text-slate-400">
             Total: {total.toLocaleString()} • Page {safePage} / {totalPages}
           </span>
         </div>
 
         {pageRows.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-gray-600 dark:text-slate-300">No listings found.</div>
+          <div className="px-4 py-6 text-sm text-gray-600 dark:text-slate-300">
+            No listings found.
+          </div>
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -230,37 +299,54 @@ export default async function Page({
                       </Td>
                       <Td className="max-w-[320px]">
                         <Link
-                          href={r.kind === "product" ? `/product/${r.id}` : `/service/${r.id}`}
+                          href={
+                            r.kind === "product"
+                              ? `/product/${r.id}`
+                              : `/service/${r.id}`
+                          }
+                          prefetch={false}
                           className="underline text-[#161748] dark:text-[#39a0ca]"
                         >
                           <span className="line-clamp-1">{r.name}</span>
                         </Link>
                       </Td>
                       <Td>{fmtKES(r.price)}</Td>
-                      <Td>{r.featured ? <Badge tone="indigo">Featured</Badge> : <Badge>—</Badge>}</Td>
+                      <Td>
+                        {r.featured ? (
+                          <Badge tone="indigo">Featured</Badge>
+                        ) : (
+                          <Badge>—</Badge>
+                        )}
+                      </Td>
                       <Td>
                         {r.sellerName ?? "—"}{" "}
-                        {r.sellerId ? (
-                          <span className="font-mono text-[11px] opacity-70">({r.sellerId})</span>
-                        ) : null}
+                        {r.sellerId && (
+                          <span className="font-mono text-[11px] opacity-70">
+                            ({r.sellerId})
+                          </span>
+                        )}
                       </Td>
                       <Td>{fmtDateKE(r.createdAt)}</Td>
                       <Td>
                         <div className="flex gap-2">
-                          {/* ✅ Edit → /…/edit */}
                           <Link
                             href={
                               r.kind === "product"
                                 ? `/product/${r.id}/edit`
                                 : `/service/${r.id}/edit`
                             }
+                            prefetch={false}
                             className="rounded border px-2 py-1 text-xs hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
                           >
                             Edit
                           </Link>
-                          {/* ✅ View → live page */}
                           <Link
-                            href={r.kind === "product" ? `/product/${r.id}` : `/service/${r.id}`}
+                            href={
+                              r.kind === "product"
+                                ? `/product/${r.id}`
+                                : `/service/${r.id}`
+                            }
+                            prefetch={false}
                             className="rounded border px-2 py-1 text-xs hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
                           >
                             View
@@ -281,12 +367,17 @@ export default async function Page({
               <Link
                 href={
                   safePage > 1
-                    ? keepQuery("/admin/listings", sp, { page: String(safePage - 1) })
+                    ? keepQuery("/admin/listings", sp, {
+                        page: String(safePage - 1),
+                      })
                     : "#"
                 }
+                prefetch={false}
                 aria-disabled={safePage <= 1}
                 className={`rounded border px-3 py-1 transition ${
-                  safePage > 1 ? "hover:shadow dark:border-slate-800" : "opacity-50 dark:border-slate-800"
+                  safePage > 1
+                    ? "hover:shadow dark:border-slate-800"
+                    : "opacity-50 dark:border-slate-800"
                 }`}
               >
                 ← Prev
@@ -297,17 +388,26 @@ export default async function Page({
                   const half = 3;
                   let p = i + 1;
                   if (totalPages > 7) {
-                    const start = Math.max(1, Math.min(safePage - half, totalPages - 6));
+                    const start = Math.max(
+                      1,
+                      Math.min(safePage - half, totalPages - 6)
+                    );
                     p = start + i;
                   }
                   const isCurrent = p === safePage;
+
                   return (
                     <Link
                       key={p}
-                      href={keepQuery("/admin/listings", sp, { page: String(p) })}
+                      href={keepQuery("/admin/listings", sp, {
+                        page: String(p),
+                      })}
+                      prefetch={false}
                       aria-current={isCurrent ? "page" : undefined}
                       className={`rounded px-2 py-1 ${
-                        isCurrent ? "bg-[#161748] text-white" : "hover:bg-black/5 dark:hover:bg-white/10"
+                        isCurrent
+                          ? "bg-[#161748] text-white"
+                          : "hover:bg-black/5 dark:hover:bg-white/10"
                       }`}
                     >
                       {p}
@@ -319,12 +419,17 @@ export default async function Page({
               <Link
                 href={
                   safePage < totalPages
-                    ? keepQuery("/admin/listings", sp, { page: String(safePage + 1) })
+                    ? keepQuery("/admin/listings", sp, {
+                        page: String(safePage + 1),
+                      })
                     : "#"
                 }
+                prefetch={false}
                 aria-disabled={safePage >= totalPages}
                 className={`rounded border px-3 py-1 transition ${
-                  safePage < totalPages ? "hover:shadow dark:border-slate-800" : "opacity-50 dark:border-slate-800"
+                  safePage < totalPages
+                    ? "hover:shadow dark:border-slate-800"
+                    : "opacity-50 dark:border-slate-800"
                 }`}
               >
                 Next →
@@ -337,9 +442,12 @@ export default async function Page({
   );
 }
 
-/* ===== UI bits ===== */
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="whitespace-nowrap px-4 py-2 text-left font-semibold">{children}</th>;
+  return (
+    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold">
+      {children}
+    </th>
+  );
 }
 
 function Td({
@@ -347,9 +455,17 @@ function Td({
   className,
 }: {
   children: React.ReactNode;
-  className?: string | undefined;
+  className?: string;
 }) {
-  return <td className={`whitespace-nowrap px-4 py-2 align-middle ${className ?? ""}`}>{children}</td>;
+  return (
+    <td
+      className={`whitespace-nowrap px-4 py-2 align-middle ${
+        className ?? ""
+      }`}
+    >
+      {children}
+    </td>
+  );
 }
 
 function Badge({
@@ -360,11 +476,16 @@ function Badge({
   tone?: "slate" | "green" | "amber" | "rose" | "indigo";
 }) {
   const map: Record<string, string> = {
-    slate: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-    green: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
-    amber: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-    rose: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
-    indigo: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+    slate:
+      "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    green:
+      "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
+    amber:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+    rose:
+      "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
+    indigo:
+      "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
   };
   return (
     <span

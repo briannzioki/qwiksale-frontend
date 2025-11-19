@@ -70,3 +70,11 @@ prisma.config.ts
 # local backups/logs
 .backup/
 .logs/
+.project-inventory/
+_scan/
+audit-signin-report.txt
+auth-migrate-narrow/
+auth-migrate/
+src/app/_debug/
+suspects/
+tests/e2e/_all-specs.txt

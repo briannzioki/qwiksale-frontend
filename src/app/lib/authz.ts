@@ -1,155 +1,184 @@
 // src/app/lib/authz.ts
 import "server-only";
-import { cache } from "react";
-import { prisma } from "@/app/lib/prisma";
-import { getServerSession, getSessionUser } from "@/app/lib/auth";
-import { redirectIfDifferent } from "@/app/lib/safeRedirect";
+import { redirect } from "next/navigation";
+import { auth as _auth } from "@/auth";
 
-export type Role = "SUPERADMIN" | "ADMIN" | "MODERATOR" | "USER" | null | undefined;
-
-const ROLE_RANK: Record<Exclude<Role, undefined | null>, number> = {
-  SUPERADMIN: 4,
-  ADMIN: 3,
-  MODERATOR: 2,
-  USER: 1,
+export type AnyUser = {
+  id?: string | number | null;
+  email?: string | null;
+  role?: string | null;
+  roles?: string[] | null;
+  isAdmin?: boolean | null;
+  isSuperAdmin?: boolean | null;
 };
 
-/* ----------------------- Allowlists from environment ---------------------- */
+export type RequireAdminResult =
+  | { authorized: true; user: AnyUser }
+  | { authorized: false; status: 401 | 403; reason: string };
 
-function toSet(v?: string | null) {
-  return new Set(
-    (v ?? "")
-      .split(/[,\s]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
+export type RequireSuperAdminResult =
+  | { authorized: true; user: AnyUser }
+  | { authorized: false; status: 401 | 403; reason: string };
 
-const ADMIN_EMAILS_ALLOWLIST: ReadonlySet<string> = toSet(process.env["ADMIN_EMAILS"]);
-const SUPERADMIN_EMAILS_ALLOWLIST: ReadonlySet<string> = toSet(process.env["SUPERADMIN_EMAILS"]);
-
-/* --------------------------- Role resolution ------------------------------ */
-
-/** Prefer session flags (fast), fall back to DB role (authoritative). Cached per request. */
-const getCurrentUserRole = cache(async (): Promise<Role> => {
-  const u = await getSessionUser();
-  if (!u?.id) return null;
-
-  const fromSession = (u as any)?.role as Role | undefined;
-  if (fromSession) return fromSession;
-
-  const row = await prisma.user.findUnique({
-    where: { id: u.id as string },
-    select: { role: true },
-  });
-  return (row?.role as Role) ?? "USER";
-});
-
-export async function isAllowlistedAdminEmail(): Promise<boolean> {
-  const u = await getSessionUser();
-  const email = u?.email?.toLowerCase();
-  return !!(email && (ADMIN_EMAILS_ALLOWLIST.has(email) || SUPERADMIN_EMAILS_ALLOWLIST.has(email)));
-}
-
-export async function isAllowlistedSuperAdminEmail(): Promise<boolean> {
-  const u = await getSessionUser();
-  const email = u?.email?.toLowerCase();
-  return !!(email && SUPERADMIN_EMAILS_ALLOWLIST.has(email));
-}
-
-/** Returns both flags derived from session, allowlists, and DB role. */
-export const getRoleFlags = cache(async () => {
-  const u = await getSessionUser();
-  const email = u?.email?.toLowerCase() ?? null;
-  const role = (await getCurrentUserRole()) ?? "USER";
-
-  const sessionIsSuper = (u as any)?.isSuperAdmin === true;
-  const sessionIsAdmin = (u as any)?.isAdmin === true;
-
-  const allowSuper = !!(email && SUPERADMIN_EMAILS_ALLOWLIST.has(email));
-  const allowAdmin = !!(email && (ADMIN_EMAILS_ALLOWLIST.has(email) || SUPERADMIN_EMAILS_ALLOWLIST.has(email)));
-
-  const isSuperAdmin = sessionIsSuper || allowSuper || role === "SUPERADMIN";
-  const isAdmin = sessionIsAdmin || isSuperAdmin || role === "ADMIN";
-
-  return { role, isAdmin, isSuperAdmin };
-});
-
-export async function isAdminUser(): Promise<boolean> {
-  const { isAdmin } = await getRoleFlags();
-  return isAdmin;
-}
-
-export async function isSuperAdminUser(): Promise<boolean> {
-  const { isSuperAdmin } = await getRoleFlags();
-  return isSuperAdmin;
-}
-
-export async function hasRoleAtLeast(min: Exclude<Role, null | undefined>) {
-  const { role, isSuperAdmin, isAdmin } = await getRoleFlags();
-  if (isSuperAdmin) return true;
-  if (min === "ADMIN") return isAdmin;
-  if (!role) return false;
-  return (ROLE_RANK[role] ?? 0) >= (ROLE_RANK[min] ?? 0);
-}
-
-/* ------------------------------ Guards ----------------------------------- */
-
-export async function requireAdmin(orReturnTo = "/admin") {
-  const s = await getServerSession();
-  if (!s?.user) {
-    const target = `/signin?callbackUrl=${encodeURIComponent(orReturnTo)}`;
-    return redirectIfDifferent(target, orReturnTo);
+/** Safe wrapper: never throws; returns null on failure. */
+async function safeAuth(): Promise<any | null> {
+  try {
+    return await _auth();
+  } catch {
+    return null;
   }
-  if (!(await isAdminUser())) {
-    return redirectIfDifferent("/", orReturnTo || "/");
-  }
-}
-
-export async function requireSuperAdmin(orReturnTo = "/admin") {
-  const s = await getServerSession();
-  if (!s?.user) {
-    const target = `/signin?callbackUrl=${encodeURIComponent(orReturnTo)}`;
-    return redirectIfDifferent(target, orReturnTo);
-  }
-  if (!(await isSuperAdminUser())) {
-    return redirectIfDifferent("/", orReturnTo || "/");
-  }
-}
-
-export async function assertAdminOrThrow(message = "Forbidden") {
-  const s = await getServerSession();
-  if (!s?.user || !(await isAdminUser())) throw new Error(message);
 }
 
 /**
- * Require a minimum role or redirect.
- * Default `returnTo` is `/signin` (non-self) to avoid accidental "/" ↔ "/" loops.
+ * Get the current session user, normalized to a consistent shape.
+ * - Ensures id is a string when present.
+ * - Never throws (treats failures as unauthenticated).
  */
-export async function requireRoleOrRedirect(
-  min: Exclude<Role, null | undefined>,
-  returnTo = "/signin"
-) {
-  const s = await getServerSession();
-  if (!s?.user) {
-    const target = `/signin?callbackUrl=${encodeURIComponent(returnTo)}`;
-    return redirectIfDifferent(target, returnTo);
+export async function getSessionUser(): Promise<AnyUser | null> {
+  const session = await safeAuth();
+  const raw = (session?.user ?? null) as AnyUser | null;
+  if (!raw) return null;
+
+  const normalized: AnyUser = { ...raw };
+  if (raw.id !== undefined && raw.id !== null) {
+    normalized.id = String(raw.id);
   }
-  if (!(await hasRoleAtLeast(min))) {
-    // Compare against a non-self "current" to dodge self-redirects
-    return redirectIfDifferent("/", returnTo || "/signin");
+  return normalized;
+}
+
+/** True if user is an admin. */
+export function isAdminUser(u: AnyUser | null | undefined): boolean {
+  if (!u) return false;
+  if (u.isAdmin) return true;
+
+  const primary = (u.role || "").toString().toLowerCase();
+  if (primary === "admin" || primary === "superadmin") return true;
+
+  if (Array.isArray(u.roles)) {
+    if (
+      u.roles.some((r) =>
+        ["admin", "superadmin"].includes(String(r).toLowerCase()),
+      )
+    ) {
+      return true;
+    }
   }
+  return false;
 }
 
-export async function assertRoleAtLeast(min: Exclude<Role, null | undefined>, message = "Forbidden") {
-  if (!(await hasRoleAtLeast(min))) throw new Error(message);
+/** True if user is a super-admin (local check). */
+export function isSuperAdminUserLocal(
+  u: AnyUser | null | undefined,
+): boolean {
+  if (!u) return false;
+  if (u.isSuperAdmin) return true;
+
+  const primary = (u.role || "").toString().toLowerCase();
+  if (primary === "superadmin") return true;
+
+  if (Array.isArray(u.roles)) {
+    if (
+      u.roles.some(
+        (r) => String(r).toLowerCase() === "superadmin",
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
-/* -------------------------- Diagnostics/helpers -------------------------- */
-
-export function getAdminAllowlist(): string[] {
-  return Array.from(ADMIN_EMAILS_ALLOWLIST).sort();
+/** Async helper to check super-admin using the current session. */
+export async function isSuperAdminUser(): Promise<boolean> {
+  const u = await getSessionUser();
+  return isSuperAdminUserLocal(u);
 }
-export function getSuperAdminAllowlist(): string[] {
-  return Array.from(SUPERADMIN_EMAILS_ALLOWLIST).sort();
+
+/**
+ * Canonical admin guard used across the app.
+ *
+ * Default: "redirect" mode (for RSC/layout/middleware):
+ *  - No session    => redirect(/signin?callbackUrl=/admin)
+ *  - Non-admin     => redirect(/dashboard)
+ *  - Admin         => continues; returns void
+ *
+ * API-safe: { mode: "result" }
+ *  - Never redirects; returns:
+ *      - { authorized: true, user }
+ *      - { authorized: false, status, reason }
+ */
+export async function requireAdmin(opts?: {
+  mode?: "redirect" | "result";
+  callbackUrl?: string;
+  adminFallbackHref?: string;
+}): Promise<void | RequireAdminResult> {
+  const mode = opts?.mode ?? "redirect";
+  const callbackUrl = opts?.callbackUrl ?? "/admin";
+  const adminFallbackHref = opts?.adminFallbackHref ?? "/dashboard";
+
+  const u = await getSessionUser();
+
+  // Unauthenticated
+  if (!u?.id) {
+    if (mode === "result") {
+      return { authorized: false, status: 401, reason: "Unauthenticated" };
+    }
+    redirect(`/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+  }
+
+  // Not an admin
+  if (!isAdminUser(u)) {
+    if (mode === "result") {
+      return { authorized: false, status: 403, reason: "Forbidden" };
+    }
+    redirect(adminFallbackHref);
+  }
+
+  // Authorized
+  if (mode === "result") return { authorized: true, user: u };
+  // redirect mode & authorized: fall through
+}
+
+/**
+ * Super-admin guard.
+ *
+ * Default: "redirect" mode (for layouts/RSC):
+ *  - No session        => redirect(/signin?callbackUrl=/admin)
+ *  - Non-super-admin   => redirect(/dashboard)
+ *  - Super-admin       => continues; returns void
+ *
+ * API-safe: { mode: "result" }
+ *  - Never redirects; returns:
+ *      - { authorized: true, user }
+ *      - { authorized: false, status, reason }
+ */
+export async function requireSuperAdmin(opts?: {
+  mode?: "redirect" | "result";
+  callbackUrl?: string;
+  fallbackHref?: string;
+}): Promise<void | RequireSuperAdminResult> {
+  const mode = opts?.mode ?? "redirect";
+  const callbackUrl = opts?.callbackUrl ?? "/admin";
+  const fallbackHref = opts?.fallbackHref ?? "/dashboard";
+
+  const u = await getSessionUser();
+
+  // Unauthenticated
+  if (!u?.id) {
+    if (mode === "result") {
+      return { authorized: false, status: 401, reason: "Unauthenticated" };
+    }
+    redirect(`/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+  }
+
+  // Not a super-admin
+  if (!isSuperAdminUserLocal(u)) {
+    if (mode === "result") {
+      return { authorized: false, status: 403, reason: "Forbidden" };
+    }
+    redirect(fallbackHref);
+  }
+
+  if (mode === "result") return { authorized: true, user: u };
+  // redirect mode & authorized: fall through
 }
