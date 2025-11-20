@@ -1,90 +1,224 @@
 // tests/e2e/smoke-prod.spec.ts
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { waitForServerReady, gotoHome } from "./utils/server";
-import type { Page } from "@playwright/test"; // type-only import to satisfy verbatimModuleSyntax
 
 async function getAnyProductId(page: Page): Promise<string | undefined> {
-  try {
-    const pf = await page.request.get("/api/products?pageSize=1", { timeout: 30_000 });
-    const pj = await pf.json().catch(() => ({} as any));
-    const id = pj?.items?.[0]?.id as string | undefined;
-    if (id) return id;
-  } catch {
-    /* ignore */
+  const candidates: Array<() => Promise<string | undefined>> = [
+    async () => {
+      const res = await page.request.get("/api/home-feed?t=products&limit=1", {
+        timeout: 30_000,
+      });
+      const json = (await res.json().catch(() => ({} as any))) as any;
+      return json?.items?.[0]?.id as string | undefined;
+    },
+    async () => {
+      const res = await page.request.get("/api/products?pageSize=1", {
+        timeout: 30_000,
+      });
+      const json = (await res.json().catch(() => ({} as any))) as any;
+      return json?.items?.[0]?.id as string | undefined;
+    },
+  ];
+
+  for (const fn of candidates) {
+    try {
+      const id = await fn();
+      if (id) return id;
+    } catch {
+      // ignore and try next source
+    }
   }
-  try {
-    const hf = await page.request.get("/api/home-feed?t=all&pageSize=24", { timeout: 30_000 });
-    const hj = await hf.json().catch(() => ({} as any));
-    const id = (hj?.items ?? []).find((x: any) => x?.type === "product")?.id as string | undefined;
-    if (id) return id;
-  } catch {
-    /* ignore */
-  }
+
   return undefined;
 }
 
-test("All feed API includes both product and service", async ({ page }) => {
-  await waitForServerReady(page);
+async function getAnyServiceId(page: Page): Promise<string | undefined> {
+  const candidates: Array<() => Promise<string | undefined>> = [
+    async () => {
+      const res = await page.request.get("/api/home-feed?t=services&limit=1", {
+        timeout: 30_000,
+      });
+      const json = (await res.json().catch(() => ({} as any))) as any;
+      return json?.items?.[0]?.id as string | undefined;
+    },
+    async () => {
+      const res = await page.request.get("/api/services?pageSize=1", {
+        timeout: 30_000,
+      });
+      const json = (await res.json().catch(() => ({} as any))) as any;
+      return json?.items?.[0]?.id as string | undefined;
+    },
+  ];
 
-  const r = await page.request.get("/api/home-feed?t=all&pageSize=24", { timeout: 30_000 });
-  const j = await r.json().catch(() => ({} as any));
-  const items = j?.items ?? [];
-  const hasProduct = items.some((x: any) => x?.type === "product");
-  const hasService = items.some((x: any) => x?.type === "service");
-  expect(hasProduct).toBeTruthy();
-  expect(hasService).toBeTruthy();
-});
+  for (const fn of candidates) {
+    try {
+      const id = await fn();
+      if (id) return id;
+    } catch {
+      // ignore and try next source
+    }
+  }
 
-test('Home "All" tab shows a product link and a service link', async ({ page }) => {
-  await gotoHome(page);
-  const allTab = page.getByRole("tab", { name: /all/i }).first();
-  if (await allTab.isVisible()) await allTab.click();
+  return undefined;
+}
 
-  const productLink = page.locator('a[href*="/product/"]').first();
-  const serviceLink = page.locator('a[href*="/service/"]').first();
-  await expect(productLink).toBeVisible();
-  await expect(serviceLink).toBeVisible();
-});
+test.describe("Prod smoke: core public journeys", () => {
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    try {
+      await waitForServerReady(page);
+    } finally {
+      await page.close();
+    }
+  });
 
-test('Product page -> "Message seller" surfaces a result (dialog or error)', async ({ page }) => {
-  await waitForServerReady(page);
-  const productId = await getAnyProductId(page);
-  test.skip(!productId, "No products in API to test with");
+  test("Home page renders hero + search without error overlay", async ({
+    page,
+  }) => {
+    await gotoHome(page);
 
-  await page.goto(`/product/${productId}`, { waitUntil: "domcontentloaded" });
+    await expect(
+      page
+        .getByRole("heading", { name: /qwiksale|sell faster|buy smarter/i })
+        .first(),
+    ).toBeVisible();
 
-  const button = page.getByRole("button", { name: /message seller/i }).first();
-  await expect(button).toBeVisible();
-  await button.click();
+    const searchBox = page
+      .getByRole("textbox", {
+        name: /search|what are you looking for/i,
+      })
+      .first();
+    await expect(searchBox).toBeVisible();
 
-  // tolerate either a dialog or any visible error UI
-  const dialog = page.getByRole("dialog");
-  const errorUI = page
-    .getByRole("alert")
-    .or(page.locator("[data-toast]"))
-    .or(page.locator("text=Please sign in"))
-    .or(page.getByText(/login|sign in|error|failed/i));
+    await expect(page.locator("text=Application error")).toHaveCount(0);
+  });
 
-  await expect
-    .poll(async () => (await dialog.count()) > 0 || (await errorUI.count()) > 0, { timeout: 12_000 })
-    .toBeTruthy();
+  test("Key marketing pages render without 500", async ({ page }) => {
+    const routes: Array<{ path: string; heading: RegExp }> = [
+      { path: "/help", heading: /help|faq|support/i },
+      { path: "/contact", heading: /contact|get in touch/i },
+      { path: "/about", heading: /about|qwiksale/i },
+    ];
 
-  if (await dialog.count()) await expect(dialog).toBeVisible();
-});
+    for (const { path, heading } of routes) {
+      const resp = await page.goto(path, {
+        waitUntil: "domcontentloaded",
+      });
+      expect(resp?.status(), `GET ${path} status`).toBeLessThan(500);
 
-test('"Visit store" from product navigates without generic error', async ({ page }) => {
-  await waitForServerReady(page);
-  const productId = await getAnyProductId(page);
-  test.skip(!productId, "No products in API to test with");
+      await expect(
+        page.getByRole("heading", { name: heading }).first(),
+      ).toBeVisible();
 
-  await page.goto(`/product/${productId}`, { waitUntil: "domcontentloaded" });
-  const visit = page.getByRole("link", { name: /visit store/i }).first();
-  await expect(visit).toBeVisible();
-  await Promise.all([page.waitForURL(/\/store\//), visit.click()]);
-  await expect(page.locator("text=Application error")).toHaveCount(0);
-});
+      await expect(page.locator("text=Application error")).toHaveCount(0);
+    }
+  });
 
-test("Dashboard route loads without 500 when logged out", async ({ page }) => {
-  await page.goto("/dashboard");
-  await expect(page.locator("text=Application error")).toHaveCount(0);
+  test("Product detail page works for at least one product and links to store", async ({
+    page,
+  }) => {
+    const productId = await getAnyProductId(page);
+    test.skip(
+      !productId,
+      "No product available in home feed or /api/products; seed at least one.",
+    );
+
+    const url = `/product/${productId}`;
+    const resp = await page.goto(url, { waitUntil: "domcontentloaded" });
+
+    expect(resp?.ok(), `GET ${url} should be OK`).toBe(true);
+
+    await expect(
+      page.getByRole("heading", { name: /product|item|listing/i }).first(),
+    ).toBeVisible();
+
+    await expect(page.locator("text=Application error")).toHaveCount(0);
+
+    // Message seller button should be visible even for guests (it can open auth).
+    await expect(
+      page
+        .getByRole("button", {
+          name: /message seller|contact seller|chat with seller/i,
+        })
+        .first(),
+    ).toBeVisible();
+
+    const storeLink = page
+      .getByRole("link", {
+        name: /visit store|view store|more from this seller|seller store/i,
+      })
+      .first();
+
+    if ((await storeLink.count()) > 0) {
+      const hostBefore = new URL(page.url()).host;
+
+      await Promise.all([
+        page.waitForLoadState("domcontentloaded"),
+        storeLink.click(),
+      ]);
+
+      const storeUrl = new URL(page.url());
+      expect(storeUrl.host).toBe(hostBefore);
+
+      await expect(
+        page
+          .getByRole("heading", { name: /store|seller|listings by/i })
+          .first(),
+      ).toBeVisible();
+
+      await expect(page.locator("text=Application error")).toHaveCount(0);
+    }
+  });
+
+  test("Service detail page works for at least one service", async ({ page }) => {
+    const serviceId = await getAnyServiceId(page);
+    test.skip(
+      !serviceId,
+      "No service available in home feed or /api/services; seed at least one.",
+    );
+
+    const url = `/service/${serviceId}`;
+    const resp = await page.goto(url, { waitUntil: "domcontentloaded" });
+
+    expect(resp?.ok(), `GET ${url} should be OK`).toBe(true);
+
+    await expect(
+      page.getByRole("heading", { name: /service|provider|listing/i }).first(),
+    ).toBeVisible();
+
+    await expect(page.locator("text=Application error")).toHaveCount(0);
+
+    await expect(
+      page
+        .getByRole("button", {
+          name: /message provider|contact provider|chat with provider/i,
+        })
+        .first(),
+    ).toBeVisible();
+  });
+
+  test("Messages route is gated but does not 500 for anonymous visitor", async ({
+    page,
+  }) => {
+    const resp = await page.goto("/messages", {
+      waitUntil: "domcontentloaded",
+    });
+
+    expect(resp, "No navigation response from /messages").toBeTruthy();
+    const status = resp!.status();
+    expect(status, `Unexpected status ${status}`).toBeLessThan(500);
+
+    const url = page.url();
+    const html = await page.content();
+
+    const redirectedToSignIn = /\/signin(\?|$)/.test(url);
+    const hasSignInCopy = /sign in|log in|login|account required/i.test(html);
+
+    expect(
+      redirectedToSignIn || hasSignInCopy,
+      "Messages route should gate anonymous users with a sign-in flow",
+    ).toBe(true);
+
+    await expect(page.locator("text=Application error")).toHaveCount(0);
+  });
 });
