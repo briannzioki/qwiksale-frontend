@@ -1,41 +1,40 @@
+// tests/e2e/prod.dashboard-ssr.spec.ts
 import { test, expect } from "@playwright/test";
+import { waitForServerReady } from "./utils/server";
 
-test("Dashboard SSR: no 5xx, capture diagnostics on failure", async ({ page }) => {
-  // Surface console + pageerror to the test runner output
-  page.on("console", (msg) => {
-    // eslint-disable-next-line no-console
-    console.log(`[dashboard console:${msg.type()}] ${msg.text()}`);
+test.describe("Prod: /dashboard SSR for logged-in user", () => {
+  test("dashboard renders without 500 and shows a dashboard heading", async ({
+    page,
+    request,
+  }) => {
+    const me = await request.get("/api/me", { failOnStatusCode: false });
+
+    test.skip(
+      me.status() !== 200,
+      "Requires logged-in storage; set E2E_USER_* or E2E_ADMIN_* and rerun.",
+    );
+
+    await waitForServerReady(page);
+
+    const resp = await page.goto("/dashboard", {
+      waitUntil: "domcontentloaded",
+    });
+
+    expect(resp?.ok(), "GET /dashboard should be OK for logged-in user").toBe(
+      true,
+    );
+
+    const html = await page.content();
+
+    // Basic SSR invariants: HTML & BODY present and no error overlay.
+    expect(html).toMatch(/<html[^>]*>/i);
+    expect(html).toMatch(/<body[^>]*>/i);
+    expect(html).not.toMatch(
+      /__next_error__|Application error|500 Internal|An error occurred in the Server Components render/i,
+    );
+
+    await expect(
+      page.getByRole("heading", { name: /dashboard/i }).first(),
+    ).toBeVisible();
   });
-  page.on("pageerror", (err) => {
-    // eslint-disable-next-line no-console
-    console.log(`[dashboard pageerror] ${err?.message || String(err)}`);
-  });
-
-  const resp = await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
-  expect(resp).toBeTruthy();
-
-  const status = resp!.status();
-  const headers = resp!.headers();
-  // Log a few headers that help debug where it failed
-  // eslint-disable-next-line no-console
-  console.log("status:", status, {
-    "cache-control": headers["cache-control"],
-    "x-vercel-id": headers["x-vercel-id"],
-    "x-powered-by": headers["x-powered-by"],
-    "content-type": headers["content-type"],
-  });
-
-  if (status >= 500) {
-    // Grab the raw HTML to look for clues
-    const html = await resp!.text();
-    // eslint-disable-next-line no-console
-    console.log("---- BEGIN DASHBOARD HTML (first 2KB) ----");
-    // print only a slice so logs stay readable
-    console.log(html.slice(0, 2048));
-    console.log("---- END DASHBOARD HTML ----");
-  }
-
-  expect(status).toBeLessThan(500);
-  const htmlNow = await page.content();
-  expect(htmlNow).not.toMatch(/__next_error__|Application error|500 Internal/i);
 });

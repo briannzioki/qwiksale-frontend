@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { categories } from "../data/categories";
 import IconButton from "@/app/components/IconButton";
 
@@ -28,10 +28,12 @@ function track(event: string, payload?: Record<string, unknown>) {
 type LeafName = string;
 type Subcategory = { name: string; subsubcategories?: ReadonlyArray<LeafName> };
 type Category = { name: string; subcategories?: ReadonlyArray<Subcategory> };
-const isCategory = (x: unknown): x is Category => !!x && typeof (x as any).name === "string";
+const isCategory = (x: unknown): x is Category =>
+  !!x && typeof (x as any).name === "string";
 
 /* --------------------------- helpers ---------------------------------- */
-const categoryHref = (value: string) => `/?category=${encodeURIComponent(value)}`;
+const categoryHref = (value: string) =>
+  `/?category=${encodeURIComponent(value)}`;
 
 function pickTopCategoryNames(max = 10) {
   const names: string[] = [];
@@ -39,7 +41,10 @@ function pickTopCategoryNames(max = 10) {
     if (isCategory(c)) names.push(c.name);
     if (names.length >= max) break;
   }
-  return (names.length ? names : ["Phones", "Cars", "Laptops", "Furniture", "Home services"]).slice(0, max);
+  return (names.length
+    ? names
+    : ["Phones", "Cars", "Laptops", "Furniture", "Home services"]
+  ).slice(0, max);
 }
 
 function getReturnTo(): string {
@@ -52,12 +57,50 @@ function getReturnTo(): string {
 }
 
 /* --------------------------- component -------------------------------- */
-export default function HomeClientHero({ className = "" }: { className?: string }) {
+export default function HomeClientHero({
+  className = "",
+}: {
+  className?: string;
+}) {
   const { data: session, status } = useSession();
+  const [authedSignal, setAuthedSignal] = useState(false);
 
-  const user = (session?.user ?? null) as (Session["user"] & {
-    username?: string | null;
-  }) | null;
+  // Observe body-level auth flag and header account menu so we can reliably
+  // decide whether to hide the hero's auth CTA in authed scenarios.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    if (!body) return;
+
+    const update = () => {
+      const hasBodyFlag = body.dataset["qsSession"] === "authed";
+      const hasAccountMenu = !!document.querySelector(
+        '[data-testid="account-menu-trigger"]',
+      );
+      setAuthedSignal(hasBodyFlag || hasAccountMenu);
+    };
+
+    update();
+
+    const observer = new MutationObserver(() => {
+      update();
+    });
+
+    observer.observe(body, {
+      attributes: true,
+      attributeFilter: ["data-qs-session"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  const user = (session?.user ?? null) as
+    | (Session["user"] & {
+        username?: string | null;
+      })
+    | null;
+
+  const isAppAuthed = status === "authenticated" || authedSignal;
 
   const greeting = useMemo(() => {
     if (status === "loading") return "Welcome";
@@ -112,23 +155,37 @@ export default function HomeClientHero({ className = "" }: { className?: string 
 
       <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
         <div>
-          <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white text-balance" aria-live="polite">
+          <h1
+            className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white text-balance"
+            aria-live="polite"
+          >
             {greeting} — buy &amp; sell, faster.
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-gray-700 dark:text-slate-300">
-            Browse fresh deals across Kenya. Post your own listing in seconds and reach local buyers.
+            Browse fresh deals across Kenya. Post your own listing in seconds
+            and reach local buyers.
           </p>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Link href="/sell" prefetch onClick={() => track("hero_sell_click")} className="btn-gradient-hero">
+            <Link
+              href="/sell"
+              prefetch
+              onClick={() => track("hero_sell_click")}
+              className="btn-gradient-hero"
+            >
               + Post a listing
             </Link>
 
-            <Link href="/search" prefetch onClick={() => track("hero_browse_click")} className="btn-outline">
+            <Link
+              href="/search"
+              prefetch
+              onClick={() => track("hero_browse_click")}
+              className="btn-outline"
+            >
               Browse all
             </Link>
 
-            {status === "authenticated" ? (
+            {isAppAuthed ? (
               <>
                 <Link
                   href="/saved"
@@ -137,13 +194,30 @@ export default function HomeClientHero({ className = "" }: { className?: string 
                   aria-label="Favorites"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 bg-white/60 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/50 dark:hover:bg-slate-900/70"
                 >
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" className="text-pink-600 dark:text-pink-400">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    className="text-pink-600 dark:text-pink-400"
+                  >
                     <path d="M12 21s-7.5-4.35-10-8.5C-0.5 8 2 4 6 4c2.14 0 3.57 1.07 4.5 2.3C11.43 5.07 12.86 4 15 4c4 0 6.5 4 4 8.5C19.5 16.65 12 21 12 21z" />
                   </svg>
                 </Link>
 
-                <Link href="/dashboard" prefetch onClick={() => track("hero_dashboard_click")} className="contents">
-                  <IconButton icon="settings" variant="outline" labelText="Dashboard" srLabel="Dashboard" />
+                <Link
+                  href="/dashboard"
+                  prefetch
+                  onClick={() => track("hero_dashboard_click")}
+                  className="contents"
+                >
+                  <IconButton
+                    icon="settings"
+                    variant="outline"
+                    labelText="Dashboard"
+                    srLabel="Dashboard"
+                  />
                 </Link>
 
                 {!user?.username && (
@@ -160,10 +234,21 @@ export default function HomeClientHero({ className = "" }: { className?: string 
               </>
             ) : (
               <>
-                <Link href={signInHref} prefetch onClick={() => track("hero_signin_click")} className="btn-outline">
-                  Sign in
+                <Link
+                  href={signInHref}
+                  prefetch
+                  aria-label="Sign in to QwikSale"
+                  onClick={() => track("hero_signin_click")}
+                  className="btn-outline"
+                >
+                  Sign in to QwikSale
                 </Link>
-                <Link href="/signup" prefetch onClick={() => track("hero_join_click")} className="btn-outline">
+                <Link
+                  href="/signup"
+                  prefetch
+                  onClick={() => track("hero_join_click")}
+                  className="btn-outline"
+                >
                   Join
                 </Link>
               </>
@@ -193,7 +278,9 @@ export default function HomeClientHero({ className = "" }: { className?: string 
                 <Link
                   href={categoryHref(name)}
                   prefetch
-                  onClick={() => track("hero_category_click", { category: name })}
+                  onClick={() =>
+                    track("hero_category_click", { category: name })
+                  }
                   className="chip-outline"
                 >
                   {name}
@@ -210,22 +297,51 @@ export default function HomeClientHero({ className = "" }: { className?: string 
 /* ---------------- tiny inline icons ---------------- */
 function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
-      <path d="M12 3l7 3v6a9 9 0 0 1-7 8 9 9 0 0 1-7-8V6l7-3z" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" />
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+      {...props}
+    >
+      <path
+        d="M12 3l7 3v6a9 9 0 0 1-7 8 9 9 0 0 1-7-8V6l7-3z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M9 12l2 2 4-4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }
 function StarIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+      {...props}
+    >
       <path d="M12 17.27l5.18 3.05-1.4-6.03 4.64-4.02-6.12-.53L12 4 9.7 9.74l-6.12.53 4.64 4.02-1.4 6.03L12 17.27z" />
     </svg>
   );
 }
 function BoltIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+      {...props}
+    >
       <path d="M13 2 3 14h7l-1 8 11-14h-7V2z" />
     </svg>
   );

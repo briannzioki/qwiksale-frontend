@@ -30,7 +30,7 @@
     "test:unit": "vitest --run --dir tests/unit",
     "test:unit-smoke": "vitest --run --dir tests/unit-smoke",
     "test:api": "vitest --run --dir tests/integration",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --workers=1",
     "test:e2e:ui": "playwright test --ui",
     "test:install-browsers": "playwright install --with-deps",
     "ci": "npm run typecheck && npm run test:unit && npm run test:api && npm run build && npm run test:e2e",

@@ -163,7 +163,9 @@ export default async function ProductPage({
   return (
     <main className="container-page space-y-5 py-6">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">{title}</h1>
+        <h1 className="text-2xl font-bold">
+          Product: {title}
+        </h1>
         <Link
           href={storeHref}
           prefetch={false}
@@ -231,7 +233,11 @@ export default async function ProductPage({
         </Link>
       </section>
 
-      <ProductActions kind="product" id={product?.id || id} storeHref={storeHref} />
+      <ProductActions
+        kind="product"
+        id={product?.id || id}
+        storeHref={storeHref}
+      />
     </main>
   );
 }
