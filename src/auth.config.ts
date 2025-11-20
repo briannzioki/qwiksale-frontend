@@ -1,6 +1,7 @@
 // src/auth.config.ts
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 import { authCookies } from "@/app/lib/auth-cookies";
 
 // ------------------------------- helpers --------------------------------
@@ -37,6 +38,29 @@ const cookiesConfig: NextAuthConfig["cookies"] | undefined =
   typeof authCookies === "function"
     ? (authCookies as unknown as () => NextAuthConfig["cookies"])()
     : (authCookies as unknown as NextAuthConfig["cookies"] | undefined);
+
+/* ---------------------------- Google envs ------------------------------ */
+
+const GOOGLE_CLIENT_ID = process.env["GOOGLE_CLIENT_ID"];
+const GOOGLE_CLIENT_SECRET = process.env["GOOGLE_CLIENT_SECRET"];
+
+// In production, Google login is mandatory. Fail loud if misconfigured.
+if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET. " +
+        "Google provider is required in production. " +
+        "Check Vercel → Project → Environment Variables."
+    );
+  } else {
+    // In dev/test, we allow running without Google and simply skip the provider.
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[auth] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set; " +
+        "Google provider will be disabled in this environment."
+    );
+  }
+}
 
 // ------------------------------- config ---------------------------------
 export const authOptions = {
@@ -87,7 +111,14 @@ export const authOptions = {
             const dbUser =
               (await prisma.user.findUnique({
                 where: { email },
-                select: { id: true, email: true, name: true, username: true, role: true, subscription: true },
+                select: {
+                  id: true,
+                  email: true,
+                  name: true,
+                  username: true,
+                  role: true,
+                  subscription: true,
+                },
               })) || null;
             if (dbUser) {
               return {
@@ -108,6 +139,16 @@ export const authOptions = {
         return null;
       },
     }),
+
+    // Google provider: always configured when envs are present.
+    ...(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET
+      ? [
+          GoogleProvider({
+            clientId: GOOGLE_CLIENT_ID,
+            clientSecret: GOOGLE_CLIENT_SECRET,
+          }),
+        ]
+      : []),
   ],
 
   callbacks: {
