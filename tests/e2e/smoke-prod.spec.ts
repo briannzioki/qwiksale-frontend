@@ -62,6 +62,10 @@ async function getAnyServiceId(page: Page): Promise<string | undefined> {
   return undefined;
 }
 
+// Presence of these envs is our signal that Google should be wired in E2E.
+const hasGoogleEnv =
+  !!process.env["GOOGLE_CLIENT_ID"] && !!process.env["GOOGLE_CLIENT_SECRET"];
+
 test.describe("Prod smoke: core public journeys", () => {
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
@@ -219,6 +223,63 @@ test.describe("Prod smoke: core public journeys", () => {
       "Messages route should gate anonymous users with a sign-in flow",
     ).toBe(true);
 
+    await expect(page.locator("text=Application error")).toHaveCount(0);
+  });
+
+  test("Google auth provider is wired and sign-in endpoint is healthy", async ({
+    page,
+  }) => {
+    test.skip(
+      !hasGoogleEnv,
+      "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set; skipping Google auth smoke test.",
+    );
+
+    // 1) /api/auth/providers includes google
+    const providersRes = await page.request.get("/api/auth/providers", {
+      timeout: 15_000,
+    });
+    expect(
+      providersRes.ok(),
+      "GET /api/auth/providers should succeed",
+    ).toBe(true);
+
+    const providersJson = (await providersRes.json().catch(() => null)) as any;
+    expect(
+      providersJson && typeof providersJson === "object",
+      "Providers payload should be an object",
+    ).toBeTruthy();
+
+    expect(
+      providersJson && providersJson["google"],
+      "Expected 'google' provider in /api/auth/providers when GOOGLE_CLIENT_ID/SECRET are set.",
+    ).toBeTruthy();
+
+    // 2) sign-in endpoint itself should not throw a Configuration error / 500
+    const signInRes = await page.request.get(
+      "/api/auth/signin/google?callbackUrl=%2Fdashboard",
+      { timeout: 15_000, maxRedirects: 0 },
+    );
+    const status = signInRes.status();
+    expect(
+      status,
+      `GET /api/auth/signin/google status should be < 500 (got ${status})`,
+    ).toBeLessThan(500);
+
+    const body = await signInRes.text();
+    expect(body).not.toMatch(/Configuration/i);
+
+    // 3) The /signin page actually shows the Google button when provider exists
+    const resp = await page.goto("/signin", {
+      waitUntil: "domcontentloaded",
+    });
+    expect(resp?.status(), "GET /signin status").toBeLessThan(500);
+
+    await expect(
+      page.getByRole("link", { name: /continue with google/i }),
+    ).toBeVisible();
+
+    const html = await page.content();
+    expect(html).not.toMatch(/Auth is temporarily misconfigured/i);
     await expect(page.locator("text=Application error")).toHaveCount(0);
   });
 });
