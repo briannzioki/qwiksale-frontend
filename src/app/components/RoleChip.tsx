@@ -56,10 +56,12 @@ export default function RoleChip({
       className={cn(
         "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold select-none",
         palette,
-        className
+        className,
       )}
       aria-label={aria}
       title={aria}
+      // This is the single "session chip" the E2E tests look for inside the account button.
+      data-testid="session-chip"
     >
       {label}
     </span>

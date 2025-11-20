@@ -331,7 +331,7 @@ export default async function StorePage({
           />
           <div>
             <h1 className="text-2xl font-extrabold md:text-3xl">
-              @{displayHandle}
+              Store: @{displayHandle}
             </h1>
             <p className="text-sm text-white/90">
               {user.name ? `${user.name} • ` : ""}

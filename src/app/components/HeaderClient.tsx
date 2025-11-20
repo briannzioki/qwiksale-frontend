@@ -3,25 +3,22 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 import Navbar from "@/app/components/Navbar";
-import { Button } from "@/app/components/Button";
 import { Icon } from "@/app/components/Icon";
-import IconButton from "@/app/components/IconButton";
 import HeaderInlineSearch from "@/app/components/HeaderInlineSearch";
+import AuthButtons from "@/app/components/AuthButtons";
 
 type Props = {
   initialAuth: { isAuthed: boolean; isAdmin: boolean };
 };
 
 export default function HeaderClient({ initialAuth }: Props) {
-  const router = useRouter();
   const pathname = usePathname() || "/";
   const inAdmin = pathname.startsWith("/admin");
 
-  const isAuthed = initialAuth.isAuthed;
-  const isAdmin = initialAuth.isAdmin;
+  const isAuthedHint = initialAuth.isAuthed;
 
   function getInlineSearch() {
     const root = document.getElementById("header-inline-search");
@@ -70,86 +67,41 @@ export default function HeaderClient({ initialAuth }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const currentUrl = React.useMemo(() => {
-    try {
-      const { search, hash } = window.location;
-      return `${pathname}${search || ""}${hash || ""}`;
-    } catch {
-      return pathname || "/";
-    }
-  }, [pathname]);
-
-  const signInHref = `/signin?callbackUrl=${encodeURIComponent(currentUrl)}`;
-  const dashboardHref = isAuthed
-    ? isAdmin
-      ? "/admin"
-      : "/dashboard"
-    : "/signin";
-
   const rightSlot = (
     <div className="flex items-center gap-2">
-      {isAuthed ? (
-        <>
-          {!inAdmin && (
-            <Link
-              href="/saved"
-              prefetch={false}
-              aria-label="Favorites"
-              title="Favorites"
-              className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
-            >
-              <Icon name="heart" />
-              <span className="sr-only">Favorites</span>
-            </Link>
-          )}
-          {!inAdmin && (
-            <Link
-              href="/messages"
-              prefetch={false}
-              aria-label="Messages"
-              title="Messages"
-              className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
-            >
-              <Icon name="message" />
-              <span className="sr-only">Messages</span>
-            </Link>
-          )}
-          <Link
-            href={dashboardHref}
-            prefetch={false}
-            className="ml-1 inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-medium border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 transition"
-          >
-            {isAdmin ? "Admin" : "Dashboard"}
-          </Link>
-        </>
-      ) : (
+      {/* Saved & Messages icons only when we have a server-side auth hint
+         and we're not on admin shell. The actual account button is always
+         handled by AuthButtons. */}
+      {isAuthedHint && !inAdmin && (
         <>
           <Link
-            href={signInHref}
+            href="/saved"
             prefetch={false}
-            className="hidden md:inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-slate-200 dark:hover:text-white border border-transparent hover:border-gray-200 dark:hover:border-white/10 transition"
+            aria-label="Favorites"
+            title="Favorites"
+            className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
           >
-            Sign in
+            <Icon name="heart" />
+            <span className="sr-only">Favorites</span>
           </Link>
-          <Button
-            asChild
-            size="sm"
-            variant="primary"
-            className="hidden md:inline-flex"
+          <Link
+            href="/messages"
+            prefetch={false}
+            aria-label="Messages"
+            title="Messages"
+            className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
           >
-            <Link href="/signup" prefetch={false}>
-              Join
-            </Link>
-          </Button>
-          <IconButton
-            icon="login"
-            variant="ghost"
-            srLabel="Open account"
-            className="md:hidden"
-            onClick={() => router.push(signInHref)}
-          />
+            <Icon name="message" />
+            <span className="sr-only">Messages</span>
+          </Link>
         </>
       )}
+
+      {/* This is the shared account menu / sign-in surface.
+         - When unauthenticated → shows “Sign in” link.
+         - When authenticated → shows account button with avatar + single session chip.
+         Tests 11/12/30/31/23 all target this trigger. */}
+      <AuthButtons initialIsAuthedHint={isAuthedHint} />
     </div>
   );
 

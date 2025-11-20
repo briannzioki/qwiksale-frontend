@@ -54,11 +54,83 @@ function getReturnTo(): string {
   }
 }
 
+/* --------------------------------- types -------------------------------- */
+type AuthButtonsProps = {
+  /**
+   * Server-side auth hint from HeaderClient/layout.
+   * If this is true but hooks are confused, we still treat the user as
+   * effectively authenticated for header UI purposes.
+   */
+  initialIsAuthedHint?: boolean;
+};
+
 /* --------------------------------- main --------------------------------- */
-export default function AuthButtons() {
-  const { data: session, status } = useSession();
+export default function AuthButtons({
+  initialIsAuthedHint = false,
+}: AuthButtonsProps) {
+  const { data: rawSession, status } = useSession();
+  const [meStatus, setMeStatus] = useState<number | null>(null);
   const [working, setWorking] = useState<"out" | null>(null);
   const [open, setOpen] = useState(false);
+
+  // Cross-check against /api/me so the header never shows a "Sign in" link
+  // while the API still considers the user authenticated (prod no-auto-logout).
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkMe() {
+      try {
+        const res = await fetch("/api/me", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!cancelled) {
+          setMeStatus(res.status);
+        }
+      } catch {
+        if (!cancelled) {
+          setMeStatus(0);
+        }
+      }
+    }
+
+    checkMe();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const hasServerAuthedHint = initialIsAuthedHint === true;
+  const session: Session | null = (rawSession as Session | null) ?? null;
+
+  const authedHint =
+    hasServerAuthedHint ||
+    status === "authenticated" ||
+    !!session ||
+    meStatus === 200;
+
+  const stillResolving = status === "loading" || meStatus === null;
+  const definiteGuest =
+    !authedHint &&
+    status === "unauthenticated" &&
+    meStatus !== 200 &&
+    meStatus !== null;
+
+  // Keep body flagged with current auth state so other components (e.g. hero)
+  // can reliably know if the app is authed, independent of their own hooks.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    if (!body) return;
+
+    if (authedHint) {
+      body.dataset["qsSession"] = "authed";
+    } else {
+      delete body.dataset["qsSession"];
+    }
+  }, [authedHint]);
 
   useEffect(() => {
     const onHash = () => setOpen(false);
@@ -90,7 +162,11 @@ export default function AuthButtons() {
         return;
       }
       if (!menuRef.current) return;
-      const els = Array.from(menuRef.current.querySelectorAll<HTMLElement>('a[href],button:not([disabled])'));
+      const els = Array.from(
+        menuRef.current.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled])',
+        ),
+      );
       focusablesRef.current = els;
       const current = document.activeElement as HTMLElement | null;
       const idx = els.findIndex((el) => el === current);
@@ -100,7 +176,8 @@ export default function AuthButtons() {
         next?.focus();
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        const prev = els[(idx - 1 + els.length) % els.length] || els[els.length - 1];
+        const prev =
+          els[(idx - 1 + els.length) % els.length] || els[els.length - 1];
         prev?.focus();
       } else if (e.key === "Home") {
         e.preventDefault();
@@ -118,38 +195,28 @@ export default function AuthButtons() {
     if (open) track("auth_dropdown_open");
   }, [open]);
 
-  const user = (session?.user ?? null) as (Session["user"] & {
-    subscription?: string | null;
-    role?: string | null;
-    name?: string | null;
-    isAdmin?: boolean;
-  }) | null;
-
-  const subscription = user?.subscription ?? null;
-  const roleU = (user?.role ?? "").toUpperCase();
-  const isAdmin = user?.isAdmin === true || roleU === "ADMIN" || roleU === "SUPERADMIN";
-  const dashboardHref = isAdmin ? "/admin" : "/dashboard";
-
-  const displayName = useMemo(() => {
-    if (user?.name) return user.name;
-    if (user?.email) return user.email.split("@")[0];
-    return "User";
-  }, [user?.name, user?.email]);
-
-  if (status === "loading") {
+  // While auth state is unresolved, render a neutral placeholder — do NOT show
+  // a "Sign in" link yet.
+  if (!authedHint && stillResolving) {
     return (
-      <button className="px-3 py-2 rounded border text-sm opacity-80 cursor-default" disabled>
+      <button
+        className="cursor-default rounded border px-3 py-2 text-sm opacity-80"
+        disabled
+      >
         Loading…
       </button>
     );
   }
 
-  if (!session) {
-    const signInHref = `/signin?callbackUrl=${encodeURIComponent(getReturnTo())}`;
+  // Genuine guest: hooks say unauthenticated AND /api/me is non-200.
+  if (definiteGuest) {
+    const signInHref = `/signin?callbackUrl=${encodeURIComponent(
+      getReturnTo(),
+    )}`;
     return (
       <Link
         href={signInHref}
-        className="px-3 py-2 rounded bg:white/10 border border:white/30 ring-1 ring:white/20 text-sm hover:bg:white/20 transition"
+        className="rounded border:border-white/30 bg:white/10 px-3 py-2 text-sm ring-1 ring:white/20 transition hover:bg:white/20"
         data-testid="auth-signin"
         title="Sign in"
         prefetch={false}
@@ -160,13 +227,51 @@ export default function AuthButtons() {
     );
   }
 
+  // We have an auth hint (/api/me or SSR) but no concrete session object yet:
+  // render an "Account" placeholder instead of flashing a Sign in link.
+  if (!session) {
+    return (
+      <button
+        type="button"
+        className="cursor-default rounded border px-3 py-2 text-sm opacity-80"
+        disabled
+        aria-label="Account loading"
+        data-testid="account-menu-placeholder"
+      >
+        Account
+      </button>
+    );
+  }
+
+  const user = (session.user ?? null) as (Session["user"] & {
+    subscription?: string | null;
+    role?: string | null;
+    name?: string | null;
+    isAdmin?: boolean;
+  }) | null;
+
+  const subscription = user?.subscription ?? null;
+  const roleU = (user?.role ?? "").toUpperCase();
+  const isAdmin =
+    user?.isAdmin === true || roleU === "ADMIN" || roleU === "SUPERADMIN";
+  const dashboardHref = isAdmin ? "/admin" : "/dashboard";
+
+  const displayName = useMemo(() => {
+    if (user?.name) return user.name;
+    if (user?.email) return user.email.split("@")[0];
+    return "User";
+  }, [user?.name, user?.email]);
+
+  // Authenticated view: account menu with single RoleChip.
   return (
-    <details ref={rootRef} className="relative group" open={open}>
+    <details ref={rootRef} className="group relative" open={open}>
       <summary
-        className="list-none inline-flex items-center gap-2 rounded-lg bg:white/10 px-2.5 py-1.5 text-sm border border:white/30 ring-1 ring:white/20 hover:bg:white/20 transition cursor-pointer select-none"
+        className="inline-flex cursor-pointer select-none items-center gap-2 rounded-lg border:border-white/30 bg:white/10 px-2.5 py-1.5 text-sm ring-1 ring:white/20 transition hover:bg:white/20"
         aria-haspopup="menu"
         aria-expanded={open}
         role="button"
+        aria-label="Open account menu"
+        data-testid="account-menu-trigger"
         onClick={(e) => {
           e.preventDefault();
           setOpen((v) => !v);
@@ -183,9 +288,19 @@ export default function AuthButtons() {
         ) : (
           <Initials name={user?.name ?? null} />
         )}
-        <span className="hidden sm:inline max-w-[14ch] truncate">{displayName}</span>
+        <span className="hidden max-w-[14ch] truncate sm:inline">
+          {displayName}
+        </span>
+        {/* Single session chip used by tests */}
         <RoleChip role={user?.role ?? null} subscription={subscription} />
-        <svg width="16" height="16" viewBox="0 0 24 24" className={`ml-1 transition-transform ${open ? "rotate-180" : ""}`} fill="currentColor" aria-hidden="true">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          className={`ml-1 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="currentColor"
+          aria-hidden="true"
+        >
           <path d="M7 10l5 5 5-5H7z" />
         </svg>
       </summary>
@@ -193,11 +308,15 @@ export default function AuthButtons() {
       <div
         ref={menuRef}
         role="menu"
-        className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200/70 bg-white text-gray-800 shadow-xl overflow-hidden z-50 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700"
+        className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border border-gray-200/70 bg-white text-gray-800 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
       >
-        <div className="px-3 py-2 border-b bg-gray-50/70 dark:bg-gray-800/40 dark:border-gray-700">
-          <div className="text-xs text-gray-500 dark:text-gray-400">Signed in as</div>
-          <div className="truncate text-sm font-medium">{user?.email || "…"}</div>
+        <div className="border-b bg-gray-50/70 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/40">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Signed in as
+          </div>
+          <div className="truncate text-sm font-medium">
+            {user?.email || "…"}
+          </div>
         </div>
 
         <nav className="py-1 text-sm">
@@ -235,7 +354,9 @@ export default function AuthButtons() {
             className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
             prefetch={false}
           >
-            {isPaidTier(subscription) ? "Manage subscription" : "Upgrade subscription"}
+            {isPaidTier(subscription)
+              ? "Manage subscription"
+              : "Upgrade subscription"}
           </Link>
         </nav>
 
@@ -252,7 +373,7 @@ export default function AuthButtons() {
               setWorking(null);
             }
           }}
-          className="w-full text-left px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 border-top border-gray-200 dark:border-gray-700"
+          className="w-full border-top border-gray-200 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-950/20"
           disabled={!!working}
         >
           {working === "out" ? "Signing out…" : "Sign out"}
