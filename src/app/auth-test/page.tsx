@@ -201,7 +201,7 @@ export default function AuthTest() {
               <button
                 onClick={() => {
                   track("auth_debug_signin_click");
-                  // v5: signIn still accepts callbackUrl
+                  // next-auth/react: signIn still accepts callbackUrl
                   signIn(undefined, { callbackUrl: "/auth-test" });
                 }}
                 className="rounded-lg bg-black text-white px-4 py-2 text-sm"
@@ -212,8 +212,8 @@ export default function AuthTest() {
               <button
                 onClick={() => {
                   track("auth_debug_signout_click");
-                  // v5: use redirectTo (NOT callbackUrl)
-                  signOut({ redirectTo: "/auth-test" });
+                  // next-auth/react: use callbackUrl to land back here
+                  signOut({ callbackUrl: "/auth-test" });
                 }}
                 className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
               >

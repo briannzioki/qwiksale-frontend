@@ -2,7 +2,9 @@
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
+import bcrypt from "bcryptjs";
 import { authCookies } from "@/app/lib/auth-cookies";
+import { prisma } from "@/app/lib/prisma";
 
 // ------------------------------- helpers --------------------------------
 function splitList(v?: string | null): string[] {
@@ -50,14 +52,14 @@ if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
     throw new Error(
       "Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET. " +
         "Google provider is required in production. " +
-        "Check Vercel → Project → Environment Variables."
+        "Check Vercel → Project → Environment Variables.",
     );
   } else {
     // In dev/test, we allow running without Google and simply skip the provider.
     // eslint-disable-next-line no-console
     console.warn(
       "[auth] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET not set; " +
-        "Google provider will be disabled in this environment."
+        "Google provider will be disabled in this environment.",
     );
   }
 }
@@ -91,7 +93,11 @@ export const authOptions = {
         const email = (creds?.email || "").toString().trim().toLowerCase();
         const password = (creds?.password || "").toString();
 
-        // E2E/dev admin backdoor
+        if (!email || !password) {
+          return null;
+        }
+
+        // E2E/dev admin backdoor (only when NOT in production)
         const E2E_ADMIN_EMAIL = (process.env["E2E_ADMIN_EMAIL"] || "").toLowerCase();
         const E2E_ADMIN_PASSWORD = process.env["E2E_ADMIN_PASSWORD"] || "";
         if (process.env.NODE_ENV !== "production" && email && password) {
@@ -105,38 +111,43 @@ export const authOptions = {
               username: "admin",
             } as any;
           }
-          // Dev/E2E: allow known DB user by email (no password check)
-          try {
-            const { prisma } = await import("@/app/lib/prisma");
-            const dbUser =
-              (await prisma.user.findUnique({
-                where: { email },
-                select: {
-                  id: true,
-                  email: true,
-                  name: true,
-                  username: true,
-                  role: true,
-                  subscription: true,
-                },
-              })) || null;
-            if (dbUser) {
-              return {
-                id: dbUser.id,
-                email: dbUser.email ?? email,
-                name: dbUser.name ?? null,
-                username: dbUser.username ?? null,
-                role: (dbUser as any).role ?? "USER",
-                subscription: (dbUser as any).subscription ?? null,
-              } as any;
-            }
-          } catch {
-            // ignore and fall through
-          }
         }
 
-        // TODO: Implement real password verification in prod
-        return null;
+        // Real password verification (all environments)
+        const user = await prisma.user.findUnique({
+          where: { email },
+        });
+
+        if (!user) {
+          return null;
+        }
+
+        const dbUser = user as any;
+        const rawHash = dbUser.passwordHash ?? dbUser.password;
+
+        if (typeof rawHash !== "string" || !rawHash) {
+          return null;
+        }
+
+        const ok = await bcrypt.compare(password, rawHash);
+        if (!ok) {
+          return null;
+        }
+
+        return {
+          id: dbUser.id,
+          email: dbUser.email ?? email,
+          name: dbUser.name ?? dbUser.email ?? email,
+          username: dbUser.username ?? null,
+          role:
+            typeof dbUser.role === "string" && dbUser.role
+              ? dbUser.role
+              : "USER",
+          subscription:
+            typeof dbUser.subscription === "string" && dbUser.subscription
+              ? dbUser.subscription
+              : null,
+        } as any;
       },
     }),
 
@@ -152,54 +163,52 @@ export const authOptions = {
   ],
 
   callbacks: {
+    // <- This is the flexible redirect from your Option 2
     async redirect({ url, baseUrl }) {
-      // allow-list for stable in-app redirects
-      const ALLOWED = new Set<string>([
-        "/",
-        "/dashboard",
-        "/sell",
-        "/saved",
-        "/account/profile",
-        "/account/complete-profile",
-        "/admin",
-        "/admin/users",
-        "/admin/listings",
-        "/search",
-      ]);
-
       try {
         const base = new URL(baseUrl);
         const u = new URL(url, baseUrl);
 
-        // Block external origins
-        if (u.origin !== base.origin) return baseUrl;
+        // Block external origins completely
+        if (u.origin !== base.origin) {
+          return baseUrl;
+        }
 
-        // Never bounce to /signup from callbacks
-        if (u.pathname === "/signup") return baseUrl;
-
-        // Prefer explicit, safe callbackUrl if present
+        // Prefer explicit callbackUrl if present and safe
         const cb = u.searchParams.get("callbackUrl");
         if (cb) {
           try {
             const cbu = new URL(cb, baseUrl);
-            if (
-              cbu.origin === base.origin &&
-              cbu.pathname !== "/signup" &&
-              (ALLOWED.has(cbu.pathname) || cbu.pathname === "/")
-            ) {
+            if (cbu.origin === base.origin) {
+              if (cbu.pathname === "/signup") return baseUrl;
               return toRelativeIfSameOrigin(cbu.toString(), baseUrl);
             }
           } catch {
-            if (cb.startsWith("/") && (ALLOWED.has(cb) || cb === "/")) return cb;
+            if (
+              cb.startsWith("/") &&
+              !cb.startsWith("//") &&
+              cb !== "/signup"
+            ) {
+              return cb;
+            }
           }
         }
 
-        // Else, if the target itself is safe, allow it
-        if (ALLOWED.has(u.pathname) || u.pathname === "/") {
-          return toRelativeIfSameOrigin(u.toString(), baseUrl);
+        // Otherwise, use the target URL itself if it's same-origin & safe.
+        if (u.pathname === "/signup") {
+          return baseUrl;
         }
+
+        return toRelativeIfSameOrigin(u.toString(), baseUrl);
       } catch {
-        if (typeof url === "string" && url.startsWith("/")) return url;
+        if (
+          typeof url === "string" &&
+          url.startsWith("/") &&
+          !url.startsWith("//") &&
+          url !== "/signup"
+        ) {
+          return url;
+        }
       }
 
       return baseUrl;
