@@ -64,16 +64,25 @@ export async function GET(req: NextRequest) {
     const viewerUserId = (session as any)?.user?.id as string | undefined;
 
     // Global best-effort rate limit (bucket per viewer + service)
-    const rl = await checkRateLimit(req.headers, {
-      name: "services_contact_reveal",
-      limit: 5,
-      windowMs: 60_000,
-      extraKey: `${viewerUserId ?? "anon"}:${listingId}`,
-    });
+    const rl =
+      (await checkRateLimit(req.headers, {
+        name: "services_contact_reveal",
+        limit: 5,
+        windowMs: 60_000,
+        extraKey: `${viewerUserId ?? "anon"}:${listingId}`,
+      }).catch((e: unknown) => {
+        // eslint-disable-next-line no-console
+        console.warn("[services/:id/contact] rate-limit error:", e);
+        return { ok: true, retryAfterSec: 0 };
+      })) as { ok: boolean; retryAfterSec?: number };
+
     if (!rl.ok) {
+      const retryAfterSec =
+        typeof rl.retryAfterSec === "number" ? rl.retryAfterSec : 60;
+
       return tooMany(
         "Please wait a moment before revealing more contacts.",
-        rl.retryAfterSec
+        retryAfterSec,
       );
     }
 
@@ -94,14 +103,12 @@ export async function GET(req: NextRequest) {
     const ip = getClientIp(req);
     const ua = req.headers.get("user-agent") || null;
     const now = Date.now();
-    const WIN_IP_HR = new Date(now - 60 * 60 * 1000);     // 1 hour
+    const WIN_IP_HR = new Date(now - 60 * 60 * 1000); // 1 hour
     const WIN_DEVICE_15 = new Date(now - 15 * 60 * 1000); // 15 minutes
 
     const MAX_PER_IP_PER_HOUR = 12;
     const MAX_PER_DEVICE_15MIN = 6;
 
-    // We don't know which model your schema uses; try serviceContactReveal first,
-    // then contactReveal with a serviceId column. All DB calls are best-effort.
     const db: any = prisma;
 
     // Count recent reveals per IP for this listing
@@ -136,11 +143,21 @@ export async function GET(req: NextRequest) {
       try {
         if (db.serviceContactReveal?.count) {
           devCount = await db.serviceContactReveal.count({
-            where: { serviceId: listingId, ip, userAgent: ua, createdAt: { gte: WIN_DEVICE_15 } },
+            where: {
+              serviceId: listingId,
+              ip,
+              userAgent: ua,
+              createdAt: { gte: WIN_DEVICE_15 },
+            },
           });
         } else if (db.contactReveal?.count) {
           devCount = await db.contactReveal.count({
-            where: { serviceId: listingId, ip, userAgent: ua, createdAt: { gte: WIN_DEVICE_15 } },
+            where: {
+              serviceId: listingId,
+              ip,
+              userAgent: ua,
+              createdAt: { gte: WIN_DEVICE_15 },
+            },
           });
         }
       } catch {
@@ -158,7 +175,7 @@ export async function GET(req: NextRequest) {
 
     // Light telemetry — never block user on errors
     const referer = validUrl(req.headers.get("referer"));
-    void referer; // add a column later if you want
+    void referer;
 
     (async () => {
       try {
@@ -172,7 +189,6 @@ export async function GET(req: NextRequest) {
             },
           });
         } else if (db.contactReveal?.create) {
-          // Fallback if your generic table has serviceId
           await db.contactReveal.create({
             data: {
               serviceId: listingId,
