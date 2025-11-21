@@ -158,7 +158,11 @@ export default function AuthButtons({
       if (!open) return;
       if (e.key === "Escape") {
         setOpen(false);
-        (rootRef.current?.querySelector("summary") as HTMLElement | null)?.focus?.();
+        (
+          rootRef.current?.querySelector(
+            "summary",
+          ) as HTMLElement | null
+        )?.focus?.();
         return;
       }
       if (!menuRef.current) return;
@@ -172,12 +176,14 @@ export default function AuthButtons({
       const idx = els.findIndex((el) => el === current);
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        const next = els[(idx + 1 + els.length) % els.length] || els[0];
+        const next =
+          els[(idx + 1 + els.length) % els.length] || els[0];
         next?.focus();
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         const prev =
-          els[(idx - 1 + els.length) % els.length] || els[els.length - 1];
+          els[(idx - 1 + els.length) % els.length] ||
+          els[els.length - 1];
         prev?.focus();
       } else if (e.key === "Home") {
         e.preventDefault();
@@ -216,7 +222,7 @@ export default function AuthButtons({
     return (
       <Link
         href={signInHref}
-        className="rounded border:border-white/30 bg:white/10 px-3 py-2 text-sm ring-1 ring:white/20 transition hover:bg:white/20"
+        className="rounded border border-white/30 bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 transition hover:bg-white/20"
         data-testid="auth-signin"
         title="Sign in"
         prefetch={false}
@@ -253,7 +259,9 @@ export default function AuthButtons({
   const subscription = user?.subscription ?? null;
   const roleU = (user?.role ?? "").toUpperCase();
   const isAdmin =
-    user?.isAdmin === true || roleU === "ADMIN" || roleU === "SUPERADMIN";
+    user?.isAdmin === true ||
+    roleU === "ADMIN" ||
+    roleU === "SUPERADMIN";
   const dashboardHref = isAdmin ? "/admin" : "/dashboard";
 
   const displayName = useMemo(() => {
@@ -266,7 +274,7 @@ export default function AuthButtons({
   return (
     <details ref={rootRef} className="group relative" open={open}>
       <summary
-        className="inline-flex cursor-pointer select-none items-center gap-2 rounded-lg border:border-white/30 bg:white/10 px-2.5 py-1.5 text-sm ring-1 ring:white/20 transition hover:bg:white/20"
+        className="inline-flex cursor-pointer select-none items-center gap-2 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1.5 text-sm ring-1 ring-white/20 transition hover:bg-white/20"
         aria-haspopup="menu"
         aria-expanded={open}
         role="button"
@@ -297,7 +305,9 @@ export default function AuthButtons({
           width="16"
           height="16"
           viewBox="0 0 24 24"
-          className={`ml-1 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`ml-1 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
           fill="currentColor"
           aria-hidden="true"
         >
@@ -373,7 +383,7 @@ export default function AuthButtons({
               setWorking(null);
             }
           }}
-          className="w-full border-top border-gray-200 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-950/20"
+          className="w-full border-t border-gray-200 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-950/20"
           disabled={!!working}
         >
           {working === "out" ? "Signing out…" : "Sign out"}
