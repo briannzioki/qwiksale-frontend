@@ -2,6 +2,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+/* ------------------- Auth secret (match auth.config.ts) ------------------- */
+/**
+ * IMPORTANT:
+ * This must mirror src/auth.config.ts so that NextAuth (auth()/callbacks)
+ * and getToken() are using the same secret.
+ *
+ * - In prod, you should set either AUTH_SECRET or NEXTAUTH_SECRET (or both).
+ * - In dev/test, we fall back to a stable "dev-secret-change-me" just like
+ *   auth.config.ts does, so cookies + JWTs stay in sync.
+ */
+const AUTH_SECRET =
+  process.env["AUTH_SECRET"] ??
+  process.env["NEXTAUTH_SECRET"] ??
+  (process.env.NODE_ENV !== "production" ? "dev-secret-change-me" : undefined);
+
 /* ------------------- Edge-safe helpers ------------------- */
 function makeNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -195,9 +210,18 @@ function parseAllow(env?: string | null) {
 
 /* -------------------- Read token safely -------------------- */
 async function readToken(req: NextRequest) {
-  const secret = process.env["NEXTAUTH_SECRET"];
-  if (secret) return getToken({ req, secret });
-  return getToken({ req } as any);
+  try {
+    // Use the same secret derivation as auth.config.ts so that
+    // getToken can actually decode the JWT issued by NextAuth.
+    if (AUTH_SECRET) {
+      return await getToken({ req, secret: AUTH_SECRET });
+    }
+    // Fallback to getToken default behaviour if somehow no secret is set.
+    return await getToken({ req } as any);
+  } catch {
+    // On any failure, treat as anonymous.
+    return null;
+  }
 }
 
 /* -------------------------------- Main middleware -------------------------------- */

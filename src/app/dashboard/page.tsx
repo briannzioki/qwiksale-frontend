@@ -1,6 +1,7 @@
 ﻿// src/app/dashboard/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import { cookies } from "next/headers";
 import UserAvatar from "@/app/components/UserAvatar";
 import SectionHeader from "@/app/components/SectionHeader";
@@ -25,6 +26,40 @@ type Me = {
   subscription: string | null;
 };
 
+type DashboardListing = {
+  type: "product" | "service";
+  id: string;
+  name: string;
+  category: string | null;
+  subcategory: string | null;
+  price: number | null;
+  image: string | null;
+  location: string | null;
+  createdAt: string; // ISO
+};
+
+type ProductRowDash = {
+  id: string;
+  name: string | null;
+  category: string | null;
+  subcategory: string | null;
+  price: number | null;
+  image: string | null;
+  location: string | null;
+  createdAt: Date | string | null;
+};
+
+type ServiceRowDash = {
+  id: string | number;
+  name: string | null;
+  category: string | null;
+  subcategory: string | null;
+  price: number | null;
+  image: string | null;
+  location: string | null;
+  createdAt: Date | string | null;
+};
+
 function fmtInt(n: number) {
   const val = Number.isFinite(n) ? n : 0;
   try {
@@ -32,6 +67,27 @@ function fmtInt(n: number) {
   } catch {
     return String(val);
   }
+}
+
+function fmtKES(n?: number | null) {
+  if (typeof n === "number" && Number.isFinite(n) && n > 0) {
+    try {
+      return `KES ${n.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
+    } catch {
+      return `KES ${n}`;
+    }
+  }
+  return "Contact for price";
+}
+
+const FALLBACK_IMG = "/placeholder/default.jpg";
+
+function toIso(value: unknown): string {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString();
+  const s = String(value);
+  const ts = Date.parse(s);
+  return Number.isFinite(ts) ? new Date(ts).toISOString() : "";
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -247,12 +303,158 @@ export default async function DashboardPage({
       );
     }
 
-    const subLabel = (me.subscription ?? "FREE").toUpperCase();
+    // ---- My listings metrics + recent listings (products + services) ----
+    const now = new Date();
+    const sevenDaysAgo = new Date(
+      now.getTime() - 7 * 24 * 60 * 60 * 1000,
+    );
 
-    const myListingsCount = 0;
+    const anyPrisma = prisma as any;
+    const ServiceModel =
+      anyPrisma.service ??
+      anyPrisma.services ??
+      null;
+
+    const [
+      productCount,
+      serviceCount,
+      recentProductCount,
+      recentServiceCount,
+      recentProductsRaw,
+      recentServicesRaw,
+    ] = await Promise.all([
+      withTimeout(
+        prisma.product.count({
+          where: { sellerId: concreteUserId },
+        }),
+        800,
+        0,
+      ),
+      ServiceModel
+        ? withTimeout(
+            ServiceModel.count({
+              where: { sellerId: concreteUserId },
+            }),
+            800,
+            0,
+          )
+        : Promise.resolve(0),
+      withTimeout(
+        prisma.product.count({
+          where: {
+            sellerId: concreteUserId,
+            createdAt: { gte: sevenDaysAgo },
+          },
+        }),
+        800,
+        0,
+      ),
+      ServiceModel
+        ? withTimeout(
+            ServiceModel.count({
+              where: {
+                sellerId: concreteUserId,
+                createdAt: { gte: sevenDaysAgo },
+              },
+            }),
+            800,
+            0,
+          )
+        : Promise.resolve(0),
+      withTimeout(
+        prisma.product.findMany({
+          where: { sellerId: concreteUserId },
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            subcategory: true,
+            price: true,
+            image: true,
+            location: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+          take: 6,
+        }),
+        800,
+        [] as ProductRowDash[],
+      ),
+      ServiceModel
+        ? withTimeout(
+            ServiceModel.findMany({
+              where: { sellerId: concreteUserId },
+              select: {
+                id: true,
+                name: true,
+                category: true,
+                subcategory: true,
+                price: true,
+                image: true,
+                location: true,
+                createdAt: true,
+              },
+              orderBy: { createdAt: "desc" },
+              take: 6,
+            }),
+            800,
+            [] as ServiceRowDash[],
+          )
+        : Promise.resolve([] as ServiceRowDash[]),
+    ]);
+
+    const recentListings: DashboardListing[] = [
+      ...(recentProductsRaw as ProductRowDash[]).map(
+        (p): DashboardListing => ({
+          type: "product",
+          id: String(p.id),
+          name: p.name || "Untitled",
+          category: p.category ?? null,
+          subcategory: p.subcategory ?? null,
+          price:
+            typeof p.price === "number" ? p.price : null,
+          image: p.image ?? null,
+          location: p.location ?? null,
+          createdAt: toIso(p.createdAt),
+        }),
+      ),
+      ...(recentServicesRaw as ServiceRowDash[]).map(
+        (s): DashboardListing => ({
+          type: "service",
+          id: String(s.id),
+          name: s.name || "Untitled",
+          category: s.category ?? null,
+          subcategory: s.subcategory ?? null,
+          price:
+            typeof s.price === "number"
+              ? s.price
+              : null,
+          image: s.image ?? null,
+          location: s.location ?? null,
+          createdAt: toIso(s.createdAt),
+        }),
+      ),
+    ]
+      .sort((a, b) => {
+        const da = Date.parse(a.createdAt || "");
+        const db = Date.parse(b.createdAt || "");
+        if (db !== da) return db - da;
+        // tie-break on type+id for stability
+        return `${b.type}-${b.id}`.localeCompare(
+          `${a.type}-${a.id}`,
+        );
+      })
+      .slice(0, 6);
+
+    const myListingsCount = productCount + serviceCount;
+    const newLast7Days =
+      recentProductCount + recentServiceCount;
+
+    // Favorites metrics still default to 0 for now
     const favoritesCount = 0;
-    const newLast7Days = 0;
     const likesOnMyListings = 0;
+
+    const subLabel = (me.subscription ?? "FREE").toUpperCase();
 
     return (
       <main className="p-6 space-y-6">
@@ -267,14 +469,19 @@ export default async function DashboardPage({
                 alt={me.name || me.email || "You"}
                 size={40}
               />
-              <span>Welcome{me.name ? `, ${me.name}` : ""} 👋</span>
+              <span>
+                Welcome{me.name ? `, ${me.name}` : ""} 👋
+              </span>
             </span>
           }
           subtitle="Manage your listings, favorites, and account."
           actions={
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-white/15 px-3 py-1 text-sm text-white">
-                Subscription: <span className="font-semibold">{subLabel}</span>
+                Subscription:{" "}
+                <span className="font-semibold">
+                  {subLabel}
+                </span>
               </span>
               <Link
                 href="/account/profile"
@@ -298,10 +505,18 @@ export default async function DashboardPage({
         />
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/sell" prefetch={false} className="btn-outline">
+          <Link
+            href="/sell"
+            prefetch={false}
+            className="btn-outline"
+          >
             + Post a Listing
           </Link>
-          <Link href="/saved" prefetch={false} className="btn-outline">
+          <Link
+            href="/saved"
+            prefetch={false}
+            className="btn-outline"
+          >
             View Saved
           </Link>
           <Link
@@ -321,15 +536,29 @@ export default async function DashboardPage({
         </div>
 
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric title="My Listings" value={myListingsCount} />
-          <Metric title="My Favorites" value={favoritesCount} />
-          <Metric title="New in last 7 days" value={newLast7Days} />
-          <Metric title="Likes on my listings" value={likesOnMyListings} />
+          <Metric
+            title="My Listings"
+            value={myListingsCount}
+          />
+          <Metric
+            title="My Favorites"
+            value={favoritesCount}
+          />
+          <Metric
+            title="New in last 7 days"
+            value={newLast7Days}
+          />
+          <Metric
+            title="Likes on my listings"
+            value={likesOnMyListings}
+          />
         </section>
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Your Recent Listings</h2>
+            <h2 className="text-lg font-semibold">
+              Your Recent Listings
+            </h2>
             <Link
               href="/sell"
               prefetch={false}
@@ -339,25 +568,43 @@ export default async function DashboardPage({
             </Link>
           </div>
 
-          <div className="rounded-xl border bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/illustrations/empty-box.svg"
-              alt=""
-              className="mx-auto h-24 w-24 opacity-90"
-            />
-            <p className="mt-3 text-lg font-semibold text-gray-700 dark:text-slate-200">
-              No listings yet
-            </p>
-            <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-              Post your first item to get started.
-            </p>
-            <div className="mt-4">
-              <Link href="/sell" prefetch={false} className="btn-gradient-primary">
-                Post a Listing
-              </Link>
+          {recentListings.length === 0 ? (
+            <div className="rounded-xl border bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/illustrations/empty-box.svg"
+                alt=""
+                className="mx-auto h-24 w-24 opacity-90"
+              />
+              <p className="mt-3 text-lg font-semibold text-gray-700 dark:text-slate-200">
+                No listings yet
+              </p>
+              <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+                Post your first item to get started.
+              </p>
+              <div className="mt-4">
+                <Link
+                  href="/sell"
+                  prefetch={false}
+                  className="btn-gradient-primary"
+                >
+                  Post a Listing
+                </Link>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+              aria-label="Your recent listings"
+            >
+              {recentListings.map((item) => (
+                <RecentListingCard
+                  key={`${item.type}-${item.id}`}
+                  item={item}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </main>
     );
@@ -371,13 +618,20 @@ export default async function DashboardPage({
         data-soft-error="dashboard"
         data-e2e="dashboard-soft-error"
       >
-        <h1 className="text-xl font-semibold">We hit a dashboard error</h1>
+        <h1 className="text-xl font-semibold">
+          We hit a dashboard error
+        </h1>
         <p className="mt-2 text-sm opacity-80">
-          Something went wrong loading your dashboard. Please refresh. If this
-          continues, contact support — the error has been logged.
+          Something went wrong loading your dashboard.
+          Please refresh. If this continues, contact support —
+          the error has been logged.
         </p>
         <div className="mt-3">
-          <Link href="/dashboard" prefetch={false} className="btn-outline">
+          <Link
+            href="/dashboard"
+            prefetch={false}
+            className="btn-outline"
+          >
             Retry
           </Link>
         </div>
@@ -389,10 +643,60 @@ export default async function DashboardPage({
 function Metric({ title, value }: { title: string; value: number }) {
   return (
     <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-      <div className="text-sm text-gray-500 dark:text-slate-400">{title}</div>
+      <div className="text-sm text-gray-500 dark:text-slate-400">
+        {title}
+      </div>
       <div className="text-2xl font-bold text-[#161748] dark:text-white">
         {fmtInt(value)}
       </div>
     </div>
+  );
+}
+
+function RecentListingCard({ item }: { item: DashboardListing }) {
+  const href =
+    item.type === "service"
+      ? `/service/${encodeURIComponent(item.id)}`
+      : `/product/${encodeURIComponent(item.id)}`;
+
+  const created =
+    item.createdAt && item.createdAt.length
+      ? new Date(item.createdAt).toLocaleDateString("en-KE")
+      : "";
+
+  return (
+    <Link
+      href={href}
+      prefetch={false}
+      className="group flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+      aria-label={`View ${item.type}: ${item.name}`}
+    >
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+        <Image
+          src={item.image || FALLBACK_IMG}
+          alt={item.name}
+          fill
+          sizes="(min-width: 1024px) 320px, (min-width: 640px) 50vw, 100vw"
+          className="object-cover transition duration-300 group-hover:scale-105"
+        />
+      </div>
+      <div className="flex flex-1 flex-col gap-1 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="line-clamp-2 text-sm font-semibold">
+            {item.name}
+          </span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            {item.type}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <span>{item.location || "Kenya"}</span>
+          <span>{created}</span>
+        </div>
+        <div className="mt-2 text-sm font-semibold text-[#161748] dark:text-white">
+          {fmtKES(item.price)}
+        </div>
+      </div>
+    </Link>
   );
 }
