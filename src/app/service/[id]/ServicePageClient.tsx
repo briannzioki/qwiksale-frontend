@@ -1,3 +1,4 @@
+// src/app/service/[id]/ServicePageClient.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
@@ -475,9 +476,7 @@ export default function ServicePageClient({
         {/* Media */}
         <div className="lg:col-span-3">
           <div
-            className="relative overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-9
-
-00"
+            className="relative overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
             data-gallery-wrap
           >
             <div className="relative aspect-[4/3] sm:aspect-[16/10]">
@@ -577,15 +576,6 @@ export default function ServicePageClient({
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
               {display.name || "Service"}
             </h1>
-            <Link
-              href={storeHref}
-              prefetch={false}
-              className="btn-gradient-primary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
-              aria-label="Visit provider store"
-              title="Visit Store"
-            >
-              Visit Store
-            </Link>
           </div>
 
           <div className="space-y-1 rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">

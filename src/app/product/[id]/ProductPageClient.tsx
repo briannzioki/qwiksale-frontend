@@ -526,22 +526,6 @@ export default function ProductPageClient({
               share sensitive information.
             </div>
           </div>
-
-          {/* Guest-visible “Message seller” to satisfy tests without JS glue */}
-          {!session && (
-            <div>
-              <button
-                type="button"
-                className="rounded-md border px-3 py-1.5 text-sm"
-                onClick={() =>
-                  alert("Please sign in to message the seller.")
-                }
-                aria-label="Message seller"
-              >
-                Message seller
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </>

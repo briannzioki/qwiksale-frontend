@@ -8,7 +8,6 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 
 import Gallery from "@/app/components/Gallery";
-import ProductActions from "@/app/components/ProductActions";
 import ContactModalService from "@/app/components/ContactModalService";
 import { makeApiUrl } from "@/app/lib/url";
 import { extractGalleryUrls, stripPlaceholderIfOthers } from "@/app/lib/media";
@@ -184,15 +183,6 @@ export default async function ServicePage({
           <span className="sr-only">Service listing: </span>
           {title}
         </h1>
-        <Link
-          href={storeHref}
-          prefetch={false}
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
-          aria-label="Visit store"
-          data-testid="visit-store-link"
-        >
-          Visit store
-        </Link>
       </div>
 
       <div className="space-x-3 text-sm text-gray-600 dark:text-slate-300">
@@ -237,6 +227,7 @@ export default async function ServicePage({
         </section>
       )}
 
+      {/* Single CTA row: Message provider + Visit store */}
       <section className="mt-4 flex flex-wrap items-center gap-3">
         <ContactModalService
           serviceId={service?.id || id}
@@ -252,12 +243,12 @@ export default async function ServicePage({
           href={storeHref}
           prefetch={false}
           className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+          aria-label="Visit store"
+          data-testid="visit-store-link"
         >
           Visit store
         </Link>
       </section>
-
-      <ProductActions kind="service" id={service?.id || id} storeHref={storeHref} />
     </main>
   );
 }

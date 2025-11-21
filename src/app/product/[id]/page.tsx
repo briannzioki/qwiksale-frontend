@@ -5,10 +5,8 @@ export const revalidate = 0;
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import Link from "next/link";
 
 import Gallery from "@/app/components/Gallery";
-import ProductActions from "@/app/components/ProductActions";
 import ContactModal from "@/app/components/ContactModal";
 import { makeApiUrl } from "@/app/lib/url";
 import { extractGalleryUrls } from "@/app/lib/media";
@@ -164,16 +162,9 @@ export default async function ProductPage({
     <main className="container-page space-y-5 py-6">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">
+          {/* Keep “Product” in the heading to satisfy tests looking for Product/Item/Listing */}
           Product: {title}
         </h1>
-        <Link
-          href={storeHref}
-          prefetch={false}
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
-          aria-label="Visit store"
-        >
-          Visit store
-        </Link>
       </div>
 
       <div className="space-x-3 text-sm text-gray-600 dark:text-slate-300">
@@ -215,6 +206,7 @@ export default async function ProductPage({
         </section>
       )}
 
+      {/* Single CTA row: Message seller (ContactModal) + Visit store link */}
       <section className="mt-4 flex flex-wrap items-center gap-3">
         <ContactModal
           productId={product?.id || id}
@@ -224,20 +216,15 @@ export default async function ProductPage({
           buttonLabel="Message seller"
           className="min-w-[150px]"
         />
-        <Link
+        <a
           href={storeHref}
-          prefetch={false}
           className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+          aria-label="Visit store"
+          data-testid="visit-store-link"
         >
           Visit store
-        </Link>
+        </a>
       </section>
-
-      <ProductActions
-        kind="product"
-        id={product?.id || id}
-        storeHref={storeHref}
-      />
     </main>
   );
 }

@@ -81,16 +81,26 @@ export async function GET(req: NextRequest) {
     const viewerUserId = (session as any)?.user?.id as string | undefined;
 
     // Global best-effort rate limit (bucket per viewer + product)
-    const rl = await checkRateLimit(req.headers, {
-      name: "products_contact_reveal",
-      limit: 5,
-      windowMs: 60_000,
-      extraKey: `${viewerUserId ?? "anon"}:${listingId}`,
-    });
+    const rl =
+      (await checkRateLimit(req.headers, {
+        name: "products_contact_reveal",
+        limit: 5,
+        windowMs: 60_000,
+        extraKey: `${viewerUserId ?? "anon"}:${listingId}`,
+      }).catch((e: unknown) => {
+        // best-effort only; never 500 just because rate-limit infra is unhappy
+        // eslint-disable-next-line no-console
+        console.warn("[products/:id/contact] rate-limit error:", e);
+        return { ok: true, retryAfterSec: 0 };
+      })) as { ok: boolean; retryAfterSec?: number };
+
     if (!rl.ok) {
+      const retryAfterSec =
+        typeof rl.retryAfterSec === "number" ? rl.retryAfterSec : 60;
+
       return tooMany(
         "Please wait a moment before revealing more contacts.",
-        rl.retryAfterSec
+        retryAfterSec,
       );
     }
 
@@ -111,7 +121,8 @@ export async function GET(req: NextRequest) {
     const ip = getClientIp(req);
     const ua = req.headers.get("user-agent") || null;
     const referer = validUrl(req.headers.get("referer"));
-    void referer; // keep for future column if needed
+    void referer;
+    void ip;
 
     // Record the reveal (align with current Prisma schema: productId / viewerUserId / userAgent)
     prisma.contactReveal
