@@ -132,9 +132,8 @@ test.describe("Prod smoke: core public journeys", () => {
 
     expect(resp?.ok(), `GET ${url} should be OK`).toBe(true);
 
-    await expect(
-      page.getByRole("heading", { name: /product|item|listing/i }).first(),
-    ).toBeVisible();
+    // New layout: title is the product name, not literally "Product/Item/Listing"
+    await expect(page.locator("h1").first()).toBeVisible();
 
     await expect(page.locator("text=Application error")).toHaveCount(0);
 
@@ -157,7 +156,7 @@ test.describe("Prod smoke: core public journeys", () => {
       const hostBefore = new URL(page.url()).host;
 
       await Promise.all([
-        page.waitForLoadState("domcontentloaded"),
+        page.waitForURL(/\/store\//),
         storeLink.click(),
       ]);
 

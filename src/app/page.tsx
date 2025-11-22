@@ -195,7 +195,7 @@ export default async function Page({
         <SectionHeader
           as="h1"
           title="QwikSale"
-          subtitle="Kenya’s most trusted marketplace — buy & sell anything fast."
+          subtitle="Kenya’s most trusted marketplace, buy & sell anything fast."
           kicker="Welcome"
         />
       </section>
