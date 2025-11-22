@@ -1,4 +1,5 @@
-﻿import type { ReactNode } from "react";
+﻿// src/app/search/page.tsx
+import type { ReactNode } from "react";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";
 import NumberInputNoWheel from "@/app/components/ui/NumberInputNoWheel";
@@ -13,6 +14,9 @@ type SearchResultItem = {
   id: string;
   name: string;
   href: string;
+  imageUrl?: string | null;
+  categoryLabel?: string | null;
+  priceLabel?: string | null;
 };
 
 type Envelope<T> = {
@@ -181,6 +185,111 @@ async function fetchEnvelope<T>(
   }
 }
 
+/* ---------- normalization helpers to make cards look like home ---------- */
+
+function getPrimaryImage(raw: any): string | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const candidates: unknown[] = [
+    raw.image,
+    raw.imageUrl,
+    raw.primaryImage,
+    raw.coverImage,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c;
+  }
+
+  if (Array.isArray(raw.images) && raw.images.length > 0) {
+    const first = raw.images[0];
+    if (typeof first === "string" && first.trim()) return first;
+    if (first && typeof first.url === "string" && first.url.trim()) return first.url;
+  }
+
+  if (Array.isArray(raw.gallery) && raw.gallery.length > 0) {
+    const first = raw.gallery[0];
+    if (typeof first === "string" && first.trim()) return first;
+    if (first && typeof first.url === "string" && first.url.trim()) return first.url;
+  }
+
+  return null;
+}
+
+function getCategoryLabel(raw: any): string | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const catCandidates: unknown[] = [
+    raw.categoryName,
+    raw.category,
+    raw.categoryLabel,
+  ];
+  const subCandidates: unknown[] = [
+    raw.subcategoryName,
+    raw.subcategory,
+    raw.subcategoryLabel,
+  ];
+
+  const cat = catCandidates.find((v) => typeof v === "string" && v.trim());
+  const sub = subCandidates.find((v) => typeof v === "string" && v.trim());
+
+  if (cat && sub) return `${String(cat)} • ${String(sub)}`;
+  if (cat) return String(cat);
+  if (sub) return String(sub);
+  return null;
+}
+
+function getPriceLabel(raw: any, kind: "product" | "service"): string | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const display = raw.priceDisplay ?? raw.priceText ?? raw.displayPrice;
+  if (typeof display === "string" && display.trim()) return display;
+
+  const price = raw.price ?? raw.rate;
+  if (typeof price === "number" && Number.isFinite(price)) {
+    try {
+      return new Intl.NumberFormat("en-KE", {
+        style: "currency",
+        currency: "KES",
+        maximumFractionDigits: 0,
+      }).format(price);
+    } catch {
+      return `KES ${price.toLocaleString("en-KE")}`;
+    }
+  }
+
+  const priceType = raw.priceType ?? raw.pricingMode ?? raw.billingType;
+  if (
+    typeof priceType === "string" &&
+    priceType.toLowerCase().includes("contact")
+  ) {
+    return "Contact for price";
+  }
+
+  if (kind === "service") return "Contact for quote";
+  return null;
+}
+
+function buildResultItem(raw: any, kind: "product" | "service"): SearchResultItem {
+  const id = raw?.id ?? raw?.productId ?? raw?.serviceId;
+  const name = raw?.name ?? raw?.title ?? "Untitled";
+
+  const href =
+    kind === "product"
+      ? `/product/${encodeURIComponent(String(id))}`
+      : `/service/${encodeURIComponent(String(id))}`;
+
+  return {
+    kind,
+    id: String(id ?? ""),
+    name: String(name),
+    href,
+    imageUrl: getPrimaryImage(raw),
+    categoryLabel: getCategoryLabel(raw),
+    priceLabel: getPriceLabel(raw, kind),
+  };
+}
+
 /** Title above the form */
 function getHeaderTitle(type: string): string {
   switch (type) {
@@ -227,10 +336,9 @@ export default async function SearchPage({
 }) {
   const sp = await searchParams;
 
-  // type – keep it as a plain string to avoid TS over-narrowing
+  // type – keep it as a plain string union to avoid TS over-narrowing
   const rawType = (getParam(sp, "type") || "all").toLowerCase();
-  const type =
-    rawType === "product" || rawType === "service" ? rawType : "all";
+  const type = rawType === "product" || rawType === "service" ? rawType : "all";
 
   // core filters
   const q = (getParam(sp, "q") || "").trim();
@@ -289,7 +397,7 @@ export default async function SearchPage({
   const headerTitle = getHeaderTitle(type);
   const subtitle = getSubtitle(type, q);
 
-  // Always hit real APIs – no demo placeholders
+  // Always hit real APIs
   const qs = buildSearchQS({
     q,
     category,
@@ -310,21 +418,11 @@ export default async function SearchPage({
   if (type === "product") {
     const env = await fetchEnvelope<any>("product", qs, pageSize);
     total = env.total;
-    items = env.items.map((p: any): SearchResultItem => ({
-      kind: "product",
-      id: String(p.id),
-      name: String(p.name ?? p.title ?? "Untitled"),
-      href: `/product/${encodeURIComponent(String(p.id))}`,
-    }));
+    items = env.items.map((p: any) => buildResultItem(p, "product"));
   } else if (type === "service") {
     const env = await fetchEnvelope<any>("service", qs, pageSize);
     total = env.total;
-    items = env.items.map((s: any): SearchResultItem => ({
-      kind: "service",
-      id: String(s.id),
-      name: String(s.name ?? s.title ?? "Untitled"),
-      href: `/service/${encodeURIComponent(String(s.id))}`,
-    }));
+    items = env.items.map((s: any) => buildResultItem(s, "service"));
   } else {
     const [prodEnv, svcEnv] = await Promise.all([
       fetchEnvelope<any>("product", qs, pageSize),
@@ -333,18 +431,8 @@ export default async function SearchPage({
     total = (prodEnv.total || 0) + (svcEnv.total || 0);
 
     items = [
-      ...prodEnv.items.map((p: any): SearchResultItem => ({
-        kind: "product",
-        id: String(p.id),
-        name: String(p.name ?? p.title ?? "Untitled"),
-        href: `/product/${encodeURIComponent(String(p.id))}`,
-      })),
-      ...svcEnv.items.map((s: any): SearchResultItem => ({
-        kind: "service",
-        id: String(s.id),
-        name: String(s.name ?? s.title ?? "Untitled"),
-        href: `/service/${encodeURIComponent(String(s.id))}`,
-      })),
+      ...prodEnv.items.map((p: any) => buildResultItem(p, "product")),
+      ...svcEnv.items.map((s: any) => buildResultItem(s, "service")),
     ].slice(0, pageSize);
   }
 
@@ -569,21 +657,47 @@ export default async function SearchPage({
             No results yet. Try adjusting your filters.
           </div>
         ) : (
-          <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {items.map((r) => (
-              <li
-                key={`${r.kind}-${r.id}`}
-                className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 text-sm shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:bg-slate-800"
-              >
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  {r.kind === "product" ? "Product" : "Service"}
-                </div>
+              <li key={`${r.kind}-${r.id}`}>
                 <Link
                   href={r.href}
                   prefetch={false}
-                  className="font-medium text-[#161748] underline dark:text-[#39a0ca]"
+                  className="group block h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 shadow-sm hover:border-brandBlue/60 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-brandBlue/70 dark:hover:bg-slate-800 transition"
+                  aria-label={`${r.kind === "product" ? "Product" : "Service"}: ${r.name}`}
                 >
-                  {r.name}
+                  <div className="relative aspect-[4/3] overflow-hidden bg-slate-900/60">
+                    {r.imageUrl ? (
+                      <img
+                        src={r.imageUrl}
+                        alt={r.name}
+                        loading="lazy"
+                        className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        No photo
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      {r.kind === "product" ? "Product" : "Service"}
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                      {r.name}
+                    </div>
+                    {r.categoryLabel && (
+                      <div className="mt-0.5 line-clamp-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        {r.categoryLabel}
+                      </div>
+                    )}
+                    {r.priceLabel && (
+                      <div className="mt-2 text-sm font-semibold text-brandBlue dark:text-brandBlue">
+                        {r.priceLabel}
+                      </div>
+                    )}
+                  </div>
                 </Link>
               </li>
             ))}
