@@ -1,4 +1,3 @@
-// src/app/service/[id]/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -175,79 +174,123 @@ export default async function ServicePage({
   const storeHref = resolveStoreHref(service);
   const title = service?.name || "Service";
   const rateText = fmtKES(service?.price);
+  const locationText = service?.location || null;
 
   return (
-    <main className="container-page space-y-5 py-6">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">
-          <span className="sr-only">Service listing: </span>
-          {title}
-        </h1>
-      </div>
+    <main className="container-page space-y-6 py-6">
+      {/* Header */}
+      <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-brandBlue/80 dark:text-brandBlue">
+            Service
+          </p>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+            {title}
+          </h1>
 
-      <div className="space-x-3 text-sm text-gray-600 dark:text-slate-300">
-        <span>
-          ID:{" "}
-          <code className="font-mono" data-testid="service-id">
-            {id}
-          </code>
-        </span>
-        <span>Rate: {rateText}</span>
-        {service?.location && <span>Location: {service.location}</span>}
-      </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-slate-300">
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-semibold text-gray-900 dark:bg-slate-800 dark:text-slate-50">
+              {rateText}
+            </span>
+            {locationText && (
+              <span className="inline-flex items-center gap-1">
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                  aria-hidden="true"
+                />
+                <span>{locationText}</span>
+              </span>
+            )}
 
-      {/* Wrap the gallery so tests can target [data-gallery-wrap]; keep an overlay target */}
-      <div className="relative" data-gallery-wrap>
-        <div
-          className="relative aspect-[4/3] sm:aspect-[16/10]"
-          data-gallery-overlay="true"
-        >
-          <Gallery
-            images={toRender}
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 70vw, 960px"
-          />
-
-          {/* Hidden mirror so tests can read actual src/currentSrc */}
-          <ul hidden data-gallery-shadow="true">
-            {toRender.map((src, i) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <li key={`shadow:${i}`}>
-                <img src={src} alt="" data-gallery-image />
-              </li>
-            ))}
-          </ul>
-
-          <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-black/5 dark:ring-white/10" />
+            {/* Keep ID for tests but hide it visually */}
+            <span className="sr-only" data-testid="service-id">
+              {id}
+            </span>
+          </div>
         </div>
-      </div>
+      </header>
 
-      {service?.description && (
-        <section className="prose prose-sm max-w-none dark:prose-invert">
-          <p>{service.description}</p>
-        </section>
-      )}
+      {/* Main content */}
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        {/* Gallery */}
+        <div>
+          {/* Wrap the gallery so tests can target [data-gallery-wrap]; keep an overlay target */}
+          <div
+            className="relative overflow-hidden rounded-2xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            data-gallery-wrap
+          >
+            <div
+              className="relative aspect-[4/3] sm:aspect-[16/10]"
+              data-gallery-overlay="true"
+            >
+              <Gallery
+                images={toRender}
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 70vw, 960px"
+              />
 
-      {/* Single CTA row: Message provider + Visit store */}
-      <section className="mt-4 flex flex-wrap items-center gap-3">
-        <ContactModalService
-          serviceId={service?.id || id}
-          {...(service?.name ? { serviceName: service.name } : {})}
-          {...(service?.provider?.name
-            ? { fallbackName: service.provider.name }
-            : {})}
-          {...(service?.location ? { fallbackLocation: service.location } : {})}
-          buttonLabel="Message provider"
-          className="min-w-[170px]"
-        />
-        <Link
-          href={storeHref}
-          prefetch={false}
-          className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
-          aria-label="Visit store"
-          data-testid="visit-store-link"
-        >
-          Visit store
-        </Link>
+              {/* Hidden mirror so tests can read actual src/currentSrc */}
+              <ul hidden data-gallery-shadow="true">
+                {toRender.map((src, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <li key={`shadow:${i}`}>
+                    <img src={src} alt="" data-gallery-image />
+                  </li>
+                ))}
+              </ul>
+
+              <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-black/5 dark:ring-white/10" />
+            </div>
+          </div>
+        </div>
+
+        {/* Side panels */}
+        <div className="space-y-4">
+          {/* Description */}
+          <section className="rounded-xl border bg-white p-4 text-sm text-gray-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+              Description
+            </h2>
+            <p className="whitespace-pre-line">
+              {service?.description || "No description provided yet."}
+            </p>
+          </section>
+
+          {/* Contact */}
+          <section className="rounded-xl border bg-white p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+              Talk to the provider
+            </h2>
+            <p className="mb-3 text-xs text-gray-500 dark:text-slate-400">
+              Ask about availability, pricing, and any special requirements
+              before you book.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <ContactModalService
+                serviceId={service?.id || id}
+                {...(service?.name ? { serviceName: service.name } : {})}
+                {...(service?.provider?.name
+                  ? { fallbackName: service.provider.name }
+                  : {})}
+                {...(service?.location
+                  ? { fallbackLocation: service.location }
+                  : {})}
+                buttonLabel="Message provider"
+                className="btn-gradient-primary"
+              />
+
+              <Link
+                href={storeHref}
+                prefetch={false}
+                className="btn-outline"
+                aria-label="Visit store"
+                data-testid="visit-store-link"
+              >
+                Visit store
+              </Link>
+            </div>
+          </section>
+        </div>
       </section>
     </main>
   );

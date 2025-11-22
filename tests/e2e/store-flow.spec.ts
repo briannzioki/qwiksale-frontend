@@ -69,8 +69,9 @@ test.describe("Store flows", () => {
 
     const hostBefore = new URL(page.url()).host;
 
+    // Wait for actual navigation to /store/ instead of reusing the existing load state
     await Promise.all([
-      page.waitForLoadState("domcontentloaded"),
+      page.waitForURL(/\/store\//),
       storeLink.click(),
     ]);
 
