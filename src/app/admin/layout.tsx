@@ -1,148 +1,134 @@
 // src/app/admin/layout.tsx
+import type { Metadata } from "next";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { requireAdmin } from "@/app/lib/authz";
+import { AdminNav, type NavItem } from "@/app/admin/_components/AdminNav";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-export const fetchCache = "force-no-store";
-
-import type { Metadata, Viewport } from "next";
-import type { ReactNode } from "react";
-import Link from "next/link";
-import { requireAdmin } from "@/app/lib/authz";
 
 export const metadata: Metadata = {
   title: "Admin · QwikSale",
-  robots: {
-    index: false,
-    follow: false,
-    noarchive: true,
-    googleBot: {
-      index: false,
-      follow: false,
-      noimageindex: true,
-    },
-  },
+  description: "Admin tools for QwikSale moderators and team.",
+  robots: { index: false, follow: false },
+  alternates: { canonical: "/admin" },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#161748",
-};
-
-export default async function AdminLayout({
-  children,
-}: {
+type Props = {
   children: ReactNode;
-}) {
+};
+
+const EXTRA_ADMIN_ITEMS: readonly NavItem[] = [
+  {
+    href: "/admin/moderation",
+    label: "Moderation",
+    icon: "shield",
+  },
+  {
+    href: "/admin/reveals",
+    label: "Contact reveals",
+    icon: "eye",
+  },
+] as const;
+
+export default async function AdminLayout({ children }: Props) {
+  // Hard SSR gate – if this fails you go to /signin?callbackUrl=/admin
   await requireAdmin();
 
   return (
-    <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-dvh bg-slate-950 text-slate-100">
+      {/* Skip link for keyboard users */}
       <a
         href="#admin-main"
-        className="sr-only focus:not-sr-only focus:fixed focus:z-[100] focus:top-3 focus:left-3 focus:bg-white focus:text-[#161748] focus:px-3 focus:py-2 focus:rounded-lg focus:shadow"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white shadow"
       >
-        Skip to content
+        Skip to main content
       </a>
 
-      <header
-        className="sticky top-0 z-30 bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow"
-        aria-label="Admin header"
-      >
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="flex h-14 items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Link
-                href="/"
-                prefetch={false}
-                className="rounded-md bg-white/10 px-2 py-1 text-sm font-semibold hover:bg:white/15"
-                aria-label="Back to site"
-                title="Back to site"
-              >
-                Site
-              </Link>
-              <span className="text-lg font-extrabold tracking-tight">
-                Admin
-              </span>
+      {/* Top header */}
+      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/"
+              prefetch={false}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-900/80"
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span>Back to site</span>
+            </Link>
+            <div>
+              <div className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+                QwikSale
+              </div>
+              <h1 className="text-lg font-bold text-slate-50">
+                Admin console
+              </h1>
+              <p className="text-xs text-slate-400">
+                For moderators and trusted team members only.
+              </p>
             </div>
+          </div>
 
-            <details className="lg:hidden">
-              <summary className="list-none cursor-pointer rounded-md px-2 py-1 text-sm font-semibold hover:bg-white/15">
-                Menu
+          {/* Mobile nav (collapsible) */}
+          <div className="flex items-center gap-3 lg:hidden">
+            <details className="group relative">
+              <summary className="flex cursor-pointer list-none items-center gap-1 rounded-full border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-900/80">
+                <span>Admin menu</span>
+                <span
+                  aria-hidden
+                  className="transition-transform group-open:rotate-180"
+                >
+                  ▾
+                </span>
               </summary>
-              <nav
-                className="mt-2 grid gap-1 rounded-xl bg-white/10 p-2 backdrop-blur"
-                aria-label="Admin navigation"
-              >
-                <AdminLink href="/admin">Dashboard</AdminLink>
-                <AdminLink href="/admin/users">Users</AdminLink>
-                <AdminLink href="/admin/listings">Listings</AdminLink>
-              </nav>
+              <div className="absolute right-0 z-40 mt-2 w-56 rounded-xl border border-slate-800 bg-slate-950/95 p-2 shadow-lg backdrop-blur">
+                <AdminNav
+                  items={EXTRA_ADMIN_ITEMS}
+                  className="text-sm"
+                />
+              </div>
             </details>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-6 py-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="hidden lg:block">
-            <div className="sticky top-[4.5rem] space-y-4">
-              <nav
-                aria-label="Admin navigation"
-                className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-              >
-                <ul className="space-y-1">
-                  <li>
-                    <AdminLink href="/admin">Dashboard</AdminLink>
-                  </li>
-                  <li>
-                    <AdminLink href="/admin/users">Users</AdminLink>
-                  </li>
-                  <li>
-                    <AdminLink href="/admin/listings">Listings</AdminLink>
-                  </li>
-                </ul>
-              </nav>
+      {/* Body: sidebar + main */}
+      <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        {/* Sidebar (desktop) */}
+        <aside className="hidden w-60 shrink-0 lg:block">
+          <div className="sticky top-20 space-y-4">
+            <AdminNav items={EXTRA_ADMIN_ITEMS} />
+            <p className="text-[11px] leading-snug text-slate-500">
+              Tip: bookmark{" "}
+              <span className="font-mono text-slate-300">
+                /admin
+              </span>{" "}
+              or pin it for quick access to your tools.
+            </p>
+          </div>
+        </aside>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                Tip: use{" "}
-                <span className="font-semibold">Dashboard</span> for quick
-                metrics. Use{" "}
-                <span className="font-semibold">Listings</span> to feature or
-                unlist content.
-              </div>
-            </div>
-          </aside>
-
-          <main
-            id="admin-main"
-            role="main"
-            className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-          >
-            {children}
-          </main>
-        </div>
+        {/* Main content */}
+        <main
+          id="admin-main"
+          className="min-w-0 flex-1 space-y-6 rounded-2xl border border-slate-800 bg-slate-950/80 p-4 shadow-sm sm:p-6"
+        >
+          {children}
+        </main>
       </div>
 
-      <footer className="border-t border-slate-200 py-6 text-center text-xs text-slate-500 dark:border-slate-800">
-        QwikSale Admin • {new Date().getFullYear()}
+      {/* Footer */}
+      <footer className="border-t border-slate-900 bg-slate-950/90">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 text-xs text-slate-500 sm:px-6 lg:px-8">
+          <div>QwikSale admin · Internal use only</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span>Audit logging enabled where applicable.</span>
+          </div>
+        </div>
       </footer>
     </div>
-  );
-}
-
-function AdminLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
-      aria-label={typeof children === "string" ? children : undefined}
-    >
-      {children}
-    </a>
   );
 }

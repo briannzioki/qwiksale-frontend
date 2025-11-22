@@ -1,3 +1,4 @@
+// src/app/admin/users/RoleActions.client.tsx
 "use client";
 
 import * as React from "react";
@@ -34,10 +35,12 @@ export default function RoleActions({
   isSelf: boolean;
 }) {
   const [pending, setPending] = React.useState(false);
-  const [optimisticRole, setOptimisticRole] = React.useState<Role>(currentRole);
-  const [toast, setToast] = React.useState<{ type: "success" | "error"; message: string } | null>(
-    null
-  );
+  const [optimisticRole, setOptimisticRole] =
+    React.useState<Role>(currentRole);
+  const [toast, setToast] = React.useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   React.useEffect(() => {
     if (!toast) return;
@@ -50,7 +53,10 @@ export default function RoleActions({
 
     // Guard: SUPERADMIN can't demote self via UI
     if (isSelf && optimisticRole === "SUPERADMIN" && next !== "SUPERADMIN") {
-      setToast({ type: "error", message: "You cannot demote yourself from SUPERADMIN." });
+      setToast({
+        type: "error",
+        message: "You cannot demote yourself from SUPERADMIN.",
+      });
       return;
     }
 
@@ -68,12 +74,16 @@ export default function RoleActions({
     setPending(true);
 
     try {
-      const r = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ role: next }),
-      });
+      const r = await fetch(
+        `/api/admin/users/${encodeURIComponent(userId)}/role`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          credentials: "same-origin",
+          body: JSON.stringify({ role: next }),
+        },
+      );
 
       if (!r.ok) {
         let msg = `HTTP ${r.status}`;
@@ -88,10 +98,18 @@ export default function RoleActions({
           category: "admin.action",
           level: "error",
           message: "role.change.failure",
-          data: { targetUserId: userId, from: prev, to: next, status: r.status },
+          data: {
+            targetUserId: userId,
+            from: prev,
+            to: next,
+            status: r.status,
+          },
         });
 
-        setToast({ type: "error", message: `Failed to update role: ${msg}` });
+        setToast({
+          type: "error",
+          message: `Failed to update role: ${msg}`,
+        });
         return;
       }
 
@@ -102,11 +120,17 @@ export default function RoleActions({
         data: { targetUserId: userId, from: prev, to: next },
       });
 
-      setToast({ type: "success", message: `Role updated → ${next}` });
+      setToast({
+        type: "success",
+        message: `Role updated → ${next}`,
+      });
     } catch (err) {
       setOptimisticRole(prev);
       sentry.captureException(err, { tags: { area: "admin" } });
-      setToast({ type: "error", message: "Network error updating role." });
+      setToast({
+        type: "error",
+        message: "Network error updating role.",
+      });
     } finally {
       setPending(false);
     }
@@ -141,7 +165,9 @@ export default function RoleActions({
         title={title}
         aria-pressed={active}
         aria-label={active ? `${role} (current)` : `Set role to ${role}`}
-        className={`${base} ${palette[tone]} ${active ? "font-semibold ring-1 ring-current" : ""}`}
+        className={`${base} ${palette[tone]} ${
+          active ? "font-semibold ring-1 ring-current" : ""
+        }`}
         onClick={() => setRole(role)}
         disabled={pending || active}
       >
@@ -154,9 +180,17 @@ export default function RoleActions({
     <>
       <div className="flex flex-wrap items-center gap-1.5" aria-busy={pending}>
         <Btn role="USER" tone="slate" title="Set role to USER" />
-        <Btn role="MODERATOR" tone="amber" title="Set role to MODERATOR" />
+        <Btn
+          role="MODERATOR"
+          tone="amber"
+          title="Set role to MODERATOR"
+        />
         <Btn role="ADMIN" tone="green" title="Set role to ADMIN" />
-        <Btn role="SUPERADMIN" tone="indigo" title="Set role to SUPERADMIN" />
+        <Btn
+          role="SUPERADMIN"
+          tone="indigo"
+          title="Set role to SUPERADMIN"
+        />
       </div>
 
       {toast && (
@@ -164,7 +198,9 @@ export default function RoleActions({
           role="status"
           aria-live="polite"
           className={`fixed bottom-4 right-4 z-[2000] max-w-sm rounded-lg px-3 py-2 text-sm shadow-lg ${
-            toast.type === "success" ? "bg-green-600 text-white" : "bg-rose-600 text-white"
+            toast.type === "success"
+              ? "bg-green-600 text-white"
+              : "bg-rose-600 text-white"
           }`}
         >
           {toast.message}
@@ -173,4 +209,3 @@ export default function RoleActions({
     </>
   );
 }
-

@@ -77,6 +77,8 @@ const REQUIRED_ITEMS: NavItem[] = [
   },
 ];
 
+export const ADMIN_NAV_REQUIRED_ITEMS: readonly NavItem[] = REQUIRED_ITEMS;
+
 type Props = {
   /**
    * Optional extra nav items.
@@ -132,8 +134,7 @@ export function AdminNav({ items, className = "" }: Props) {
         const inactive =
           "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";
         const activeCls =
-          "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200/60 " +
-          "dark:bg-indigo-950/40 dark:text-indigo-200 dark:ring-indigo-800/50";
+          "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200/60 dark:bg-indigo-950/40 dark:text-indigo-200 dark:ring-indigo-800/50";
 
         return (
           <Link

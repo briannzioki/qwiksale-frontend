@@ -24,13 +24,16 @@ test.describe("Admin guardrails", () => {
 
         // Top-level admin shell should render
         await expect(
-          page.getByRole("heading", { name: /admin/i }),
+          page.getByRole("heading", { name: "Admin console" }),
         ).toBeVisible();
 
         // Route-specific heading (Users/Listings/etc.)
-        const heading = page
-          .getByRole("heading", { name: /users|listings|moderation|admin/i })
-          .first();
+        const routeHeadingName =
+          route === "/admin/users"
+            ? "Admin · Users"
+            : "Admin · Listings";
+
+        const heading = page.getByRole("heading", { name: routeHeadingName });
         await expect(heading).toBeVisible();
 
         // No Next.js error overlays

@@ -8,7 +8,6 @@ import type { Prisma } from "@prisma/client";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { prisma } from "@/app/lib/prisma";
-import { requireAdmin } from "@/app/lib/authz";
 
 export const metadata: Metadata = {
   title: "Contact Reveals · QwikSale",
@@ -31,7 +30,11 @@ function getStr(sp: SafeSearchParams, key: string): string | undefined {
   return undefined;
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
   let tid: ReturnType<typeof setTimeout> | null = null;
   const t = new Promise<T>((resolve) => {
     tid = setTimeout(() => resolve(fallback), ms);
@@ -64,8 +67,7 @@ export default async function AdminRevealsPage({
 }: {
   searchParams: Promise<SafeSearchParams>;
 }) {
-  await requireAdmin(); // strict SSR gate
-
+  // Admin gate enforced once in /admin/layout.
   const sp = (await searchParams) ?? {};
   const qRaw = (getStr(sp, "q") || "").trim();
   const q = qRaw.length > 120 ? qRaw.slice(0, 120) : qRaw;
@@ -74,7 +76,7 @@ export default async function AdminRevealsPage({
   const takeNum = clamp(
     Number.isFinite(Number(takeStr)) ? Number(takeStr) : 200,
     20,
-    1000
+    1000,
   );
 
   let where: Prisma.ContactRevealWhereInput | undefined;
@@ -107,7 +109,7 @@ export default async function AdminRevealsPage({
           return [] as RevealWithProduct[];
         }),
       1200,
-      []
+      [],
     );
   } catch {
     logs = [];
@@ -137,8 +139,8 @@ export default async function AdminRevealsPage({
   const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
 
   return (
-    <div className="mx-auto max-w-6xl p-6 space-y-4">
-      <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+    <div className="mx-auto max-w-6xl space-y-4 p-6">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-extrabold">Contact Reveals</h1>
@@ -166,7 +168,10 @@ export default async function AdminRevealsPage({
         </div>
       </div>
 
-      <form className="flex flex-col gap-2 sm:flex-row" aria-label="Filter reveals">
+      <form
+        className="flex flex-col gap-2 sm:flex-row"
+        aria-label="Filter reveals"
+      >
         <input
           name="q"
           defaultValue={q}
@@ -250,7 +255,11 @@ export default async function AdminRevealsPage({
                         <span className="text-gray-500">guest</span>
                       )}
                     </Td>
-                    <Td>{r.ip || <span className="text-gray-400">—</span>}</Td>
+                    <Td>
+                      {r.ip || (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </Td>
                     <Td className="max-w-[420px]">
                       <span className="line-clamp-2 break-all text-gray-700 dark:text-slate-200">
                         {r.userAgent || "—"}
@@ -266,7 +275,8 @@ export default async function AdminRevealsPage({
 
       <p className="text-xs text-gray-500 dark:text-slate-400">
         Showing {logs.length} of latest reveals
-        {q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on the server.
+        {q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on
+        the server.
       </p>
     </div>
   );
@@ -275,6 +285,12 @@ export default async function AdminRevealsPage({
 function Th({ children }: { children: ReactNode }) {
   return <th className="px-3 py-2">{children}</th>;
 }
-function Td({ children, className }: { children: ReactNode; className?: string }) {
+function Td({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return <td className={`px-3 py-2 ${className ?? ""}`}>{children}</td>;
 }

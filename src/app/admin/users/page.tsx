@@ -1,3 +1,4 @@
+// src/app/admin/users/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,16 +34,32 @@ const SSR_TIMEOUT_MS = 1200;
 const FETCH_TIMEOUT_MS = 2500;
 const PAGE_SIZE = 50;
 
-function withTimeout<T>(p: Promise<T>, ms: number, fallback: T | (() => T)): Promise<T> {
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  fallback: T | (() => T),
+): Promise<T> {
   return Promise.race([
     p,
     new Promise<T>((resolve) =>
-      setTimeout(() => resolve(typeof fallback === "function" ? (fallback as any)() : fallback), ms),
+      setTimeout(
+        () =>
+          resolve(
+            typeof fallback === "function"
+              ? (fallback as any)()
+              : fallback,
+          ),
+        ms,
+      ),
     ),
   ]);
 }
 
-async function fetchWithTimeout(input: string, init: RequestInit, ms: number) {
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  ms: number,
+) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), ms);
   try {
@@ -55,9 +72,10 @@ async function fetchWithTimeout(input: string, init: RequestInit, ms: number) {
 const fmtDateKE = (iso?: string | null) => {
   if (!iso) return "—";
   try {
-    return new Intl.DateTimeFormat("en-KE", { dateStyle: "medium", timeZone: "Africa/Nairobi" }).format(
-      new Date(iso),
-    );
+    return new Intl.DateTimeFormat("en-KE", {
+      dateStyle: "medium",
+      timeZone: "Africa/Nairobi",
+    }).format(new Date(iso));
   } catch {
     return new Date(iso!).toLocaleDateString();
   }
@@ -164,7 +182,9 @@ export default async function Page({
     const roleOk = role === "any" ? true : r === role;
     const qOk =
       !lowered ||
-      [u.id, u.email, u.name, u.username].some((x) => String(x ?? "").toLowerCase().includes(lowered));
+      [u.id, u.email, u.name, u.username].some((x) =>
+        String(x ?? "").toLowerCase().includes(lowered),
+      );
     return roleOk && qOk;
   });
 
@@ -221,11 +241,20 @@ export default async function Page({
       )}
 
       {/* Filters */}
-      <form method="GET" action="/admin/users" className="rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <form
+        method="GET"
+        action="/admin/users"
+        className="rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-8">
             <label className="label">Search</label>
-            <input name="q" defaultValue={q} placeholder="ID, email, name, username…" className="input" />
+            <input
+              name="q"
+              defaultValue={q}
+              placeholder="ID, email, name, username…"
+              className="input"
+            />
           </div>
           <div className="md:col-span-4">
             <label className="label">Role</label>
@@ -257,11 +286,16 @@ export default async function Page({
         </div>
 
         {pageRows.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-gray-600 dark:text-slate-300">No users found.</div>
+          <div className="px-4 py-6 text-sm text-gray-600 dark:text-slate-300">
+            No users found.
+          </div>
         ) : (
           <>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
+                <caption className="sr-only">
+                  Admin user list with roles, created date, and actions
+                </caption>
                 <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800/50 dark:text-slate-300">
                   <tr>
                     <Th>ID</Th>
@@ -282,7 +316,10 @@ export default async function Page({
                       | "SUPERADMIN";
 
                     return (
-                      <tr key={u.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60">
+                      <tr
+                        key={u.id}
+                        className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60"
+                      >
                         <Td className="font-mono text-xs">{u.id}</Td>
                         <Td>{u.email ?? "—"}</Td>
                         <Td>{u.name ?? "—"}</Td>
@@ -302,7 +339,13 @@ export default async function Page({
                         <Td>
                           <Badge
                             tone={
-                              r === "SUPERADMIN" ? "indigo" : r === "ADMIN" ? "green" : r === "MODERATOR" ? "amber" : "slate"
+                              r === "SUPERADMIN"
+                                ? "indigo"
+                                : r === "ADMIN"
+                                  ? "green"
+                                  : r === "MODERATOR"
+                                    ? "amber"
+                                    : "slate"
                             }
                           >
                             {r}
@@ -311,7 +354,11 @@ export default async function Page({
                         <Td>{fmtDateKE(u.createdAt)}</Td>
                         {viewerIsSuper ? (
                           <Td>
-                            <RoleActions userId={u.id} currentRole={r} isSelf={viewerId === u.id} />
+                            <RoleActions
+                              userId={u.id}
+                              currentRole={r}
+                              isSelf={viewerId === u.id}
+                            />
                           </Td>
                         ) : null}
                       </tr>
@@ -322,50 +369,78 @@ export default async function Page({
             </div>
 
             {/* Pagination */}
-            <nav className="flex items-center justify-between border-t px-4 py-3 text-sm dark:border-slate-800" aria-label="Pagination">
+            <nav
+              className="flex items-center justify-between border-t px-4 py-3 text-sm dark:border-slate-800"
+              aria-label="Pagination"
+            >
               <Link
-                href={safePage > 1 ? keepQuery("/admin/users", sp, { page: String(safePage - 1) }) : "#"}
+                href={
+                  safePage > 1
+                    ? keepQuery("/admin/users", sp, {
+                        page: String(safePage - 1),
+                      })
+                    : "#"
+                }
                 aria-disabled={safePage <= 1}
                 className={`rounded border px-3 py-1 transition ${
-                  safePage > 1 ? "hover:shadow dark:border-slate-800" : "opacity-50 dark:border-slate-800"
+                  safePage > 1
+                    ? "hover:shadow dark:border-slate-800"
+                    : "opacity-50 dark:border-slate-800"
                 }`}
               >
                 ← Prev
               </Link>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(7, totalPages) }).map((_, i) => {
-                  const half = 3;
-                  let p = i + 1;
+                {Array.from({ length: Math.min(7, totalPages) }).map(
+                  (_, i) => {
+                    const half = 3;
+                    let p = i + 1;
 
-                  if (totalPages > 7) {
-                    const start = Math.max(1, Math.min(safePage - half, totalPages - 6));
-                    p = start + i;
-                  }
+                    if (totalPages > 7) {
+                      const start = Math.max(
+                        1,
+                        Math.min(safePage - half, totalPages - 6),
+                      );
+                      p = start + i;
+                    }
 
-                  const isCurrent = p === safePage;
+                    const isCurrent = p === safePage;
 
-                  return (
-                    <Link
-                      key={p}
-                      href={keepQuery("/admin/users", sp, { page: String(p) })}
-                      prefetch={false}
-                      aria-current={isCurrent ? "page" : undefined}
-                      className={`rounded px-2 py-1 ${
-                        isCurrent ? "bg-[#161748] text-white" : "hover:bg-black/5 dark:hover:bg-white/10"
-                      }`}
-                    >
-                      {p}
-                    </Link>
-                  );
-                })}
+                    return (
+                      <Link
+                        key={p}
+                        href={keepQuery("/admin/users", sp, {
+                          page: String(p),
+                        })}
+                        prefetch={false}
+                        aria-current={isCurrent ? "page" : undefined}
+                        className={`rounded px-2 py-1 ${
+                          isCurrent
+                            ? "bg-[#161748] text-white"
+                            : "hover:bg-black/5 dark:hover:bg-white/10"
+                        }`}
+                      >
+                        {p}
+                      </Link>
+                    );
+                  },
+                )}
               </div>
 
               <Link
-                href={safePage < totalPages ? keepQuery("/admin/users", sp, { page: String(safePage + 1) }) : "#"}
+                href={
+                  safePage < totalPages
+                    ? keepQuery("/admin/users", sp, {
+                        page: String(safePage + 1),
+                      })
+                    : "#"
+                }
                 aria-disabled={safePage >= totalPages}
                 className={`rounded border px-3 py-1 transition ${
-                  safePage < totalPages ? "hover:shadow dark:border-slate-800" : "opacity-50 dark:border-slate-800"
+                  safePage < totalPages
+                    ? "hover:shadow dark:border-slate-800"
+                    : "opacity-50 dark:border-slate-800"
                 }`}
               >
                 Next →
@@ -379,11 +454,29 @@ export default async function Page({
 }
 
 function Th({ children }: { children: ReactNode }) {
-  return <th className="whitespace-nowrap px-4 py-2 text-left font-semibold">{children}</th>;
+  return (
+    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold">
+      {children}
+    </th>
+  );
 }
 
-function Td({ children, className }: { children: ReactNode; className?: string }) {
-  return <td className={`whitespace-nowrap px-4 py-2 align-middle ${className ?? ""}`}>{children}</td>;
+function Td({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <td
+      className={`whitespace-nowrap px-4 py-2 align-middle ${
+        className ?? ""
+      }`}
+    >
+      {children}
+    </td>
+  );
 }
 
 function Badge({
@@ -394,11 +487,22 @@ function Badge({
   tone?: "slate" | "green" | "amber" | "rose" | "indigo";
 }) {
   const map: Record<string, string> = {
-    slate: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-    green: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
-    amber: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-    rose: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
-    indigo: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+    slate:
+      "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    green:
+      "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
+    amber:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+    rose:
+      "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
+    indigo:
+      "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
   };
-  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${map[tone]}`}>{children}</span>;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${map[tone]}`}
+    >
+      {children}
+    </span>
+  );
 }
