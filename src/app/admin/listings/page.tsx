@@ -6,6 +6,7 @@ export const revalidate = 0;
 import type { Metadata } from "next";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";
+import { prisma } from "@/app/lib/prisma";
 
 export const metadata: Metadata = {
   title: "Listings · QwikSale Admin",
@@ -34,6 +35,7 @@ type Listing = {
 
 const FETCH_TIMEOUT_MS = 2500;
 const PAGE_SIZE = 50;
+const API_LIMIT = 200;
 
 function withTimeout<T>(
   p: Promise<T>,
@@ -155,6 +157,112 @@ function normalizeListingsPayload(payload: unknown): Listing[] {
   return [];
 }
 
+// Fallback: direct Prisma query if /api/admin/listings fails or returns 0 rows.
+async function fetchListingsFallback(opts: {
+  q: string;
+  type: "any" | "product" | "service";
+  featured: "any" | "yes" | "no";
+  limit: number;
+}): Promise<Listing[]> {
+  const { q, type, featured, limit } = opts;
+
+  const baseWhere: Record<string, unknown> = {};
+  if (featured === "yes") baseWhere["featured"] = true;
+  if (featured === "no") baseWhere["featured"] = false;
+  if (q) {
+    const like = { contains: q, mode: "insensitive" as const };
+    baseWhere["OR"] = [
+      { name: like },
+      { sellerName: like } as any,
+    ];
+  }
+
+  const orderBy = [
+    { createdAt: "desc" as const },
+    { id: "desc" as const },
+  ];
+
+  const wantsProduct = type === "any" || type === "product";
+  const wantsService = type === "any" || type === "service";
+
+  const split =
+    wantsProduct && wantsService ? Math.max(1, Math.floor(limit / 2)) : limit;
+  const takeProducts = wantsProduct ? split : 0;
+  const takeServices = wantsService ? limit - takeProducts : 0;
+
+  const [productRows, serviceRows] = await Promise.all([
+    wantsProduct
+      ? prisma.product.findMany({
+          where: baseWhere,
+          orderBy,
+          take: takeProducts,
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            featured: true,
+            createdAt: true,
+            sellerId: true as any,
+            sellerName: true as any,
+            seller: { select: { id: true, name: true } },
+          },
+        })
+      : Promise.resolve([] as any[]),
+    wantsService
+      ? prisma.service.findMany({
+          where: baseWhere,
+          orderBy,
+          take: takeServices,
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            featured: true,
+            createdAt: true,
+            sellerId: true as any,
+            sellerName: true as any,
+            seller: { select: { id: true, name: true } },
+          },
+        })
+      : Promise.resolve([] as any[]),
+  ]);
+
+  const rows: Listing[] = [
+    ...productRows.map((p: any) => ({
+      id: String(p.id),
+      kind: "product" as const,
+      name: String(p.name ?? ""),
+      price: typeof p.price === "number" ? p.price : null,
+      featured: typeof p.featured === "boolean" ? p.featured : null,
+      createdAt:
+        p.createdAt instanceof Date
+          ? p.createdAt.toISOString()
+          : p.createdAt
+          ? String(p.createdAt)
+          : null,
+      sellerName: (p.sellerName as string) ?? p.seller?.name ?? null,
+      sellerId: (p.sellerId as string) ?? p.seller?.id ?? null,
+    })),
+    ...serviceRows.map((s: any) => ({
+      id: String(s.id),
+      kind: "service" as const,
+      name: String(s.name ?? ""),
+      price: typeof s.price === "number" ? s.price : null,
+      featured: typeof s.featured === "boolean" ? s.featured : null,
+      createdAt:
+        s.createdAt instanceof Date
+          ? s.createdAt.toISOString()
+          : s.createdAt
+          ? String(s.createdAt)
+          : null,
+      sellerName: (s.sellerName as string) ?? s.seller?.name ?? null,
+      sellerId: (s.sellerId as string) ?? s.seller?.id ?? null,
+    })),
+  ];
+
+  return rows;
+}
+
 /**
  * Admin-only listings view.
  * Access enforced by:
@@ -166,11 +274,14 @@ export default async function Page({ searchParams }: PageProps) {
 
   const q = (getParam(sp, "q") || "").trim();
   const type = (getParam(sp, "type") || "any") as "any" | "product" | "service";
-  const featured = (getParam(sp, "featured") || "any") as "any" | "yes" | "no";
+  const featured = (getParam(sp, "featured") || "any") as
+    | "any"
+    | "yes"
+    | "no";
   const page = Math.max(1, Number(getParam(sp, "page") || 1));
 
   const qs = new URLSearchParams();
-  qs.set("limit", "200");
+  qs.set("limit", String(API_LIMIT));
   if (q) qs.set("q", q);
   if (type !== "any") qs.set("type", type);
   if (featured !== "any") {
@@ -179,6 +290,7 @@ export default async function Page({ searchParams }: PageProps) {
 
   let rows: Listing[] | null = null;
   let lastStatus = 0;
+  let hadApiError = false;
 
   try {
     const res = await fetchWithTimeout(
@@ -200,16 +312,32 @@ export default async function Page({ searchParams }: PageProps) {
     rows = normalizeListingsPayload(json);
   } catch {
     rows = null;
+    hadApiError = true;
+  }
+
+  let source: Listing[] = Array.isArray(rows) ? rows : [];
+  let hadFallbackError = false;
+
+  if (source.length === 0) {
+    try {
+      source = await fetchListingsFallback({
+        q,
+        type,
+        featured,
+        limit: API_LIMIT,
+      });
+    } catch {
+      hadFallbackError = true;
+    }
   }
 
   const softError =
-    rows === null
+    hadApiError && hadFallbackError
       ? lastStatus === 403
         ? "You need admin access to view listings."
         : "Failed to load listings. Showing an empty list."
       : null;
 
-  const source = Array.isArray(rows) ? rows : [];
   const total = source.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -454,7 +582,7 @@ export default async function Page({ searchParams }: PageProps) {
                         className={`rounded px-2 py-1 ${
                           isCurrent
                             ? "bg-[#161748] text-white"
-                            : "hover:bg-black/5 dark:hover:bg-white/10"
+                            : "hover:bg-black/5 dark:hover:bg:white/10"
                         }`}
                       >
                         {p}
