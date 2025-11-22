@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import UserAvatar from "@/app/components/UserAvatar";
-import SectionHeader from "@/app/components/SectionHeader";
 import ListingCard from "@/app/components/ListingCard";
 import { getSessionUser } from "@/app/lib/authz";
 
@@ -132,34 +131,33 @@ export default async function DashboardPage({
       // Explicit soft-error surface for guardrail tests
       return (
         <main
-          className="p-6"
+          className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
           data-soft-error="dashboard"
           data-e2e="dashboard-soft-error"
         >
-          <h1 className="text-xl font-semibold">
-            We hit a dashboard error
-          </h1>
-          <p className="mt-2 text-sm opacity-80">
-            This is a simulated soft error for guardrail testing. You can
-            refresh or navigate away.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <Link href="/dashboard" prefetch={false} className="btn-outline">
-              Retry
-            </Link>
-            <Link href="/" prefetch={false} className="btn-outline">
-              Home
-            </Link>
-            <Link href="/help" prefetch={false} className="btn-outline">
-              Help Center
-            </Link>
+          <div className="mx-auto max-w-6xl">
+            <h1 className="text-xl font-semibold">We hit a dashboard error</h1>
+            <p className="mt-2 text-sm opacity-80">
+              This is a simulated soft error for guardrail testing. You can
+              refresh or navigate away.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <Link href="/dashboard" prefetch={false} className="btn-outline">
+                Retry
+              </Link>
+              <Link href="/" prefetch={false} className="btn-outline">
+                Home
+              </Link>
+              <Link href="/help" prefetch={false} className="btn-outline">
+                Help Center
+              </Link>
+            </div>
           </div>
         </main>
       );
     }
 
-    // Server-side cookie hint: if *any* auth-session cookie exists, treat this
-    // as an "authed hint" even if getSessionUser() glitches.
+    // Server-side cookie hint
     const cookieStore = await cookies();
     const hasAuthCookie = cookieStore.getAll().some((c) => {
       const name = (c.name ?? "").toLowerCase();
@@ -171,7 +169,6 @@ export default async function DashboardPage({
       );
     });
 
-    // Canonical session helper.
     const viewer = await getSessionUser();
     const userId: string | null =
       viewer?.id != null ? String(viewer.id) : null;
@@ -179,47 +176,52 @@ export default async function DashboardPage({
     const isGuest = !userId && !hasAuthCookie;
     const isAuthedOrHinted = !!userId || hasAuthCookie;
 
-    // True guest / unauthenticated: do NOT redirect. Render a stable CTA with a
-    // "Dashboard" heading and explicit sign-in link (for guardrail tests).
+    // True guest / unauthenticated: soft CTA instead of redirect
     if (isGuest) {
       return (
-        <main className="space-y-3 p-6" data-e2e="dashboard-guest">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-sm">
-              Something went wrong loading your dashboard or your session has
-              expired. Please{" "}
-              <Link
-                href="/signin?callbackUrl=%2Fdashboard"
-                prefetch={false}
-                className="underline"
-              >
-                sign in
-              </Link>{" "}
-              to view your dashboard.
-            </p>
+        <main className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16">
+          <div
+            className="mx-auto flex max-w-6xl flex-col gap-4"
+            data-e2e="dashboard-guest"
+          >
+            <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
+            <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <p className="text-sm">
+                Something went wrong loading your dashboard or your session has
+                expired. Please{" "}
+                <Link
+                  href="/signin?callbackUrl=%2Fdashboard"
+                  prefetch={false}
+                  className="underline"
+                >
+                  sign in
+                </Link>{" "}
+                to view your dashboard.
+              </p>
+            </div>
           </div>
         </main>
       );
     }
 
     // Limbo state: cookies say "authed" but we have no userId.
-    // For prod.no-auto-logout, this must NOT show a "Sign in" link.
     if (!userId && hasAuthCookie) {
       return (
         <main
-          className="space-y-3 p-6"
+          className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
           data-soft-error="dashboard"
           data-e2e="dashboard-soft-error"
         >
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-sm">
-              We couldn&apos;t fully load your account details right now, but
-              your session appears to be active. Please refresh this page or
-              navigate to another section; your account menu in the header
-              should remain available.
-            </p>
+          <div className="mx-auto flex max-w-6xl flex-col gap-4">
+            <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
+            <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <p className="text-sm">
+                We couldn&apos;t fully load your account details right now, but
+                your session appears to be active. Please refresh this page or
+                navigate to another section; your account menu in the header
+                should remain available.
+              </p>
+            </div>
           </div>
         </main>
       );
@@ -248,47 +250,49 @@ export default async function DashboardPage({
 
     // Data soft error (no user row / timeout)
     if (!me) {
-      // If we have any auth hint, DO NOT render a "Sign in" link; treat it
-      // as a soft data error that should not look like a logout.
       if (isAuthedOrHinted) {
         return (
           <main
-            className="space-y-3 p-6"
+            className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
             data-soft-error="dashboard"
             data-e2e="dashboard-soft-error"
           >
-            <h1 className="text-2xl font-bold">Dashboard</h1>
-            <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-              <p className="text-sm">
-                We couldn&apos;t load your account details. Your session appears
-                to be active, but the dashboard data failed to load. Please
-                refresh this page. If this keeps happening, contact support.
-              </p>
+            <div className="mx-auto flex max-w-6xl flex-col gap-4">
+              <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
+              <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <p className="text-sm">
+                  We couldn&apos;t load your account details. Your session
+                  appears to be active, but the dashboard data failed to load.
+                  Please refresh this page. If this keeps happening, contact
+                  support.
+                </p>
+              </div>
             </div>
           </main>
         );
       }
 
-      // Extremely rare: no user, no auth hint – fall back to guest-style CTA.
       return (
         <main
-          className="space-y-3 p-6"
+          className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
           data-soft-error="dashboard"
           data-e2e="dashboard-soft-error"
         >
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-sm">
-              We couldn&apos;t load your account. Please{" "}
-              <Link
-                href="/signin?callbackUrl=%2Fdashboard"
-                prefetch={false}
-                className="underline"
-              >
-                sign in
-              </Link>{" "}
-              again.
-            </p>
+          <div className="mx-auto flex max-w-6xl flex-col gap-4">
+            <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
+            <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <p className="text-sm">
+                We couldn&apos;t load your account. Please{" "}
+                <Link
+                  href="/signin?callbackUrl=%2Fdashboard"
+                  prefetch={false}
+                  className="underline"
+                >
+                  sign in
+                </Link>{" "}
+                again.
+              </p>
+            </div>
           </div>
         </main>
       );
@@ -438,136 +442,161 @@ export default async function DashboardPage({
     const subLabel = (me.subscription ?? "FREE").toUpperCase();
 
     return (
-      <main className="space-y-6 p-6">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+      <main className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6">
+          {/* Page title + hero */}
+          <header className="flex flex-col gap-4">
+            <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
 
-        <SectionHeader
-          as="h2"
-          title={
-            <span className="flex items-center gap-3">
-              <UserAvatar
-                src={me.image ?? undefined}
-                alt={me.name || me.email || "You"}
-                size={40}
-              />
-              <span>
-                Welcome{me.name ? `, ${me.name}` : ""} 👋
-              </span>
-            </span>
-          }
-          subtitle="Manage your listings, favorites, and account."
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-white/15 px-3 py-1 text-sm text-white">
-                Subscription:{" "}
-                <span className="font-semibold">{subLabel}</span>
-              </span>
-              <Link
-                href="/account/profile"
-                prefetch={false}
-                className="btn-gradient-primary text-sm"
-                title="Edit account"
-              >
-                Edit Account
-              </Link>
-              {subLabel === "FREE" && (
-                <Link
-                  href="/settings/billing"
-                  prefetch={false}
-                  className="btn-gradient-accent text-sm"
-                >
-                  Upgrade
-                </Link>
-              )}
-            </div>
-          }
-        />
-
-        <div className="flex flex-wrap gap-3">
-          <Link href="/sell" prefetch={false} className="btn-outline">
-            + Post a Listing
-          </Link>
-          <Link href="/saved" prefetch={false} className="btn-outline">
-            View Saved
-          </Link>
-          <Link
-            href="/settings/billing"
-            prefetch={false}
-            className="btn-outline"
-          >
-            Billing & Subscription
-          </Link>
-          <a
-            href="/api/auth/signout"
-            className="btn-outline ml-auto"
-            rel="nofollow"
-          >
-            Sign out
-          </a>
-        </div>
-
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric title="My Listings" value={myListingsCount} />
-          <Metric title="My Favorites" value={favoritesCount} />
-          <Metric title="New in last 7 days" value={newLast7Days} />
-          <Metric
-            title="Likes on my listings"
-            value={likesOnMyListings}
-          />
-        </section>
-
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">
-              Your Recent Listings
-            </h2>
-            <Link
-              href="/sell"
-              prefetch={false}
-              className="text-sm text-[#39a0ca] underline"
+            <section
+              aria-label="Account overview"
+              className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#161748] via-[#1b244f] to-[#39a0ca] p-6 shadow-lg shadow-black/25 ring-1 ring-white/10"
             >
-              Post another →
-            </Link>
-          </div>
+              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-4">
+                  <UserAvatar
+                    src={me.image ?? undefined}
+                    alt={me.name || me.email || "You"}
+                    size={56}
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-100/80">
+                      Welcome 👋
+                    </p>
+                    <p className="text-xl font-semibold text-white md:text-2xl">
+                      {me.name || me.email || "Your QwikSale dashboard"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-100/80">
+                      Manage your listings, favorites, and account.
+                    </p>
+                  </div>
+                </div>
 
-          {recentListings.length === 0 ? (
-            <div className="rounded-xl border bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/illustrations/empty-box.svg"
-                alt=""
-                className="mx-auto h-24 w-24 opacity-90"
-              />
-              <p className="mt-3 text-lg font-semibold text-gray-700 dark:text-slate-200">
-                No listings yet
-              </p>
-              <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-                Post your first item to get started.
-              </p>
-              <div className="mt-4">
+                <div className="flex flex-col items-start gap-2 md:items-end">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-black/30 px-3 py-1 text-xs font-medium text-slate-50">
+                    <span
+                      className="h-2 w-2 rounded-full bg-emerald-400"
+                      aria-hidden="true"
+                    />
+                    <span>Subscription:</span>
+                    <span className="font-semibold">{subLabel}</span>
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href="/account/profile"
+                      prefetch={false}
+                      className="btn-gradient-primary text-xs md:text-sm"
+                      title="Edit account"
+                    >
+                      Edit Account
+                    </Link>
+                    {subLabel === "FREE" && (
+                      <Link
+                        href="/settings/billing"
+                        prefetch={false}
+                        className="btn-gradient-accent text-xs md:text-sm"
+                      >
+                        Upgrade
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Hero actions row */}
+              <div className="mt-5 flex flex-wrap gap-3">
                 <Link
                   href="/sell"
                   prefetch={false}
-                  className="btn-gradient-primary"
+                  className="btn-outline bg-white/10 text-sm text-slate-50 hover:bg-white/20"
                 >
-                  Post a Listing
+                  + Post a Listing
                 </Link>
+                <Link
+                  href="/saved"
+                  prefetch={false}
+                  className="btn-outline bg-white/5 text-sm text-slate-50 hover:bg-white/15"
+                >
+                  View Saved
+                </Link>
+                <Link
+                  href="/settings/billing"
+                  prefetch={false}
+                  className="btn-outline bg-white/5 text-sm text-slate-50 hover:bg-white/15"
+                >
+                  Billing &amp; Subscription
+                </Link>
+                <a
+                  href="/api/auth/signout"
+                  className="btn-outline ml-auto bg-black/30 text-sm text-slate-50 hover:bg-black/40"
+                  rel="nofollow"
+                >
+                  Sign out
+                </a>
               </div>
+            </section>
+          </header>
+
+          {/* Metrics row */}
+          <section
+            aria-label="Dashboard summary"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            <Metric title="My Listings" value={myListingsCount} />
+            <Metric title="My Favorites" value={favoritesCount} />
+            <Metric title="New in last 7 days" value={newLast7Days} />
+            <Metric title="Likes on my listings" value={likesOnMyListings} />
+          </section>
+
+          {/* Recent listings */}
+          <section className="space-y-3" aria-label="Your recent listings">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold">Your Recent Listings</h2>
+              <Link
+                href="/sell"
+                prefetch={false}
+                className="text-sm text-[#39a0ca] underline"
+              >
+                Post another →
+              </Link>
             </div>
-          ) : (
-            <div
-              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-              aria-label="Your recent listings"
-            >
-              {recentListings.map((item) => (
-                <RecentListingCard
-                  key={`${item.type}-${item.id}`}
-                  item={item}
+
+            {recentListings.length === 0 ? (
+              <div className="rounded-2xl border bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/illustrations/empty-box.svg"
+                  alt=""
+                  className="mx-auto h-24 w-24 opacity-90"
                 />
-              ))}
-            </div>
-          )}
-        </section>
+                <p className="mt-3 text-lg font-semibold text-gray-700 dark:text-slate-200">
+                  No listings yet
+                </p>
+                <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+                  Post your first item to get started.
+                </p>
+                <div className="mt-4">
+                  <Link
+                    href="/sell"
+                    prefetch={false}
+                    className="btn-gradient-primary"
+                  >
+                    Post a Listing
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {recentListings.map((item) => (
+                  <RecentListingCard
+                    key={`${item.type}-${item.id}`}
+                    item={item}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       </main>
     );
   } catch (err: unknown) {
@@ -576,25 +605,21 @@ export default async function DashboardPage({
     console.error("[dashboard SSR fatal]", err);
     return (
       <main
-        className="p-6"
+        className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
         data-soft-error="dashboard"
         data-e2e="dashboard-soft-error"
       >
-        <h1 className="text-xl font-semibold">
-          We hit a dashboard error
-        </h1>
-        <p className="mt-2 text-sm opacity-80">
-          Something went wrong loading your dashboard. Please refresh. If this
-          continues, contact support — the error has been logged.
-        </p>
-        <div className="mt-3">
-          <Link
-            href="/dashboard"
-            prefetch={false}
-            className="btn-outline"
-          >
-            Retry
-          </Link>
+        <div className="mx-auto max-w-6xl">
+          <h1 className="text-xl font-semibold">We hit a dashboard error</h1>
+          <p className="mt-2 text-sm opacity-80">
+            Something went wrong loading your dashboard. Please refresh. If this
+            continues, contact support — the error has been logged.
+          </p>
+          <div className="mt-3">
+            <Link href="/dashboard" prefetch={false} className="btn-outline">
+              Retry
+            </Link>
+          </div>
         </div>
       </main>
     );
@@ -603,10 +628,8 @@ export default async function DashboardPage({
 
 function Metric({ title, value }: { title: string; value: number }) {
   return (
-    <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-      <div className="text-sm text-gray-500 dark:text-slate-400">
-        {title}
-      </div>
+    <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="text-sm text-gray-500 dark:text-slate-400">{title}</div>
       <div className="text-2xl font-bold text-[#161748] dark:text-white">
         {fmtInt(value)}
       </div>
@@ -630,11 +653,7 @@ function RecentListingCard({ item }: { item: DashboardListing }) {
       id={item.id}
       href={href}
       title={item.name}
-      price={
-        typeof item.price === "number"
-          ? item.price
-          : "Contact for price"
-      }
+      price={typeof item.price === "number" ? item.price : "Contact for price"}
       currency="KES"
       imageUrl={item.image || FALLBACK_IMG}
       location={item.location || "Kenya"}
