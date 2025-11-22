@@ -128,14 +128,18 @@ export default function ListingCard({
         "group relative overflow-hidden rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-slate-900",
         "transition hover:border-black/10 dark:hover:border-white/15",
         featured && "ring-1 ring-brandBlue/30",
-        className
+        className,
       )}
       data-listing-id={id}
       data-listing-kind={kind}
       role="article"
     >
       {/* Single canonical Link for the main click surface */}
-      <Link href={href} prefetch={false} aria-labelledby={`listing-${id}-title`}>
+      <Link
+        href={href}
+        prefetch={false}
+        aria-labelledby={`listing-${id}-title`}
+      >
         {/* Cover */}
         <div className="relative overflow-hidden">
           <div className="aspect-[4/3] w-full">
@@ -147,12 +151,12 @@ export default function ListingCard({
                 sizes="(max-width: 768px) 100vw, (max-width: 1280px) 33vw, 25vw"
                 className={cn(
                   "object-cover transition-transform duration-300",
-                  "group-hover:scale-[1.03]"
+                  "group-hover:scale-[1.03]",
                 )}
                 priority={false}
               />
             ) : (
-              <div className="h-full w-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-slate-800 dark:to-slate-900 grid place-items-center">
+              <div className="grid h-full w-full place-items-center bg-gradient-to-br from-gray-100 to-gray-200 dark:from-slate-800 dark:to-slate-900">
                 <Icon name="image" className="opacity-40" />
               </div>
             )}
@@ -167,15 +171,15 @@ export default function ListingCard({
             className={cn(
               "absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center",
               "rounded-full border border-black/10 dark:border-white/10",
-              "backdrop-blur-md bg-white/60 dark:bg-slate-900/50", // stronger backdrop for bright photos
+              "backdrop-blur-md bg-white/60 dark:bg-slate-900/50",
               "transition hover:bg-white/80 dark:hover:bg-slate-900/70",
-              isSaved && "ring-2 ring-brandPink/40"
+              isSaved && "ring-2 ring-brandPink/40",
             )}
           >
             <span
               className={cn(
                 "absolute inset-0 rounded-full",
-                "bg-gradient-to-br from-white/40 to-white/10 dark:from-slate-900/40 dark:to-slate-900/10"
+                "bg-gradient-to-br from-white/40 to-white/10 dark:from-slate-900/40 dark:to-slate-900/10",
               )}
               aria-hidden
             />
@@ -183,7 +187,9 @@ export default function ListingCard({
               name="heart"
               className={cn(
                 "relative",
-                isSaved ? "text-pink-600 dark:text-pink-400" : "text-gray-700 dark:text-slate-200"
+                isSaved
+                  ? "text-pink-600 dark:text-pink-400"
+                  : "text-gray-700 dark:text-slate-200",
               )}
               aria-hidden
             />
@@ -205,7 +211,11 @@ export default function ListingCard({
             <div className="flex items-center gap-1.5 text-xs opacity-90">
               {verified ? (
                 <>
-                  <Icon name="verified" className="text-emerald-300" aria-hidden />
+                  <Icon
+                    name="verified"
+                    className="text-emerald-300"
+                    aria-hidden
+                  />
                   <span className="sr-only">Verified</span>
                 </>
               ) : null}
@@ -215,8 +225,14 @@ export default function ListingCard({
                   {location}
                 </span>
               ) : null}
-              {conditionLabel ? <span className="hidden sm:inline">• {conditionLabel}</span> : null}
-              {kind === "service" ? <span className="hidden sm:inline">• Service</span> : null}
+              {conditionLabel ? (
+                <span className="hidden sm:inline">
+                  • {conditionLabel}
+                </span>
+              ) : null}
+              {kind === "service" ? (
+                <span className="hidden sm:inline">• Service</span>
+              ) : null}
             </div>
             <h3
               id={`listing-${id}-title`}
@@ -260,7 +276,8 @@ export default function ListingCard({
                 className="px-2 py-1"
                 onClick={handleEditClick}
               >
-                {editLabel || "Edit"} <span className="sr-only">{title}</span>
+                {editLabel || "Edit"}{" "}
+                <span className="sr-only">{title}</span>
               </Button>
             )}
           </div>

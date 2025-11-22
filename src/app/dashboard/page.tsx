@@ -1,10 +1,10 @@
 ﻿// src/app/dashboard/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { cookies } from "next/headers";
 import UserAvatar from "@/app/components/UserAvatar";
 import SectionHeader from "@/app/components/SectionHeader";
+import ListingCard from "@/app/components/ListingCard";
 import { getSessionUser } from "@/app/lib/authz";
 
 export const runtime = "nodejs";
@@ -67,17 +67,6 @@ function fmtInt(n: number) {
   } catch {
     return String(val);
   }
-}
-
-function fmtKES(n?: number | null) {
-  if (typeof n === "number" && Number.isFinite(n) && n > 0) {
-    try {
-      return `KES ${n.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
-    } catch {
-      return `KES ${n}`;
-    }
-  }
-  return "Contact for price";
 }
 
 const FALLBACK_IMG = "/placeholder/default.jpg";
@@ -147,7 +136,9 @@ export default async function DashboardPage({
           data-soft-error="dashboard"
           data-e2e="dashboard-soft-error"
         >
-          <h1 className="text-xl font-semibold">We hit a dashboard error</h1>
+          <h1 className="text-xl font-semibold">
+            We hit a dashboard error
+          </h1>
           <p className="mt-2 text-sm opacity-80">
             This is a simulated soft error for guardrail testing. You can
             refresh or navigate away.
@@ -192,7 +183,7 @@ export default async function DashboardPage({
     // "Dashboard" heading and explicit sign-in link (for guardrail tests).
     if (isGuest) {
       return (
-        <main className="p-6 space-y-3" data-e2e="dashboard-guest">
+        <main className="space-y-3 p-6" data-e2e="dashboard-guest">
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <div className="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
             <p className="text-sm">
@@ -217,7 +208,7 @@ export default async function DashboardPage({
     if (!userId && hasAuthCookie) {
       return (
         <main
-          className="p-6 space-y-3"
+          className="space-y-3 p-6"
           data-soft-error="dashboard"
           data-e2e="dashboard-soft-error"
         >
@@ -262,7 +253,7 @@ export default async function DashboardPage({
       if (isAuthedOrHinted) {
         return (
           <main
-            className="p-6 space-y-3"
+            className="space-y-3 p-6"
             data-soft-error="dashboard"
             data-e2e="dashboard-soft-error"
           >
@@ -281,7 +272,7 @@ export default async function DashboardPage({
       // Extremely rare: no user, no auth hint – fall back to guest-style CTA.
       return (
         <main
-          className="p-6 space-y-3"
+          className="space-y-3 p-6"
           data-soft-error="dashboard"
           data-e2e="dashboard-soft-error"
         >
@@ -310,10 +301,7 @@ export default async function DashboardPage({
     );
 
     const anyPrisma = prisma as any;
-    const ServiceModel =
-      anyPrisma.service ??
-      anyPrisma.services ??
-      null;
+    const ServiceModel = anyPrisma.service ?? anyPrisma.services ?? null;
 
     const [
       productCount,
@@ -411,8 +399,7 @@ export default async function DashboardPage({
           name: p.name || "Untitled",
           category: p.category ?? null,
           subcategory: p.subcategory ?? null,
-          price:
-            typeof p.price === "number" ? p.price : null,
+          price: typeof p.price === "number" ? p.price : null,
           image: p.image ?? null,
           location: p.location ?? null,
           createdAt: toIso(p.createdAt),
@@ -425,10 +412,7 @@ export default async function DashboardPage({
           name: s.name || "Untitled",
           category: s.category ?? null,
           subcategory: s.subcategory ?? null,
-          price:
-            typeof s.price === "number"
-              ? s.price
-              : null,
+          price: typeof s.price === "number" ? s.price : null,
           image: s.image ?? null,
           location: s.location ?? null,
           createdAt: toIso(s.createdAt),
@@ -440,15 +424,12 @@ export default async function DashboardPage({
         const db = Date.parse(b.createdAt || "");
         if (db !== da) return db - da;
         // tie-break on type+id for stability
-        return `${b.type}-${b.id}`.localeCompare(
-          `${a.type}-${a.id}`,
-        );
+        return `${b.type}-${b.id}`.localeCompare(`${a.type}-${a.id}`);
       })
       .slice(0, 6);
 
     const myListingsCount = productCount + serviceCount;
-    const newLast7Days =
-      recentProductCount + recentServiceCount;
+    const newLast7Days = recentProductCount + recentServiceCount;
 
     // Favorites metrics still default to 0 for now
     const favoritesCount = 0;
@@ -457,7 +438,7 @@ export default async function DashboardPage({
     const subLabel = (me.subscription ?? "FREE").toUpperCase();
 
     return (
-      <main className="p-6 space-y-6">
+      <main className="space-y-6 p-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
 
         <SectionHeader
@@ -479,9 +460,7 @@ export default async function DashboardPage({
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-white/15 px-3 py-1 text-sm text-white">
                 Subscription:{" "}
-                <span className="font-semibold">
-                  {subLabel}
-                </span>
+                <span className="font-semibold">{subLabel}</span>
               </span>
               <Link
                 href="/account/profile"
@@ -505,18 +484,10 @@ export default async function DashboardPage({
         />
 
         <div className="flex flex-wrap gap-3">
-          <Link
-            href="/sell"
-            prefetch={false}
-            className="btn-outline"
-          >
+          <Link href="/sell" prefetch={false} className="btn-outline">
             + Post a Listing
           </Link>
-          <Link
-            href="/saved"
-            prefetch={false}
-            className="btn-outline"
-          >
+          <Link href="/saved" prefetch={false} className="btn-outline">
             View Saved
           </Link>
           <Link
@@ -528,7 +499,7 @@ export default async function DashboardPage({
           </Link>
           <a
             href="/api/auth/signout"
-            className="ml-auto btn-outline"
+            className="btn-outline ml-auto"
             rel="nofollow"
           >
             Sign out
@@ -536,18 +507,9 @@ export default async function DashboardPage({
         </div>
 
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric
-            title="My Listings"
-            value={myListingsCount}
-          />
-          <Metric
-            title="My Favorites"
-            value={favoritesCount}
-          />
-          <Metric
-            title="New in last 7 days"
-            value={newLast7Days}
-          />
+          <Metric title="My Listings" value={myListingsCount} />
+          <Metric title="My Favorites" value={favoritesCount} />
+          <Metric title="New in last 7 days" value={newLast7Days} />
           <Metric
             title="Likes on my listings"
             value={likesOnMyListings}
@@ -622,9 +584,8 @@ export default async function DashboardPage({
           We hit a dashboard error
         </h1>
         <p className="mt-2 text-sm opacity-80">
-          Something went wrong loading your dashboard.
-          Please refresh. If this continues, contact support —
-          the error has been logged.
+          Something went wrong loading your dashboard. Please refresh. If this
+          continues, contact support — the error has been logged.
         </p>
         <div className="mt-3">
           <Link
@@ -659,44 +620,26 @@ function RecentListingCard({ item }: { item: DashboardListing }) {
       ? `/service/${encodeURIComponent(item.id)}`
       : `/product/${encodeURIComponent(item.id)}`;
 
-  const created =
-    item.createdAt && item.createdAt.length
-      ? new Date(item.createdAt).toLocaleDateString("en-KE")
-      : "";
+  const editHref =
+    item.type === "service"
+      ? `/service/${encodeURIComponent(item.id)}/edit`
+      : `/product/${encodeURIComponent(item.id)}/edit`;
 
   return (
-    <Link
+    <ListingCard
+      id={item.id}
       href={href}
-      prefetch={false}
-      className="group flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
-      aria-label={`View ${item.type}: ${item.name}`}
-    >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-        <Image
-          src={item.image || FALLBACK_IMG}
-          alt={item.name}
-          fill
-          sizes="(min-width: 1024px) 320px, (min-width: 640px) 50vw, 100vw"
-          className="object-cover transition duration-300 group-hover:scale-105"
-        />
-      </div>
-      <div className="flex flex-1 flex-col gap-1 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <span className="line-clamp-2 text-sm font-semibold">
-            {item.name}
-          </span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-            {item.type}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-          <span>{item.location || "Kenya"}</span>
-          <span>{created}</span>
-        </div>
-        <div className="mt-2 text-sm font-semibold text-[#161748] dark:text-white">
-          {fmtKES(item.price)}
-        </div>
-      </div>
-    </Link>
+      title={item.name}
+      price={
+        typeof item.price === "number"
+          ? item.price
+          : "Contact for price"
+      }
+      currency="KES"
+      imageUrl={item.image || FALLBACK_IMG}
+      location={item.location || "Kenya"}
+      kind={item.type}
+      editHref={editHref}
+    />
   );
 }

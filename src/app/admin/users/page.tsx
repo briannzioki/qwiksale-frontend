@@ -114,10 +114,34 @@ function keepQuery(
 function parseRoleFilter(raw: string | undefined): RoleFilter {
   if (!raw) return "any";
   const upper = raw.toUpperCase();
-  if (upper === "USER" || upper === "MODERATOR" || upper === "ADMIN" || upper === "SUPERADMIN") {
+  if (
+    upper === "USER" ||
+    upper === "MODERATOR" ||
+    upper === "ADMIN" ||
+    upper === "SUPERADMIN"
+  ) {
     return upper as Exclude<RoleFilter, "any">;
   }
   return "any";
+}
+
+// Accept various API payload shapes: array, {users:[]}, {data:[]}, {items:[]}, {rows:[]}
+function normalizeUsersPayload(payload: unknown): AdminUser[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) {
+    return payload as AdminUser[];
+  }
+  if (typeof payload === "object") {
+    const obj = payload as Record<string, unknown>;
+    const keys = ["users", "data", "items", "rows"];
+    for (const key of keys) {
+      const maybe = obj[key];
+      if (Array.isArray(maybe)) {
+        return maybe as AdminUser[];
+      }
+    }
+  }
+  return [];
 }
 
 /**
@@ -162,7 +186,9 @@ export default async function Page({
     );
     lastStatus = res.status;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    all = ((await res.json().catch(() => [])) ?? []) as AdminUser[];
+
+    const json = await withTimeout(res.json(), 800, []);
+    all = normalizeUsersPayload(json);
   } catch {
     all = null;
   }
@@ -222,7 +248,11 @@ export default async function Page({
             <Link href="/admin" className="btn-outline text-sm" prefetch={false}>
               Admin home
             </Link>
-            <Link href="/admin/listings" className="btn-gradient-primary text-sm" prefetch={false}>
+            <Link
+              href="/admin/listings"
+              className="btn-gradient-primary text-sm"
+              prefetch={false}
+            >
               Listings
             </Link>
           </div>
