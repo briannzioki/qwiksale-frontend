@@ -1,4 +1,3 @@
-// src/app/store/[username]/page.tsx
 export const revalidate = 300;
 export const runtime = "nodejs";
 
@@ -79,25 +78,25 @@ export async function generateMetadata({
     let user: MetaUserRow = null;
 
     if (username) {
-      user = await withTimeout<MetaUserRow>(
+      user = (await withTimeout<MetaUserRow>(
         prisma.user.findFirst({
           where: { username: { equals: username, mode: "insensitive" } },
           select: { id: true, username: true, name: true },
         }) as Promise<MetaUserRow>,
         600,
         null,
-      );
+      )) as MetaUserRow;
     }
 
     if (!user && sellerId) {
-      user = await withTimeout<MetaUserRow>(
+      user = (await withTimeout<MetaUserRow>(
         prisma.user.findUnique({
           where: { id: sellerId },
           select: { id: true, username: true, name: true },
         }) as Promise<MetaUserRow>,
         600,
         null,
-      );
+      )) as MetaUserRow;
     }
 
     if (user) {
@@ -269,7 +268,7 @@ export default async function StorePage({
               total: 0,
               totalPages: 1,
               items: [],
-            } as ApiListResp<StoreProduct>),
+            }) as ApiListResp<StoreProduct>,
         )
     : {
         page: 1,
@@ -290,7 +289,7 @@ export default async function StorePage({
               total: 0,
               totalPages: 1,
               items: [],
-            } as ApiListResp<StoreService>),
+            }) as ApiListResp<StoreService>,
         )
     : {
         page: 1,
@@ -312,165 +311,223 @@ export default async function StorePage({
     subcategory: s.subcategory ?? null,
   }));
 
-  const hasAny =
-    Number(productsJson.total || 0) + Number(servicesJson.total || 0) > 0;
+  const totalProducts = Number(productsJson.total || 0);
+  const totalServices = Number(servicesJson.total || 0);
+  const totalListings = totalProducts + totalServices;
+  const hasAny = totalListings > 0;
+
+  const memberSinceYear =
+    user.createdAt instanceof Date
+      ? user.createdAt.getFullYear()
+      : user.createdAt
+      ? new Date(user.createdAt).getFullYear()
+      : null;
 
   return (
-    <div className="space-y-6">
-      {/* Store header */}
-      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow">
-        <div className="flex items-center gap-4">
-          <UserAvatar
-            src={user.image}
-            alt={`${displayHandle} avatar`}
-            size={56}
-            ring
-            fallbackText={
-              (user.name || displayHandle || "U").slice(0, 1).toUpperCase()
-            }
-          />
-          <div>
-            <h1 className="text-2xl font-extrabold md:text-3xl">
-              Store: @{displayHandle}
-            </h1>
-            <p className="text-sm text-white/90">
-              {user.name ? `${user.name} • ` : ""}
-              {user.createdAt
-                ? `Member since ${new Date(user.createdAt).getFullYear()}`
-                : "Store profile"}
-              {user.city || user.country
-                ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}`
-                : ""}
+    <main id="main" className="min-h-[60svh]">
+      <section className="container mx-auto space-y-6 px-4 py-6">
+        {/* Store header */}
+        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow-xl ring-1 ring-white/10">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+            <div className="flex items-center gap-4">
+              <UserAvatar
+                src={user.image}
+                alt={`${displayHandle} avatar`}
+                size={64}
+                ring
+                fallbackText={
+                  (user.name || displayHandle || "U")
+                    .slice(0, 1)
+                    .toUpperCase()
+                }
+              />
+              <div>
+                <h1 className="text-2xl font-extrabold md:text-3xl">
+                  Store: @{displayHandle}
+                </h1>
+                <p className="text-sm text-white/90">
+                  {user.name ? `${user.name}` : "Store profile"}
+                  {memberSinceYear
+                    ? ` • Member since ${memberSinceYear}`
+                    : ""}
+                  {user.city || user.country
+                    ? ` • ${[user.city, user.country]
+                        .filter(Boolean)
+                        .join(", ")}`
+                    : ""}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-2 flex w-full items-center justify-end gap-3 md:mt-0 md:w-auto">
+              {totalListings > 0 && (
+                <div className="inline-flex items-center gap-3 rounded-full bg-black/15 px-4 py-2 text-xs font-medium text-white/90">
+                  <span>
+                    {totalListings.toLocaleString()}{" "}
+                    {totalListings === 1 ? "listing" : "listings"}
+                  </span>
+                  {totalProducts > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-black/25 px-2 py-0.5">
+                      {totalProducts} products
+                    </span>
+                  )}
+                  {totalServices > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-black/25 px-2 py-0.5">
+                      {totalServices} services
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <Link
+                href="/"
+                className="rounded-full border border-white/40 bg-white/10 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20"
+              >
+                Back to Home
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* Soft warning instead of 500-style error */}
+        {shouldFetchListings && (!prodOk || !svcOk) && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+            <p className="font-semibold">Some listings couldn’t be loaded.</p>
+            <p className="mt-1 opacity-80">
+              {!prodOk && "Product listings are temporarily unavailable. "}
+              {!svcOk && "Service listings are temporarily unavailable. "}
+              Please try again later.
             </p>
           </div>
-          <div className="ml-auto">
-            <Link href="/" className="btn-outline">
-              Back to Home
-            </Link>
-          </div>
-        </div>
-      </div>
+        )}
 
-      {/* Soft warning instead of 500-style error */}
-      {shouldFetchListings && (!prodOk || !svcOk) && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
-          <p className="font-semibold">Some listings couldn’t be loaded.</p>
-          <p className="text-sm opacity-80">
-            {!prodOk && "Product listings are temporarily unavailable. "}
-            {!svcOk && "Service listings are temporarily unavailable. "}
-            Please try again later.
-          </p>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!hasAny && (
-        <div className="rounded-xl border p-8 text-center text-gray-600 dark:border-slate-800 dark:text-slate-300">
-          <p className="text-lg font-semibold">No listings yet</p>
-          <p className="mt-1 text-sm opacity-80">
-            {shouldFetchListings
-              ? "This store hasn’t posted any products or services yet."
-              : "This store profile isn’t set up yet."}
-          </p>
-          <div className="mt-4">
-            <Link href="/" className="btn-outline">
-              Browse Home
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Products */}
-      {productsJson.total > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Products</h2>
-            <span className="text-sm text-gray-500">
-              {productsJson.total} items
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((p) => (
-              <Link key={p.id} href={`/product/${p.id}`} className="group">
-                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-                  {p.featured && (
-                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
-                      Featured
-                    </span>
-                  )}
-                  <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
-                    <SmartImage
-                      src={p.image || undefined}
-                      alt={p.name || "Product image"}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                    />
-                  </div>
-                  <div className="p-4">
-                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
-                      {p.name || "Unnamed item"}
-                    </h3>
-                    <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
-                      {[p.category, p.subcategory].filter(Boolean).join(" • ") || "—"}
-                    </p>
-                    <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
-                      {fmtKES(p.price)}
-                    </p>
-                  </div>
-                </div>
+        {/* Empty state */}
+        {!hasAny && (
+          <div className="card-surface rounded-xl border p-8 text-center text-gray-600 dark:border-slate-800 dark:text-slate-300">
+            <p className="text-lg font-semibold">No listings yet</p>
+            <p className="mt-1 text-sm opacity-80">
+              {shouldFetchListings
+                ? "This store hasn’t posted any products or services yet."
+                : "This store profile isn’t set up yet."}
+            </p>
+            <div className="mt-4">
+              <Link href="/" className="btn-outline">
+                Browse Home
               </Link>
-            ))}
+            </div>
           </div>
-        </section>
-      )}
+        )}
 
-      {/* Services */}
-      {servicesJson.total > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Services</h2>
-            <span className="text-sm text-gray-500">
-              {servicesJson.total} items
-            </span>
-          </div>
+        {/* Products */}
+        {totalProducts > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">
+                Products
+              </h2>
+              <span className="text-sm text-slate-400">
+                {totalProducts.toLocaleString()} items
+              </span>
+            </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {services.map((s) => (
-              <Link key={s.id} href={`/service/${s.id}`} className="group">
-                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow transition hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-                  {s.featured && (
-                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
-                      Featured
-                    </span>
-                  )}
-                  <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
-                    <SmartImage
-                      src={s.image || undefined}
-                      alt={s.name || "Service image"}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                    />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((p) => (
+                <Link
+                  key={p.id}
+                  href={`/product/${p.id}`}
+                  className="group"
+                  aria-label={p.name || "Product"}
+                >
+                  <div className="card-surface relative overflow-hidden rounded-xl border border-slate-800/60 bg-slate-900/80 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
+                    {p.featured && (
+                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
+                        Featured
+                      </span>
+                    )}
+                    <div className="relative h-40 w-full bg-slate-900">
+                      <SmartImage
+                        src={p.image || undefined}
+                        alt={p.name || "Product image"}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      />
+                    </div>
+                    <div className="p-4">
+                      <h3 className="line-clamp-1 font-semibold text-slate-50">
+                        {p.name || "Unnamed item"}
+                      </h3>
+                      <p className="line-clamp-1 text-xs text-slate-400">
+                        {[p.category, p.subcategory]
+                          .filter(Boolean)
+                          .join(" • ") || "—"}
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-[#7dd3fc]">
+                        {fmtKES(p.price)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="p-4">
-                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
-                      {s.name || "Unnamed service"}
-                    </h3>
-                    <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
-                      {[s.category, s.subcategory].filter(Boolean).join(" • ") || "—"}
-                    </p>
-                    <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
-                      {fmtKES(s.price)}
-                    </p>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Services */}
+        {totalServices > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">
+                Services
+              </h2>
+              <span className="text-sm text-slate-400">
+                {totalServices.toLocaleString()} items
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {services.map((s) => (
+                <Link
+                  key={s.id}
+                  href={`/service/${s.id}`}
+                  className="group"
+                  aria-label={s.name || "Service"}
+                >
+                  <div className="card-surface relative overflow-hidden rounded-xl border border-slate-800/60 bg-slate-900/80 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
+                    {s.featured && (
+                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
+                        Featured
+                      </span>
+                    )}
+                    <div className="relative h-40 w-full bg-slate-900">
+                      <SmartImage
+                        src={s.image || undefined}
+                        alt={s.name || "Service image"}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      />
+                    </div>
+                    <div className="p-4">
+                      <h3 className="line-clamp-1 font-semibold text-slate-50">
+                        {s.name || "Unnamed service"}
+                      </h3>
+                      <p className="line-clamp-1 text-xs text-slate-400">
+                        {[s.category, s.subcategory]
+                          .filter(Boolean)
+                          .join(" • ") || "—"}
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-[#7dd3fc]">
+                        {fmtKES(s.price)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+      </section>
+    </main>
   );
 }
