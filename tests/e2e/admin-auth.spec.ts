@@ -17,7 +17,11 @@ test.describe("Admin auth/redirects", () => {
   test("admin can reach /admin and it renders", async ({ page }) => {
     const res = await page.goto("/admin", { waitUntil: "domcontentloaded" });
     expect(res?.ok()).toBeTruthy();
-    await expect(page.getByRole("heading", { name: /admin/i })).toBeVisible();
+
+    // Top-level admin shell heading should render
+    await expect(
+      page.getByRole("heading", { name: "Admin console" }),
+    ).toBeVisible();
   });
 
   test("visiting / or /dashboard does not break; admin area remains accessible", async ({ page }) => {
@@ -30,7 +34,11 @@ test.describe("Admin auth/redirects", () => {
 
     const r3 = await page.goto("/admin", { waitUntil: "domcontentloaded" });
     expect(r3?.ok()).toBeTruthy();
-    await expect(page.getByRole("heading", { name: /admin/i })).toBeVisible();
+
+    // Top-level admin shell heading should still be visible
+    await expect(
+      page.getByRole("heading", { name: "Admin console" }),
+    ).toBeVisible();
   });
 });
 
@@ -62,6 +70,8 @@ test.describe("User auth/redirects", () => {
     const blocked = !urlIsAdmin || status === 401 || status === 403 || unauthorizedUI > 0;
     expect(blocked).toBeTruthy();
 
-    await expect(page.getByRole("heading", { name: /admin/i })).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: /admin/i }),
+    ).toHaveCount(0);
   });
 });
