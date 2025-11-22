@@ -4,6 +4,7 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/app/components/Icon";
 import { Badge } from "@/app/components/Badge";
 import { Button } from "@/app/components/Button";
@@ -25,8 +26,15 @@ export type ListingCardProps = {
   featured?: boolean;
   className?: string;
 
-  /** ✅ App Router-safe function prop (ends with `Action`) */
+  /** Optional edit destination (enables Edit button in footer when present). */
+  editHref?: string;
+  /** Optional custom label for Edit button (defaults to "Edit"). */
+  editLabel?: string;
+
+  /** App Router-safe callbacks for analytics / side-effects. */
   onToggleSaveAction?: (next: boolean) => void | Promise<void>;
+  onViewAction?: () => void | Promise<void>;
+  onEditAction?: () => void | Promise<void>;
 };
 
 function cn(...xs: Array<string | false | null | undefined>) {
@@ -60,13 +68,19 @@ export default function ListingCard({
   conditionLabel,
   featured = false,
   className,
+  editHref,
+  editLabel,
   onToggleSaveAction,
+  onViewAction,
+  onEditAction,
 }: ListingCardProps) {
+  const router = useRouter();
   const [isSaved, setIsSaved] = React.useState(!!saved);
   const [busy, setBusy] = React.useState(false);
 
   async function handleSaveToggle(e: React.MouseEvent) {
     e.preventDefault();
+    e.stopPropagation();
     if (busy) return;
     const next = !isSaved;
     setIsSaved(next); // optimistic
@@ -80,7 +94,32 @@ export default function ListingCard({
     }
   }
 
+  async function handleViewClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await onViewAction?.();
+    } catch {
+      // ignore analytics failures
+    }
+    router.push(href);
+  }
+
+  async function handleEditClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dest = editHref;
+    if (!dest) return;
+    try {
+      await onEditAction?.();
+    } catch {
+      // ignore analytics failures
+    }
+    router.push(dest);
+  }
+
   const priceText = formatPrice(price, currency);
+  const showEdit = !!editHref;
 
   return (
     <article
@@ -91,7 +130,11 @@ export default function ListingCard({
         featured && "ring-1 ring-brandBlue/30",
         className
       )}
+      data-listing-id={id}
+      data-listing-kind={kind}
+      role="article"
     >
+      {/* Single canonical Link for the main click surface */}
       <Link href={href} prefetch={false} aria-labelledby={`listing-${id}-title`}>
         {/* Cover */}
         <div className="relative overflow-hidden">
@@ -184,7 +227,7 @@ export default function ListingCard({
           </div>
         </div>
 
-        {/* Footer row */}
+        {/* Footer row: badges + View/Edit actions */}
         <div className="flex items-center justify-between gap-2 px-3 py-3">
           <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-400">
             {verified ? (
@@ -198,11 +241,29 @@ export default function ListingCard({
             )}
           </div>
 
-          <Button asChild size="xs" variant="subtle" className="px-2 py-1">
-            <span>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="xs"
+              variant="subtle"
+              className="px-2 py-1"
+              onClick={handleViewClick}
+            >
               View <span className="sr-only">{title}</span>
-            </span>
-          </Button>
+            </Button>
+
+            {showEdit && (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="px-2 py-1"
+                onClick={handleEditClick}
+              >
+                {editLabel || "Edit"} <span className="sr-only">{title}</span>
+              </Button>
+            )}
+          </div>
         </div>
       </Link>
     </article>

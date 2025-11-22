@@ -1,5 +1,5 @@
-"use client";
 // src/app/admin/AdminProductActions.tsx
+"use client";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -14,16 +14,23 @@ export default function AdminProductActions({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState<"feature" | "delete" | null>(null);
-  const [optimisticFeatured, setOptimisticFeatured] = useState(featured);
+  const [optimisticFeatured, setOptimisticFeatured] =
+    useState(featured);
 
   async function patchFeature(target: boolean, force = false) {
-    const r = await fetch(`/api/admin/products/${encodeURIComponent(id)}/feature`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      cache: "no-store",
-      body: JSON.stringify({ featured: target, ...(force ? { force: true } : {}) }),
-    });
+    const r = await fetch(
+      `/api/admin/products/${encodeURIComponent(id)}/feature`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+        body: JSON.stringify({
+          featured: target,
+          ...(force ? { force: true } : {}),
+        }),
+      },
+    );
     return r;
   }
 
@@ -42,10 +49,10 @@ export default function AdminProductActions({
 
       // If product isn't ACTIVE, server returns 409 with {status}
       if (!r.ok && r.status === 409) {
-        const j = await r.json().catch(() => ({} as any));
+        const j = (await r.json().catch(() => ({} as any))) as any;
         const status = j?.status || "current status";
         const confirmForce = confirm(
-          `Listing is ${status}. Feature toggle usually requires ACTIVE.\n\nForce anyway?`
+          `Listing is ${status}. Feature toggle usually requires ACTIVE.\n\nForce anyway?`,
         );
         if (confirmForce) {
           r = await patchFeature(target, true);
@@ -53,7 +60,7 @@ export default function AdminProductActions({
       }
 
       if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
+        const j = (await r.json().catch(() => ({}))) as any;
         alert(j?.error || `Failed: ${r.status}`);
         // revert optimistic state
         setOptimisticFeatured(!target);
@@ -76,13 +83,16 @@ export default function AdminProductActions({
     setBusy("delete");
     try {
       // Deletion stays on the main resource route (it already allows owner/admin)
-      const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-        credentials: "same-origin",
-        cache: "no-store",
-      });
+      const r = await fetch(
+        `/api/products/${encodeURIComponent(id)}`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+          cache: "no-store",
+        },
+      );
       if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
+        const j = (await r.json().catch(() => ({}))) as any;
         alert(j?.error || "Failed to delete");
         return;
       }
@@ -106,12 +116,16 @@ export default function AdminProductActions({
         aria-busy={busy === "feature" || undefined}
         className={`rounded border px-3 py-1 text-sm transition ${
           optimisticFeatured
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
             : "hover:bg-gray-50"
-        } ${isBusy ? "opacity-60 cursor-wait" : ""}`}
+        } ${isBusy ? "cursor-wait opacity-60" : ""}`}
         title={optimisticFeatured ? "Unfeature listing" : "Feature listing"}
       >
-        {busy === "feature" ? "…" : optimisticFeatured ? "Unfeature" : "Feature"}
+        {busy === "feature"
+          ? "…"
+          : optimisticFeatured
+            ? "Unfeature"
+            : "Feature"}
       </button>
 
       <button
@@ -119,8 +133,8 @@ export default function AdminProductActions({
         onClick={deleteProduct}
         disabled={isBusy}
         aria-busy={busy === "delete" || undefined}
-        className={`rounded bg-red-600 text-white px-3 py-1 text-sm hover:bg-red-700 transition ${
-          isBusy ? "opacity-70 cursor-wait" : ""
+        className={`rounded bg-red-600 px-3 py-1 text-sm text-white transition hover:bg-red-700 ${
+          isBusy ? "cursor-wait opacity-70" : ""
         }`}
         title="Delete listing"
       >

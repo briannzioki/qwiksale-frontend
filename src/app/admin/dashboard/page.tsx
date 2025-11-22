@@ -3,8 +3,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import type { Metadata } from "next";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";
+
+export const metadata: Metadata = {
+  title: "Dashboard · QwikSale Admin",
+  robots: {
+    index: false,
+    follow: false,
+    noarchive: true,
+    googleBot: { index: false, follow: false, noimageindex: true },
+  },
+};
 
 type DayPoint = {
   date: string;
@@ -30,37 +41,28 @@ type Metrics = {
 function withTimeout<T>(
   p: Promise<T>,
   ms: number,
-  fallback: T
+  fallback: T,
 ): Promise<T> {
   let tid: ReturnType<typeof setTimeout> | null = null;
   const timeout = new Promise<T>((resolve) => {
     tid = setTimeout(() => resolve(fallback), ms);
   });
-  return Promise.race([p.catch(() => fallback), timeout]).finally(
-    () => {
-      if (tid) clearTimeout(tid);
-    }
-  ) as Promise<T>;
+  return Promise.race([p.catch(() => fallback), timeout]).finally(() => {
+    if (tid) clearTimeout(tid);
+  }) as Promise<T>;
 }
 
 /* =========================
    Data fetch
    ========================= */
-async function fetchMetrics(
-  timeoutMs = 2000
-): Promise<Metrics | null> {
+async function fetchMetrics(timeoutMs = 2000): Promise<Metrics | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     // Prefer configured public URL; fall back to relative.
-    const base =
-      (process.env["NEXT_PUBLIC_APP_URL"] || "").replace(
-        /\/+$/,
-        ""
-      );
-    const url =
-      (base || "") + "/api/admin/metrics";
+    const base = (process.env["NEXT_PUBLIC_APP_URL"] || "").replace(/\/+$/, "");
+    const url = (base || "") + "/api/admin/metrics";
 
     const res = await fetch(url, {
       cache: "no-store",
@@ -69,9 +71,7 @@ async function fetchMetrics(
     });
 
     if (!res.ok) return null;
-    return (await res
-      .json()
-      .catch(() => null)) as Metrics | null;
+    return (await res.json().catch(() => null)) as Metrics | null;
   } catch {
     return null;
   } finally {
@@ -94,19 +94,17 @@ function StatCard({
 }) {
   const safe = Number.isFinite(value) ? value : 0;
   return (
-    <div className="rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
-        {label}
-      </div>
-      <div className="mt-1 text-2xl font-bold">
-        {safe.toLocaleString("en-KE")}
-      </div>
-      {sublabel ? (
-        <div className="mt-1 text-xs text-gray-500">
-          {sublabel}
+      <div className="rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
+          {label}
         </div>
-      ) : null}
-    </div>
+        <div className="mt-1 text-2xl font-bold">
+          {safe.toLocaleString("en-KE")}
+        </div>
+        {sublabel ? (
+          <div className="mt-1 text-xs text-gray-500">{sublabel}</div>
+        ) : null}
+      </div>
   );
 }
 
@@ -148,18 +146,13 @@ function Sparkline({
   width?: number;
   height?: number;
 }) {
-  const vals = data.map((d) =>
-    Number((d as any)[field] ?? 0)
-  );
+  const vals = data.map((d) => Number((d as any)[field] ?? 0));
   const max = Math.max(1, ...vals);
-  const stepX =
-    data.length > 1 ? width / (data.length - 1) : width;
+  const stepX = data.length > 1 ? width / (data.length - 1) : width;
   const pts = vals
     .map((v, i) => {
       const x = Math.round(i * stepX);
-      const y = Math.round(
-        height - (v / max) * height
-      );
+      const y = Math.round(height - (v / max) * height);
       return `${x},${y}`;
     })
     .join(" ");
@@ -187,11 +180,7 @@ function Sparkline({
 export default async function Page() {
   // 🔐 Admin access enforced by /admin/layout via requireAdmin().
 
-  const metrics = await withTimeout(
-    fetchMetrics(2000),
-    2200,
-    null
-  );
+  const metrics = await withTimeout(fetchMetrics(2000), 2200, null);
 
   const card =
     "rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900";
@@ -200,9 +189,7 @@ export default async function Page() {
   if (!metrics) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">
-          Admin Dashboard
-        </h1>
+        <h1 className="text-2xl font-bold">Admin Dashboard</h1>
 
         <SectionHeader
           title="Admin · Dashboard"
@@ -225,7 +212,11 @@ export default async function Page() {
           }
         />
 
-        <div className="rounded-xl border bg-white p-4 text-sm text-rose-600 dark:border-slate-800 dark:bg-slate-900 dark:text-rose-400">
+        <div
+          className="rounded-xl border bg-white p-4 text-sm text-rose-600 dark:border-slate-800 dark:bg-slate-900 dark:text-rose-400"
+          role="status"
+          aria-live="polite"
+        >
           Failed to load metrics.
         </div>
       </div>
@@ -240,9 +231,7 @@ export default async function Page() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">
-        Admin Dashboard
-      </h1>
+      <h1 className="text-2xl font-bold">Admin Dashboard</h1>
 
       <SectionHeader
         title="Admin · Dashboard"
@@ -284,18 +273,13 @@ export default async function Page() {
         />
         <StatCard
           label="Featured"
-          value={Number(
-            metrics.totals.featured ?? 0
-          )}
+          value={Number(metrics.totals.featured ?? 0)}
         />
         {"reveals" in metrics.totals &&
         metrics.totals.reveals != null ? (
           <StatCard
             label="Contact Reveals"
-            value={
-              metrics.totals.reveals ??
-              0
-            }
+            value={metrics.totals.reveals ?? 0}
           />
         ) : (
           <div
@@ -317,10 +301,7 @@ export default async function Page() {
               Users
             </div>
             <div className="text-[#161748]">
-              <Sparkline
-                data={metrics.last7d}
-                field="users"
-              />
+              <Sparkline data={metrics.last7d} field="users" />
             </div>
           </div>
           <div>
@@ -328,10 +309,7 @@ export default async function Page() {
               Products
             </div>
             <div className="text-emerald-600 dark:text-emerald-400">
-              <Sparkline
-                data={metrics.last7d}
-                field="products"
-              />
+              <Sparkline data={metrics.last7d} field="products" />
             </div>
           </div>
           <div>
@@ -339,10 +317,7 @@ export default async function Page() {
               Services
             </div>
             <div className="text-sky-600 dark:text-sky-400">
-              <Sparkline
-                data={metrics.last7d}
-                field="services"
-              />
+              <Sparkline data={metrics.last7d} field="services" />
             </div>
           </div>
         </div>
@@ -365,21 +340,9 @@ export default async function Page() {
                   className="border-t border-gray-100 dark:border-slate-800"
                 >
                   <Td>{d.date}</Td>
-                  <Td>
-                    {d.users.toLocaleString(
-                      "en-KE"
-                    )}
-                  </Td>
-                  <Td>
-                    {d.products.toLocaleString(
-                      "en-KE"
-                    )}
-                  </Td>
-                  <Td>
-                    {d.services.toLocaleString(
-                      "en-KE"
-                    )}
-                  </Td>
+                  <Td>{d.users.toLocaleString("en-KE")}</Td>
+                  <Td>{d.products.toLocaleString("en-KE")}</Td>
+                  <Td>{d.services.toLocaleString("en-KE")}</Td>
                 </tr>
               ))}
             </tbody>

@@ -6,7 +6,6 @@ export const revalidate = 0;
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
@@ -16,15 +15,18 @@ import CommitBinder from "./CommitBinder";
 import SellServiceClient from "@/app/sell/service/SellServiceClient";
 
 export const metadata: Metadata = {
-  title: "Edit service • QwikSale",
+  title: "Edit service · QwikSale",
   robots: { index: false, follow: false },
 };
 
 /* -------------------------- Model compat -------------------------- */
 function getServiceModel() {
   const any = prisma as any;
-  const candidate = any.service ?? any.services ?? any.Service ?? any.Services ?? null;
-  return candidate && typeof candidate.findUnique === "function" ? candidate : null;
+  const candidate =
+    any.service ?? any.services ?? any.Service ?? any.Services ?? null;
+  return candidate && typeof candidate.findUnique === "function"
+    ? candidate
+    : null;
 }
 
 /* ------------------------------ Helpers ------------------------------ */
@@ -45,7 +47,7 @@ function toUrlish(v: any): string {
       v?.src ??
       v?.location ??
       v?.path ??
-      (typeof v === "string" ? v : "")
+      (typeof v === "string" ? v : ""),
   ).trim();
 }
 
@@ -58,13 +60,17 @@ function normalizeImagesFromRow(p: any): Img[] {
     if (!url || seen.has(url)) return;
     seen.add(url);
 
-    const id = String(x?.id ?? x?.imageId ?? x?.publicId ?? x?.key ?? url ?? `img-${i}`);
+    const id = String(
+      x?.id ?? x?.imageId ?? x?.publicId ?? x?.key ?? url ?? `img-${i}`,
+    );
 
     const isCover =
       Boolean(x?.isCover) ||
       Boolean(p?.coverImageId && x?.id && p.coverImageId === x.id) ||
       Boolean(typeof p?.coverImage === "string" && url === p.coverImage) ||
-      Boolean(typeof p?.coverImageUrl === "string" && url === p.coverImageUrl) ||
+      Boolean(
+        typeof p?.coverImageUrl === "string" && url === p.coverImageUrl,
+      ) ||
       Boolean(typeof p?.image === "string" && url === p.image);
 
     const sort =
@@ -110,15 +116,26 @@ function normalizeImagesFromRow(p: any): Img[] {
   }
 
   return out
-    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id))
+    .sort(
+      (a, b) =>
+        (a.sort ?? 0) - (b.sort ?? 0) ||
+        a.id.localeCompare(b.id),
+    )
     .slice(0, 50);
 }
 
 /** single service-image model, quiet via serviceId */
 function getServiceImageModel() {
   const any = prisma as any;
-  const candidates = [any.serviceImage, any.serviceImages, any.ServiceImage, any.ServiceImages].filter(Boolean);
-  return candidates.find((m: any) => typeof m?.findMany === "function") || null;
+  const candidates = [
+    any.serviceImage,
+    any.serviceImages,
+    any.ServiceImage,
+    any.ServiceImages,
+  ].filter(Boolean);
+  return candidates.find(
+    (m: any) => typeof m?.findMany === "function",
+  ) || null;
 }
 
 async function fetchRelatedImageRows(serviceId: string): Promise<any[]> {
@@ -141,13 +158,21 @@ function rowsToImgs(rows: any[], parent: any): Img[] {
   for (const x of rows) {
     const url = toUrlish(x);
     if (!url) continue;
-    const id = String(x?.id ?? x?.imageId ?? x?.key ?? url ?? `rimg-${i++}`);
+    const id = String(
+      x?.id ?? x?.imageId ?? x?.key ?? url ?? `rimg-${i++}`,
+    );
     const isCover =
       Boolean(x?.isCover) ||
       Boolean(parent?.coverImageId && x?.id && parent.coverImageId === x.id) ||
       Boolean(typeof parent?.image === "string" && url === parent.image) ||
-      Boolean(typeof parent?.coverImage === "string" && url === parent.coverImage) ||
-      Boolean(typeof parent?.coverImageUrl === "string" && url === parent.coverImageUrl);
+      Boolean(
+        typeof parent?.coverImage === "string" &&
+          url === parent.coverImage,
+      ) ||
+      Boolean(
+        typeof parent?.coverImageUrl === "string" &&
+          url === parent.coverImageUrl,
+      );
 
     const sort =
       Number.isFinite(x?.sortOrder)
@@ -191,8 +216,10 @@ function mergeImgs(a: Img[], b: Img[], parent: any): Img[] {
   if (!list.some((x) => x.isCover) && list.length > 0) {
     const preferred =
       (typeof parent?.image === "string" && parent.image) ||
-      (typeof parent?.coverImage === "string" && parent.coverImage) ||
-      (typeof parent?.coverImageUrl === "string" && parent.coverImageUrl) ||
+      (typeof parent?.coverImage === "string" &&
+        parent.coverImage) ||
+      (typeof parent?.coverImageUrl === "string" &&
+        parent.coverImageUrl) ||
       (list[0] ? list[0].url : undefined);
     const idx = list.findIndex((x) => x.url === preferred);
     if (list.length > 0) {
@@ -200,7 +227,13 @@ function mergeImgs(a: Img[], b: Img[], parent: any): Img[] {
     }
   }
 
-  list = list.sort((x, y) => (x.sort ?? 0) - (y.sort ?? 0) || x.id.localeCompare(y.id)).slice(0, 50);
+  list = list
+    .sort(
+      (x, y) =>
+        (x.sort ?? 0) - (y.sort ?? 0) ||
+        x.id.localeCompare(y.id),
+    )
+    .slice(0, 50);
 
   return list;
 }
@@ -217,31 +250,10 @@ function fmtDate(d?: Date | string | null) {
   if (!d) return "—";
   const dd = typeof d === "string" ? new Date(d) : d;
   if (!(dd instanceof Date) || isNaN(dd.getTime())) return "—";
-  return dd.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
-/* ---------------------------- Server Action ---------------------------- */
-async function saveQuickAction(formData: FormData) {
-  "use server";
-  const id = String(formData.get("id") || "");
-  const name = String(formData.get("name") || "").trim();
-  if (!id) return;
-
-  const Service = getServiceModel();
-  if (!Service) return;
-
-  if (name) {
-    try {
-      await Service.update({
-        where: { id },
-        data: { name, title: name },
-      });
-    } catch {
-      // ignore
-    }
-  }
-
-  revalidatePath(`/service/${id}/edit`);
+  return dd.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 /* -------------------------------- Page -------------------------------- */
@@ -284,7 +296,11 @@ export default async function EditServicePage({
     relationRows = [];
   }
 
-  const images = mergeImgs(normalizeImagesFromRow(service), rowsToImgs(relationRows, service), service);
+  const images = mergeImgs(
+    normalizeImagesFromRow(service),
+    rowsToImgs(relationRows, service),
+    service,
+  );
 
   const lastUpdated = service?.updatedAt ?? service?.createdAt ?? null;
   const serviceName = service?.name ?? service?.title ?? "Service";
@@ -299,19 +315,32 @@ export default async function EditServicePage({
             <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white/95">
               Service Editor
             </span>
-            <span className="mx-2 hidden text-white/70 md:inline">•</span>
-            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/95">
-              Status: <span className="ml-1 font-semibold">{briefStatus(service)}</span>
+            <span className="mx-2 hidden text-white/70 md:inline">
+              •
             </span>
-            <span className="mx-2 hidden text-white/70 md:inline">•</span>
+            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/95">
+              Status:{" "}
+              <span className="ml-1 font-semibold">
+                {briefStatus(service)}
+              </span>
+            </span>
+            <span className="mx-2 hidden text-white/70 md:inline">
+              •
+            </span>
             <span className="text-white/90">
-              ID <span className="font-mono">{service.id}</span> · Updated {fmtDate(lastUpdated)}
+              ID <span className="font-mono">{service.id}</span> ·
+              Updated {fmtDate(lastUpdated)}
             </span>
           </>
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/dashboard" prefetch={false} className="btn-outline" aria-label="Back to dashboard">
+            <Link
+              href="/dashboard"
+              prefetch={false}
+              className="btn-outline"
+              aria-label="Back to dashboard"
+            >
               Back
             </Link>
             <Link
@@ -322,7 +351,13 @@ export default async function EditServicePage({
             >
               View live
             </Link>
-            {canDelete && <DeleteListingButton serviceId={service.id} label="Delete" className="btn-danger" />}
+            {canDelete && (
+              <DeleteListingButton
+                serviceId={service.id}
+                label="Delete"
+                className="btn-danger"
+              />
+            )}
           </div>
         }
       />
@@ -331,7 +366,8 @@ export default async function EditServicePage({
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Photos</h2>
           <div className="text-sm text-gray-500 dark:text-slate-400">
-            {images.length} photo{images.length === 1 ? "" : "s"}
+            {images.length} photo
+            {images.length === 1 ? "" : "s"}
           </div>
         </div>
         <ServiceMediaManager
@@ -341,9 +377,19 @@ export default async function EditServicePage({
               ? images.map((img) => ({
                   ...img,
                   isCover: !!img.isCover,
-                  sort: typeof img.sort === "number" ? img.sort : 0,
+                  sort:
+                    typeof img.sort === "number"
+                      ? img.sort
+                      : 0,
                 }))
-              : [{ id: "placeholder", url: PLACEHOLDER, isCover: true, sort: 0 }]
+              : [
+                  {
+                    id: "placeholder",
+                    url: PLACEHOLDER,
+                    isCover: true,
+                    sort: 0,
+                  },
+                ]
           }
           max={6}
         />

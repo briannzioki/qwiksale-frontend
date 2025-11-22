@@ -35,19 +35,32 @@ type Listing = {
 const FETCH_TIMEOUT_MS = 2500;
 const PAGE_SIZE = 50;
 
-function withTimeout<T>(p: Promise<T>, ms: number, fallback: T | (() => T)): Promise<T> {
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  fallback: T | (() => T),
+): Promise<T> {
   return Promise.race([
     p,
     new Promise<T>((resolve) =>
       setTimeout(
-        () => resolve(typeof fallback === "function" ? (fallback as any)() : fallback),
-        ms
-      )
+        () =>
+          resolve(
+            typeof fallback === "function"
+              ? (fallback as any)()
+              : fallback,
+          ),
+        ms,
+      ),
     ),
   ]);
 }
 
-async function fetchWithTimeout(input: string, init: RequestInit, ms: number) {
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  ms: number,
+) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), ms);
   try {
@@ -96,7 +109,7 @@ function getParam(sp: SearchParams, k: string): string | undefined {
 function keepQuery(
   base: string,
   sp: SearchParams,
-  overrides: Partial<Record<"page" | "q" | "type" | "featured", string>>
+  overrides: Partial<Record<"page" | "q" | "type" | "featured", string>>,
 ) {
   const url = new URL(base, "http://x");
   const qp = url.searchParams;
@@ -157,7 +170,7 @@ export default async function Page({ searchParams }: PageProps) {
           Accept: "application/json",
         },
       },
-      FETCH_TIMEOUT_MS
+      FETCH_TIMEOUT_MS,
     );
     lastStatus = res.status;
     if (!res.ok) {
@@ -242,7 +255,11 @@ export default async function Page({ searchParams }: PageProps) {
           </div>
           <div className="md:col-span-3">
             <label className="label">Featured</label>
-            <select name="featured" defaultValue={featured} className="select">
+            <select
+              name="featured"
+              defaultValue={featured}
+              className="select"
+            >
               <option value="any">Any</option>
               <option value="yes">Yes</option>
               <option value="no">No</option>
@@ -251,7 +268,11 @@ export default async function Page({ searchParams }: PageProps) {
           <input type="hidden" name="page" value="1" />
           <div className="md:col-span-12 flex items-end gap-2 pt-1">
             <button className="btn-gradient-primary">Apply</button>
-            <Link href="/admin/listings" className="btn-outline" prefetch={false}>
+            <Link
+              href="/admin/listings"
+              className="btn-outline"
+              prefetch={false}
+            >
               Clear
             </Link>
           </div>
@@ -275,6 +296,10 @@ export default async function Page({ searchParams }: PageProps) {
           <>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
+                <caption className="sr-only">
+                  Admin listing table showing products and services with seller
+                  and featured status
+                </caption>
                 <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800/50 dark:text-slate-300">
                   <tr className="text-left">
                     <Th>Type</Th>
@@ -384,36 +409,38 @@ export default async function Page({ searchParams }: PageProps) {
               </Link>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(7, totalPages) }).map((_, i) => {
-                  const half = 3;
-                  let p = i + 1;
-                  if (totalPages > 7) {
-                    const start = Math.max(
-                      1,
-                      Math.min(safePage - half, totalPages - 6)
-                    );
-                    p = start + i;
-                  }
-                  const isCurrent = p === safePage;
+                {Array.from({ length: Math.min(7, totalPages) }).map(
+                  (_, i) => {
+                    const half = 3;
+                    let p = i + 1;
+                    if (totalPages > 7) {
+                      const start = Math.max(
+                        1,
+                        Math.min(safePage - half, totalPages - 6),
+                      );
+                      p = start + i;
+                    }
+                    const isCurrent = p === safePage;
 
-                  return (
-                    <Link
-                      key={p}
-                      href={keepQuery("/admin/listings", sp, {
-                        page: String(p),
-                      })}
-                      prefetch={false}
-                      aria-current={isCurrent ? "page" : undefined}
-                      className={`rounded px-2 py-1 ${
-                        isCurrent
-                          ? "bg-[#161748] text-white"
-                          : "hover:bg-black/5 dark:hover:bg-white/10"
-                      }`}
-                    >
-                      {p}
-                    </Link>
-                  );
-                })}
+                    return (
+                      <Link
+                        key={p}
+                        href={keepQuery("/admin/listings", sp, {
+                          page: String(p),
+                        })}
+                        prefetch={false}
+                        aria-current={isCurrent ? "page" : undefined}
+                        className={`rounded px-2 py-1 ${
+                          isCurrent
+                            ? "bg-[#161748] text-white"
+                            : "hover:bg-black/5 dark:hover:bg-white/10"
+                        }`}
+                      >
+                        {p}
+                      </Link>
+                    );
+                  },
+                )}
               </div>
 
               <Link

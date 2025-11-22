@@ -23,7 +23,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminHome() {
-  await requireAdmin(); // strict SSR guard
+  // Root admin entrypoint – keep strict SSR guard here.
+  await requireAdmin();
 
   return (
     <div className="space-y-6">
@@ -33,17 +34,28 @@ export default async function AdminHome() {
       <SectionHeader
         as="h2"
         title="Overview"
-        subtitle="Quick links to administration areas."
+        subtitle="Quick links to key administration areas."
         actions={
           <div className="flex gap-2">
-            <Link href="/" prefetch={false} className="btn-outline text-sm">
+            <Link
+              href="/admin/dashboard"
+              prefetch={false}
+              className="btn-gradient-primary text-sm"
+            >
+              Metrics
+            </Link>
+            <Link
+              href="/"
+              prefetch={false}
+              className="btn-outline text-sm"
+            >
               Home
             </Link>
           </div>
         }
       />
 
-      <ul className="grid gap-3 sm:grid-cols-2">
+      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <li>
           <Link
             href="/admin/users"
@@ -51,7 +63,9 @@ export default async function AdminHome() {
             className="block rounded-xl border bg-white p-4 shadow-sm hover:shadow dark:border-slate-800 dark:bg-slate-900"
           >
             <div className="font-semibold">Users</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">Manage roles &amp; accounts</div>
+            <div className="text-sm text-gray-600 dark:text-slate-400">
+              Manage roles &amp; accounts
+            </div>
           </Link>
         </li>
         <li>
@@ -61,7 +75,33 @@ export default async function AdminHome() {
             className="block rounded-xl border bg-white p-4 shadow-sm hover:shadow dark:border-slate-800 dark:bg-slate-900"
           >
             <div className="font-semibold">Listings</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">Products &amp; services</div>
+            <div className="text-sm text-gray-600 dark:text-slate-400">
+              Products &amp; services across the marketplace
+            </div>
+          </Link>
+        </li>
+        <li>
+          <Link
+            href="/admin/moderation"
+            prefetch={false}
+            className="block rounded-xl border bg-white p-4 shadow-sm hover:shadow dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="font-semibold">Moderation</div>
+            <div className="text-sm text-gray-600 dark:text-slate-400">
+              Review reports &amp; hide problem listings
+            </div>
+          </Link>
+        </li>
+        <li>
+          <Link
+            href="/admin/reveals"
+            prefetch={false}
+            className="block rounded-xl border bg-white p-4 shadow-sm hover:shadow dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="font-semibold">Contact reveals</div>
+            <div className="text-sm text-gray-600 dark:text-slate-400">
+              Audit who revealed phone numbers
+            </div>
           </Link>
         </li>
       </ul>
