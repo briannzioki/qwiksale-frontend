@@ -8,6 +8,7 @@ import Link from "next/link";
 import type { JSX, ReactNode } from "react";
 import SectionHeader from "@/app/components/SectionHeader";
 import { getSessionUser, isSuperAdminUser } from "@/app/lib/authz";
+import { prisma } from "@/app/lib/prisma";
 
 export const metadata: Metadata = {
   title: "Users · QwikSale Admin",
@@ -33,6 +34,7 @@ type RoleFilter = "any" | "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN";
 const SSR_TIMEOUT_MS = 1200;
 const FETCH_TIMEOUT_MS = 2500;
 const PAGE_SIZE = 50;
+const API_LIMIT = 500;
 
 function withTimeout<T>(
   p: Promise<T>,
@@ -144,11 +146,60 @@ function normalizeUsersPayload(payload: unknown): AdminUser[] {
   return [];
 }
 
+// Fallback: direct Prisma query if the API fails or returns 0 rows.
+// Uses the same basic filters as /api/admin/users.
+async function fetchUsersFallback(opts: {
+  q: string;
+  role: RoleFilter;
+  limit: number;
+}): Promise<AdminUser[]> {
+  const { q, role, limit } = opts;
+
+  const where: Record<string, unknown> = {};
+  if (q) {
+    const like = { contains: q, mode: "insensitive" as const };
+    const or: any[] = [{ email: like }, { name: like }, { username: like }];
+    if (q.length >= 8) {
+      or.push({ id: q });
+    }
+    where["OR"] = or;
+  }
+  if (role !== "any") {
+    where["role"] = role;
+  }
+
+  const rows = await prisma.user.findMany({
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: limit,
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      username: true,
+      role: true,
+      createdAt: true,
+    },
+  });
+
+  return rows.map((u) => ({
+    id: String(u.id),
+    email: u.email ?? null,
+    name: u.name ?? null,
+    username: u.username ?? null,
+    role: u.role ? String(u.role) : null,
+    createdAt:
+      u.createdAt instanceof Date
+        ? u.createdAt.toISOString()
+        : ((u as any).createdAt as string | null) ?? null,
+  }));
+}
+
 /**
  * Admin-only view.
  * Access enforced by:
  * - /admin/layout via requireAdmin()
- * - middleware for /api/admin/users
+ * - middleware / assertAdmin for /api/admin/users
  */
 export default async function Page({
   searchParams,
@@ -171,12 +222,13 @@ export default async function Page({
 
   // Build API query (relative URL; middleware + server handle host)
   const qs = new URLSearchParams();
-  qs.set("limit", "500");
+  qs.set("limit", String(API_LIMIT));
   if (q) qs.set("q", q);
   if (role !== "any") qs.set("role", role);
 
   let all: AdminUser[] | null = null;
   let lastStatus = 0;
+  let hadApiError = false;
 
   try {
     const res = await fetchWithTimeout(
@@ -191,16 +243,32 @@ export default async function Page({
     all = normalizeUsersPayload(json);
   } catch {
     all = null;
+    hadApiError = true;
+  }
+
+  // Primary source from API, then DB fallback if empty or API failed.
+  let source: AdminUser[] = Array.isArray(all) ? all : [];
+  let hadFallbackError = false;
+
+  if (source.length === 0) {
+    try {
+      source = await fetchUsersFallback({
+        q,
+        role,
+        limit: API_LIMIT,
+      });
+    } catch {
+      hadFallbackError = true;
+    }
   }
 
   const softError =
-    all === null
+    hadApiError && hadFallbackError
       ? lastStatus === 403
         ? "You need admin access to view users."
         : "Failed to load users. Showing an empty list."
       : null;
 
-  const source: AdminUser[] = Array.isArray(all) ? all : [];
   const lowered = q.toLowerCase();
 
   const users: AdminUser[] = source.filter((u) => {
@@ -448,7 +516,7 @@ export default async function Page({
                         className={`rounded px-2 py-1 ${
                           isCurrent
                             ? "bg-[#161748] text-white"
-                            : "hover:bg-black/5 dark:hover:bg-white/10"
+                            : "hover:bg-black/5 dark:hover:bg:white/10"
                         }`}
                       >
                         {p}
