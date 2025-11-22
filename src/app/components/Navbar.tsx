@@ -1,8 +1,8 @@
-// src/app/components/Navbar.tsx
 "use client";
 
 import * as React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/app/components/Icon";
 import { Button } from "@/app/components/Button";
@@ -41,8 +41,9 @@ export default function Navbar({
   }, [sticky]);
 
   const isActive = React.useCallback(
-    (href: string) => (pathname === href ? true : pathname?.startsWith(href + "/")),
-    [pathname]
+    (href: string) =>
+      pathname === href ? true : pathname?.startsWith(href + "/"),
+    [pathname],
   );
 
   const openCategories = React.useCallback(() => {
@@ -50,13 +51,17 @@ export default function Navbar({
   }, []);
 
   return (
-    <div className={cx(sticky && "sticky top-0 z-header", "w-full")} role="navigation" aria-label="Main">
+    <div
+      className={cx(sticky && "sticky top-0 z-header", "w-full")}
+      role="navigation"
+      aria-label="Main"
+    >
       <div
         className={cx(
-          "bg-white/60 dark:bg-slate-900/30 backdrop-blur-md",
+          "bg-white/60 dark:bg-slate-950/80 backdrop-blur-md supports-[backdrop-filter]:bg-slate-950/70",
           "border-b border-black/5 dark:border-white/5",
           scrolled ? "shadow-sm" : "shadow-none",
-          "transition-[box-shadow,background-color,backdrop-filter] duration-200"
+          "transition-[box-shadow,background-color,backdrop-filter] duration-200",
         )}
       >
         <div className="container-page flex h-14 items-center gap-3 md:h-16">
@@ -64,29 +69,40 @@ export default function Navbar({
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
-              className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 dark:border-white/15 bg-white/60 dark:bg-white/5 hover:bg-white/80 dark:hover:bg:white/10 transition"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg-white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10 transition md:hidden"
               onClick={openCategories}
               aria-label="Open categories"
             >
               <Icon name="refine" />
             </button>
 
-            <Link href="/" className="flex shrink-0 items-center gap-2" prefetch={false}>
-              <span
-                className="h-6 w-6 rounded-md shadow-sm"
-                style={{ backgroundImage: "linear-gradient(135deg, #161748 0%, #478559 50%, #39a0ca 100%)" }}
-                aria-hidden="true"
-              />
-              <span className="text-gradient text-sm font-extrabold tracking-tight md:text-base">QwikSale</span>
+            <Link
+              href="/"
+              className="flex shrink-0 items-center gap-2"
+              prefetch={false}
+            >
+              <span className="relative inline-flex h-8 w-8 overflow-hidden rounded-xl border border-white/20 bg-slate-950 shadow-inner">
+                <Image
+                  src="/brand/qwiksale-logo.jpg"
+                  alt="QwikSale logo"
+                  fill
+                  sizes="32px"
+                  className="object-contain"
+                  priority
+                />
+              </span>
+              <span className="text-sm font-extrabold tracking-tight text-slate-900 drop-shadow-sm dark:text-white md:text-base">
+                QwikSale
+              </span>
             </Link>
 
             <button
               type="button"
               className={cx(
-                "hidden md:inline-flex items:center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium",
+                "hidden md:inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium",
                 "text-gray-700 hover:text-gray-900 dark:text-slate-200 dark:hover:text-white",
                 "border border-transparent hover:border-gray-200 dark:hover:border-white/10",
-                "transition"
+                "transition",
               )}
               onClick={openCategories}
             >
@@ -134,7 +150,7 @@ export default function Navbar({
             <Link
               href="/search"
               prefetch={false}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg-white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg:white/10 transition md:hidden"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg-white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10 transition md:hidden"
               aria-label="Search"
             >
               <Icon name="search" />
@@ -144,7 +160,7 @@ export default function Navbar({
               <Link
                 href="/post"
                 prefetch={false}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg:white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg:white/10 transition md:hidden"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg-white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10 transition md:hidden"
                 aria-label="Sell"
               >
                 <Icon name="add" />
@@ -178,14 +194,17 @@ function NavLink({
         "relative inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium transition",
         "text-gray-700 hover:text-gray-900 dark:text-slate-200 dark:hover:text-white",
         "border border-transparent hover:border-gray-200 dark:hover:border-white/10",
-        active && "text-gray-900 dark:text-white bg-white/70 dark:bg-white/10 border-gray-200 dark:border-white/10"
+        active &&
+          "bg-white/70 text-gray-900 border-gray-200 dark:bg-white/10 dark:text-white dark:border-white/10",
       )}
       aria-current={active ? "page" : undefined}
     >
       <span
         className={cx(
           "absolute -bottom-[7px] left-2 right-2 h-[2px] rounded-full",
-          active ? "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]" : "bg-transparent"
+          active
+            ? "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]"
+            : "bg-transparent",
         )}
         aria-hidden="true"
       />

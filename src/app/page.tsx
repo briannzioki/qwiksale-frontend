@@ -1,14 +1,19 @@
-﻿// src/app/page.tsx
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import type { Metadata } from "next";
 import SectionHeader from "@/app/components/SectionHeader";
-import HomeClientNoSSR, { type HomeSeedProps } from "@/app/_components/HomeClientNoSSR";
+import HomeClientNoSSR, {
+  type HomeSeedProps,
+} from "@/app/_components/HomeClientNoSSR";
 
 /* ------------------------------ Minimal shapes ----------------------------- */
-type AnyItem = { id: string | number; type?: "product" | "service" } & Record<string, unknown>;
+type AnyItem = {
+  id: string | number;
+  type?: "product" | "service";
+} & Record<string, unknown>;
+
 type PageResponse = {
   page: number;
   pageSize: number;
@@ -37,10 +42,14 @@ function resolveBaseUrl(): string {
 }
 
 function timeout<T = never>(ms: number): Promise<T> {
-  return new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms));
+  return new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("timeout")), ms),
+  );
 }
 
-async function safeJSON<T>(r: Response | undefined | null): Promise<T | null> {
+async function safeJSON<T>(
+  r: Response | undefined | null,
+): Promise<T | null> {
   try {
     if (!r || !r.ok) return null;
     return (await r.json()) as T;
@@ -49,9 +58,15 @@ async function safeJSON<T>(r: Response | undefined | null): Promise<T | null> {
   }
 }
 
-async function pickFirst(url: string, softMs = 3500): Promise<AnyItem | null> {
+async function pickFirst(
+  url: string,
+  softMs = 3500,
+): Promise<AnyItem | null> {
   try {
-    const r: any = await Promise.race([fetch(url, { cache: "no-store" }), timeout(softMs)]);
+    const r: any = await Promise.race([
+      fetch(url, { cache: "no-store" }),
+      timeout(softMs),
+    ]);
     const json = (await safeJSON<PageResponse>(r)) as PageResponse | null;
     if (Array.isArray(json?.items) && json!.items.length > 0) {
       return json!.items[0] as AnyItem;
@@ -62,7 +77,9 @@ async function pickFirst(url: string, softMs = 3500): Promise<AnyItem | null> {
   }
 }
 
-async function bestEffortFirst(kind: "products" | "services"): Promise<AnyItem | null> {
+async function bestEffortFirst(
+  kind: "products" | "services",
+): Promise<AnyItem | null> {
   const base = resolveBaseUrl();
   const qs = "limit=1";
   // 1) Try home-feed tab first
@@ -75,8 +92,14 @@ async function bestEffortFirst(kind: "products" | "services"): Promise<AnyItem |
 }
 
 /** Returns nullable IDs for SSR seed anchors (so tests can grab a link instantly). */
-async function getSeedIds(): Promise<{ productId: string | null; serviceId: string | null }> {
-  const [prodItem, servItem] = await Promise.all([bestEffortFirst("products"), bestEffortFirst("services")]);
+async function getSeedIds(): Promise<{
+  productId: string | null;
+  serviceId: string | null;
+}> {
+  const [prodItem, servItem] = await Promise.all([
+    bestEffortFirst("products"),
+    bestEffortFirst("services"),
+  ]);
   const productId = prodItem?.id != null ? String(prodItem.id) : null;
   const serviceId = servItem?.id != null ? String(servItem.id) : null;
   return { productId, serviceId };
@@ -91,16 +114,23 @@ function getParam(sp: SearchParams, k: string): string | undefined {
 
 export const metadata: Metadata = {
   title: "Home",
-  description: "Discover the latest listings on QwikSale — Kenya’s trusted marketplace for all items.",
+  description:
+    "Discover the latest listings on QwikSale — Kenya’s most trusted marketplace to buy & sell anything fast.",
 };
 
-export default async function Page({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
   const sp = (await (searchParams ?? Promise.resolve({}))) as SearchParams;
 
   // Accept BOTH ?t= and ?tab= (the tests sometimes use ?tab=services)
   const tabParamRaw = getParam(sp, "t") ?? getParam(sp, "tab") ?? "all";
   const tab: "all" | "products" | "services" =
-    tabParamRaw === "products" || tabParamRaw === "services" || tabParamRaw === "all"
+    tabParamRaw === "products" ||
+    tabParamRaw === "services" ||
+    tabParamRaw === "all"
       ? (tabParamRaw as "all" | "products" | "services")
       : "all";
 
@@ -113,12 +143,16 @@ export default async function Page({ searchParams }: { searchParams?: Promise<Se
   // If we couldn't resolve any real service ID but we're on the services tab,
   // still surface a tiny fallback <a href="/service/..."> so tests never hang.
   const shouldRenderServiceFallback = !serviceId && tab === "services";
-  const hasAnySeedLink = !!productId || !!serviceId || shouldRenderServiceFallback;
+  const hasAnySeedLink =
+    !!productId || !!serviceId || shouldRenderServiceFallback;
 
   return (
     <main id="main" className="min-h-[60svh]">
       {hasAnySeedLink && (
-        <section aria-label="Quick links" className="container mx-auto px-4 pt-2 pb-0 leading-none">
+        <section
+          aria-label="Quick links"
+          className="container mx-auto px-4 pt-2 pb-0 leading-none"
+        >
           <div className="flex gap-2">
             {productId && (
               <a
@@ -161,12 +195,15 @@ export default async function Page({ searchParams }: { searchParams?: Promise<Se
         <SectionHeader
           as="h1"
           title="QwikSale"
-          subtitle="Kenya’s trusted marketplace — buy & sell anything fast."
+          subtitle="Kenya’s most trusted marketplace — buy & sell anything fast."
           kicker="Welcome"
         />
       </section>
 
-      <section aria-label="Search results" className="container mx-auto px-4 pb-12">
+      <section
+        aria-label="Search results"
+        className="container mx-auto px-4 pb-12"
+      >
         <HomeClientNoSSR {...seedProps} />
       </section>
     </main>
