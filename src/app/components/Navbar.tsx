@@ -1,3 +1,4 @@
+// src/app/components/Navbar.tsx
 "use client";
 
 import * as React from "react";
@@ -67,6 +68,7 @@ export default function Navbar({
         <div className="container-page flex h-14 items-center gap-3 md:h-16">
           {/* Left */}
           <div className="flex min-w-0 items-center gap-2">
+            {/* Mobile categories toggle */}
             <button
               type="button"
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg-white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10 transition md:hidden"
@@ -76,6 +78,7 @@ export default function Navbar({
               <Icon name="refine" />
             </button>
 
+            {/* Logo */}
             <Link
               href="/"
               className="flex shrink-0 items-center gap-2"
@@ -96,19 +99,21 @@ export default function Navbar({
               </span>
             </Link>
 
-            <button
-              type="button"
+            {/* Desktop Browse → now a real link to /search */}
+            <Link
+              href="/search"
+              prefetch={false}
               className={cx(
                 "hidden md:inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium",
                 "text-gray-700 hover:text-gray-900 dark:text-slate-200 dark:hover:text-white",
                 "border border-transparent hover:border-gray-200 dark:hover:border-white/10",
                 "transition",
               )}
-              onClick={openCategories}
+              aria-current={isActive("/search") ? "page" : undefined}
             >
               <Icon name="filter" />
               Browse
-            </button>
+            </Link>
           </div>
 
           {/* Center: canonical header inline search */}
