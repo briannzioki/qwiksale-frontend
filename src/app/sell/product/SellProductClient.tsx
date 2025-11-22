@@ -9,7 +9,6 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { categories, type CategoryNode } from "@/app/data/categories";
 import { useProducts } from "@/app/lib/productsStore";
@@ -21,17 +20,16 @@ import {
 import { extractGalleryUrls } from "@/app/lib/media";
 
 type FilePreview = { file: File; url: string; key: string };
-type Me = {
-  id: string;
-  email: string | null;
-  profileComplete?: boolean;
-  whatsapp?: string | null;
-};
 
 type Props = {
   id?: string | undefined;
   hideMedia?: boolean;
   onBeforeSubmitAction?: () => Promise<void>;
+  /**
+   * Server-computed flag from /sell/product/page.tsx.
+   * We do NOT call /api/me to decide login state.
+   */
+  isAuthenticated?: boolean;
 };
 
 const MAX_FILES = 6;
@@ -54,7 +52,9 @@ async function uploadToCloudinary(
   file: File,
   opts?: { onProgress?: (pct: number) => void; folder?: string },
 ): Promise<{ secure_url: string; public_id: string }> {
-  if (!CLOUD_NAME) throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  if (!CLOUD_NAME) {
+    throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  }
   const folder = opts?.folder || "qwiksale";
   const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
   const fd = new FormData();
@@ -79,13 +79,9 @@ async function uploadToCloudinary(
     },
   );
   const sigJson: any = await sigRes.json();
-  if (!sigRes.ok)
+  if (!sigRes.ok) {
     throw new Error(sigJson?.error || "Failed to get upload signature");
-
-  fd.append("api_key", sigJson.apiKey);
-  fd.append("timestamp", String(sigJson.timestamp));
-  fd.append("signature", sigJson.signature);
-  fd.append("folder", folder);
+  }
 
   const xhr = new XMLHttpRequest();
   const p = new Promise<{ secure_url: string; public_id: string }>(
@@ -99,12 +95,11 @@ async function uploadToCloudinary(
         if (xhr.readyState === 4) {
           try {
             const j = JSON.parse(xhr.responseText);
-            if (
-              xhr.status >= 200 &&
-              xhr.status < 300 &&
-              j.secure_url
-            ) {
-              resolve({ secure_url: j.secure_url, public_id: j.public_id });
+            if (xhr.status >= 200 && xhr.status < 300 && j.secure_url) {
+              resolve({
+                secure_url: j.secure_url,
+                public_id: j.public_id,
+              });
             } else {
               reject(
                 new Error(
@@ -115,7 +110,9 @@ async function uploadToCloudinary(
             }
           } catch (e: any) {
             reject(
-              new Error(e?.message || "Cloudinary response parse error"),
+              new Error(
+                e?.message || "Cloudinary response parse error",
+              ),
             );
           }
         }
@@ -131,11 +128,9 @@ export default function SellProductClient({
   id,
   hideMedia = false,
   onBeforeSubmitAction,
+  isAuthenticated = false,
 }: Props) {
   const router = useRouter();
-
-  // We no longer gate rendering on "ready" – the form is always rendered
-  const [allowed, setAllowed] = useState<boolean | null>(null);
 
   const [name, setName] = useState<string>("");
   const [price, setPrice] = useState<number | "">("");
@@ -160,45 +155,6 @@ export default function SellProductClient({
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // Auth & /api/me – used for prefill and sign-in hint only, never to hide the form
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/me", { cache: "no-store" });
-
-        if (res.status === 401) {
-          if (!cancelled) {
-            setAllowed(false);
-          }
-          return;
-        }
-        if (!res.ok) {
-          if (!cancelled) {
-            setAllowed(true);
-          }
-          return;
-        }
-
-        const j = (await res.json().catch(() => null)) as any;
-        const me: Me | null = (j && (j.user ?? j)) || null;
-
-        if (!cancelled && me && me.profileComplete === false) {
-          setAllowed(true);
-          return;
-        }
-
-        if (!cancelled && !phone && me?.whatsapp) setPhone(me.whatsapp);
-        if (!cancelled) setAllowed(true);
-      } catch {
-        if (!cancelled) setAllowed(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [phone]);
 
   const store = useProducts() as any;
   const addProduct: (payload: any) => Promise<any> | any =
@@ -324,8 +280,9 @@ export default function SellProductClient({
       if (
         previews.some((p) => p.key === key) ||
         next.some((p) => p.key === key)
-      )
+      ) {
         continue;
+      }
       const url = URL.createObjectURL(f);
       next.push({ file: f, url, key });
     }
@@ -441,8 +398,9 @@ export default function SellProductClient({
             : [];
 
         if (computedImage) payload["image"] = computedImage;
-        if (computedGallery && computedGallery.length > 0)
+        if (computedGallery && computedGallery.length > 0) {
           payload["gallery"] = computedGallery;
+        }
       }
 
       let resultId: string | null = null;
@@ -516,32 +474,11 @@ export default function SellProductClient({
     }
   }
 
-  const notSignedIn = allowed === false;
-
   return (
-    // Full client-side flow; no mount-time URL normalization, and form is always rendered.
-    <div className="container-page py-6">
-      {/* Optional inline sign-in warning, but we ALWAYS render the form + CTA */}
-      {notSignedIn && (
-        <div className="mb-4 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h2 className="text-lg font-semibold">You’re not signed in</h2>
-          <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
-            You can draft your listing, but you’ll need to sign in before it can
-            be posted.
-          </p>
-          <div className="mt-2">
-            <Link
-              href={`/signin?callbackUrl=${encodeURIComponent(
-                "/sell/product",
-              )}`}
-              className="btn-gradient-primary inline-block text-sm"
-            >
-              Sign in
-            </Link>
-          </div>
-        </div>
-      )}
-
+    <div
+      className="container-page py-6"
+      data-authed={isAuthenticated ? "true" : "false"}
+    >
       {/* Header card */}
       <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
         <h1 className="text-2xl font-bold text-balance">
@@ -635,7 +572,9 @@ export default function SellProductClient({
               className="select mt-1"
               value={condition}
               onChange={(e) =>
-                setCondition(e.target.value as "brand new" | "pre-owned")
+                setCondition(
+                  e.target.value as "brand new" | "pre-owned",
+                )
               }
             >
               <option value="brand new">Brand New</option>

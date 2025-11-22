@@ -1,3 +1,4 @@
+// src/app/sell/service/SellServiceClient.tsx
 "use client";
 
 import {
@@ -14,18 +15,31 @@ import { toast } from "@/app/components/ToasterClient";
 import { extractGalleryUrls } from "@/app/lib/media";
 
 const SERVICE_CATEGORIES = [
-  { name: "Home Services", subcategories: [{ name: "Cleaning" }, { name: "Repairs" }] },
-  { name: "Automotive", subcategories: [{ name: "Mechanic" }, { name: "Car Wash" }] },
-  { name: "Events", subcategories: [{ name: "Photography" }, { name: "Catering" }] },
+  {
+    name: "Home Services",
+    subcategories: [{ name: "Cleaning" }, { name: "Repairs" }],
+  },
+  {
+    name: "Automotive",
+    subcategories: [{ name: "Mechanic" }, { name: "Car Wash" }],
+  },
+  {
+    name: "Events",
+    subcategories: [{ name: "Photography" }, { name: "Catering" }],
+  },
 ] as const;
 
 type FilePreview = { file: File; url: string; key: string };
-type Me = { id: string; email: string | null; profileComplete?: boolean; whatsapp?: string | null };
 
 type Props = {
   editId?: string | null | undefined;
   hideMedia?: boolean;
   onBeforeSubmitAction?: () => Promise<void>;
+  /**
+   * Server-computed auth hint from /sell/service/page.tsx.
+   * We never call /api/me to decide if you are logged in.
+   */
+  isAuthenticated?: boolean;
 };
 
 const MAX_FILES = 6;
@@ -33,7 +47,8 @@ const MAX_MB = 5;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
-const UPLOAD_PRESET = process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? "";
+const UPLOAD_PRESET =
+  process.env["NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET"] ?? "";
 
 function normalizePhone(raw: string): string {
   const trimmed = (raw || "").trim();
@@ -44,13 +59,16 @@ function normalizePhone(raw: string): string {
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-const looksLikeValidKePhone = (input: string) => /^254(7|1)\d{8}$/.test(normalizePhone(input));
+const looksLikeValidKePhone = (input: string) =>
+  /^254(7|1)\d{8}$/.test(normalizePhone(input));
 
 async function uploadToCloudinary(
   file: File,
   opts?: { onProgress?: (pct: number) => void; folder?: string },
 ): Promise<{ secure_url: string; public_id: string }> {
-  if (!CLOUD_NAME) throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  if (!CLOUD_NAME) {
+    throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  }
   const folder = opts?.folder || "qwiksale";
   const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
   const fd = new FormData();
@@ -67,52 +85,73 @@ async function uploadToCloudinary(
     return { secure_url: json.secure_url, public_id: json.public_id };
   }
 
-  const sigRes = await fetch(`/api/upload/sign?folder=${encodeURIComponent(folder)}`, {
-    method: "GET",
-    cache: "no-store",
-  });
+  const sigRes = await fetch(
+    `/api/upload/sign?folder=${encodeURIComponent(folder)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
   const sigJson: any = await sigRes.json();
-  if (!sigRes.ok) throw new Error(sigJson?.error || "Failed to get upload signature");
-
-  fd.append("api_key", sigJson.apiKey);
-  fd.append("timestamp", String(sigJson.timestamp));
-  fd.append("signature", sigJson.signature);
-  fd.append("folder", folder);
+  if (!sigRes.ok) {
+    throw new Error(sigJson?.error || "Failed to get upload signature");
+  }
 
   const xhr = new XMLHttpRequest();
-  return await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-    xhr.upload.onprogress = (evt) =>
-      evt.lengthComputable && opts?.onProgress?.(Math.round((evt.loaded / evt.total) * 100));
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState !== 4) return;
-      try {
-        const j = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && j.secure_url)
-          resolve({ secure_url: j.secure_url, public_id: j.public_id });
-        else reject(new Error(j?.error?.message || `Cloudinary upload failed (${xhr.status})`));
-      } catch (e: any) {
-        reject(new Error(e?.message || "Cloudinary response parse error"));
-      }
-    };
-    xhr.open("POST", endpoint, true);
-    xhr.send(fd);
-  });
+  return await new Promise<{ secure_url: string; public_id: string }>(
+    (resolve, reject) => {
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable && opts?.onProgress) {
+          opts.onProgress(Math.round((evt.loaded / evt.total) * 100));
+        }
+      };
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState !== 4) return;
+        try {
+          const j = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300 && j.secure_url) {
+            resolve({
+              secure_url: j.secure_url,
+              public_id: j.public_id,
+            });
+          } else {
+            reject(
+              new Error(
+                j?.error?.message ||
+                  `Cloudinary upload failed (${xhr.status})`,
+              ),
+            );
+          }
+        } catch (e: any) {
+          reject(
+            new Error(
+              e?.message || "Cloudinary response parse error",
+            ),
+          );
+        }
+      };
+      xhr.open("POST", endpoint, true);
+      xhr.send(fd);
+    },
+  );
 }
 
 export default function SellServiceClient({
   editId,
   hideMedia = false,
   onBeforeSubmitAction,
+  isAuthenticated = false,
 }: Props) {
   const router = useRouter();
 
-  const [ready, setReady] = useState(false);
-  const [allowed, setAllowed] = useState<boolean | null>(null);
-
   const [name, setName] = useState<string>("");
   const [price, setPrice] = useState<number | "">("");
-  const [rateType, setRateType] = useState<"hour" | "day" | "fixed">("fixed");
-  const [category, setCategory] = useState<string>(String(SERVICE_CATEGORIES[0]?.name || "Services"));
+  const [rateType, setRateType] = useState<"hour" | "day" | "fixed">(
+    "fixed",
+  );
+  const [category, setCategory] = useState<string>(
+    String(SERVICE_CATEGORIES[0]?.name || "Services"),
+  );
   const [subcategory, setSubcategory] = useState<string>(
     String(SERVICE_CATEGORIES[0]?.subcategories?.[0]?.name || ""),
   );
@@ -129,59 +168,18 @@ export default function SellServiceClient({
   const [uploadPct, setUploadPct] = useState<number>(0);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const phoneRef = useRef<string>("");
-
-  useEffect(() => {
-    phoneRef.current = phone;
-  }, [phone]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/me", { cache: "no-store" });
-        if (res.status === 401) {
-          if (!cancelled) {
-            setAllowed(false);
-            setReady(true);
-          }
-          return;
-        }
-        if (!res.ok) {
-          if (!cancelled) {
-            setAllowed(true);
-            setReady(true);
-          }
-          return;
-        }
-        const j = (await res.json().catch(() => null)) as any;
-        const me: Me | null = j?.user ?? j ?? null;
-        if (!cancelled && me && me.profileComplete === false) {
-          setAllowed(true);
-          setReady(true);
-          return;
-        }
-        if (!cancelled && !phoneRef.current && me?.whatsapp) setPhone(me.whatsapp);
-        if (!cancelled) setAllowed(true);
-      } catch {
-        if (!cancelled) setAllowed(true);
-      } finally {
-        if (!cancelled) setReady(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!editId) return;
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(`/api/services/${encodeURIComponent(editId)}`, {
-          cache: "no-store",
-        });
+        const r = await fetch(
+          `/api/services/${encodeURIComponent(editId)}`,
+          {
+            cache: "no-store",
+          },
+        );
         if (!r.ok) {
           toast.error("Unable to load service for editing.");
           return;
@@ -193,14 +191,32 @@ export default function SellServiceClient({
         setDescription(s?.description ?? "");
         setCategory(s?.category ?? "Services");
         setSubcategory(s?.subcategory ?? "");
-        setRateType((s?.rateType as "hour" | "day" | "fixed") ?? "fixed");
-        setPrice(typeof s?.price === "number" ? s.price : s?.price === null ? "" : "");
-        setServiceArea(s?.serviceArea ?? s?.location ?? "Nairobi");
+        setRateType(
+          (s?.rateType as "hour" | "day" | "fixed") ?? "fixed",
+        );
+        setPrice(
+          typeof s?.price === "number"
+            ? s.price
+            : s?.price === null
+            ? ""
+            : "",
+        );
+        setServiceArea(
+          s?.serviceArea ?? s?.location ?? "Nairobi",
+        );
         setAvailability(s?.availability ?? "Weekdays");
-        setLocation(s?.location ?? s?.serviceArea ?? "Nairobi");
+        setLocation(
+          s?.location ?? s?.serviceArea ?? "Nairobi",
+        );
         setPhone(s?.sellerPhone ?? "");
         setExistingImage(s?.image ?? null);
-        setExistingGallery(extractGalleryUrls({ gallery: s?.gallery }, undefined, 50));
+        setExistingGallery(
+          extractGalleryUrls(
+            { gallery: s?.gallery },
+            undefined,
+            50,
+          ),
+        );
       } catch (e: any) {
         console.error(e);
         toast.error("Failed to prefill service.");
@@ -212,7 +228,10 @@ export default function SellServiceClient({
   }, [editId]);
 
   type Sub = { readonly name: string };
-  type Cat = { readonly name: string; readonly subcategories: readonly Sub[] };
+  type Cat = {
+    readonly name: string;
+    readonly subcategories: readonly Sub[];
+  };
   const cats: readonly Cat[] = SERVICE_CATEGORIES;
 
   const subcats = useMemo(() => {
@@ -225,7 +244,9 @@ export default function SellServiceClient({
       setSubcategory("");
       return;
     }
-    if (!subcats.some((s) => s.name === subcategory)) setSubcategory(subcats[0]?.name || "");
+    if (!subcats.some((s) => s.name === subcategory)) {
+      setSubcategory(subcats[0]?.name || "");
+    }
   }, [subcats, subcategory]);
 
   useEffect(
@@ -257,11 +278,18 @@ export default function SellServiceClient({
         continue;
       }
       const key = `${f.name}:${f.size}:${f.lastModified}`;
-      if (previews.some((p) => p.key === key) || next.some((p) => p.key === key)) continue;
+      if (
+        previews.some((p) => p.key === key) ||
+        next.some((p) => p.key === key)
+      ) {
+        continue;
+      }
       const url = URL.createObjectURL(f);
       next.push({ file: f, url, key });
     }
-    if (next.length) setPreviews((prev) => [...prev, ...next].slice(0, MAX_FILES));
+    if (next.length) {
+      setPreviews((prev) => [...prev, ...next].slice(0, MAX_FILES));
+    }
   }
 
   function onFileInputChange(files: FileList | null) {
@@ -273,7 +301,9 @@ export default function SellServiceClient({
   function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer?.files?.length) filesToAdd(e.dataTransfer.files);
+    if (e.dataTransfer?.files?.length) {
+      filesToAdd(e.dataTransfer.files);
+    }
   }
 
   const removeAt = (idx: number) =>
@@ -298,7 +328,10 @@ export default function SellServiceClient({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return toast.error("Please fill all required fields.");
+    if (!canSubmit) {
+      toast.error("Please fill all required fields.");
+      return;
+    }
 
     if (!hideMedia && previews.length && !CLOUD_NAME) {
       toast.error(
@@ -323,7 +356,9 @@ export default function SellServiceClient({
           const item = await uploadToCloudinary(p.file, {
             folder: "qwiksale/services",
             onProgress: (pct) =>
-              setUploadPct(Math.round(((done + pct / 100) / total) * 100)),
+              setUploadPct(
+                Math.round(((done + pct / 100) / total) * 100),
+              ),
           });
           uploaded.push(item);
           done += 1;
@@ -336,7 +371,10 @@ export default function SellServiceClient({
         description: description.trim(),
         category,
         subcategory: subcategory || undefined,
-        price: price === "" ? null : Math.max(0, Math.round(Number(price))),
+        price:
+          price === ""
+            ? null
+            : Math.max(0, Math.round(Number(price))),
         rateType,
         serviceArea: serviceArea || undefined,
         availability: availability || undefined,
@@ -360,21 +398,29 @@ export default function SellServiceClient({
             : [];
 
         if (computedImage) payload["image"] = computedImage;
-        if (computedGallery.length > 0) payload["gallery"] = computedGallery;
+        if (computedGallery.length > 0) {
+          payload["gallery"] = computedGallery;
+        }
       }
 
       let resultId: string | null = null;
 
       if (editId) {
-        const r = await fetch(`/api/services/${encodeURIComponent(editId)}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify(payload),
-        });
+        const r = await fetch(
+          `/api/services/${encodeURIComponent(editId)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify(payload),
+          },
+        );
         const j = await r.json().catch(() => ({} as any));
-        if (!r.ok || (j as any)?.error)
-          throw new Error((j as any)?.error || `Failed to update (${r.status})`);
+        if (!r.ok || (j as any)?.error) {
+          throw new Error(
+            (j as any)?.error || `Failed to update (${r.status})`,
+          );
+        }
         resultId = editId;
         toast.success("Service updated!");
       } else {
@@ -386,11 +432,17 @@ export default function SellServiceClient({
         });
         if (r.status === 429) {
           const j = await r.json().catch(() => ({}));
-          throw new Error(j?.error || "You’re posting too fast. Please slow down.");
+          throw new Error(
+            j?.error ||
+              "You’re posting too fast. Please slow down.",
+          );
         }
         const j = await r.json().catch(() => ({} as any));
-        if (!r.ok || (j as any)?.error)
-          throw new Error((j as any)?.error || `Failed to create (${r.status})`);
+        if (!r.ok || (j as any)?.error) {
+          throw new Error(
+            (j as any)?.error || `Failed to create (${r.status})`,
+          );
+        }
         resultId = String((j as any)?.serviceId || "");
         toast.success("Service posted!");
       }
@@ -403,49 +455,422 @@ export default function SellServiceClient({
       }
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.message || (editId ? "Failed to update service." : "Failed to post service."));
+      toast.error(
+        err?.message ||
+          (editId
+            ? "Failed to update service."
+            : "Failed to post service."),
+      );
     } finally {
       setSubmitting(false);
       setUploadPct(0);
     }
   }
 
-  if (!ready) {
-    return (
-      <div className="container-page py-10">
-        <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
-          <h1 className="text-2xl font-bold">{editId ? "Edit Service" : "Post a Service"}</h1>
-          <p className="text-white/90">Checking your account…</p>
-        </div>
-      </div>
-    );
-  }
+  const notSignedIn = !isAuthenticated;
 
-  if (allowed === false) {
-    return (
-      <div className="container-page py-10">
-        <div className="rounded-xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h2 className="text-xl font-semibold">You’re not signed in</h2>
+  return (
+    <div
+      className="container-page py-6"
+      data-authed={isAuthenticated ? "true" : "false"}
+    >
+      {notSignedIn && (
+        <div className="mb-4 rounded-xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="text-xl font-semibold">
+            You’re not signed in
+          </h2>
           <p className="mt-2 text-gray-600 dark:text-slate-300">
-            Please sign in to post a service.
+            You can sketch out your service, but you’ll need to sign in
+            before publishing.
           </p>
           <div className="mt-4">
             <Link
-              href={`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`}
+              href={`/signin?callbackUrl=${encodeURIComponent(
+                "/sell/service",
+              )}`}
               className="btn-gradient-primary inline-block"
             >
               Sign in
             </Link>
           </div>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    /* keep your existing full form JSX here */
-    <div className="container-page py-6">
-      {/* Header + form stays as in your implementation */}
+      <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
+        <h1 className="text-2xl font-bold">
+          {editId ? "Edit Service" : "Post a Service"}
+        </h1>
+        <p className="text-white/90">
+          {editId
+            ? "Update your service details."
+            : "Describe what you offer and where you work."}
+        </p>
+      </div>
+
+      <form
+        className="mt-6 space-y-4 rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        onSubmit={onSubmit}
+      >
+        {/* Name + Price + RateType */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="md:col-span-2">
+            <label
+              className="text-sm font-medium"
+              htmlFor="sf-name"
+            >
+              Service name
+            </label>
+            <input
+              id="sf-name"
+              value={name}
+              onChange={(e) => setName(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              required
+              minLength={3}
+              placeholder="e.g. House Cleaning, Plumbing, Tutoring…"
+            />
+          </div>
+
+          <div>
+            <label
+              className="text-sm font-medium"
+              htmlFor="sf-price"
+            >
+              Price (KES)
+            </label>
+            <input
+              id="sf-price"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={price === "" ? "" : price}
+              onChange={(e) =>
+                setPrice(
+                  e.currentTarget.value === ""
+                    ? ""
+                    : Math.max(
+                        0,
+                        Math.floor(
+                          Number(e.currentTarget.value) || 0,
+                        ),
+                      ),
+                )
+              }
+              onWheel={(e) =>
+                (e.currentTarget as HTMLInputElement).blur()
+              }
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder='Leave empty for "Contact for quote"'
+              aria-describedby="sf-price-help"
+            />
+            <p
+              id="sf-price-help"
+              className="mt-1 text-xs text-gray-600 dark:text-gray-400"
+            >
+              Leave empty to show <em>Contact for quote</em>.
+            </p>
+
+            <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="rateType"
+                  value="fixed"
+                  checked={rateType === "fixed"}
+                  onChange={() => setRateType("fixed")}
+                  className="rounded border-gray-300 dark:border-slate-600"
+                />
+                Fixed
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="rateType"
+                  value="hour"
+                  checked={rateType === "hour"}
+                  onChange={() => setRateType("hour")}
+                  className="rounded border-gray-300 dark:border-slate-600"
+                />
+                /hour
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="rateType"
+                  value="day"
+                  checked={rateType === "day"}
+                  onChange={() => setRateType("day")}
+                  className="rounded border-gray-300 dark:border-slate-600"
+                />
+                /day
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Category/Subcategory/ServiceArea */}
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <label
+              className="text-sm font-medium"
+              htmlFor="sf-category"
+            >
+              Category
+            </label>
+            <select
+              id="sf-category"
+              value={category}
+              onChange={(e) => setCategory(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            >
+              {cats.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              className="text-sm font-medium"
+              htmlFor="sf-subcategory"
+            >
+              Subcategory (optional)
+            </label>
+            <select
+              id="sf-subcategory"
+              value={subcategory}
+              onChange={(e) =>
+                setSubcategory(e.currentTarget.value)
+              }
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            >
+              {subcats.length > 0 ? (
+                subcats.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.name}
+                  </option>
+                ))
+              ) : (
+                <option value="">—</option>
+              )}
+            </select>
+          </div>
+
+          <div>
+            <label
+              className="text-sm font-medium"
+              htmlFor="sf-area"
+            >
+              Service area (optional)
+            </label>
+            <input
+              id="sf-area"
+              value={serviceArea}
+              onChange={(e) =>
+                setServiceArea(e.currentTarget.value)
+              }
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder="e.g. Nairobi & Kiambu"
+            />
+          </div>
+        </div>
+
+        {/* Availability/Location/Phone */}
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <label
+              className="text-sm font-medium"
+              htmlFor="sf-avail"
+            >
+              Availability (optional)
+            </label>
+            <input
+              id="sf-avail"
+              value={availability}
+              onChange={(e) =>
+                setAvailability(e.currentTarget.value)
+              }
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder="e.g. Mon–Sat, 8am–6pm"
+            />
+          </div>
+          <div>
+            <label
+              className="text-sm font-medium"
+              htmlFor="sf-location"
+            >
+              Base location
+            </label>
+            <input
+              id="sf-location"
+              value={location}
+              onChange={(e) =>
+                setLocation(e.currentTarget.value)
+              }
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder="e.g. Nairobi"
+            />
+          </div>
+          <div>
+            <label
+              className="text-sm font-medium"
+              htmlFor="sf-phone"
+            >
+              Seller phone (optional)
+            </label>
+            <input
+              id="sf-phone"
+              value={phone}
+              onChange={(e) => setPhone(e.currentTarget.value)}
+              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              placeholder="2547XXXXXXXX"
+              inputMode="tel"
+              aria-invalid={phone && !phoneOk ? "true" : undefined}
+            />
+            <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+              {phone
+                ? phoneOk
+                  ? `Normalized: ${normalizedPhone}`
+                  : "Please use Safaricom format: 2547XXXXXXXX"
+                : "Optional. Buyers can call or WhatsApp."}
+            </div>
+          </div>
+        </div>
+
+        {/* Description */}
+        <div className="mt-4">
+          <label
+            className="text-sm font-medium"
+            htmlFor="sf-description"
+          >
+            Description
+          </label>
+          <textarea
+            id="sf-description"
+            value={description}
+            onChange={(e) =>
+              setDescription(e.currentTarget.value)
+            }
+            rows={5}
+            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            placeholder="Describe your service, experience, what’s included, etc."
+            required
+            minLength={10}
+          />
+        </div>
+
+        {/* Photos */}
+        {!hideMedia && (
+          <section className="mt-4 space-y-3">
+            <div
+              className="rounded-lg border border-dashed p-4 text-sm text-gray-600 dark:border-slate-700 dark:text-slate-300"
+              onDrop={onDrop}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <p className="font-medium">Photos</p>
+              <p className="text-xs">
+                Drag & drop up to {MAX_FILES} images ({MAX_MB}MB
+                each), or click to select.
+              </p>
+              <input
+                ref={inputRef}
+                type="file"
+                accept={ACCEPTED_TYPES.join(",")}
+                multiple
+                className="mt-2 block text-xs"
+                onChange={(e) => onFileInputChange(e.target.files)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              {existingImage && existingGallery.length === 0 && (
+                <div className="rounded border p-2 text-xs">
+                  Existing cover image
+                </div>
+              )}
+              {existingGallery.map((url) => (
+                <div
+                  key={url}
+                  className="rounded border p-2 text-xs"
+                >
+                  Existing photo
+                </div>
+              ))}
+              {previews.map((p, idx) => (
+                <div
+                  key={p.key}
+                  className="space-y-1 rounded border p-2 text-xs"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.url}
+                    alt=""
+                    className="h-24 w-full rounded object-cover"
+                  />
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="truncate">
+                      {Math.round(p.file.size / 1024)} KB
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => move(idx, -1)}
+                        className="rounded border px-1"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => move(idx, 1)}
+                        className="rounded border px-1"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeAt(idx)}
+                        className="rounded border px-1 text-red-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {uploadPct > 0 && submitting && (
+              <div className="text-xs text-gray-600 dark:text-slate-300">
+                Uploading photos… {uploadPct}%
+              </div>
+            )}
+          </section>
+        )}
+
+        <div className="mt-5 flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={!canSubmit || submitting}
+            className="btn-gradient-primary"
+          >
+            {submitting
+              ? editId
+                ? "Saving…"
+                : "Posting…"
+              : editId
+              ? "Save changes"
+              : "Post service"}
+          </button>
+          <p className="text-xs text-gray-500 dark:text-slate-400">
+            You can edit this service later from your dashboard.
+          </p>
+        </div>
+      </form>
     </div>
   );
 }

@@ -136,6 +136,25 @@ function keepQuery(
   return qs ? `${base}?${qs}` : base;
 }
 
+// Accept various API payload shapes: array, {listings:[]}, {data:[]}, {items:[]}, {rows:[]}
+function normalizeListingsPayload(payload: unknown): Listing[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) {
+    return payload as Listing[];
+  }
+  if (typeof payload === "object") {
+    const obj = payload as Record<string, unknown>;
+    const keys = ["listings", "data", "items", "rows"];
+    for (const key of keys) {
+      const maybe = obj[key];
+      if (Array.isArray(maybe)) {
+        return maybe as Listing[];
+      }
+    }
+  }
+  return [];
+}
+
 /**
  * Admin-only listings view.
  * Access enforced by:
@@ -176,7 +195,9 @@ export default async function Page({ searchParams }: PageProps) {
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
-    rows = await withTimeout<Listing[]>(res.json(), 500, []);
+
+    const json = await withTimeout(res.json(), 800, []);
+    rows = normalizeListingsPayload(json);
   } catch {
     rows = null;
   }

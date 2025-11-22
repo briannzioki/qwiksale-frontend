@@ -1,9 +1,10 @@
 // src/app/sell/service/page.tsx
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { cookies } from "next/headers";
 import SellServiceClient from "./SellServiceClient";
+import { getSessionUser } from "@/app/lib/authz";
 
 type SP = Record<string, string | string[] | undefined>;
 
@@ -21,18 +22,23 @@ export default async function Page({
   const id = firstParam(sp, "id");
   const isEdit = Boolean(id && String(id).trim());
 
-  // SSR auth sniff: look for next-auth cookie
-  const cookieStore = await cookies();
-  const authed = Boolean(
-    cookieStore.get("__Secure-next-auth.session-token")?.value ||
-      cookieStore.get("next-auth.session-token")?.value,
-  );
+  let isAuthenticated = false;
+  try {
+    const viewer = await getSessionUser();
+    if (viewer && viewer.id) {
+      isAuthenticated = true;
+    }
+  } catch {
+    isAuthenticated = false;
+  }
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6">
-      <h1 className="mb-4 text-xl font-semibold">Sell a Service</h1>
+      <h1 className="mb-4 text-xl font-semibold">
+        {isEdit ? "Edit Service" : "Sell a Service"}
+      </h1>
 
-      {!authed && (
+      {!isAuthenticated && (
         <p className="mb-4 text-sm text-gray-700 dark:text-slate-200">
           <a
             href={`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`}
@@ -74,7 +80,7 @@ export default async function Page({
       </form>
 
       {/* Real implementation (create/edit) lives in SellServiceClient */}
-      <SellServiceClient editId={id} />
+      <SellServiceClient editId={id} isAuthenticated={isAuthenticated} />
     </main>
   );
 }

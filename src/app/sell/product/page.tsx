@@ -3,8 +3,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { cookies } from "next/headers";
 import SellProductClient from "./SellProductClient";
+import { getSessionUser } from "@/app/lib/authz";
 
 type SP = Record<string, string | string[] | undefined>;
 
@@ -22,12 +22,16 @@ export default async function Page({
   const id = firstParam(sp, "id");
   const isEdit = Boolean(id && String(id).trim());
 
-  // SSR auth sniff: look for next-auth cookie (same pattern as /sell/service)
-  const cookieStore = await cookies();
-  const authed = Boolean(
-    cookieStore.get("__Secure-next-auth.session-token")?.value ||
-      cookieStore.get("next-auth.session-token")?.value,
-  );
+  let isAuthenticated = false;
+  try {
+    const viewer = await getSessionUser();
+    if (viewer && viewer.id) {
+      isAuthenticated = true;
+    }
+  } catch {
+    // Soft page – we do not want auth lookup failures to 500.
+    isAuthenticated = false;
+  }
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
@@ -35,7 +39,7 @@ export default async function Page({
         {isEdit ? "Edit product" : "Sell a Product"}
       </h1>
 
-      {!authed && (
+      {!isAuthenticated && (
         <p className="mb-2 text-sm text-gray-700 dark:text-slate-200">
           <a
             href={`/signin?callbackUrl=${encodeURIComponent("/sell/product")}`}
@@ -47,10 +51,7 @@ export default async function Page({
         </p>
       )}
 
-      {/* Server-side CTA that always renders immediately.
-          Playwright targets this via data-testid="sell-product-mode-cta"
-          in both create (/sell/product) and edit (/sell/product?id=...) modes.
-       */}
+      {/* Server-side CTA that Playwright hits */}
       <div className="mb-2">
         <button
           type="button"
@@ -61,11 +62,7 @@ export default async function Page({
         </button>
       </div>
 
-      {/* The real flow (create vs edit) lives in SellProductClient + its form.
-          Only this server button owns data-testid="sell-product-mode-cta" so tests
-          can target a stable SSR CTA before hydration.
-       */}
-      <SellProductClient id={id} />
+      <SellProductClient id={id} isAuthenticated={isAuthenticated} />
     </main>
   );
 }
