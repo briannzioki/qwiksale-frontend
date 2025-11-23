@@ -126,7 +126,7 @@ export default function HomeClientHero({
     <section
       aria-label="Welcome hero"
       className={[
-        "relative overflow-hidden rounded-2xl border border-black/5 dark:border-white/10",
+        "relative overflow-hidden rounded-2xl border border-border/60",
         "bg-gradient-to-br from-[#e6f6fd] via-[#eaf7f0] to-[#f0effa] dark:from-slate-900 dark:via-slate-900 dark:to-slate-950",
         "p-5 md:p-6",
         "shadow-soft",
@@ -161,7 +161,7 @@ export default function HomeClientHero({
           >
             {greeting} — buy &amp; sell, faster.
           </h1>
-          <p className="mt-1 max-w-2xl text-sm text-gray-700 dark:text-slate-300">
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Browse fresh deals across Kenya. Post your own listing in seconds
             and reach local buyers.
           </p>
@@ -192,7 +192,7 @@ export default function HomeClientHero({
                   prefetch
                   onClick={() => track("hero_saved_click")}
                   aria-label="Favorites"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 bg-white/60 transition hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/50 dark:hover:bg-slate-900/70"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card/80 text-pink-600 transition hover:bg-card"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -200,7 +200,6 @@ export default function HomeClientHero({
                     height="18"
                     fill="currentColor"
                     aria-hidden="true"
-                    className="text-pink-600 dark:text-pink-400"
                   >
                     <path d="M12 21s-7.5-4.35-10-8.5C-0.5 8 2 4 6 4c2.14 0 3.57 1.07 4.5 2.3C11.43 5.07 12.86 4 15 4c4 0 6.5 4 4 8.5C19.5 16.65 12 21 12 21z" />
                   </svg>
@@ -255,7 +254,7 @@ export default function HomeClientHero({
             )}
           </div>
 
-          <ul className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-slate-400">
+          <ul className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <li className="inline-flex items-center gap-1">
               <ShieldIcon /> Buyer safety
             </li>
@@ -269,7 +268,7 @@ export default function HomeClientHero({
         </div>
 
         <nav aria-label="Popular categories" className="md:justify-self-end">
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Popular now
           </div>
           <ul className="mt-2 flex max-w-[36rem] flex-wrap gap-2">

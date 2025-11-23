@@ -46,10 +46,11 @@ export default function ToasterClient({
   }, []);
 
   // Choose position responsively; update on resize
-  const [autoPos, setAutoPos] = useState<NonNullable<ToasterProps["position"]>>(() => {
-    if (typeof window === "undefined") return "top-right";
-    return window.innerWidth < 640 ? "top-center" : "top-right";
-  });
+  const [autoPos, setAutoPos] =
+    useState<NonNullable<ToasterProps["position"]>>(() => {
+      if (typeof window === "undefined") return "top-right";
+      return window.innerWidth < 640 ? "top-center" : "top-right";
+    });
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onResize = () => {
@@ -64,7 +65,7 @@ export default function ToasterClient({
     () => ({
       duration: reducedMotion ? 2200 : 3200,
       className:
-        "glass rounded-xl shadow-soft px-3 py-2 text-[0.9rem] text-gray-900 dark:text-slate-100",
+        "glass rounded-xl shadow-soft px-3 py-2 text-[0.9rem] text-[var(--text)]",
       style: {
         lineHeight: 1.4,
         maxWidth: "min(calc(100vw - 2rem), 420px)",
@@ -87,11 +88,10 @@ export default function ToasterClient({
       },
       loading: {
         className:
-          "glass rounded-xl px-3 py-2 shadow bg-white/90 text-gray-900 border border-gray-200 " +
-          "dark:bg-white/5 dark:text-slate-100 dark:border-white/10",
+          "glass rounded-xl px-3 py-2 shadow-soft text-[0.9rem] text-[var(--text)] border border-[var(--border-subtle)]",
       },
     }),
-    [reducedMotion]
+    [reducedMotion],
   );
 
   // Merge safe overrides from the caller

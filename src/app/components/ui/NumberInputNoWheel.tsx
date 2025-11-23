@@ -19,7 +19,7 @@ const NumberInputNoWheel = React.forwardRef<HTMLInputElement, Props>(
     };
 
     return <input ref={ref} type="number" onWheel={handleWheel} {...rest} />;
-  }
+  },
 );
 NumberInputNoWheel.displayName = "NumberInputNoWheel";
 

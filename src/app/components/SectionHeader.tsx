@@ -40,20 +40,20 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
+/**
+ * Strip styles per gradient type.
+ *
+ * All of these now lean on design tokens:
+ * - bg-spotlight / bg-noise (CSS vars)
+ * - bg-brand-navy / bg-brand-accent (Tailwind backgroundImage from tokens)
+ */
 const stripByGradient: Record<Exclude<Gradient, "none">, string> = {
+  // Primary brand hero – spotlight + noise overlay
   brand: "bg-spotlight bg-noise text-white",
-  navy: "text-white shadow-soft",
-  blue: "text-white shadow-soft",
-};
-
-const stripInlineByGradient: Partial<Record<Gradient, React.CSSProperties>> = {
-  navy: {
-    backgroundImage:
-      "linear-gradient(90deg, #161748 0%, #1f2a6b 60%, #2b3a8a 100%)",
-  },
-  blue: {
-    backgroundImage: "linear-gradient(90deg, #0b5fad 0%, #39a0ca 100%)",
-  },
+  // Navy-heavy gradient from Tailwind config (brandNavy → brandBlue)
+  navy: "bg-brand-navy text-white shadow-soft",
+  // Blue/green accent gradient from Tailwind config
+  blue: "bg-brand-accent text-white shadow-soft",
 };
 
 export default function SectionHeader({
@@ -102,9 +102,10 @@ export default function SectionHeader({
     typeof title === "string" &&
     title.trim().toLowerCase() === "qwiksale";
 
+  // Non-strip mode now uses semantic tokens for text color
   const baseColorClass = useStrip
     ? "text-white"
-    : "text-gray-900 dark:text-slate-100";
+    : "text-[color:var(--text)]";
 
   const titleColorClass = isHomeHero
     ? "bg-gradient-to-r from-[#f9fafb] via-[#7dd3fc] to-[#6ee7b7] bg-clip-text text-transparent"
@@ -134,7 +135,6 @@ export default function SectionHeader({
             : "w-full",
           dense ? "pt-4 pb-6 md:pt-5 md:pb-7" : "pt-8 pb-12 md:pt-10 md:pb-14",
         )}
-        style={stripInlineByGradient[gradient]}
       >
         <div className="container-page">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -152,7 +152,7 @@ export default function SectionHeader({
                     "flex items-center gap-2 text-xs md:text-sm",
                     useStrip
                       ? "text-white/90"
-                      : "text-gray-600 dark:text-slate-400",
+                      : "text-[color:var(--text-muted)]",
                     align === "center" ? "justify-center" : "",
                   )}
                 >
@@ -181,7 +181,7 @@ export default function SectionHeader({
                     "mt-1 max-w-2xl text-sm md:text-base",
                     useStrip
                       ? "text-white/80"
-                      : "text-gray-600 dark:text-slate-400",
+                      : "text-[color:var(--text-muted)]",
                     align === "center" ? "mx-auto" : "",
                   )}
                 >

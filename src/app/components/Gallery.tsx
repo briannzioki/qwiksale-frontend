@@ -163,7 +163,7 @@ export default function Gallery({
     >
       {/* Hero */}
       <div
-        className={`relative ${aspect} w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800 min-h-[180px] sm:min-h-[220px]`}
+        className={`relative ${aspect} w-full overflow-hidden rounded-xl bg-muted min-h-[180px] sm:min-h-[220px]`}
         style={{ position: "relative" }} // ensure non-static position for unit test + Next fill semantics
         data-gallery-wrap
         data-gallery-hero
@@ -248,9 +248,9 @@ export default function Gallery({
 
       {/* Thumbnails */}
       {total > 1 && (
-        <div className="mt-2 border-t pt-2 dark:border-white/10" data-gallery-thumbs>
+        <div className="mt-2 border-t border-border/60 pt-2" data-gallery-thumbs>
           <ul
-            className="flex gap-2 overflow-x-auto p-1 no-scrollbar"
+            className="no-scrollbar flex gap-2 overflow-x-auto p-1"
             role="tablist"
             aria-label="Thumbnails"
             onWheel={(e: React.WheelEvent<HTMLUListElement>) => {
@@ -273,12 +273,12 @@ export default function Gallery({
                     aria-selected={selected}
                     aria-controls={heroId}
                     className={[
-                      "relative block h-16 w-24 overflow-hidden rounded-lg border bg-white dark:bg-slate-900",
+                      "relative block h-16 w-24 overflow-hidden rounded-lg border bg-card",
                       selected
-                        ? "ring-2 ring-[#39a0ca] border-transparent"
-                        : "border-black/10 dark:border-white/10 hover:ring-1 hover:ring-[#39a0ca]/60",
+                        ? "border-transparent ring-2 ring-[#39a0ca]"
+                        : "border-border hover:ring-1 hover:ring-[#39a0ca]/60",
                     ].join(" ")}
-                    aria-label={`Show image ${i + 1} of ${total}`}
+                    aria-label={`Show image ${i + 1} of {total}`}
                     title={selected ? "Current image" : `Image ${i + 1}`}
                     onClick={() => setIdx(i)}
                     onKeyDown={(e) => {
@@ -313,7 +313,7 @@ export default function Gallery({
                       decoding="async"
                       draggable={false}
                       loading="lazy"
-                      className="h-full w-full object-cover pointer-events-none"
+                      className="h-full w-full cursor-pointer object-cover pointer-events-none"
                       data-gallery-image
                       data-gallery-thumb-img
                     />

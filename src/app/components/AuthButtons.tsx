@@ -206,7 +206,7 @@ export default function AuthButtons({
   if (!authedHint && stillResolving) {
     return (
       <button
-        className="cursor-default rounded border px-3 py-2 text-sm opacity-80"
+        className="cursor-default rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-muted)] opacity-80"
         disabled
       >
         Loading…
@@ -222,7 +222,7 @@ export default function AuthButtons({
     return (
       <Link
         href={signInHref}
-        className="rounded border border-white/30 bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 transition hover:bg-white/20"
+        className="rounded-lg border border-[var(--border)] bg-subtle px-3 py-2 text-sm text-[var(--text)] transition hover:bg-[var(--bg-elevated)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
         data-testid="auth-signin"
         title="Sign in"
         prefetch={false}
@@ -239,7 +239,7 @@ export default function AuthButtons({
     return (
       <button
         type="button"
-        className="cursor-default rounded border px-3 py-2 text-sm opacity-80"
+        className="cursor-default rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-muted)] opacity-80"
         disabled
         aria-label="Account loading"
         data-testid="account-menu-placeholder"
@@ -274,7 +274,7 @@ export default function AuthButtons({
   return (
     <details ref={rootRef} className="group relative" open={open}>
       <summary
-        className="inline-flex cursor-pointer select-none items-center gap-2 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1.5 text-sm ring-1 ring-white/20 transition hover:bg-white/20"
+        className="inline-flex cursor-pointer select-none items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-sm text-[var(--text)] transition hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 ring-focus"
         aria-haspopup="menu"
         aria-expanded={open}
         role="button"
@@ -318,10 +318,10 @@ export default function AuthButtons({
       <div
         ref={menuRef}
         role="menu"
-        className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border border-gray-200/70 bg-white text-gray-800 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+        className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-soft"
       >
-        <div className="border-b bg-gray-50/70 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/40">
-          <div className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="border-b border-[var(--border-subtle)] bg-subtle px-3 py-2">
+          <div className="text-xs text-[var(--text-muted)]">
             Signed in as
           </div>
           <div className="truncate text-sm font-medium">
@@ -334,7 +334,7 @@ export default function AuthButtons({
             href={dashboardHref}
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="block px-3 py-2 hover:bg-subtle"
             prefetch={false}
           >
             Dashboard
@@ -343,7 +343,7 @@ export default function AuthButtons({
             href="/account/profile"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="block px-3 py-2 hover:bg-subtle"
             prefetch={false}
           >
             Edit profile
@@ -352,7 +352,7 @@ export default function AuthButtons({
             href="/saved"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="block px-3 py-2 hover:bg-subtle"
             prefetch={false}
           >
             Saved items
@@ -361,7 +361,7 @@ export default function AuthButtons({
             href="/account/billing"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="block px-3 py-2 hover:bg-subtle"
             prefetch={false}
           >
             {isPaidTier(subscription)
@@ -383,7 +383,7 @@ export default function AuthButtons({
               setWorking(null);
             }
           }}
-          className="w-full border-t border-gray-200 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-950/20"
+          className="w-full border-t border-[var(--border-subtle)] px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
           disabled={!!working}
         >
           {working === "out" ? "Signing out…" : "Sign out"}

@@ -1,4 +1,5 @@
 "use client";
+// src/app/components/SearchBox.tsx
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
@@ -67,7 +68,10 @@ export default function SearchBox(props: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [isInline, inlineOpen, props]);
 
-  const hint = useMemo(() => (!q.trim() ? "Try: Samsung, SUVs, Mama Fua…" : ""), [q]);
+  const hint = useMemo(
+    () => (!q.trim() ? "Try: Samsung, SUVs, Mama Fua…" : ""),
+    [q]
+  );
 
   const formAction = "/search";
 
@@ -79,9 +83,9 @@ export default function SearchBox(props: Props) {
           method="GET"
           action={formAction}
           aria-label="Search products, brands, categories or services"
-          className="flex items-center gap-2 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2 shadow-sm transition focus-within:ring-2 focus-within:ring-brandBlue"
+          className="flex items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm transition focus-within:ring-2 focus-within:ring-primary"
         >
-          <SearchIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+          <SearchIcon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
 
           <input
             id="searchbox-input"
@@ -91,7 +95,7 @@ export default function SearchBox(props: Props) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={placeholder}
-            className="flex-1 bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
+            className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
             autoFocus={autoFocus}
             aria-label="Search query"
           />
@@ -99,7 +103,7 @@ export default function SearchBox(props: Props) {
           {q && (
             <button
               type="button"
-              className="rounded-lg px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-800"
+              className="rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
               onClick={() => setQ("")}
               aria-label="Clear search"
             >
@@ -109,7 +113,7 @@ export default function SearchBox(props: Props) {
 
           <button
             type="submit"
-            className="rounded-lg bg-brandNavy px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+            className="rounded-lg bg-brandNavy px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
             aria-label="Search"
           >
             Search
@@ -117,7 +121,7 @@ export default function SearchBox(props: Props) {
         </form>
 
         {hint && (
-          <div className="mt-1 text-xs text-gray-500 dark:text-slate-400" aria-live="polite">
+          <div className="mt-1 text-xs text-muted-foreground" aria-live="polite">
             {hint}
           </div>
         )}
@@ -130,9 +134,7 @@ export default function SearchBox(props: Props) {
     <div
       ref={wrapRef}
       className={classNames(
-        "relative overflow-hidden rounded-xl border transition-all duration-200",
-        "bg-white dark:bg-slate-900",
-        "border-gray-200 dark:border-white/10",
+        "relative overflow-hidden rounded-xl border border-border bg-card transition-all duration-200",
         inlineOpen ? "w-72 opacity-100 px-2 py-1.5" : "w-0 opacity-0 px-0 py-0",
         className
       )}
@@ -149,7 +151,7 @@ export default function SearchBox(props: Props) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={placeholder}
-            className="w-full bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
+            className="w-full bg-transparent outline-none placeholder:text-muted-foreground"
             aria-label="Search query"
           />
 
@@ -157,7 +159,7 @@ export default function SearchBox(props: Props) {
             <button
               type="button"
               aria-label="Clear search"
-              className="rounded-md p-1.5 text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-800"
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
               onClick={() => setQ("")}
               title="Clear"
             >
@@ -170,7 +172,7 @@ export default function SearchBox(props: Props) {
           <button
             type="submit"
             aria-label="Search"
-            className="rounded-md p-1.5 text-gray-700 hover:bg-gray-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
             title="Search"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>

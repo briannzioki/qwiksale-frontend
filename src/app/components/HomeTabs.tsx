@@ -25,15 +25,28 @@ function IconAll(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
 function IconProducts(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
-      <path d="M3 7l9-4 9 4-9 4-9-4Z" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" />
-      <path d="M21 7v10l-9 4-9-4V7" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M3 7l9-4 9 4-9 4-9-4Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M21 7v10l-9 4-9-4V7"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <path d="M12 11v10" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
     </svg>
   );
 }
+
 function IconServices(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
@@ -50,22 +63,23 @@ export default function HomeTabs({ className = "" }: { className?: string }) {
 
   const baseTab =
     "relative inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition " +
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39a0ca] focus-visible:ring-offset-2 " +
-    "focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900";
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 " +
+    "focus-visible:ring-offset-background";
 
   const selectedTab =
-    "bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue text-white border-transparent shadow-sm shadow-brandNavy/20";
+    "bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue text-primary-foreground " +
+    "border-transparent shadow-sm shadow-brandNavy/20";
 
   const unselectedTab =
-    "bg-white/70 dark:bg-white/5 border-black/10 dark:border-white/10 hover:bg-white/90 dark:hover:bg-white/10 text-gray-800 dark:text-slate-100";
+    "bg-card/70 border-border/70 hover:bg-card/90 text-foreground";
 
   return (
     <nav
       aria-label="Feed type"
       role="tablist"
       className={[
-        "inline-flex items-center gap-1 rounded-2xl border border-black/5 dark:border-white/10",
-        "bg-white/60 dark:bg-white/[0.03] backdrop-blur shadow-sm",
+        "inline-flex items-center gap-1 rounded-2xl border border-border",
+        "bg-card/60 backdrop-blur shadow-sm",
         "p-1",
         className,
       ].join(" ")}
@@ -80,7 +94,6 @@ export default function HomeTabs({ className = "" }: { className?: string }) {
         prefetch={false}
         className={`${baseTab} ${mode === "all" ? selectedTab : unselectedTab}`}
         data-tab="all"
-        // DOM sanity: real anchor with literal href="/"
       >
         <IconAll className="h-4 w-4" />
         <span>All</span>
@@ -96,7 +109,7 @@ export default function HomeTabs({ className = "" }: { className?: string }) {
         prefetch={false}
         className={`${baseTab} ${mode === "products" ? selectedTab : unselectedTab}`}
         data-tab="products"
-        data-verify-href="/?t=products" /* helps tests assert correct href */
+        data-verify-href="/?t=products"
       >
         <IconProducts className="h-4 w-4" />
         <span>Products</span>

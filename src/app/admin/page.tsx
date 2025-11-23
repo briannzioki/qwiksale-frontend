@@ -60,10 +60,10 @@ export default async function AdminHome() {
           <Link
             href="/admin/users"
             prefetch={false}
-            className="block rounded-xl border bg-white p-4 shadow-sm hover:shadow dark:border-slate-800 dark:bg-slate-900"
+            className="block rounded-xl border border-border bg-card p-4 shadow-sm hover:shadow"
           >
             <div className="font-semibold">Users</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">
+            <div className="text-sm text-muted-foreground">
               Manage roles &amp; accounts
             </div>
           </Link>
@@ -72,10 +72,10 @@ export default async function AdminHome() {
           <Link
             href="/admin/listings"
             prefetch={false}
-            className="block rounded-xl border bg-white p-4 shadow-sm hover:shadow dark:border-slate-800 dark:bg-slate-900"
+            className="block rounded-xl border border-border bg-card p-4 shadow-sm hover:shadow"
           >
             <div className="font-semibold">Listings</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">
+            <div className="text-sm text-muted-foreground">
               Products &amp; services across the marketplace
             </div>
           </Link>
@@ -84,10 +84,10 @@ export default async function AdminHome() {
           <Link
             href="/admin/moderation"
             prefetch={false}
-            className="block rounded-xl border bg-white p-4 shadow-sm hover:shadow dark:border-slate-800 dark:bg-slate-900"
+            className="block rounded-xl border border-border bg-card p-4 shadow-sm hover:shadow"
           >
             <div className="font-semibold">Moderation</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">
+            <div className="text-sm text-muted-foreground">
               Review reports &amp; hide problem listings
             </div>
           </Link>
@@ -96,10 +96,10 @@ export default async function AdminHome() {
           <Link
             href="/admin/reveals"
             prefetch={false}
-            className="block rounded-xl border bg-white p-4 shadow-sm hover:shadow dark:border-slate-800 dark:bg-slate-900"
+            className="block rounded-xl border border-border bg-card p-4 shadow-sm hover:shadow"
           >
             <div className="font-semibold">Contact reveals</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">
+            <div className="text-sm text-muted-foreground">
               Audit who revealed phone numbers
             </div>
           </Link>

@@ -34,7 +34,9 @@ export default function DashboardError({
       data-soft-error="dashboard"
     >
       {/* Headline that the guardrail test searches for */}
-      <div className="mb-2 text-base font-semibold">We hit a dashboard error</div>
+      <div className="mb-2 text-base font-semibold">
+        We hit a dashboard error
+      </div>
 
       <div className="mx-auto max-w-3xl">
         <ErrorBanner
@@ -47,20 +49,24 @@ export default function DashboardError({
         />
 
         <div
-          className="rounded-2xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          className="rounded-2xl border border-border bg-card p-6 shadow-sm"
           role="region"
           aria-labelledby="dash-error-title"
         >
           <h2 id="dash-error-title" className="text-lg font-semibold">
             Let’s try that again
           </h2>
-          <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             If the problem keeps happening, please contact support — it helps us
             fix things faster.
           </p>
 
           <div className="mt-4 flex gap-2">
-            <button type="button" onClick={onRetry} className="btn-gradient-primary">
+            <button
+              type="button"
+              onClick={onRetry}
+              className="btn-gradient-primary"
+            >
               Retry
             </button>
             <a href="/" className="btn-outline">
@@ -68,7 +74,7 @@ export default function DashboardError({
             </a>
             <a
               href="/help"
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
             >
               Help Center
             </a>
@@ -93,7 +99,7 @@ export default function DashboardError({
                   </p>
                 ) : null}
                 {error?.stack ? (
-                  <pre className="overflow-auto rounded-md bg-black/5 p-3 text-xs dark:bg-white/10">
+                  <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
                     {error.stack}
                   </pre>
                 ) : null}

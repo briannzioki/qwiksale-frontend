@@ -160,25 +160,25 @@ export default async function ModerationPage({
   return (
     <div className="space-y-6">
       {/* Hero */}
-      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-primary-foreground shadow">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-extrabold md:text-3xl">
               Moderation
             </h1>
-            <p className="mt-1 text-sm text-white/90">
+            <p className="mt-1 text-sm text-primary-foreground/90">
               Review and act on reports. Showing page {page} of{" "}
               {totalPages} • {total.toLocaleString()} total.
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-white/15 px-3 py-1 text-xs">
+            <span className="rounded-full bg-background/20 px-3 py-1 text-xs text-primary-foreground">
               Unresolved:{" "}
               <span className="font-semibold">
                 {unresolved.toLocaleString()}
               </span>
             </span>
-            <span className="rounded-full bg-white/15 px-3 py-1 text-xs">
+            <span className="rounded-full bg-background/20 px-3 py-1 text-xs text-primary-foreground">
               Page size:{" "}
               <span className="font-semibold">{PAGE_SIZE}</span>
             </span>
@@ -189,14 +189,11 @@ export default async function ModerationPage({
       {/* Filters */}
       <form
         method="GET"
-        className="grid grid-cols-1 gap-2 rounded-xl border bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:grid-cols-6"
+        className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-card p-3 shadow-sm md:grid-cols-6"
         aria-label="Report filters"
       >
         <div className="md:col-span-2">
-          <label
-            htmlFor="mod-q"
-            className="sr-only"
-          >
+          <label htmlFor="mod-q" className="sr-only">
             Search reports
           </label>
           <input
@@ -204,21 +201,18 @@ export default async function ModerationPage({
             name="q"
             defaultValue={parsed.q}
             placeholder="Search id/ip/user/details…"
-            className="w-full rounded border px-2 py-1 dark:border-slate-700 dark:bg-slate-950"
+            className="input w-full"
           />
         </div>
         <div>
-          <label
-            htmlFor="mod-type"
-            className="sr-only"
-          >
+          <label htmlFor="mod-type" className="sr-only">
             Listing type
           </label>
           <select
             id="mod-type"
             name="type"
             defaultValue={parsed.type || ""}
-            className="w-full rounded border px-2 py-1 dark:border-slate-700 dark:bg-slate-950"
+            className="select w-full"
           >
             <option value="">All types</option>
             <option value="product">Product</option>
@@ -226,17 +220,14 @@ export default async function ModerationPage({
           </select>
         </div>
         <div>
-          <label
-            htmlFor="mod-reason"
-            className="sr-only"
-          >
+          <label htmlFor="mod-reason" className="sr-only">
             Reason
           </label>
           <select
             id="mod-reason"
             name="reason"
             defaultValue={parsed.reason || ""}
-            className="w-full rounded border px-2 py-1 dark:border-slate-700 dark:bg-slate-950"
+            className="select w-full"
           >
             <option value="">All reasons</option>
             <option value="scam">Scam</option>
@@ -249,10 +240,7 @@ export default async function ModerationPage({
           </select>
         </div>
         <div>
-          <label
-            htmlFor="mod-resolved"
-            className="sr-only"
-          >
+          <label htmlFor="mod-resolved" className="sr-only">
             Resolved state
           </label>
           <select
@@ -265,7 +253,7 @@ export default async function ModerationPage({
                   : "0"
                 : ""
             }
-            className="w-full rounded border px-2 py-1 dark:border-slate-700 dark:bg-slate-950"
+            className="select w-full"
           >
             <option value="">All</option>
             <option value="0">Unresolved</option>
@@ -274,14 +262,14 @@ export default async function ModerationPage({
         </div>
         <div className="flex items-center gap-2">
           <button
-            className="rounded bg-[#161748] px-3 py-1 text-sm text-white"
+            className="btn-gradient-primary text-sm"
             aria-label="Apply filters"
           >
             Apply
           </button>
           <Link
             href="/admin/moderation"
-            className="btn-outline px-2 py-1 text-sm"
+            className="btn-outline text-sm"
             aria-label="Clear filters"
           >
             Clear
@@ -290,16 +278,16 @@ export default async function ModerationPage({
       </form>
 
       {/* Results */}
-      <section className="overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b px-4 py-3 dark:border-slate-800">
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="font-semibold">Reports</h2>
-          <div className="text-xs text-gray-600 dark:text-slate-300">
+          <div className="text-xs text-muted-foreground">
             {total.toLocaleString()} total • page {page}/{totalPages}
           </div>
         </div>
 
         {items.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-gray-600 dark:text-slate-300">
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
             No reports match your filters.
           </div>
         ) : (
@@ -308,7 +296,8 @@ export default async function ModerationPage({
               items={items.map((r: any) => ({
                 id: String(r.id),
                 listingId: String(r.listingId),
-                listingType: (r.listingType as "product" | "service") ?? "product",
+                listingType:
+                  (r.listingType as "product" | "service") ?? "product",
                 reason: String(r.reason ?? ""),
                 details: (r.details ?? null) as string | null,
                 ip: (r.ip ?? null) as string | null,
@@ -326,7 +315,7 @@ export default async function ModerationPage({
 
             {/* Pagination */}
             <nav
-              className="flex items-center justify-between border-t px-4 py-3 text-sm dark:border-slate-800"
+              className="flex items-center justify-between border-t border-border px-4 py-3 text-sm"
               aria-label="Pagination"
             >
               <Link
@@ -338,10 +327,8 @@ export default async function ModerationPage({
                     : "#"
                 }
                 aria-disabled={page <= 1}
-                className={`rounded border px-3 py-1 transition ${
-                  page > 1
-                    ? "hover:shadow dark:border-slate-800"
-                    : "opacity-50 dark:border-slate-800"
+                className={`rounded border border-border px-3 py-1 text-sm transition ${
+                  page > 1 ? "hover:shadow" : "opacity-50"
                 }`}
               >
                 ← Prev
@@ -368,10 +355,10 @@ export default async function ModerationPage({
                           page: p,
                         })}
                         aria-current={isCurrent ? "page" : undefined}
-                        className={`rounded px-2 py-1 ${
+                        className={`rounded px-2 py-1 text-sm ${
                           isCurrent
-                            ? "bg-[#161748] text-white"
-                            : "hover:bg-black/5 dark:hover:bg-white/10"
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-muted"
                         }`}
                       >
                         {p}
@@ -390,10 +377,8 @@ export default async function ModerationPage({
                     : "#"
                 }
                 aria-disabled={page >= totalPages}
-                className={`rounded border px-3 py-1 transition ${
-                  page < totalPages
-                    ? "hover:shadow dark:border-slate-800"
-                    : "opacity-50 dark:border-slate-800"
+                className={`rounded border border-border px-3 py-1 text-sm transition ${
+                  page < totalPages ? "hover:shadow" : "opacity-50"
                 }`}
               >
                 Next →
@@ -407,7 +392,7 @@ export default async function ModerationPage({
       <div className="flex items-center justify-end">
         <Link
           href="/admin/dashboard"
-          className="rounded-xl border px-3 py-1 text-sm shadow-sm transition hover:shadow dark:border-slate-800"
+          className="btn-outline text-sm"
         >
           ← Back to Dashboard
         </Link>

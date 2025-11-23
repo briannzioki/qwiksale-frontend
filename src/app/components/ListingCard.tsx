@@ -124,9 +124,8 @@ export default function ListingCard({
   return (
     <article
       className={cn(
-        // Border-only card (no box shadow) for lighter weight
-        "group relative overflow-hidden rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-slate-900",
-        "transition hover:border-black/10 dark:hover:border-white/15",
+        "group relative overflow-hidden rounded-2xl border bg-[var(--bg-elevated)] text-[var(--text)]",
+        "border-[var(--border-subtle)] transition hover:border-[var(--border)]",
         featured && "ring-1 ring-brandBlue/30",
         className,
       )}
@@ -245,7 +244,7 @@ export default function ListingCard({
 
         {/* Footer row: badges + View/Edit actions */}
         <div className="flex items-center justify-between gap-2 px-3 py-3">
-          <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-400">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
             {verified ? (
               <Badge tone="green" variant="soft">
                 <Icon name="secure" aria-hidden /> Verified

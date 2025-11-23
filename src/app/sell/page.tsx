@@ -96,10 +96,10 @@ export default async function SellLandingPage() {
               </span>
               <h2 className="text-xl font-semibold">Sell a Product</h2>
             </div>
-            <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">
+            <p className="mt-2 text-sm text-muted-foreground">
               Phones, electronics, fashion, furniture, vehicles — anything legit.
             </p>
-            <ul className="mt-4 space-y-2 text-sm text-gray-700 dark:text-slate-200">
+            <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
               <li>• Add up to 6 photos</li>
               <li>• Set price or &ldquo;Contact for price&rdquo;</li>
               <li>• Optional WhatsApp number for quick chats</li>
@@ -130,11 +130,11 @@ export default async function SellLandingPage() {
               </span>
               <h2 className="text-xl font-semibold">Offer a Service</h2>
             </div>
-            <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">
+            <p className="mt-2 text-sm text-muted-foreground">
               Cleaning, repairs, beauty, events, transport, tech — list your
               service.
             </p>
-            <ul className="mt-4 space-y-2 text-sm text-gray-700 dark:text-slate-200">
+            <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
               <li>• Fixed price or hourly/day rates</li>
               <li>• Service areas &amp; availability</li>
               <li>• Direct enquiries from buyers</li>
@@ -162,22 +162,22 @@ export default async function SellLandingPage() {
         <div className="card p-6 md:p-7">
           <h3 className="text-lg font-semibold">How it works</h3>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border p-4 dark:border-slate-700">
+            <div className="rounded-xl border border-border p-4">
               <div className="text-2xl font-semibold">1</div>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-2 text-sm text-muted-foreground">
                 Create a clear listing with photos and details.
               </p>
             </div>
-            <div className="rounded-xl border p-4 dark:border-slate-700">
+            <div className="rounded-xl border border-border p-4">
               <div className="text-2xl font-semibold">2</div>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-2 text-sm text-muted-foreground">
                 Interested buyers contact you directly via call, SMS, or
                 WhatsApp.
               </p>
             </div>
-            <div className="rounded-xl border p-4 dark:border-slate-700">
+            <div className="rounded-xl border border-border p-4">
               <div className="text-2xl font-semibold">3</div>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-2 text-sm text-muted-foreground">
                 Meet, verify, and close the deal. No commission fees.
               </p>
             </div>

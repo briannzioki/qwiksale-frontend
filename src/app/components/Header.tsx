@@ -1,3 +1,4 @@
+// src/app/components/Header.tsx
 import { cookies as nextCookies } from "next/headers";
 import HeaderClient from "@/app/components/HeaderClient";
 import { getViewer } from "@/app/lib/auth";
@@ -15,7 +16,7 @@ async function hasAuthCookie() {
     c.get("__Secure-next-auth.session-token")?.value ||
       c.get("next-auth.session-token")?.value ||
       c.get("__Secure-authjs.session-token")?.value ||
-      c.get("authjs.session-token")?.value
+      c.get("authjs.session-token")?.value,
   );
 }
 
@@ -30,7 +31,13 @@ export default async function Header() {
     <>
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 bg-white dark:bg-slate-900 px-3 py-2 rounded shadow"
+        className={[
+          "sr-only",
+          "focus:not-sr-only focus:fixed focus:top-3 focus:left-3 z-50",
+          "px-3 py-2 rounded-xl",
+          "bg-[var(--bg-elevated)] text-[var(--text)] border border-[var(--border-subtle)] shadow-soft",
+          "focus:outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 ring-focus",
+        ].join(" ")}
       >
         Skip to content
       </a>

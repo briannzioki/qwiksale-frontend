@@ -38,11 +38,15 @@ function Badge({
   tone?: "slate" | "green" | "amber" | "rose" | "indigo";
 }) {
   const map: Record<string, string> = {
-    slate: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-    green: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
-    amber: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-    rose: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
-    indigo: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+    slate: "bg-muted text-muted-foreground",
+    green:
+      "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
+    amber:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+    rose:
+      "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
+    indigo:
+      "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${map[tone]}`}>
@@ -72,12 +76,16 @@ export default function ModerationClient({
         }))}
       />
 
-      <div className="overflow-x-auto rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 text-left text-gray-700 dark:bg-slate-800 dark:text-slate-200">
+          <thead className="bg-muted text-left text-muted-foreground">
             <tr className="align-middle">
               <th className="w-8 px-3 py-2">
-                <input type="checkbox" data-check="all" aria-label="Select all reports" />
+                <input
+                  type="checkbox"
+                  data-check="all"
+                  aria-label="Select all reports"
+                />
               </th>
               <th className="px-3 py-2">When</th>
               <th className="px-3 py-2">Listing</th>
@@ -92,17 +100,31 @@ export default function ModerationClient({
           </thead>
           <tbody>
             {items.map((r) => (
-              <tr key={r.id} className="align-top border-t hover:bg-gray-50/50 dark:border-slate-800 dark:hover:bg-slate-800/40">
+              <tr
+                key={r.id}
+                className="align-top border-t border-border hover:bg-muted"
+              >
                 <td className="px-3 py-2">
-                  <input type="checkbox" name="select" value={r.id} aria-label={`Select report ${r.id}`} />
+                  <input
+                    type="checkbox"
+                    name="select"
+                    value={r.id}
+                    aria-label={`Select report ${r.id}`}
+                  />
                 </td>
-                <td className="whitespace-nowrap px-3 py-2">{fmtDateTimeKE(r.createdAt)}</td>
+                <td className="whitespace-nowrap px-3 py-2">
+                  {fmtDateTimeKE(r.createdAt)}
+                </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
                     <code className="text-xs">{r.listingId}</code>
                     <Link
                       className="text-[#39a0ca] hover:underline"
-                      href={r.listingType === "product" ? `/product/${r.listingId}` : `/service/${r.listingId}`}
+                      href={
+                        r.listingType === "product"
+                          ? `/product/${r.listingId}`
+                          : `/service/${r.listingId}`
+                      }
                       target="_blank"
                       rel="noopener noreferrer"
                       title={`Open ${r.listingType} ${r.listingId}`}
@@ -112,7 +134,11 @@ export default function ModerationClient({
                   </div>
                 </td>
                 <td className="px-3 py-2">
-                  <Badge tone={r.listingType === "product" ? "indigo" : "green"}>{r.listingType}</Badge>
+                  <Badge
+                    tone={r.listingType === "product" ? "indigo" : "green"}
+                  >
+                    {r.listingType}
+                  </Badge>
                 </td>
                 <td className="px-3 py-2">
                   <Badge tone="amber">{r.reason}</Badge>
@@ -123,21 +149,36 @@ export default function ModerationClient({
                       <summary className="cursor-pointer text-[#161748] underline decoration-dotted underline-offset-2 dark:text-[#39a0ca]">
                         View details
                       </summary>
-                      <div className="mt-1 rounded-md border px-2 py-1 text-[13px] text-gray-800 dark:border-slate-700 dark:text-slate-200">
-                        <pre className="whitespace-pre-wrap break-words">{r.details}</pre>
+                      <div className="mt-1 rounded-md border border-border px-2 py-1 text-[13px] text-foreground">
+                        <pre className="whitespace-pre-wrap break-words">
+                          {r.details}
+                        </pre>
                       </div>
                     </details>
                   ) : (
                     <span className="opacity-60">—</span>
                   )}
                 </td>
-                <td className="px-3 py-2">{r.userId || <span className="opacity-60">guest</span>}</td>
-                <td className="px-3 py-2">{r.ip || <span className="opacity-60">—</span>}</td>
                 <td className="px-3 py-2">
-                  {r.resolved ? <Badge tone="green">Yes</Badge> : <Badge tone="rose">No</Badge>}
+                  {r.userId || <span className="opacity-60">guest</span>}
                 </td>
                 <td className="px-3 py-2">
-                  <RowActions listingId={r.listingId} type={r.listingType} resolved={r.resolved} reportId={r.id} />
+                  {r.ip || <span className="opacity-60">—</span>}
+                </td>
+                <td className="px-3 py-2">
+                  {r.resolved ? (
+                    <Badge tone="green">Yes</Badge>
+                  ) : (
+                    <Badge tone="rose">No</Badge>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <RowActions
+                    listingId={r.listingId}
+                    type={r.listingType}
+                    resolved={r.resolved}
+                    reportId={r.id}
+                  />
                 </td>
               </tr>
             ))}
@@ -145,7 +186,7 @@ export default function ModerationClient({
         </table>
       </div>
 
-      <nav className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-slate-300">
+      <nav className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>
           Page {page} of {totalPages} • {total} reports
         </span>
@@ -208,7 +249,9 @@ function RowActions({
   };
 
   const toggleResolved = () => {
-    const msg = resolved ? "Mark this report as UNRESOLVED?" : "Mark this report as resolved?";
+    const msg = resolved
+      ? "Mark this report as UNRESOLVED?"
+      : "Mark this report as resolved?";
     if (!confirm(msg)) return;
 
     start(async () => {
@@ -254,7 +297,7 @@ function RowActions({
       <button
         type="button"
         onClick={toggleResolved}
-        className="rounded border px-2 py-1 text-xs disabled:opacity-60 dark:border-slate-700"
+        className="rounded border border-border px-2 py-1 text-xs disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
         title={resolved ? "Mark as unresolved" : "Mark as resolved"}
@@ -270,16 +313,23 @@ function RowActions({
 function BulkActions({
   items,
 }: {
-  items: Array<{ id: string; listingId: string; listingType: "product" | "service" }>;
+  items: Array<{
+    id: string;
+    listingId: string;
+    listingType: "product" | "service";
+  }>;
 }) {
   const [pending, start] = useTransition();
   const [selectedCount, setSelectedCount] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
-    const master = document.querySelector<HTMLInputElement>('input[data-check="all"]');
+    const master =
+      document.querySelector<HTMLInputElement>('input[data-check="all"]');
     const boxes = () =>
-      Array.from(document.querySelectorAll<HTMLInputElement>('input[name="select"]'));
+      Array.from(
+        document.querySelectorAll<HTMLInputElement>('input[name="select"]'),
+      );
 
     const updateCount = () => {
       const bs = boxes();
@@ -311,16 +361,20 @@ function BulkActions({
   }, []);
 
   const getSelected = () =>
-    Array.from(document.querySelectorAll<HTMLInputElement>('input[name="select"]:checked')).map(
-      (i) => i.value
-    );
+    Array.from(
+      document.querySelectorAll<HTMLInputElement>(
+        'input[name="select"]:checked',
+      ),
+    ).map((i) => i.value);
 
   const doResolve = (flag: "1" | "0") =>
     start(async () => {
       const ids = getSelected();
       if (!ids.length) return alert("Select at least one report.");
       const question =
-        flag === "1" ? "Mark selected reports as resolved?" : "Mark selected reports as UNRESOLVED?";
+        flag === "1"
+          ? "Mark selected reports as resolved?"
+          : "Mark selected reports as UNRESOLVED?";
       if (!confirm(question)) return;
 
       const form = new FormData();
@@ -340,7 +394,9 @@ function BulkActions({
       const ids = getSelected();
       if (!ids.length) return alert("Select at least one report.");
       const actionText =
-        status === "HIDDEN" ? "Hide all selected listings?" : "Unhide all selected listings?";
+        status === "HIDDEN"
+          ? "Hide all selected listings?"
+          : "Unhide all selected listings?";
       if (!confirm(actionText)) return;
 
       const byReportId = new Map(items.map((r) => [r.id, r] as const));
@@ -360,14 +416,14 @@ function BulkActions({
             credentials: "same-origin",
             body: JSON.stringify({ status }),
           }).catch(() => {});
-        })
+        }),
       );
       router.refresh();
     });
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      <div className="mr-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-slate-800 dark:text-slate-200">
+      <div className="mr-2 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
         Selected: <span className="font-semibold">{selectedCount}</span>
       </div>
 
@@ -384,7 +440,7 @@ function BulkActions({
       <button
         type="button"
         onClick={() => doResolve("0")}
-        className="rounded border px-3 py-1 text-sm disabled:opacity-60 dark:border-slate-700"
+        className="rounded border border-border px-3 py-1 text-sm disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
         title="Mark selected as unresolved"

@@ -1,4 +1,5 @@
 "use client";
+
 // src/app/account/complete-profile/CompleteProfileClient.tsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import ProfilePhotoUploader from "@/app/components/account/ProfilePhotoUploader";
+import { Button } from "@/app/components/Button";
 
 /* ----------------------------- Types & helpers ----------------------------- */
 
@@ -23,7 +25,8 @@ type Me = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const looksLikeEmail = (e?: string) => !!e && EMAIL_RE.test(e.trim().toLowerCase());
+const looksLikeEmail = (e?: string) =>
+  !!e && EMAIL_RE.test(e.trim().toLowerCase());
 
 function normalizeKePhone(raw: string): string {
   const trimmed = (raw || "").trim();
@@ -34,14 +37,22 @@ function normalizeKePhone(raw: string): string {
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-const looksLikeValidKePhone = (input: string) => /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
+const looksLikeValidKePhone = (input: string) =>
+  /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
 
 // 3–24; letters/digits/._; no leading/trailing sep; no doubles
 const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 const looksLikeValidUsername = (u: string) => USERNAME_RE.test(u);
-const isSafePath = (p?: string | null): p is string => !!p && /^\/(?!\/)/.test(p);
+const isSafePath = (p?: string | null): p is string =>
+  !!p && /^\/(?!\/)/.test(p);
 
-type NameStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "error";
+type NameStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "taken"
+  | "invalid"
+  | "error";
 
 /* -------------------------------- Component -------------------------------- */
 
@@ -73,7 +84,7 @@ export default function CompleteProfileClient() {
 
   const whatsappNormalized = useMemo(
     () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
-    [whatsapp]
+    [whatsapp],
   );
 
   /* -------------------------------- Load /api/me ------------------------------- */
@@ -89,6 +100,7 @@ export default function CompleteProfileClient() {
           credentials: "same-origin",
           headers: { accept: "application/json" },
         });
+
         if (r.status === 401) {
           if (alive) {
             setUnauth(true);
@@ -96,6 +108,7 @@ export default function CompleteProfileClient() {
           }
           return;
         }
+
         const j = await r.json().catch(() => null);
         const u: Me | null =
           j?.user && typeof j.user === "object"
@@ -105,6 +118,7 @@ export default function CompleteProfileClient() {
             : null;
 
         if (!alive) return;
+
         if (!u?.email) {
           setUnauth(true);
           setLoading(false);
@@ -120,9 +134,9 @@ export default function CompleteProfileClient() {
         setCity(u.city ?? "");
         setCountry(u.country ?? "");
       } catch {
-        /* soft-fail */
+        // soft-fail; keep loading false so user sees something
       } finally {
-        alive && setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
 
@@ -153,12 +167,15 @@ export default function CompleteProfileClient() {
       usernameAbort.current = ctrl;
 
       try {
-        const res = await fetch(`/api/username/check?u=${encodeURIComponent(u)}`, {
-          signal: ctrl.signal,
-          cache: "no-store",
-          credentials: "same-origin",
-          headers: { accept: "application/json" },
-        });
+        const res = await fetch(
+          `/api/username/check?u=${encodeURIComponent(u)}`,
+          {
+            signal: ctrl.signal,
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: { accept: "application/json" },
+          },
+        );
         if (!res.ok) {
           setNameStatus("error");
           return;
@@ -194,18 +211,24 @@ export default function CompleteProfileClient() {
       toast.error("Username must be 3–24 chars (letters, numbers, dot, underscore).");
       return;
     }
-    if (nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "checking") {
+    if (
+      nameStatus === "taken" ||
+      nameStatus === "invalid" ||
+      nameStatus === "checking"
+    ) {
       toast.error(
         nameStatus === "checking"
           ? "Please wait for the username check…"
           : nameStatus === "taken"
           ? "That username is taken."
-          : "Invalid username."
+          : "Invalid username.",
       );
       return;
     }
     if (whatsapp && !looksLikeValidKePhone(whatsapp)) {
-      toast.error("WhatsApp must be a valid KE number (e.g. 07XXXXXXXX or 2547XXXXXXXX).");
+      toast.error(
+        "WhatsApp must be a valid KE number (e.g. 07XXXXXXXX or 2547XXXXXXXX).",
+      );
       return;
     }
 
@@ -213,7 +236,10 @@ export default function CompleteProfileClient() {
     try {
       const r = await fetch("/api/me/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
         credentials: "same-origin",
         cache: "no-store",
         body: JSON.stringify({
@@ -227,10 +253,12 @@ export default function CompleteProfileClient() {
         }),
       });
       const j = await r.json().catch(() => null);
-      if (!r.ok || (j && (j as any).error)) throw new Error((j as any)?.error || `Failed (${r.status})`);
+      if (!r.ok || (j && (j as any).error)) {
+        throw new Error((j as any)?.error || `Failed (${r.status})`);
+      }
 
       toast.success("Profile saved!");
-      setSaved(true); // no auto-redirect
+      setSaved(true); // we keep the user here; they can hit “Continue”
     } catch (err: any) {
       toast.error(err?.message || "Could not save profile");
     } finally {
@@ -239,6 +267,7 @@ export default function CompleteProfileClient() {
   }
 
   /* ---------------------------------- Render --------------------------------- */
+
   const nameHint =
     nameStatus === "available"
       ? "Looks good — available."
@@ -253,165 +282,282 @@ export default function CompleteProfileClient() {
   const nameHintClass =
     nameStatus === "available"
       ? "text-emerald-700"
-      : nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "error"
+      : nameStatus === "taken" ||
+        nameStatus === "invalid" ||
+        nameStatus === "error"
       ? "text-red-600"
-      : "text-gray-500";
+      : "text-[var(--text-muted)]";
+
+  const emailInvalid =
+    email.trim().length > 0 && !looksLikeEmail(email.trim());
 
   if (loading) {
     return (
-      <div className="container-page py-8">
-        <div className="mx-auto max-w-2xl">Loading…</div>
+      <div className="container-page py-8 md:py-10">
+        <div className="mx-auto max-w-3xl">
+          <div className="card-surface p-4 sm:p-6">
+            <div className="h-5 w-40 rounded bg-[var(--skeleton)]" />
+            <div className="mt-4 h-4 w-full max-w-md rounded bg-[var(--skeleton)]" />
+            <div className="mt-6 space-y-3">
+              <div className="h-10 w-full rounded bg-[var(--skeleton)]" />
+              <div className="h-10 w-full rounded bg-[var(--skeleton)]" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container-page py-8">
-      <div className="mx-auto max-w-2xl">
-        <div className="hero-surface">
-          <h1 className="text-2xl md:text-3xl font-extrabold mb-1">Complete your profile</h1>
-          <p className="text-sm text-white/80 dark:text-slate-300">
-            Add a username and (optionally) a profile photo, WhatsApp, and address details.
-          </p>
-        </div>
-
-        {unauth ? (
+    <div className="container-page py-8 md:py-10">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        {/* Alerts */}
+        {unauth && (
           <div
             role="alert"
-            className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
+            className="card-surface border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50"
           >
             Please{" "}
-            <Link className="underline" href={`/signin?callbackUrl=${encodeURIComponent(ret)}`}>
+            <Link
+              className="underline"
+              href={`/signin?callbackUrl=${encodeURIComponent(ret)}`}
+            >
               sign in
             </Link>{" "}
             to complete your profile.
           </div>
-        ) : null}
+        )}
 
-        {saved ? (
-          <div className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
+        {saved && !unauth && (
+          <div className="card-surface border border-emerald-300/70 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-50">
             Profile saved.{" "}
-            <Link href={ret} className="underline">Continue</Link>
-          </div>
-        ) : null}
-
-        <form onSubmit={onSave} className="card-surface p-4 mt-6 space-y-4" noValidate aria-busy={saving}>
-          {/* Email */}
-          <div>
-            <label htmlFor="email" className="label">Email</label>
-            <input
-              id="email"
-              type="email"
-              className="input"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={(e) => setEmail(e.target.value.trim())}
-              required
-              autoComplete="email"
-              inputMode="email"
-              disabled={saving}
-              aria-invalid={email ? (!looksLikeEmail(email) || undefined) : undefined}
-            />
-            <p className="text-xs text-gray-500 mt-1">Changing your sign-in email may require verification.</p>
-          </div>
-
-          {/* Username */}
-          <div>
-            <label htmlFor="username" className="label">Username</label>
-            <input
-              id="username"
-              className="input"
-              placeholder="e.g. brian254"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onBlur={(e) => setUsername(e.target.value.trim())}
-              required
-              minLength={3}
-              maxLength={24}
-              aria-invalid={nameStatus === "taken" || nameStatus === "invalid" ? true : undefined}
-              aria-describedby="username-help username-status"
-              disabled={saving}
-              inputMode="text"
-              autoComplete="username"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-            <p id="username-help" className="text-xs text-gray-500 mt-1">
-              Shown on your listings. 3–24 chars, letters/numbers/dot/underscore.
-            </p>
-            {nameHint && (
-              <p id="username-status" className={`text-xs mt-1 ${nameHintClass}`} aria-live="polite">
-                {nameHint}
-              </p>
-            )}
-          </div>
-
-          {/* Native photo uploader */}
-          <div>
-            <label className="label">Profile photo</label>
-            <ProfilePhotoUploader initialImage={me?.image ?? null} />
-          </div>
-
-          {/* WhatsApp */}
-          <div>
-            <label className="label">WhatsApp (optional)</label>
-            <input
-              className="input"
-              placeholder="07XXXXXXXX or 2547XXXXXXXX"
-              value={whatsapp}
-              onChange={(e) => setWhatsapp(e.target.value)}
-              aria-invalid={!!whatsapp && !looksLikeValidKePhone(whatsapp)}
-              disabled={saving}
-              inputMode="tel"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Will be stored as <code className="font-mono">{whatsappNormalized || "—"}</code>
-            </p>
-          </div>
-
-          {/* Location */}
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="label">City (optional)</label>
-              <input className="input" value={city} onChange={(e) => setCity(e.target.value)} disabled={saving} />
-            </div>
-            <div>
-              <label className="label">Country (optional)</label>
-              <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} disabled={saving} />
-            </div>
-          </div>
-
-          {/* Address */}
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="label">Postal code (optional)</label>
-              <input className="input" value={postalCode} onChange={(e) => setPostal(e.target.value)} disabled={saving} />
-            </div>
-            <div>
-              <label className="label">Address (optional)</label>
-              <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} disabled={saving} placeholder="Street, estate, etc." />
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2 pt-2">
-            <button
-              type="submit"
-              disabled={saving || nameStatus === "checking" || nameStatus === "invalid" || !looksLikeEmail(email)}
-              className="btn-gradient-primary"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-            <Link href={ret} className="btn-outline" aria-disabled={saving}>
-              Skip for now
+            <Link href={ret} className="underline">
+              Continue
             </Link>
           </div>
+        )}
 
-          <p className="sr-only" aria-live="polite">{saving ? "Saving profile…" : ""}</p>
+        {/* Main form card */}
+        <form
+          onSubmit={onSave}
+          className="card-surface p-4 sm:p-6 space-y-6"
+          noValidate
+          aria-busy={saving}
+        >
+          {/* Intro */}
+          <header className="space-y-1">
+            <h1 className="text-xl font-semibold text-[var(--text-strong)]">
+              Finish setting up your account
+            </h1>
+            <p className="text-sm text-[var(--text-muted)]">
+              A clear username and contact details help buyers and sellers
+              recognise you and get in touch quickly.
+            </p>
+          </header>
+
+          {/* Account section */}
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">
+              Account
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label htmlFor="email" className="label">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  className="input"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={(e) => setEmail(e.target.value.trim())}
+                  required
+                  autoComplete="email"
+                  inputMode="email"
+                  disabled={saving}
+                  aria-invalid={emailInvalid || undefined}
+                />
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  Changing your sign-in email may require verification.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="username" className="label">
+                  Username
+                </label>
+                <input
+                  id="username"
+                  className="input"
+                  placeholder="e.g. brian254"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  onBlur={(e) => setUsername(e.target.value.trim())}
+                  required
+                  minLength={3}
+                  maxLength={24}
+                  aria-invalid={
+                    nameStatus === "taken" || nameStatus === "invalid"
+                      ? true
+                      : undefined
+                  }
+                  aria-describedby="username-help username-status"
+                  disabled={saving}
+                  inputMode="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+                <p
+                  id="username-help"
+                  className="mt-1 text-xs text-[var(--text-muted)]"
+                >
+                  Shown on your listings. 3–24 chars, letters/numbers/dot/
+                  underscore.
+                </p>
+                {nameHint && (
+                  <p
+                    id="username-status"
+                    className={`mt-1 text-xs ${nameHintClass}`}
+                    aria-live="polite"
+                  >
+                    {nameHint}
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Profile photo */}
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">
+              Profile photo
+            </h2>
+            <p className="text-sm text-[var(--text-muted)]">
+              A clear photo helps people recognise you. You can change this any
+              time.
+            </p>
+            <ProfilePhotoUploader initialImage={me?.image ?? null} />
+          </section>
+
+          {/* Contact */}
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">
+              Contact
+            </h2>
+            <div>
+              <label className="label">WhatsApp (optional)</label>
+              <input
+                className="input"
+                placeholder="07XXXXXXXX or 2547XXXXXXXX"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                aria-invalid={
+                  !!whatsapp && !looksLikeValidKePhone(whatsapp)
+                }
+                disabled={saving}
+                inputMode="tel"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Will be stored as{" "}
+                <code className="font-mono">
+                  {whatsappNormalized || "—"}
+                </code>
+                .
+              </p>
+            </div>
+          </section>
+
+          {/* Location */}
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">
+              Location (optional)
+            </h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="label">City</label>
+                <input
+                  className="input"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div>
+                <label className="label">Country</label>
+                <input
+                  className="input"
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="label">Postal code</label>
+                <input
+                  className="input"
+                  value={postalCode}
+                  onChange={(e) => setPostal(e.target.value)}
+                  disabled={saving}
+                />
+              </div>
+              <div>
+                <label className="label">Address</label>
+                <input
+                  className="input"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  disabled={saving}
+                  placeholder="Street, estate, etc."
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Actions */}
+          <section className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-4">
+            <p className="text-xs text-[var(--text-muted)]">
+              You can update these details later from your account settings.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="submit"
+                size="sm"
+                variant="primary"
+                loading={saving}
+                disabled={
+                  saving ||
+                  nameStatus === "checking" ||
+                  nameStatus === "invalid" ||
+                  !looksLikeEmail(email.trim())
+                }
+              >
+                {saving ? "Saving…" : "Save profile"}
+              </Button>
+              <Button
+                asChild
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={saving}
+              >
+                <Link href={ret} aria-disabled={saving}>
+                  Skip for now
+                </Link>
+              </Button>
+            </div>
+          </section>
+
+          <p className="sr-only" aria-live="polite">
+            {saving ? "Saving profile…" : ""}
+          </p>
         </form>
       </div>
     </div>

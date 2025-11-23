@@ -155,12 +155,12 @@ export default function ProductPageClient({
   if (gone) {
     return (
       <div className="mx-auto max-w-2xl">
-        <div className="rounded-2xl border bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
           <div className="mx-auto mb-3 grid h-10 w-10 place-content-center rounded-lg bg-[#161748] text-white">
             404
           </div>
           <h1 className="text-lg font-semibold">Listing unavailable</h1>
-          <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
+          <p className="mt-1 text-sm text-muted-foreground">
             This product was removed or isn’t available anymore.
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
@@ -315,7 +315,9 @@ export default function ProductPageClient({
       (display as any)?.username ||
       null;
     const sid =
-      display.sellerId || ((seller.id as string | null) as string | null) || null;
+      display.sellerId ||
+      ((seller.id as string | null) as string | null) ||
+      null;
     return u || (sid ? `u-${sid}` : null);
   }, [
     seller.username,
@@ -339,7 +341,7 @@ export default function ProductPageClient({
         {/* Media */}
         <div className="lg:col-span-3">
           <div
-            className="relative overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm"
             data-gallery-wrap
           >
             <div
@@ -420,11 +422,11 @@ export default function ProductPageClient({
         <div className="space-y-4 lg:col-span-2">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <h1 className="text-2xl font-bold text-foreground">
                 {display.name || "Listing"}
               </h1>
               <div className="mt-1 flex items-center gap-2">
-                <span className="text-sm text-gray-500 dark:text-slate-400">
+                <span className="text-sm text-muted-foreground">
                   {display.category || "General"} •{" "}
                   {display.subcategory || "General"}
                 </span>
@@ -435,7 +437,7 @@ export default function ProductPageClient({
                 )}
               </div>
               {(fetching || fetchErr) && (
-                <div className="mt-2 text-xs text-gray-500">
+                <div className="mt-2 text-xs text-muted-foreground">
                   {fetching ? "Loading details…" : "Showing limited info"}
                 </div>
               )}
@@ -447,7 +449,7 @@ export default function ProductPageClient({
                 <Link
                   href={`/store/${encodeURIComponent(storeSlug)}`}
                   prefetch={false}
-                  className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                  className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
                   aria-label="Visit Store"
                 >
                   Visit Store
@@ -456,41 +458,41 @@ export default function ProductPageClient({
             </div>
           </div>
 
-          <div className="space-y-1 rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="space-y-1 rounded-xl border border-border bg-card p-4">
             <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">
               {fmtKES(display.price)}
             </p>
             {display.negotiable && (
-              <p className="text-sm text-gray-500">Negotiable</p>
+              <p className="text-sm text-muted-foreground">Negotiable</p>
             )}
             {display.brand && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Brand: {display.brand}
               </p>
             )}
             {display.condition && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Condition: {display.condition}
               </p>
             )}
             {display.location && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Location: {display.location}
               </p>
             )}
           </div>
 
-          <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="rounded-xl border border-border bg-card p-4">
             <h2 className="mb-2 font-semibold">Description</h2>
-            <p className="whitespace-pre-line text-gray-700 dark:text-slate-200">
+            <p className="whitespace-pre-line text-foreground">
               {display.description || "No description provided."}
             </p>
           </div>
 
           {/* Seller */}
-          <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="rounded-xl border border-border bg-card p-4">
             <h3 className="mb-3 font-semibold">Seller</h3>
-            <div className="space-y-1 text-gray-700 dark:text-slate-200">
+            <div className="space-y-1 text-foreground">
               <p className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">Name:</span>
                 <span>
@@ -521,7 +523,7 @@ export default function ProductPageClient({
               )}
             </div>
 
-            <div className="mt-4 text-xs text-gray-500 dark:text-slate-400">
+            <div className="mt-4 text-xs text-muted-foreground">
               Safety: meet in public places, inspect items carefully, and never
               share sensitive information.
             </div>

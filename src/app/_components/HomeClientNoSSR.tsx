@@ -20,7 +20,7 @@ const HomeClient = dynamic<any>(
     loading: () => (
       <div
         aria-label="Loading home feed"
-        className="mx-auto max-w-6xl px-4 py-8 text-sm text-gray-500 dark:text-slate-400"
+        className="mx-auto max-w-6xl px-4 py-8 text-sm text-muted-foreground"
       >
         Loading…
       </div>

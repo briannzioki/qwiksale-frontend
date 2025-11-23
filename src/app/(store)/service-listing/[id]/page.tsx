@@ -1,3 +1,4 @@
+// src/app/(store)/service-listing/[id]/page.tsx
 export const revalidate = 300;
 export const runtime = "nodejs";
 
@@ -281,7 +282,7 @@ export default async function StorePage({
               total: 0,
               totalPages: 1,
               items: [],
-            } as ApiListResp<StoreProduct>),
+            }) as ApiListResp<StoreProduct>,
         )
     : {
         page: 1,
@@ -302,7 +303,7 @@ export default async function StorePage({
               total: 0,
               totalPages: 1,
               items: [],
-            } as ApiListResp<StoreService>),
+            }) as ApiListResp<StoreService>,
         )
     : {
         page: 1,
@@ -357,7 +358,6 @@ export default async function StorePage({
 
   const locationText = [user.city, user.country].filter(Boolean).join(", ");
 
-  // Build simple “popular categories” snapshot
   const categoryCounts = new Map<string, number>();
   for (const item of [...products, ...services]) {
     const key =
@@ -372,7 +372,7 @@ export default async function StorePage({
   return (
     <div className="space-y-8">
       {/* Store hero */}
-      <section className="relative overflow-hidden rounded-3xl border border-slate-800/60 bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] px-6 py-6 shadow-lg sm:px-8 sm:py-7">
+      <section className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue px-6 py-6 shadow-lg sm:px-8 sm:py-7">
         <div className="absolute inset-0 opacity-30 mix-blend-soft-light">
           <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),transparent_55%),radial-gradient(circle_at_bottom,_rgba(15,23,42,0.9),transparent_60%)]" />
         </div>
@@ -392,7 +392,7 @@ export default async function StorePage({
               <p className="text-xs uppercase tracking-[0.18em] text-white/70">
                 Store
               </p>
-              <h1 className="text-2xl font-extrabold leading-tight md:text-3xl">
+              <h1 className="text-2xl font-extrabold leading-tight text-white md:text-3xl">
                 @{displayHandle}
               </h1>
               <p className="mt-1 text-sm text-white/90">
@@ -458,9 +458,9 @@ export default async function StorePage({
         <main className="space-y-8">
           {/* Empty state */}
           {!hasAny && (
-            <section className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-8 text-center text-sm text-slate-200">
+            <section className="rounded-2xl border border-dashed border-border bg-muted p-8 text-center text-sm text-foreground">
               <p className="text-lg font-semibold">No listings yet</p>
-              <p className="mt-2 text-sm text-slate-300/90">
+              <p className="mt-2 text-sm text-muted-foreground">
                 {shouldFetchListings
                   ? "This store hasn’t posted any products or services yet."
                   : "This store profile isn’t set up yet."}
@@ -484,10 +484,10 @@ export default async function StorePage({
           {hasProducts && (
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold md:text-lg">
+                <h2 className="text-base font-semibold text-foreground md:text-lg">
                   Products
                 </h2>
-                <span className="text-xs text-gray-500 dark:text-slate-400">
+                <span className="text-xs text-muted-foreground">
                   {totalProducts.toLocaleString()} item
                   {totalProducts === 1 ? "" : "s"}
                 </span>
@@ -496,13 +496,13 @@ export default async function StorePage({
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {products.map((p) => (
                   <Link key={p.id} href={`/product/${p.id}`} className="group">
-                    <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                    <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
                       {p.featured && (
                         <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
                           Featured
                         </span>
                       )}
-                      <div className="relative h-44 w-full bg-gray-100 dark:bg-slate-800">
+                      <div className="relative h-44 w-full bg-muted">
                         <SmartImage
                           src={p.image || undefined}
                           alt={p.name || "Product image"}
@@ -512,10 +512,10 @@ export default async function StorePage({
                         />
                       </div>
                       <div className="flex flex-1 flex-col p-4">
-                        <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
+                        <h3 className="line-clamp-1 font-semibold text-foreground">
                           {p.name || "Unnamed item"}
                         </h3>
-                        <p className="mt-1 line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
+                        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
                           {[p.category, p.subcategory]
                             .filter(Boolean)
                             .join(" • ") || "—"}
@@ -535,10 +535,10 @@ export default async function StorePage({
           {hasServices && (
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold md:text-lg">
+                <h2 className="text-base font-semibold text-foreground md:text-lg">
                   Services
                 </h2>
-                <span className="text-xs text-gray-500 dark:text-slate-400">
+                <span className="text-xs text-muted-foreground">
                   {totalServices.toLocaleString()} item
                   {totalServices === 1 ? "" : "s"}
                 </span>
@@ -547,13 +547,13 @@ export default async function StorePage({
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {services.map((s) => (
                   <Link key={s.id} href={`/service/${s.id}`} className="group">
-                    <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+                    <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
                       {s.featured && (
                         <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
                           Featured
                         </span>
                       )}
-                      <div className="relative h-44 w-full bg-gray-100 dark:bg-slate-800">
+                      <div className="relative h-44 w-full bg-muted">
                         <SmartImage
                           src={s.image || undefined}
                           alt={s.name || "Service image"}
@@ -563,10 +563,10 @@ export default async function StorePage({
                         />
                       </div>
                       <div className="flex flex-1 flex-col p-4">
-                        <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-white">
+                        <h3 className="line-clamp-1 font-semibold text-foreground">
                           {s.name || "Unnamed service"}
                         </h3>
-                        <p className="mt-1 line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
+                        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
                           {[s.category, s.subcategory]
                             .filter(Boolean)
                             .join(" • ") || "—"}
@@ -585,35 +585,35 @@ export default async function StorePage({
 
         {/* Right-hand “flood” / context column */}
         <aside className="space-y-4">
-          <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 text-sm text-slate-100">
+          <section className="rounded-2xl border border-border bg-muted p-5 text-sm text-foreground">
             <h2 className="text-sm font-semibold tracking-tight">
               Store overview
             </h2>
-            <p className="mt-2 text-xs text-slate-300">
+            <p className="mt-2 text-xs text-muted-foreground">
               See everything this seller offers in one place. Use the main
               marketplace search if you want to cross-shop similar items.
             </p>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
               <div>
-                <dt className="text-slate-400">Total listings</dt>
+                <dt className="text-muted-foreground">Total listings</dt>
                 <dd className="mt-1 text-base font-semibold">
                   {totalListings.toLocaleString()}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Products</dt>
+                <dt className="text-muted-foreground">Products</dt>
                 <dd className="mt-1 text-base font-semibold">
                   {totalProducts.toLocaleString()}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Services</dt>
+                <dt className="text-muted-foreground">Services</dt>
                 <dd className="mt-1 text-base font-semibold">
                   {totalServices.toLocaleString()}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Member since</dt>
+                <dt className="text-muted-foreground">Member since</dt>
                 <dd className="mt-1 text-sm font-semibold">
                   {memberSince ?? "—"}
                 </dd>
@@ -622,21 +622,21 @@ export default async function StorePage({
           </section>
 
           {topCategories.length > 0 && (
-            <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 text-sm text-slate-100">
+            <section className="rounded-2xl border border-border bg-muted p-5 text-sm text-foreground">
               <h2 className="text-sm font-semibold tracking-tight">
                 Popular in this store
               </h2>
-              <p className="mt-2 text-xs text-slate-300">
+              <p className="mt-2 text-xs text-muted-foreground">
                 Quick snapshot of what this seller lists the most.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {topCategories.map(([label, count]) => (
                   <span
                     key={label}
-                    className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] text-slate-100"
+                    className="inline-flex items-center rounded-full border border-border bg-card px-3 py-1 text-[11px] text-foreground"
                   >
                     {label}
-                    <span className="ml-2 rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">
+                    <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                       {count}
                     </span>
                   </span>
@@ -645,8 +645,8 @@ export default async function StorePage({
             </section>
           )}
 
-          <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 text-xs text-slate-300">
-            <h2 className="text-sm font-semibold tracking-tight text-slate-100">
+          <section className="rounded-2xl border border-border bg-muted p-5 text-xs text-muted-foreground">
+            <h2 className="text-sm font-semibold tracking-tight text-foreground">
               Buyer tips
             </h2>
             <ul className="mt-2 space-y-1.5">

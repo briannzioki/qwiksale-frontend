@@ -1,6 +1,5 @@
 // src/app/donate/page.tsx
 "use client";
-// src/app/donate/page.tsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -24,8 +23,7 @@ const MAX_DONATION = 1_000_000;
 
 export default function DonatePage() {
   const [amount, setAmount] = useState<number | "">("");
-  const [activePreset, setActivePreset] =
-    useState<number | null>(PRESETS[0]);
+  const [activePreset, setActivePreset] = useState<number | null>(PRESETS[0]);
   const [phone, setPhone] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -45,9 +43,7 @@ export default function DonatePage() {
     }
     const test =
       typeof process !== "undefined"
-        ? (process.env[
-            "NEXT_PUBLIC_TEST_MSISDN"
-          ] as string | undefined)
+        ? (process.env["NEXT_PUBLIC_TEST_MSISDN"] as string | undefined)
         : undefined;
     if (test) setPhone(test);
   }, []);
@@ -97,8 +93,7 @@ export default function DonatePage() {
       );
       return;
     }
-    const amt =
-      typeof amount === "number" ? Math.round(amount) : 0;
+    const amt = typeof amount === "number" ? Math.round(amount) : 0;
     if (!Number.isFinite(amt) || amt < 1) {
       setError("Enter a valid amount (minimum 1 KES).");
       return;
@@ -192,17 +187,17 @@ export default function DonatePage() {
       {/* Form */}
       <form
         onSubmit={donate}
-        className="mt-6 rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        className="mt-6 rounded-2xl border border-border bg-card p-5 text-foreground shadow-sm"
       >
-        <p className="text-gray-700 dark:text-slate-300">
-          We’re a neutral mediator — sellers handle their own sales.
-          Donations help us tackle spam, improve trust &amp; safety,
-          and build new features for everyone.
+        <p className="text-foreground">
+          We’re a neutral mediator — sellers handle their own sales. Donations
+          help us tackle spam, improve trust &amp; safety, and build new
+          features for everyone.
         </p>
 
         {/* Amount presets */}
         <div className="mt-5">
-          <label className="mb-2 block text-sm font-semibold text-gray-800 dark:text-slate-100">
+          <label className="mb-2 block text-sm font-semibold text-foreground">
             Amount
           </label>
           <div className="flex flex-wrap gap-2">
@@ -219,7 +214,7 @@ export default function DonatePage() {
                   className={`rounded-xl border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
                     active
                       ? "border-brandNavy bg-brandNavy text-white ring-brandNavy/40"
-                      : "bg-white hover:bg-gray-50 dark:bg-slate-900 dark:hover:bg-slate-800"
+                      : "border-border bg-card text-foreground hover:bg-muted"
                   }`}
                   aria-pressed={active}
                 >
@@ -233,7 +228,7 @@ export default function DonatePage() {
               className={`rounded-xl border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
                 activePreset === null
                   ? "border-brandNavy bg-brandNavy text-white ring-brandNavy/40"
-                  : "bg-white hover:bg-gray-50 dark:bg-slate-900 dark:hover:bg-slate-800"
+                  : "border-border bg-card text-foreground hover:bg-muted"
               }`}
               aria-pressed={activePreset === null}
             >
@@ -250,14 +245,14 @@ export default function DonatePage() {
                 max={MAX_DONATION}
                 step={1}
                 inputMode="numeric"
-                className="w-48 rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
+                className="w-48 rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue"
                 placeholder="Enter KES amount"
                 value={amount === "" ? "" : amount}
                 onChange={(e) => setCustomAmount(e.target.value)}
                 aria-describedby="amountHelp"
               />
               {typeof amount === "number" && amount > 0 && (
-                <span className="text-sm text-gray-600 dark:text-slate-300">
+                <span className="text-sm text-muted-foreground">
                   {fmtKES(amount)}
                 </span>
               )}
@@ -265,7 +260,7 @@ export default function DonatePage() {
           )}
           <p
             id="amountHelp"
-            className="mt-1 text-xs text-gray-500 dark:text-slate-400"
+            className="mt-1 text-xs text-muted-foreground"
           >
             Minimum 1 KES. Max {fmtKES(MAX_DONATION)}.
           </p>
@@ -275,17 +270,15 @@ export default function DonatePage() {
         <div className="mt-5">
           <label
             htmlFor="donation-phone"
-            className="block text-sm font-semibold text-gray-800 dark:text-slate-100"
+            className="block text-sm font-semibold text-foreground"
           >
             Phone (Safaricom) — format{" "}
-            <span className="font-mono">
-              2547/2541XXXXXXXX
-            </span>
+            <span className="font-mono">2547/2541XXXXXXXX</span>
           </label>
           <input
             id="donation-phone"
             inputMode="numeric"
-            className="mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-slate-700 dark:bg-slate-950"
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue"
             placeholder="2547XXXXXXXX or 2541XXXXXXXX"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -294,7 +287,7 @@ export default function DonatePage() {
           />
           <p
             id="phoneHelp"
-            className="mt-1 text-xs text-gray-500 dark:text-slate-400"
+            className="mt-1 text-xs text-muted-foreground"
           >
             We’ll send a one-time STK push to this number.
           </p>
@@ -305,10 +298,10 @@ export default function DonatePage() {
           <button
             type="submit"
             disabled={!canSubmit}
-            className={`rounded-xl px-5 py-3 text-white font-semibold shadow transition focus:outline-none focus:ring-2 ${
+            className={`rounded-xl px-5 py-3 font-semibold shadow transition focus:outline-none focus:ring-2 ${
               canSubmit
-                ? "bg-brandNavy hover:opacity-90 ring-brandNavy/40"
-                : "cursor-not-allowed bg-gray-300 ring-transparent"
+                ? "bg-brandNavy text-white hover:opacity-90 ring-brandNavy/40"
+                : "cursor-not-allowed bg-muted text-muted-foreground ring-transparent"
             }`}
           >
             {submitting ? "Processing…" : "Donate via M-Pesa"}
@@ -321,7 +314,7 @@ export default function DonatePage() {
               setError("");
               setStatus("");
             }}
-            className="rounded-xl border px-5 py-3 font-semibold hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800"
+            className="rounded-xl border border-border bg-background px-5 py-3 font-semibold hover:bg-muted"
           >
             Reset
           </button>
@@ -333,7 +326,7 @@ export default function DonatePage() {
                 setSubmitting(false);
                 setStatus("Cancelled.");
               }}
-              className="ml-auto rounded-xl border px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="ml-auto rounded-xl border border-border bg-background px-4 py-2 text-sm hover:bg-muted"
               title="Cancel request"
             >
               Cancel
@@ -345,7 +338,7 @@ export default function DonatePage() {
         <div className="mt-4 space-y-2">
           {status && (
             <div
-              className="text-sm text-gray-700 dark:text-slate-300"
+              className="text-sm text-foreground"
               role="status"
               aria-live="polite"
             >
@@ -363,9 +356,9 @@ export default function DonatePage() {
           )}
         </div>
 
-        <div className="mt-4 text-[12px] text-gray-500 dark:text-slate-400">
-          After you approve on your phone, we’ll receive a confirmation.
-          If anything looks stuck, try again. Questions?{" "}
+        <div className="mt-4 text-[12px] text-muted-foreground">
+          After you approve on your phone, we’ll receive a confirmation. If
+          anything looks stuck, try again. Questions?{" "}
           <a className="underline" href="/help">
             Contact support
           </a>

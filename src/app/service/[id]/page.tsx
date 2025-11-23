@@ -1,3 +1,4 @@
+// src/app/service/[id]/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -94,7 +95,6 @@ function resolveStoreHref(s: ServiceWire | null): string {
 async function fetchInitialService(
   id: string,
 ): Promise<{ service: ServiceWire | null; status: number }> {
-  // Hard-cap the server-side wait so /service/:id can't hang forever
   const controller =
     typeof AbortController !== "undefined" ? new AbortController() : null;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -118,7 +118,6 @@ async function fetchInitialService(
     });
 
     if (res.status === 404) {
-      // Fallback: try the multi-id API in case this ID only shows there
       const alt = await fetch(
         makeApiUrl(`/api/services?ids=${encodeURIComponent(id)}`),
         {
@@ -143,7 +142,6 @@ async function fetchInitialService(
 
     return { service: wire, status: res.status };
   } catch {
-    // Timeout or generic fetch error → treat as soft API failure
     return { service: null, status: 0 };
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
@@ -163,7 +161,6 @@ export default async function ServicePage({
   const { service, status } = await fetchInitialService(id);
   if (status === 404) notFound();
 
-  // Derive SSR gallery and prune placeholders if there are real URLs
   const rawImages = extractGalleryUrls(
     service ?? {},
     service?.image || PLACEHOLDER,
@@ -184,12 +181,12 @@ export default async function ServicePage({
           <p className="text-xs font-semibold uppercase tracking-wide text-brandBlue/80 dark:text-brandBlue">
             Service
           </p>
-          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground">
             {title}
           </h1>
 
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-slate-300">
-            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-semibold text-gray-900 dark:bg-slate-800 dark:text-slate-50">
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 font-semibold text-foreground">
               {rateText}
             </span>
             {locationText && (
@@ -214,9 +211,8 @@ export default async function ServicePage({
       <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         {/* Gallery */}
         <div>
-          {/* Wrap the gallery so tests can target [data-gallery-wrap]; keep an overlay target */}
           <div
-            className="relative overflow-hidden rounded-2xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
             data-gallery-wrap
           >
             <div
@@ -246,8 +242,8 @@ export default async function ServicePage({
         {/* Side panels */}
         <div className="space-y-4">
           {/* Description */}
-          <section className="rounded-xl border bg-white p-4 text-sm text-gray-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+          <section className="rounded-xl border border-border bg-card p-4 text-sm text-foreground shadow-sm">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Description
             </h2>
             <p className="whitespace-pre-line">
@@ -256,11 +252,11 @@ export default async function ServicePage({
           </section>
 
           {/* Contact */}
-          <section className="rounded-xl border bg-white p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+          <section className="rounded-xl border border-border bg-card p-4 text-sm shadow-sm">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Talk to the provider
             </h2>
-            <p className="mb-3 text-xs text-gray-500 dark:text-slate-400">
+            <p className="mb-3 text-xs text-muted-foreground">
               Ask about availability, pricing, and any special requirements
               before you book.
             </p>

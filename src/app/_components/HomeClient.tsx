@@ -456,7 +456,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
   const makeChip = (label: string) => (
     <span
       key={label}
-      className="inline-flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm border border-gray-200"
+      className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-foreground shadow-sm"
     >
       {label}
     </span>
@@ -474,14 +474,16 @@ export default function HomeClient(_seed?: HomeSeedProps) {
         <HomeTabs />
       </div>
 
-      {/* Filters row */}
+      {/* Filters row
+          - Mobile: normal flow (scrolls away like any other content).
+          - Desktop (md+): sticky under the tabs, same as before. */}
       <section
-        className="card-surface sticky top-[112px] z-20 p-4 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-slate-900/80"
+        className="card-surface z-20 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:sticky md:top-[112px]"
         aria-label="Filters"
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Keywords
             </label>
             <input
@@ -491,11 +493,11 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                 setPage(1);
               }}
               placeholder="Search products & services…"
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-[#39a0ca] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Category
             </label>
             <input
@@ -505,11 +507,11 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                 setPage(1);
               }}
               placeholder="Any"
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-[#39a0ca] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Subcategory
             </label>
             <input
@@ -519,14 +521,14 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                 setPage(1);
               }}
               placeholder="Any"
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-[#39a0ca] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
             />
           </div>
           <div className="md:col-span-2 flex items-end">
             <button
               type="button"
               onClick={clearAll}
-              className="inline-flex w-full items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+              className="inline-flex w-full items-center justify-center rounded-lg border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground transition hover:bg-muted/80 focus:outline-none focus:ring-2 ring-focus"
             >
               Clear filters
             </button>
@@ -538,7 +540,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
           {mode === "products" && (
             <>
               <div className="md:col-span-3">
-                <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+                <label className="block text-xs font-semibold text-muted-foreground">
                   Brand
                 </label>
                 <input
@@ -548,11 +550,11 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                     setPage(1);
                   }}
                   placeholder="e.g. Samsung"
-                  className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-[#39a0ca] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
                 />
               </div>
               <div className="md:col-span-3">
-                <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+                <label className="block text-xs font-semibold text-muted-foreground">
                   Condition
                 </label>
                 <select
@@ -561,7 +563,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                     setCondition(e.target.value);
                     setPage(1);
                   }}
-                  className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-[#39a0ca] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
                 >
                   <option value="">Any</option>
                   <option value="brand new">Brand New</option>
@@ -572,7 +574,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
           )}
 
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Min price (KES)
             </label>
             <input
@@ -583,11 +585,11 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                 setPage(1);
               }}
               inputMode="numeric"
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-[#39a0ca] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Max price (KES)
             </label>
             <input
@@ -598,12 +600,12 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                 setPage(1);
               }}
               inputMode="numeric"
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-[#39a0ca] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
             />
           </div>
 
           <div className="md:col-span-3 flex items-end">
-            <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-slate-200">
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
               <input
                 type="checkbox"
                 checked={featuredOnly}
@@ -611,14 +613,14 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                   setFeaturedOnly(e.target.checked);
                   setPage(1);
                 }}
-                className="h-4 w-4 rounded border-gray-300 text-[#161748] focus:ring-[#39a0ca] dark:border-slate-600"
+                className="h-4 w-4 rounded border border-border text-primary focus:outline-none focus:ring-2 ring-focus"
               />
               Featured only
             </label>
           </div>
 
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Sort
             </label>
             <select
@@ -627,7 +629,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                 setSort(e.target.value);
                 setPage(1);
               }}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-[#39a0ca] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
             >
               <option value="newest">Newest</option>
               <option value="featured">Featured first</option>
@@ -640,7 +642,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
         {/* Active filter chips */}
         {activeChips.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-gray-500 dark:text-slate-400">
+            <span className="text-xs font-semibold text-muted-foreground">
               Active:
             </span>
             {activeChips.map(makeChip)}
@@ -659,7 +661,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
           {err}
         </div>
       ) : items.length === 0 ? (
-        <div className="card-surface p-6 text-sm text-gray-600 dark:text-slate-300">
+        <div className="card-surface p-6 text-sm text-muted-foreground">
           No {mode === "all" ? "items" : mode} found. Try adjusting your
           filters.
         </div>
@@ -704,7 +706,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                 data-product-id={isProduct ? it.id : undefined}
                 data-service-id={!isProduct ? it.id : undefined}
               >
-                <div className="card-surface relative overflow-hidden rounded-xl border border-gray-100 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800">
+                <div className="card-surface relative overflow-hidden rounded-xl border border-border shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                   <div className="relative">
                     {featured && (
                       <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
@@ -716,7 +718,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                       src={imageUrl}
                       width={800}
                       height={440}
-                      className="h-44 w-full bg-gray-100 object-cover transition-transform duration-300 group-hover:scale-105 dark:bg-slate-800"
+                      className="h-44 w-full bg-muted object-cover transition-transform duration-300 group-hover:scale-105"
                       placeholder="blur"
                       blurDataURL={blur}
                       loading="lazy"
@@ -729,10 +731,10 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                     )}
                   </div>
                   <div className="p-3">
-                    <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-slate-100">
+                    <h3 className="line-clamp-1 font-semibold text-foreground">
                       {title}
                     </h3>
-                    <p className="line-clamp-1 text-xs text-gray-500 dark:text-slate-400">
+                    <p className="line-clamp-1 text-xs text-muted-foreground">
                       {categoryText}
                     </p>
                     <p className="mt-1 text-sm font-bold text-[#161748] dark:text-[#39a0ca]">
@@ -748,7 +750,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
 
       {/* Local pagination (does not touch URL) */}
       <section className="flex items-center justify-between" aria-live="polite">
-        <p className="text-xs text-gray-600 dark:text-slate-300">
+        <p className="text-xs text-muted-foreground">
           {loading
             ? "Loading…"
             : err
@@ -760,10 +762,10 @@ export default function HomeClient(_seed?: HomeSeedProps) {
             type="button"
             disabled={loading || pageNum <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className={`rounded-lg px-3 py-1.5 text-xs border ${
+            className={`rounded-lg border px-3 py-1.5 text-xs transition ${
               !loading && pageNum > 1
-                ? "hover:bg-gray-50 dark:hover:bg-slate-800"
-                : "cursor-not-allowed opacity-50"
+                ? "border-border bg-card hover:bg-muted"
+                : "border-border bg-muted/60 cursor-not-allowed opacity-50"
             }`}
             aria-label="Previous page"
           >
@@ -773,10 +775,10 @@ export default function HomeClient(_seed?: HomeSeedProps) {
             type="button"
             disabled={loading || pageNum >= totalPages}
             onClick={() => setPage((p) => p + 1)}
-            className={`rounded-lg px-3 py-1.5 text-xs border ${
+            className={`rounded-lg border px-3 py-1.5 text-xs transition ${
               !loading && pageNum < totalPages
-                ? "hover:bg-gray-50 dark:hover:bg-slate-800"
-                : "cursor-not-allowed opacity-50"
+                ? "border-border bg-card hover:bg-muted"
+                : "border-border bg-muted/60 cursor-not-allowed opacity-50"
             }`}
             aria-label="Next page"
           >
@@ -799,13 +801,13 @@ function SkeletonGrid() {
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
-          className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
         >
-          <div className="h-44 w-full animate-pulse bg-gray-200 dark:bg-slate-800" />
+          <div className="h-44 w-full animate-pulse bg-muted" />
           <div className="space-y-2 p-4">
-            <div className="h-4 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-slate-800" />
-            <div className="h-3 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-slate-800" />
-            <div className="h-4 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-slate-800" />
+            <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+            <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
           </div>
         </div>
       ))}

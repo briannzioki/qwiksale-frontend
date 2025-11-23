@@ -76,7 +76,7 @@ function rateSuffix(rt?: Props["rateType"]) {
 function track(event: string, payload?: Record<string, unknown>) {
   if (typeof window !== "undefined" && "CustomEvent" in window) {
     window.dispatchEvent(
-      new CustomEvent("qs:track", { detail: { event, payload } })
+      new CustomEvent("qs:track", { detail: { event, payload } }),
     );
   }
 }
@@ -102,7 +102,7 @@ function ServiceCardImpl({
   // Canonical service detail URL
   const href = useMemo(
     () => `/service/${encodeURIComponent(id)}`,
-    [id]
+    [id],
   );
   const hrefEdit =
     editHref ?? `/service/${encodeURIComponent(id)}/edit`;
@@ -128,7 +128,7 @@ function ServiceCardImpl({
       [serviceArea || "Available", availability]
         .filter(Boolean)
         .join(" • "),
-    [serviceArea, availability]
+    [serviceArea, availability],
   );
 
   // Impression tracking
@@ -155,7 +155,7 @@ function ServiceCardImpl({
           }
         }
       },
-      { rootMargin: "0px 0px -20% 0px" }
+      { rootMargin: "0px 0px -20% 0px" },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -183,7 +183,7 @@ function ServiceCardImpl({
           }
         }
       },
-      { rootMargin: "300px" }
+      { rootMargin: "300px" },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -223,9 +223,9 @@ function ServiceCardImpl({
   return (
     <div
       className={[
-        "group relative overflow-hidden rounded-xl border bg-white shadow-sm transition will-change-transform",
+        "group relative overflow-hidden rounded-xl border bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm transition will-change-transform",
         "hover:-translate-y-0.5 hover:shadow-md",
-        "border-black/5 dark:border-slate-800 dark:bg-slate-900",
+        "border-[var(--border-subtle)]",
         className,
       ].join(" ")}
       role="article"
@@ -238,7 +238,7 @@ function ServiceCardImpl({
         <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
           <Link
             href={hrefEdit}
-            className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:border-slate-700 dark:bg-slate-900"
+            className="rounded border bg-subtle px-2 py-1 text-xs text-[var(--text)] hover:bg-[var(--bg-elevated)] border-[var(--border-subtle)]"
             title="Edit service"
             aria-label="Edit service"
             prefetch={false}
@@ -299,11 +299,11 @@ function ServiceCardImpl({
         </div>
 
         <div className="p-3">
-          <div className="line-clamp-1 font-semibold text-gray-900 dark:text-gray-100">
+          <div className="line-clamp-1 font-semibold text-[var(--text)]">
             {name}
           </div>
           {subText && (
-            <div className="mt-0.5 line-clamp-1 text-xs text-gray-600 dark:text-slate-300">
+            <div className="mt-0.5 line-clamp-1 text-xs text-[var(--text-muted)]">
               {subText}
             </div>
           )}

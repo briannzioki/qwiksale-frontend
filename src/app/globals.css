@@ -26,13 +26,34 @@
   --brand-blue-rgb: 57 160 202;
   --accent-rgb: 249 93 155;
 
-  /* Semantic Surfaces / Text */
-  --bg-app: #f8fafc;         /* slate-50 */
+  /* Semantic Surfaces / Text (light) */
+  --bg-app: #f8fafc;        /* slate-50 */
   --bg-elevated: #ffffff;
-  --bg-muted: #f1f5f9;       /* slate-100 */
-  --border: #e2e8f0;         /* slate-200 */
-  --text: #0f172a;           /* slate-900 */
-  --text-muted: #475569;     /* slate-600 */
+  --bg-muted: #f1f5f9;      /* slate-100 */
+  --bg-subtle: #f9fafb;     /* slate-50 tweak */
+
+  --border-subtle: #e2e8f0; /* slate-200 */
+  --border-strong: #cbd5e1; /* slate-300 */
+  --border: var(--border-subtle);
+
+  --text-strong: #020617;   /* slate-950 */
+  --text: #0f172a;          /* slate-900 */
+  --text-muted: #475569;    /* slate-600 */
+  --text-soft: #64748b;     /* slate-500 */
+
+  /* Semantic palette */
+  --primary: var(--brand-navy);
+  --primary-soft: #f3f4fb;  /* brandNavy-50 */
+  --accent-soft: #fff1f6;   /* accent-50 */
+  --danger: #e11d48;        /* rose-600 */
+  --danger-soft: #fee2e2;   /* rose-100 */
+  --success: #16a34a;       /* emerald-600 */
+  --success-soft: #dcfce7;  /* emerald-100 */
+
+  /* Badges / chips */
+  --badge-bg: rgba(255 255 255 / 0.9);
+  --badge-border: rgba(15 23 42 / 0.08);
+  --badge-text: var(--text);
 
   /* Spotlight / noise intensity */
   --spotlight-size: 900px;
@@ -52,9 +73,24 @@
   --bg-app: #020617;         /* slate-950 */
   --bg-elevated: #0b1220;    /* near slate-900 with a hint of blue */
   --bg-muted: #0f172a;       /* slate-900 */
-  --border: #334155;         /* slate-700 */
+  --bg-subtle: #020617;
+
+  --border-subtle: #1f2937;  /* slate-800-ish */
+  --border-strong: #475569;  /* slate-600 */
+  --border: var(--border-subtle);
+
+  --text-strong: #f9fafb;
   --text: #e2e8f0;           /* slate-200 */
   --text-muted: #94a3b8;     /* slate-400 */
+  --text-soft: #64748b;      /* slate-500 */
+
+  --primary: #3f45a9;        /* brandNavy-500/300 mix */
+  --primary-soft: rgba(15 23 42 / 0.7);
+  --accent-soft: rgba(248 113 166 / 0.24);
+  --danger: #f43f5e;         /* rose-500 */
+  --danger-soft: rgba(248 113 113 / 0.27);
+  --success: #22c55e;        /* emerald-500 */
+  --success-soft: rgba(34 197 94 / 0.18);
 
   --spotlight-alpha: 0.22;
   --noise-alpha: 0.06;       /* dark mode target */
@@ -67,21 +103,36 @@
    Base layer
    ========================= */
 @layer base {
-  html, body, #__next, :root {
+  html,
+  body,
+  #__next,
+  :root {
     height: 100%;
   }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: var(--bg-app);
     color: var(--text);
   }
+
   body {
     background:
       /* subtle noise on top */
       radial-gradient(circle at 10% 10%, rgba(255 255 255 / 0.02), transparent 40%),
       var(--bg-app);
     min-height: 100%;
+  }
+
+  /* Headings default to strong text token (overridden by per-component gradients) */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: var(--text-strong);
   }
 
   /* Text selection */
@@ -91,14 +142,33 @@
   }
 
   /* Form controls defaults */
-  input, select, textarea, button {
-    @apply text-gray-900 dark:text-slate-100;
+  input,
+  select,
+  textarea,
+  button {
+    color: var(--text);
+    background-color: transparent;
   }
-  input::placeholder, textarea::placeholder { @apply text-gray-500; }
-  .dark input::placeholder, .dark textarea::placeholder { @apply text-slate-400; }
 
-  input, select, textarea {
-    @apply bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700;
+  input,
+  select,
+  textarea {
+    background-color: var(--bg-elevated);
+    border-radius: 0.75rem;
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--border);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 0.85;
+  }
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 0.9;
   }
 
   /* Accessible focus ring (fallback + utility-friendly) */
@@ -119,8 +189,13 @@
 
   /* Scrollbar (WebKit) */
   *::-webkit-scrollbar { width: 10px; height: 10px; }
-  *::-webkit-scrollbar-thumb { background-color: rgba(0 0 0 / .15); border-radius: 9999px; }
-  .dark *::-webkit-scrollbar-thumb { background-color: rgba(255 255 255 / .18); }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(0 0 0 / .15);
+    border-radius: 9999px;
+  }
+  .dark *::-webkit-scrollbar-thumb {
+    background-color: rgba(255 255 255 / .18);
+  }
 }
 
 /* =========================
@@ -145,62 +220,72 @@
 
   /* Translucent hero */
   .hero-surface {
-    @apply p-6 md:p-8 rounded-3xl text-gray-900 dark:text-slate-100 shadow;
+    @apply p-6 md:p-8 rounded-3xl shadow;
     background:
-      linear-gradient(90deg, rgba(var(--brand-navy-rgb)/.85), rgba(var(--brand-blue-rgb)/.85)),
+      linear-gradient(90deg, rgba(var(--brand-navy-rgb) / .85), rgba(var(--brand-blue-rgb) / .85)),
       radial-gradient(1200px circle at 10% -10%, rgba(255 255 255 / .12), transparent 50%);
     color: #fff;
     border: 1px solid rgba(255 255 255 / .08);
     backdrop-filter: blur(6px);
   }
 
-  /* Solid cards */
+  /* Solid cards / panels */
   .card {
     @apply rounded-2xl shadow-sm border;
     background: var(--bg-elevated);
-    border-color: var(--border);
+    border-color: var(--border-subtle);
     color: var(--text);
   }
 
   /* Translucent cards */
   .card-surface {
     @apply rounded-2xl shadow-sm;
-    background: rgba(255 255 255 / 0.8);
+    background: rgba(255 255 255 / 0.86);
     border: 1px solid rgba(0 0 0 / 0.06);
     backdrop-filter: blur(10px);
   }
   .dark .card-surface {
-    background: rgba(255 255 255 / 0.05);
+    background: rgba(15 23 42 / 0.92);
     border: 1px solid rgba(255 255 255 / 0.10);
   }
 
   /* Inputs / selects / textareas (classed variants) */
-  .input, .select, .textarea {
-    @apply w-full rounded-xl px-3 py-2
-           bg-white dark:bg-slate-800
-           border border-gray-300 dark:border-slate-700
-           placeholder:text-gray-500 dark:placeholder:text-slate-400
-           focus:outline-none focus:ring-2;
-    /* keep the ring color consistent with brand token */
+  .input,
+  .select,
+  .textarea {
+    @apply w-full rounded-xl px-3 py-2 focus:outline-none;
     box-shadow: 0 0 0 0 transparent;
   }
-  .input:focus, .select:focus, .textarea:focus {
+  .input:focus,
+  .select:focus,
+  .textarea:focus {
     box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
+    border-color: color-mix(
+      in oklab,
+      rgb(var(--brand-blue-rgb)) 60%,
+      var(--border)
+    );
   }
 
-  .label { @apply block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1; }
+  .label {
+    @apply block text-sm font-medium mb-1;
+    color: var(--text);
+    opacity: 0.9;
+  }
 
   /* Buttons */
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2
-           rounded-xl px-4 py-2 font-semibold
-           bg-white dark:bg-slate-800
-           text-gray-900 dark:text-slate-100
-           border border-gray-300 dark:border-slate-700
-           hover:bg-gray-50 dark:hover:bg-slate-700
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-semibold
            focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900
-           focus:ring-2
-           disabled:opacity-60 disabled:cursor-not-allowed;
+           focus:ring-2 disabled:opacity-60 disabled:cursor-not-allowed;
+    background-color: var(--bg-elevated);
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--border-subtle);
+    color: var(--text);
+  }
+  .btn-outline:hover {
+    background-color: var(--bg-muted);
   }
   .btn-outline:focus-visible {
     box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
@@ -208,11 +293,17 @@
 
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm
-           text-white bg-red-600 hover:bg-red-700
            focus:outline-none focus:ring-2
            disabled:opacity-60 disabled:cursor-not-allowed;
+    background-color: var(--danger);
+    color: #fff;
   }
-  .btn-danger:focus-visible { box-shadow: 0 0 0 3px rgba(248 113 113 / 0.4); } /* red-400 */
+  .btn-danger:hover {
+    background-color: color-mix(in oklab, var(--danger) 92%, black);
+  }
+  .btn-danger:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 40%, transparent);
+  }
 
   /* Brand gradient primary button */
   .btn-gradient-primary {
@@ -225,7 +316,8 @@
     /* Brand gradient + subtle gloss */
     background:
       linear-gradient(180deg, rgba(255 255 255 / .18), rgba(255 255 255 / 0)) 0 0 / 100% 100% no-repeat,
-      linear-gradient(90deg,
+      linear-gradient(
+        90deg,
         rgba(var(--brand-navy-rgb) / 1),
         rgba(var(--brand-green-rgb) / 1),
         rgba(var(--brand-blue-rgb) / 1)
@@ -254,12 +346,19 @@
 
   /* Badges */
   .badge {
-    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs
-           bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700;
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs border;
+    background-color: var(--badge-bg);
+    border-color: var(--badge-border);
+    color: var(--badge-text);
   }
+
   .badge-verified {
     color: #fff;
-    background: linear-gradient(90deg, rgba(var(--brand-navy-rgb)/1), rgba(var(--brand-blue-rgb)/1));
+    background: linear-gradient(
+      90deg,
+      rgba(var(--brand-navy-rgb) / 1),
+      rgba(var(--brand-blue-rgb) / 1)
+    );
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs;
   }
 
@@ -269,20 +368,21 @@
            focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900
            focus-visible:ring-2;
   }
+
   /* Subtle outlined chip for plain surfaces */
   .chip-outline {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium border transition;
-    background-color: rgba(255 255 255 / 0.60);
-    border-color: rgba(0 0 0 / 0.08);
-    color: #0f172a;
+    background-color: var(--bg-elevated);
+    border-color: var(--border-subtle);
+    color: var(--text);
   }
-  .chip-outline:hover { background-color: rgba(255 255 255 / 0.75); }
-  .dark .chip-outline {
-    background-color: rgba(255 255 255 / 0.06);
-    border-color: rgba(255 255 255 / 0.12);
-    color: #e2e8f0;
+  .chip-outline:hover {
+    background-color: var(--bg-muted);
   }
-  .dark .chip-outline:hover { background-color: rgba(255 255 255 / 0.10); }
+  .dark .chip-outline:hover {
+    background-color: rgba(255 255 255 / 0.10);
+  }
+
   /* Light-on-gradient chip (used in 404/error hero) */
   .chip--light {
     @apply text-white;
@@ -292,19 +392,30 @@
   }
   .chip--light:hover { background: rgba(255 255 255 / 0.25); }
   .chip--light:active { background: rgba(255 255 255 / 0.30); }
+
   /* Neutral chip for plain backgrounds */
   .chip--neutral {
-    @apply text-gray-800 bg-white border border-gray-200 shadow-sm
-           dark:text-slate-200 dark:bg-slate-800 dark:border-slate-700;
+    @apply border shadow-sm;
+    background-color: var(--bg-elevated);
+    border-color: var(--border-subtle);
+    color: var(--text);
   }
-  .chip:focus-visible { box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35); }
+
+  .chip:focus-visible {
+    box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
+  }
   button.chip { @apply cursor-pointer select-none; }
   button.chip:disabled { @apply opacity-60 cursor-not-allowed; }
 
   /* Skeleton (no default pulse—use shimmer util below) */
   .skeleton {
     @apply bg-gray-200/70 dark:bg-slate-700/40;
-    background-image: linear-gradient(90deg, transparent, rgba(255 255 255 / .35), transparent);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255 255 255 / .35),
+      transparent
+    );
     background-size: 200% 100%;
     background-position: 200% 0;
   }
@@ -350,14 +461,14 @@
 
   /* Noise texture overlay (uses /brand/noise.png) */
   .brand-noise {
-    background-image: url('/brand/noise.png');
+    background-image: url("/brand/noise.png");
     background-size: 256px 256px;
     background-repeat: repeat;
   }
 
   /* Spotlights overlay (uses /brand/spots.svg) */
   .brand-spots {
-    background-image: url('/brand/spots.svg');
+    background-image: url("/brand/spots.svg");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -367,7 +478,7 @@
 
   /* Lightweight grid overlay (uses /brand/grid.svg) */
   .bg-grid {
-    background-image: url('/brand/grid.svg');
+    background-image: url("/brand/grid.svg");
     background-size: 40px 40px;
     background-repeat: repeat;
     mix-blend-mode: soft-light;
@@ -435,7 +546,12 @@
     100% { background-position: -200% 0; }
   }
   .skeleton-shimmer {
-    background-image: linear-gradient(90deg, transparent, rgba(255 255 255 / .35), transparent);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255 255 255 / .35),
+      transparent
+    );
     background-size: 200% 100%;
     animation: skeleton-shimmer 1.2s linear infinite;
   }

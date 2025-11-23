@@ -47,6 +47,8 @@ export default function Navbar({
     [pathname],
   );
 
+  const browseActive = isActive("/search");
+
   const openCategories = React.useCallback(() => {
     window.dispatchEvent(new CustomEvent("qs:categories:open"));
   }, []);
@@ -59,9 +61,9 @@ export default function Navbar({
     >
       <div
         className={cx(
-          "bg-white/60 dark:bg-slate-950/80 backdrop-blur-md supports-[backdrop-filter]:bg-slate-950/70",
-          "border-b border-black/5 dark:border-white/5",
-          scrolled ? "shadow-sm" : "shadow-none",
+          "bg-[var(--bg-elevated)] text-[var(--text)] backdrop-blur-md supports-[backdrop-filter]:backdrop-blur-md",
+          "border-b border-[var(--border-subtle)]",
+          scrolled ? "shadow-soft" : "shadow-none",
           "transition-[box-shadow,background-color,backdrop-filter] duration-200",
         )}
       >
@@ -71,7 +73,12 @@ export default function Navbar({
             {/* Mobile categories toggle */}
             <button
               type="button"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg-white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10 transition md:hidden"
+              className={cx(
+                "inline-flex h-9 w-9 items-center justify-center rounded-xl border md:hidden",
+                "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+                "hover:bg-subtle transition",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              )}
               onClick={openCategories}
               aria-label="Open categories"
             >
@@ -84,7 +91,7 @@ export default function Navbar({
               className="flex shrink-0 items-center gap-2"
               prefetch={false}
             >
-              <span className="relative inline-flex h-8 w-8 overflow-hidden rounded-xl border border-white/20 bg-slate-950 shadow-inner">
+              <span className="relative inline-flex h-8 w-8 overflow-hidden rounded-xl border border-[var(--border)] bg-subtle shadow-inner">
                 <Image
                   src="/brand/qwiksale-logo.jpg"
                   alt="QwikSale logo"
@@ -94,22 +101,22 @@ export default function Navbar({
                   priority
                 />
               </span>
-              <span className="text-sm font-extrabold tracking-tight text-slate-900 drop-shadow-sm dark:text-white md:text-base">
+              <span className="text-sm font-extrabold tracking-tight text-[var(--text)] drop-shadow-sm md:text-base">
                 QwikSale
               </span>
             </Link>
 
-            {/* Desktop Browse → now a real link to /search */}
+            {/* Desktop Browse → /search */}
             <Link
               href="/search"
               prefetch={false}
               className={cx(
-                "hidden md:inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium",
-                "text-gray-700 hover:text-gray-900 dark:text-slate-200 dark:hover:text-white",
-                "border border-transparent hover:border-gray-200 dark:hover:border-white/10",
-                "transition",
+                "hidden md:inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium transition",
+                "border border-transparent",
+                "text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-subtle)]",
+                browseActive && "bg-subtle text-[var(--text)] border-[var(--border)]",
               )}
-              aria-current={isActive("/search") ? "page" : undefined}
+              aria-current={browseActive ? "page" : undefined}
             >
               <Icon name="filter" />
               Browse
@@ -155,7 +162,12 @@ export default function Navbar({
             <Link
               href="/search"
               prefetch={false}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg-white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10 transition md:hidden"
+              className={cx(
+                "inline-flex h-9 w-9 items-center justify-center rounded-xl border md:hidden transition",
+                "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]",
+                "hover:bg-subtle hover:text-[var(--text)]",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              )}
               aria-label="Search"
             >
               <Icon name="search" />
@@ -165,7 +177,12 @@ export default function Navbar({
               <Link
                 href="/post"
                 prefetch={false}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200/70 bg-white/60 hover:bg-white/80 dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10 transition md:hidden"
+                className={cx(
+                  "inline-flex h-9 w-9 items-center justify-center rounded-xl border md:hidden transition",
+                  "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]",
+                  "hover:bg-subtle hover:text-[var(--text)]",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                )}
                 aria-label="Sell"
               >
                 <Icon name="add" />
@@ -197,10 +214,9 @@ function NavLink({
       prefetch={false}
       className={cx(
         "relative inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium transition",
-        "text-gray-700 hover:text-gray-900 dark:text-slate-200 dark:hover:text-white",
-        "border border-transparent hover:border-gray-200 dark:hover:border-white/10",
-        active &&
-          "bg-white/70 text-gray-900 border-gray-200 dark:bg-white/10 dark:text-white dark:border-white/10",
+        "border border-transparent",
+        "text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-subtle)]",
+        active && "bg-subtle text-[var(--text)] border-[var(--border)]",
       )}
       aria-current={active ? "page" : undefined}
     >

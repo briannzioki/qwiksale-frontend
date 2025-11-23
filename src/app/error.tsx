@@ -122,7 +122,7 @@ export default function ErrorPage({
         ts: new Date().toISOString(),
       };
       await navigator.clipboard.writeText(
-        JSON.stringify(payload, null, 2)
+        JSON.stringify(payload, null, 2),
       );
       track("page_error_copy" as any, { digest, path });
     } catch {
@@ -186,7 +186,7 @@ export default function ErrorPage({
       {/* Body card with optional details */}
       <div className="container-page mt-6">
         <div
-          className="rounded-2xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          className="rounded-2xl border border-border bg-card p-6 shadow-sm"
           role="status"
           aria-live="polite"
         >
@@ -195,7 +195,7 @@ export default function ErrorPage({
               <h2 className="text-xl font-bold tracking-tight">
                 Let’s get you back on track
               </h2>
-              <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">
+              <p className="mt-1 text-sm text-muted-foreground">
                 If the problem keeps happening, please let us know — it helps
                 us fix things faster.
               </p>
@@ -224,7 +224,7 @@ export default function ErrorPage({
               href="/contact"
               prefetch={false}
               onClick={onReport}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
             >
               Report this issue
             </Link>
@@ -249,7 +249,7 @@ export default function ErrorPage({
                   </p>
                 ) : null}
                 {error?.stack ? (
-                  <pre className="overflow-auto rounded-md bg-black/5 p-3 text-xs dark:bg-white/10">
+                  <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
                     {error.stack}
                   </pre>
                 ) : null}
@@ -263,10 +263,10 @@ export default function ErrorPage({
           <Link
             href="/search"
             prefetch={false}
-            className="rounded-xl border bg-white p-4 text-gray-800 shadow-sm hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            className="rounded-xl border border-border bg-card p-4 text-foreground shadow-sm hover:shadow-md"
           >
             <div className="text-lg font-semibold">Browse listings</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">
+            <div className="text-sm text-muted-foreground">
               Products &amp; services by category
             </div>
           </Link>
@@ -274,10 +274,10 @@ export default function ErrorPage({
           <Link
             href="/sell"
             prefetch={false}
-            className="rounded-xl border bg-white p-4 text-gray-800 shadow-sm hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            className="rounded-xl border border-border bg-card p-4 text-foreground shadow-sm hover:shadow-md"
           >
             <div className="text-lg font-semibold">Sell an item</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">
+            <div className="text-sm text-muted-foreground">
               Post your listing
             </div>
           </Link>
@@ -285,10 +285,10 @@ export default function ErrorPage({
           <Link
             href="/help"
             prefetch={false}
-            className="rounded-xl border bg-white p-4 text-gray-800 shadow-sm hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            className="rounded-xl border border-border bg-card p-4 text-foreground shadow-sm hover:shadow-md"
           >
             <div className="text-lg font-semibold">Help Center</div>
-            <div className="text-sm text-gray-600 dark:text-slate-400">
+            <div className="text-sm text-muted-foreground">
               Safety tips &amp; FAQs
             </div>
           </Link>

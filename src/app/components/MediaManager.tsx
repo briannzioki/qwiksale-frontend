@@ -29,7 +29,7 @@ type InternalItem = {
   file?: File | undefined;
   isCover?: boolean | undefined;
   sort?: number | undefined;
-  _localId: string;       // stable identity for DnD/keyboard
+  _localId: string; // stable identity for DnD/keyboard
   _isNew?: boolean | undefined;
   _objectUrl?: string | undefined; // revoke on cleanup
 };
@@ -410,8 +410,8 @@ export default function MediaManager({
     >
       {/* Header row */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Media</h3>
-        <div className="text-xs text-gray-600 dark:text-slate-400">
+        <h3 className="text-lg font-semibold text-foreground">Media</h3>
+        <div className="text-xs text-muted-foreground">
           {items.length}/{max}
         </div>
       </div>
@@ -421,34 +421,34 @@ export default function MediaManager({
         <div
           className={[
             "mt-3 rounded-2xl border-2 border-dashed p-8 text-center text-sm transition",
-            "bg-white/80 dark:bg-slate-900/60 backdrop-blur supports-[backdrop-filter]:backdrop-blur",
+            "bg-card/80 backdrop-blur supports-[backdrop-filter]:backdrop-blur",
             dzOver
-              ? "border-[#39a0ca] shadow-[inset_0_0_0_2px] shadow-[#39a0ca]/40"
-              : "border-black/10 dark:border-white/10",
+              ? "border-[#39a0ca] shadow-[inset_0_0_0_2px_rgba(57,160,202,0.4)]"
+              : "border-border/60",
           ].join(" ")}
           aria-label="Drop photos here or use the Add photos button"
         >
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/15 via-emerald-500/15 to-sky-500/15">
-            <Icon name="upload" className="text-gray-600 dark:text-slate-300" />
+            <Icon name="upload" className="text-muted-foreground" />
           </div>
-          <p className="text-gray-700 dark:text-slate-200 font-medium">
+          <p className="font-medium text-foreground">
             Drag & drop photos here
           </p>
-          <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+          <p className="mt-1 text-xs text-muted-foreground">
             PNG/JPG up to {maxSizeMB}MB each. First photo becomes the cover.
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
             <button
               type="button"
               onClick={pickFiles}
-              className="rounded-xl bg-[#161748] text-white px-3 py-2 text-sm font-semibold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#161748]"
+              className="rounded-xl bg-[#161748] px-3 py-2 text-sm font-semibold text-white hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#161748]"
               disabled={!canAddMore}
             >
               Add photos
             </button>
             <button
               type="button"
-              className="rounded-xl border px-3 py-2 text-sm hover:bg-black/5 dark:border-white/10 dark:hover:bg:white/10"
+              className="rounded-xl border border-border px-3 py-2 text-sm text-foreground hover:bg-muted"
               onClick={() => toast("Tip: You can also paste images from clipboard")}
             >
               Tips
@@ -460,7 +460,7 @@ export default function MediaManager({
           {/* ====== Big Preview ====== */}
           <div
             className={[
-              "mt-3 rounded-2xl border bg-white dark:border-white/10 dark:bg-slate-950 overflow-hidden",
+              "mt-3 overflow-hidden rounded-2xl border bg-card",
               dzOver ? "ring-2 ring-[#39a0ca]" : "",
             ].join(" ")}
           >
@@ -487,7 +487,7 @@ export default function MediaManager({
               <img
                 src={items[selectedIdx]!.url}
                 alt=""
-                className="h-full w-full object-contain bg-[linear-gradient(180deg,rgba(0,0,0,.02),transparent)]"
+                className="h-full w-full bg-[linear-gradient(180deg,rgba(0,0,0,.02),transparent)] object-contain"
               />
 
               {/* Prev / Next controls */}
@@ -526,7 +526,7 @@ export default function MediaManager({
                 )}
                 <button
                   type="button"
-                  className="rounded bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-700 dark:bg-rose-600"
+                  className="rounded bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-700"
                   onClick={() => removeAt(selectedIdx)}
                   title="Remove photo"
                 >
@@ -537,7 +537,7 @@ export default function MediaManager({
               {/* Uploading hint */}
               {items[selectedIdx]?.file && (
                 <div
-                  className="absolute left-0 right-0 bottom-0 h-1 overflow-hidden bg-black/20"
+                  className="absolute bottom-0 left-0 right-0 h-1 overflow-hidden bg-black/20"
                   role="progressbar"
                   aria-label="Uploading"
                   aria-valuemin={0}
@@ -550,9 +550,9 @@ export default function MediaManager({
             </div>
 
             {/* ====== Thumbnails strip ====== */}
-            <div className="border-t dark:border-white/10">
+            <div className="border-t border-border/60">
               <ul
-                className="flex gap-2 overflow-x-auto p-2 no-scrollbar"
+                className="no-scrollbar flex gap-2 overflow-x-auto p-2"
                 aria-label="Photo thumbnails"
                 onWheel={(e: React.WheelEvent<HTMLUListElement>) => {
                   const el = e.currentTarget;
@@ -585,13 +585,11 @@ export default function MediaManager({
                         onDragEnd={onDragEnd}
                         onDrop={onDropTile(i)}
                         className={[
-                          "block h-16 w-24 overflow-hidden rounded-lg border",
-                          "bg-white dark:bg-slate-900",
+                          "block h-16 w-24 cursor-pointer overflow-hidden rounded-lg border bg-card",
                           isActive
-                            ? "ring-2 ring-[#39a0ca] border-transparent"
-                            : "border-black/10 dark:border-white/10 hover:ring-1 hover:ring-[#39a0ca]/60",
+                            ? "border-transparent ring-2 ring-[#39a0ca]"
+                            : "border-border hover:ring-1 hover:ring-[#39a0ca]/60",
                           isOver ? "outline outline-2 outline-[#39a0ca]" : "",
-                          "cursor-pointer",
                         ].join(" ")}
                         title={i === 0 ? "Cover" : `Photo #${i + 1}`}
                       >
@@ -613,7 +611,7 @@ export default function MediaManager({
           </div>
 
           {/* Tips row */}
-          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <Icon name="info" aria-hidden />
             ← / → to switch • Enter/Home = make cover • ⌫ = remove • Drag thumbnails to reorder
           </div>
@@ -625,7 +623,7 @@ export default function MediaManager({
         <button
           type="button"
           onClick={pickFiles}
-          className="rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
+          className="rounded-xl border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted"
           disabled={!canAddMore}
         >
           {canAddMore ? "Add more" : "Max reached"}
@@ -640,9 +638,9 @@ export default function MediaManager({
           onChange={onFiles}
         />
 
-        {errorMsg && <span className="text-xs text-rose-600">{errorMsg}</span>}
+        {errorMsg && <span className="text-xs text-red-600">{errorMsg}</span>}
 
-        <span className="ml-auto text-xs text-gray-500 dark:text-slate-500">
+        <span className="ml-auto text-xs text-muted-foreground">
           PNG/JPG • up to {maxSizeMB}MB • max {max} photos
         </span>
       </div>
@@ -650,11 +648,20 @@ export default function MediaManager({
       {/* Progress keyframes + hide scrollbar (scoped) */}
       <style jsx>{`
         @keyframes progress {
-          0%   { transform: translateX(-100%); }
-          100% { transform: translateX(200%); }
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(200%);
+          }
         }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
       `}</style>
     </div>
   );

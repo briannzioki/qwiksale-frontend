@@ -93,7 +93,7 @@ export default function HeaderInlineSearch() {
         aria-expanded={open ? "true" : "false"}
         title="Search"
         onClick={onToggle}
-        className="rounded-lg px-2 py-1.5 hover:bg-black/5 dark:hover:bg-white/10"
+        className="rounded-lg px-2 py-1.5 text-[var(--text-muted)] hover:bg-subtle hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
         data-testid="header-inline-search-toggle"
       >
         🔎
@@ -108,8 +108,8 @@ export default function HeaderInlineSearch() {
         data-testid="header-inline-search-form"
         onSubmit={handleSubmit}
         className={[
-          "absolute right-0 top-full z-50 mt-2 flex items-center gap-2 rounded-xl border bg-white/90 px-2 py-1.5 shadow-lg backdrop-blur",
-          "dark:border-slate-800 dark:bg-slate-950/80",
+          "absolute right-0 top-full z-50 mt-2 flex items-center gap-2 rounded-xl border px-2 py-1.5 shadow-soft backdrop-blur",
+          "border-[var(--border)] bg-[var(--bg-elevated)]",
           open
             ? "opacity-100 translate-y-0 pointer-events-auto"
             : "opacity-0 -translate-y-1 pointer-events-none",
@@ -132,11 +132,11 @@ export default function HeaderInlineSearch() {
           spellCheck={false}
           aria-label="Search query"
           data-testid="header-inline-search-input"
-          className="min-w-[12ch] sm:min-w-[28ch] bg-transparent outline-none text-sm placeholder:text-slate-400 dark:placeholder:text-slate-500"
+          className="min-w-[12ch] sm:min-w-[28ch] bg-transparent outline-none text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]"
         />
         <button
           type="submit"
-          className="inline-flex items-center rounded-lg px-2.5 py-1 text-sm font-medium bg-[#161748] text-white hover:opacity-95 transition dark:bg-[#39a0ca]"
+          className="inline-flex items-center rounded-lg px-2.5 py-1 text-sm font-medium bg-[#161748] text-white hover:opacity-95 transition focus-visible:outline-none focus-visible:ring-2 ring-focus dark:bg-[#39a0ca]"
           aria-label="Search"
           title="Search"
         >

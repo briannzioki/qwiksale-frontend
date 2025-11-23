@@ -140,11 +140,11 @@ export default async function AdminRevealsPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-6">
-      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-primary-foreground shadow">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-extrabold">Contact Reveals</h1>
-            <p className="mt-1 text-sm text-white/90">
+            <p className="mt-1 text-sm text-primary-foreground/90">
               Search, review, and export reveal logs.
             </p>
           </div>
@@ -152,14 +152,14 @@ export default async function AdminRevealsPage({
             <a
               href={csvHref}
               download={`contact-reveals-${stamp}.csv`}
-              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-white/10"
+              className="btn-outline text-sm"
               aria-label="Export reveals as CSV"
             >
               Export CSV
             </a>
             <Link
               href="/admin/reveals"
-              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-white/10"
+              className="btn-outline text-sm"
               aria-label="Refresh page"
             >
               Refresh
@@ -176,13 +176,13 @@ export default async function AdminRevealsPage({
           name="q"
           defaultValue={q}
           placeholder="Search product name, product id, user id, IP, User-Agent…"
-          className="flex-1 rounded-lg border px-3 py-2 dark:border-slate-800 dark:bg-slate-900"
+          className="input flex-1"
           aria-label="Search reveals"
         />
         <select
           name="take"
           defaultValue={String(takeNum)}
-          className="rounded-lg border px-3 py-2 dark:border-slate-800 dark:bg-slate-900"
+          className="select"
           aria-label="Number to show"
         >
           {TAKE_CHOICES.map((n) => (
@@ -192,7 +192,7 @@ export default async function AdminRevealsPage({
           ))}
         </select>
         <button
-          className="rounded-lg border px-3 py-2 hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
+          className="btn-outline"
           aria-label="Apply filters"
         >
           Apply
@@ -206,14 +206,14 @@ export default async function AdminRevealsPage({
       ) : null}
 
       {logs.length === 0 ? (
-        <div className="rounded-xl border p-4 text-sm text-gray-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
           No reveal logs found{q ? ` for “${q}”` : ""}.
         </div>
       ) : (
-        <div className="relative overflow-x-auto rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="relative overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-slate-50 text-left dark:border-slate-800 dark:bg-slate-800/40">
+              <tr className="border-b border-border bg-muted text-left">
                 <Th>Time (UTC)</Th>
                 <Th>Product</Th>
                 <Th>Viewer</Th>
@@ -230,7 +230,7 @@ export default async function AdminRevealsPage({
                 return (
                   <tr
                     key={r.id}
-                    className="border-b last:border-0 dark:border-slate-800"
+                    className="border-b border-border last:border-0"
                   >
                     <Td className="whitespace-nowrap">
                       <time dateTime={created.toISOString()}>
@@ -252,16 +252,16 @@ export default async function AdminRevealsPage({
                       {r.viewerUserId ? (
                         r.viewerUserId
                       ) : (
-                        <span className="text-gray-500">guest</span>
+                        <span className="text-muted-foreground">guest</span>
                       )}
                     </Td>
                     <Td>
                       {r.ip || (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </Td>
                     <Td className="max-w-[420px]">
-                      <span className="line-clamp-2 break-all text-gray-700 dark:text-slate-200">
+                      <span className="line-clamp-2 break-all text-foreground">
                         {r.userAgent || "—"}
                       </span>
                     </Td>
@@ -273,7 +273,7 @@ export default async function AdminRevealsPage({
         </div>
       )}
 
-      <p className="text-xs text-gray-500 dark:text-slate-400">
+      <p className="text-xs text-muted-foreground">
         Showing {logs.length} of latest reveals
         {q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on
         the server.

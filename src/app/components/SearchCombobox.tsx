@@ -214,7 +214,7 @@ export default function SearchCombobox<TMeta = unknown>({
           if (items.length) setOpen(true);
         }}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
         spellCheck
         autoCorrect="on"
         autoComplete="off"
@@ -231,10 +231,10 @@ export default function SearchCombobox<TMeta = unknown>({
         <ul
           id={listId}
           role="listbox"
-          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow-md dark:border-white/10 dark:bg-slate-900"
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-border bg-card shadow-md"
         >
           {items.length === 0 && (
-            <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
+            <li className="px-3 py-2 text-sm text-muted-foreground">
               No suggestions
             </li>
           )}
@@ -244,10 +244,8 @@ export default function SearchCombobox<TMeta = unknown>({
               role="option"
               aria-selected={i === active}
               key={it.id}
-              className={`cursor-pointer px-3 py-2 text-sm text-gray-800 dark:text-slate-100 ${
-                i === active
-                  ? "bg-gray-100 dark:bg-slate-800"
-                  : "bg-transparent"
+              className={`cursor-pointer px-3 py-2 text-sm text-foreground ${
+                i === active ? "bg-muted" : "bg-transparent"
               }`}
               onMouseEnter={() => setActive(i)}
               onMouseDown={(e) => e.preventDefault()}
@@ -261,7 +259,7 @@ export default function SearchCombobox<TMeta = unknown>({
         </ul>
       )}
 
-      <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+      <p className="mt-1 text-xs text-muted-foreground">
         Use ↑/↓ to navigate, Enter to select or search, Esc to dismiss.
       </p>
     </div>

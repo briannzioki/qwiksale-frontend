@@ -5,8 +5,11 @@ import * as React from "react";
 
 type FieldSize = "sm" | "md" | "lg"; // (alias to avoid confusion with native 'size')
 
-export type SelectProps = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "size"> & {
-  size?: FieldSize;          // our sizing tokens
+export type SelectProps = Omit<
+  React.SelectHTMLAttributes<HTMLSelectElement>,
+  "size"
+> & {
+  size?: FieldSize; // our sizing tokens
   invalid?: boolean;
   message?: string;
   label?: string;
@@ -21,10 +24,25 @@ function cn(...xs: Array<string | undefined | false | null>) {
   return xs.filter(Boolean).join(" ");
 }
 
-const sizeMap: Record<FieldSize, { select: string; label: string; chevron: string }> = {
-  sm: { select: "h-9 text-sm rounded-lg pl-3 pr-8", label: "text-xs", chevron: "right-2.5" },
-  md: { select: "h-10 text-[0.95rem] rounded-xl pl-3.5 pr-9", label: "text-sm", chevron: "right-3" },
-  lg: { select: "h-12 text-base rounded-2xl pl-4 pr-11", label: "text-sm", chevron: "right-3.5" },
+const sizeMap: Record<
+  FieldSize,
+  { select: string; label: string; chevron: string }
+> = {
+  sm: {
+    select: "h-9 text-sm rounded-lg pl-3 pr-8",
+    label: "text-xs",
+    chevron: "right-2.5",
+  },
+  md: {
+    select: "h-10 text-[0.95rem] rounded-xl pl-3.5 pr-9",
+    label: "text-sm",
+    chevron: "right-3",
+  },
+  lg: {
+    select: "h-12 text-base rounded-2xl pl-4 pr-11",
+    label: "text-sm",
+    chevron: "right-3.5",
+  },
 };
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
@@ -43,7 +61,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
       chevron,
       ...props
     },
-    ref
+    ref,
   ) => {
     const selectId = id ?? React.useId();
     const describedBy = message ? `${selectId}-desc` : undefined;
@@ -55,13 +73,16 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           <label
             htmlFor={selectId}
             className={cn(
-              "mb-1 block font-medium text-gray-700 dark:text-slate-200",
+              "mb-1 block font-medium",
+              "text-[var(--text)]",
               sz.label,
-              labelSrOnly && "sr-only"
+              labelSrOnly && "sr-only",
             )}
           >
             {label}
-            {requiredMark ? <span className="ml-0.5 text-rose-600">*</span> : null}
+            {requiredMark ? (
+              <span className="ml-0.5 text-rose-600">*</span>
+            ) : null}
           </label>
         ) : null}
 
@@ -73,24 +94,25 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             aria-describedby={describedBy}
             disabled={disabled}
             className={cn(
-              "w-full appearance-none bg-white dark:bg-slate-800",
-              "border border-gray-300 dark:border-slate-700",
-              "text-gray-900 dark:text-slate-100",
+              "w-full appearance-none",
+              "bg-[var(--bg-elevated)] text-[var(--text)]",
+              "border border-[var(--border)]",
               "shadow-inner",
               "focus:outline-none focus:ring-2 ring-focus",
               "disabled:opacity-60 disabled:cursor-not-allowed",
               "transition",
               sz.select,
               className,
-              invalid && "border-rose-300 dark:border-rose-700 focus:ring-rose-500/60"
+              invalid && "border-[var(--danger)]",
             )}
             {...props}
           />
 
           <span
             className={cn(
-              "pointer-events-none absolute inset-y-0 flex items-center text-gray-500 dark:text-slate-400",
-              sz.chevron
+              "pointer-events-none absolute inset-y-0 flex items-center",
+              "text-[var(--text-muted)]",
+              sz.chevron,
             )}
             aria-hidden
           >
@@ -103,7 +125,9 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             id={describedBy}
             className={cn(
               "mt-1 text-xs",
-              invalid ? "text-rose-600" : "text-gray-500 dark:text-slate-400"
+              invalid
+                ? "text-[var(--danger)]"
+                : "text-[var(--text-muted)]",
             )}
           >
             {message}
@@ -111,7 +135,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         ) : null}
       </div>
     );
-  }
+  },
 );
 Select.displayName = "Select";
 

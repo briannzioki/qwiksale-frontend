@@ -11,14 +11,14 @@ type Padding = "none" | "sm" | "md" | "lg";
 
 type BaseProps = {
   variant?: Variant;
-  hover?: boolean;        // lift on hover if true (default auto when clickable)
-  clickable?: boolean;    // applies focus ring + hover-lift + cursor
-  padding?: Padding;      // padding on Card.Body if you don't pass your own classes
+  hover?: boolean; // lift on hover if true (default auto when clickable)
+  clickable?: boolean; // applies focus ring + hover-lift + cursor
+  padding?: Padding; // padding on Card.Body if you don't pass your own classes
   className?: string;
   children?: React.ReactNode;
-  disabled?: boolean;     // dims and removes pointer events
+  disabled?: boolean; // dims and removes pointer events
   as?: "div" | "a" | "button"; // simple polymorphism without extra deps
-  href?: string;          // used when as="a"
+  href?: string; // used when as="a"
   onClick?: React.MouseEventHandler<any>;
 };
 
@@ -29,19 +29,18 @@ function cn(...xs: Array<string | false | null | undefined>) {
 /** Surface classes per variant, tuned to our global tokens */
 const surface: Record<Variant, string> = {
   solid:
-    "bg-[var(--bg-elevated)] border border-[var(--border)] shadow-card",
+    "bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-card",
   subtle:
-    "bg-white/80 dark:bg-white/5 border border-black/5 dark:border-white/10 shadow-sm",
+    "bg-subtle border border-[var(--border-subtle)] shadow-sm",
   ghost:
-    "bg-transparent border border-black/5 dark:border-white/10 shadow-none",
+    "bg-transparent border border-[var(--border-subtle)] shadow-none",
   glass:
     // uses globals: .glass gives blur + light border; keep our rounding/shadow too
     "glass shadow-sm",
 };
 
 const base =
-  "rounded-2xl transition will-change-transform " +
-  "text-gray-900 dark:text-slate-100";
+  "rounded-2xl transition will-change-transform text-[var(--text)]";
 
 /** Outer wrapper */
 const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
@@ -59,10 +58,11 @@ const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
       onClick,
       ...rest
     },
-    ref
+    ref,
   ) => {
     const Comp: any = as;
-    const isInteractive = clickable || as === "a" || as === "button" || !!onClick;
+    const isInteractive =
+      clickable || as === "a" || as === "button" || !!onClick;
     const lift = hover ?? isInteractive;
 
     return (
@@ -79,7 +79,7 @@ const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
           isInteractive &&
             "cursor-pointer focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900 focus-visible:ring-2 ring-focus",
           disabled && "opacity-60 pointer-events-none",
-          className
+          className,
         )}
         {...rest}
       >
@@ -91,7 +91,7 @@ const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
         )}
       </Comp>
     );
-  }
+  },
 );
 CardRoot.displayName = "Card";
 
@@ -103,27 +103,33 @@ const bodyPadding: Record<Padding, string> = {
 };
 
 /** Header / Body / Footer to compose neatly */
-type SectionProps = React.HTMLAttributes<HTMLDivElement> & { padding?: Padding };
+type SectionProps = React.HTMLAttributes<HTMLDivElement> & {
+  padding?: Padding;
+};
 
 const CardHeader = React.forwardRef<HTMLDivElement, SectionProps>(
   ({ className, padding = "md", ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        "flex items-center gap-3 border-b border-black/5 dark:border-white/10",
+        "flex items-center gap-3 border-b border-[var(--border-subtle)]",
         bodyPadding[padding],
-        className
+        className,
       )}
       {...props}
     />
-  )
+  ),
 );
 CardHeader.displayName = "Card.Header";
 
 const CardBody = React.forwardRef<HTMLDivElement, SectionProps>(
   ({ className, padding = "md", ...props }, ref) => (
-    <div ref={ref} className={cn(bodyPadding[padding], className)} {...props} />
-  )
+    <div
+      ref={ref}
+      className={cn(bodyPadding[padding], className)}
+      {...props}
+    />
+  ),
 );
 CardBody.displayName = "Card.Body";
 
@@ -132,25 +138,36 @@ const CardFooter = React.forwardRef<HTMLDivElement, SectionProps>(
     <div
       ref={ref}
       className={cn(
-        "flex items-center gap-3 border-t border-black/5 dark:border-white/10",
+        "flex items-center gap-3 border-t border-[var(--border-subtle)]",
         bodyPadding[padding],
-        className
+        className,
       )}
       {...props}
     />
-  )
+  ),
 );
 CardFooter.displayName = "Card.Footer";
 
 /** Media slot with a gentle radius that matches container */
-type MediaProps = React.ImgHTMLAttributes<HTMLImageElement> & { aspect?: string };
+type MediaProps = React.ImgHTMLAttributes<HTMLImageElement> & {
+  aspect?: string;
+};
 const CardMedia = React.forwardRef<HTMLImageElement, MediaProps>(
   ({ className, aspect, ...props }, ref) => (
-    <div className={cn("overflow-hidden rounded-2xl", aspect && `aspect-${aspect}`)}>
+    <div
+      className={cn(
+        "overflow-hidden rounded-2xl",
+        aspect && `aspect-${aspect}`,
+      )}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img ref={ref} className={cn("w-full h-auto object-cover", className)} {...props} />
+      <img
+        ref={ref}
+        className={cn("w-full h-auto object-cover", className)}
+        {...props}
+      />
     </div>
-  )
+  ),
 );
 CardMedia.displayName = "Card.Media";
 

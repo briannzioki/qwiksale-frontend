@@ -38,23 +38,23 @@ function PlanCard({
   return (
     <div
       className={[
-        "card flex flex-col rounded-2xl border p-6 shadow-sm dark:border-slate-800",
+        "flex flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-6 text-[var(--text)] shadow-soft",
         highlight ? "ring-2 ring-[#39a0ca]" : "",
       ].join(" ")}
     >
-      <div className="mb-2 text-sm uppercase tracking-wide text-gray-500 dark:text-slate-400">
+      <div className="mb-2 text-sm uppercase tracking-wide text-[var(--text-muted)]">
         {name}
       </div>
       <div className="flex items-end gap-1">
-        <div className="text-3xl font-extrabold text-[#161748] dark:text-white">
+        <div className="text-3xl font-extrabold text-[var(--text)]">
           {fmtKES(price)}
         </div>
-        <div className="pb-1 text-xs text-gray-500 dark:text-slate-400">
+        <div className="pb-1 text-xs text-[var(--text-muted)]">
           /{period}
         </div>
       </div>
 
-      <ul className="mt-4 space-y-2 text-sm text-gray-700 dark:text-slate-200">
+      <ul className="mt-4 space-y-2 text-sm text-[var(--text-muted)]">
         {features.map((f) => (
           <li key={f} className="flex items-start gap-2">
             <span aria-hidden>✓</span>
@@ -66,10 +66,10 @@ function PlanCard({
       <Link
         href={ctaHref}
         className={[
-          "mt-6 inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
+          "mt-6 inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 ring-focus",
           highlight
             ? "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white hover:opacity-95"
-            : "border border-black/10 text-gray-900 hover:bg-black/5 dark:border-white/10 dark:text-white dark:hover:bg-white/10",
+            : "border border-[var(--border-subtle)] text-[var(--text)] hover:bg-subtle",
         ].join(" ")}
         aria-label={`Choose ${name}`}
         prefetch={false}
@@ -82,7 +82,7 @@ function PlanCard({
 
 export default function PricingPage() {
   return (
-    <main className="container-page py-8">
+    <main className="container-page py-8 text-[var(--text)]">
       <SectionHeader
         title="Pricing"
         subtitle="Start free. Upgrade when you’re ready for more visibility."
@@ -133,31 +133,31 @@ export default function PricingPage() {
       </section>
 
       {/* FAQ */}
-      <section className="mt-8 card rounded-2xl border p-6 shadow-sm dark:border-slate-800">
+      <section className="mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-6 text-[var(--text)] shadow-soft">
         <h2 className="text-lg font-semibold">FAQs</h2>
         <div className="mt-3 space-y-3">
-          <details className="group rounded-lg border p-4 dark:border-slate-700">
-            <summary className="cursor-pointer font-medium">
+          <details className="group rounded-lg border border-[var(--border-subtle)] bg-subtle p-4">
+            <summary className="cursor-pointer font-medium text-[var(--text)]">
               Do I pay to post?
             </summary>
-            <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
               You can start for free. Paid plans add visibility boosts and more
               active listings.
             </p>
           </details>
-          <details className="group rounded-lg border p-4 dark:border-slate-700">
-            <summary className="cursor-pointer font-medium">
+          <details className="group rounded-lg border border-[var(--border-subtle)] bg-subtle p-4">
+            <summary className="cursor-pointer font-medium text-[var(--text)]">
               Can I cancel anytime?
             </summary>
-            <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
               Yes. Your plan remains active until the end of the billing period.
             </p>
           </details>
-          <details className="group rounded-lg border p-4 dark:border-slate-700">
-            <summary className="cursor-pointer font-medium">
+          <details className="group rounded-lg border border-[var(--border-subtle)] bg-subtle p-4">
+            <summary className="cursor-pointer font-medium text-[var(--text)]">
               Do boosts guarantee sales?
             </summary>
-            <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
               Boosts improve visibility but don’t guarantee outcomes. Great
               photos and clear details help!
             </p>

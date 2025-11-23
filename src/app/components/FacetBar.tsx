@@ -52,7 +52,7 @@ export default function FacetBar({
   facets,
   onPickAction,
   className = "",
-  maxPerSection = 10, // slightly lower default keeps DOM lighter
+  maxPerSection = 10,
 }: Props) {
   if (!hasAnyFacets(facets)) return null;
 
@@ -97,7 +97,7 @@ export default function FacetBar({
 
     return (
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {title}
         </h3>
         <ul className="flex flex-wrap gap-2" role="list">
@@ -114,17 +114,16 @@ export default function FacetBar({
                   className="
                     inline-flex items-center gap-2
                     rounded-full px-3 py-1.5 text-sm
-                    bg-white/70 dark:bg-white/[0.08]
-                    text-gray-800 dark:text-slate-100
-                    border border-black/5 dark:border-white/10
-                    hover:bg-white/90 dark:hover:bg-white/[0.12]
-                    focus:outline-none focus-visible:ring-2 focus-visible:ring-[#39a0ca]
+                    bg-muted text-foreground
+                    border border-border
+                    hover:bg-muted/80
+                    focus:outline-none focus-visible:ring-2 focus-visible:ring-primary
                     transition
                   "
                   title={label}
                   aria-label={label}
                 >
-                  <span className="truncate max-w-[12rem]">{value}</span>
+                  <span className="max-w-[12rem] truncate">{value}</span>
                   <span className="text-xs opacity-70">{countTxt}</span>
                 </button>
               </li>
@@ -140,8 +139,8 @@ export default function FacetBar({
       aria-label="Top facets"
       className={`
         w-full rounded-2xl
-        bg-white/60 dark:bg-white/[0.03]
-        border border-black/5 dark:border-white/10
+        bg-card/60
+        border border-border
         shadow-sm
         p-4 md:p-5
         ${className}

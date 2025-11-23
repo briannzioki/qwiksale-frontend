@@ -11,12 +11,12 @@ export type BadgeProps = {
   tone?: Tone;
   variant?: Variant;
   size?: Size;
-  glow?: boolean;              // subtle outer glow (good for “featured/verified”)
-  dot?: boolean;               // show a small leading dot
-  icon?: React.ReactNode;      // or a custom icon node
+  glow?: boolean; // subtle outer glow (good for “featured/verified”)
+  dot?: boolean; // show a small leading dot
+  icon?: React.ReactNode; // or a custom icon node
   className?: string;
   as?: "span" | "button" | "a"; // simple polymorphism without deps
-  href?: string;               // used when as="a"
+  href?: string; // used when as="a"
 } & React.HTMLAttributes<HTMLElement>;
 
 function cn(...xs: Array<string | false | null | undefined>) {
@@ -35,14 +35,13 @@ const palette = {
     solid:
       "bg-slate-800 text-white dark:bg-slate-300 dark:text-slate-900",
     soft:
-      "bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-900/40 dark:text-slate-200 dark:border-slate-800",
+      "bg-[var(--bg-muted)] text-[var(--text)] border border-[var(--border-subtle)]",
     outline:
-      "text-slate-800 border border-slate-300 dark:text-slate-200 dark:border-slate-700",
+      "bg-transparent text-[var(--text)] border border-[var(--border-subtle)]",
     ring: "ring-slate-400/30 dark:ring-slate-300/25",
     dot: "bg-slate-500",
   },
   green: {
-    // Use standard Tailwind to avoid relying on custom brand classes
     solid: "bg-emerald-600 text-white",
     soft:
       "bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-50 dark:border-emerald-800",
@@ -95,7 +94,7 @@ export const Badge = React.forwardRef<HTMLElement, BadgeProps>(
       children,
       ...rest
     },
-    ref
+    ref,
   ) => {
     const Comp: any = as;
     const tonePal = palette[tone];
@@ -104,8 +103,8 @@ export const Badge = React.forwardRef<HTMLElement, BadgeProps>(
       variant === "solid"
         ? tonePal.solid
         : variant === "outline"
-        ? cn("bg-transparent", tonePal.outline)
-        : tonePal.soft;
+          ? cn("bg-transparent", tonePal.outline)
+          : tonePal.soft;
 
     // glow adds a faint brand-like aura; keeps it subtle
     const glowCls = glow ? cn("ring-2", tonePal.ring, "shadow-sm") : "";
@@ -117,20 +116,21 @@ export const Badge = React.forwardRef<HTMLElement, BadgeProps>(
 
     // Disabled visual affordance (works for button[disabled] or aria-disabled)
     const isDisabled =
-      (as === "button" && (rest as any).disabled) || (rest as any)["aria-disabled"] === true;
+      (as === "button" && (rest as any).disabled) ||
+      (rest as any)["aria-disabled"] === true;
 
     return (
       <Comp
         ref={ref}
         {...extraProps}
         className={cn(
-          "inline-flex items-center",
+          "inline-flex items-center font-medium leading-none",
           sizeMap[size],
           variantCls,
           glowCls,
           isDisabled && "opacity-60 pointer-events-none",
           "transition-colors",
-          className
+          className,
         )}
         {...rest}
       >
@@ -140,12 +140,15 @@ export const Badge = React.forwardRef<HTMLElement, BadgeProps>(
           </span>
         ) : null}
         {dot && !icon ? (
-          <span className={cn("h-1.5 w-1.5 rounded-full", tonePal.dot)} aria-hidden />
+          <span
+            className={cn("h-1.5 w-1.5 rounded-full", tonePal.dot)}
+            aria-hidden
+          />
         ) : null}
         <span className="truncate">{children}</span>
       </Comp>
     );
-  }
+  },
 );
 
 Badge.displayName = "Badge";

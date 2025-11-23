@@ -68,7 +68,7 @@ export default function HeaderClient({ initialAuth }: Props) {
   }, []);
 
   const rightSlot = (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2.5">
       {/* Saved & Messages icons only when we have a server-side auth hint
          and we're not on admin shell. The actual account button is always
          handled by AuthButtons. */}
@@ -79,7 +79,13 @@ export default function HeaderClient({ initialAuth }: Props) {
             prefetch={false}
             aria-label="Favorites"
             title="Favorites"
-            className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
+            className={[
+              "relative inline-flex h-8 w-8 items-center justify-center rounded-xl",
+              "text-[var(--text-muted)]",
+              "hover:bg-subtle",
+              "focus:outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 ring-focus",
+              "transition",
+            ].join(" ")}
           >
             <Icon name="heart" />
             <span className="sr-only">Favorites</span>
@@ -89,7 +95,13 @@ export default function HeaderClient({ initialAuth }: Props) {
             prefetch={false}
             aria-label="Messages"
             title="Messages"
-            className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition"
+            className={[
+              "relative inline-flex h-8 w-8 items-center justify-center rounded-xl",
+              "text-[var(--text-muted)]",
+              "hover:bg-subtle",
+              "focus:outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 ring-focus",
+              "transition",
+            ].join(" ")}
           >
             <Icon name="message" />
             <span className="sr-only">Messages</span>

@@ -72,7 +72,12 @@ export const Skeleton = React.memo(function Skeleton({
   return (
     <Tag
       aria-hidden="true"
-      className={cx("skeleton", useShimmer && "skeleton-shimmer", rounded, className)}
+      className={cx(
+        "skeleton",
+        useShimmer && "skeleton-shimmer",
+        rounded,
+        className,
+      )}
       {...rest}
     />
   );
@@ -130,7 +135,7 @@ export const ProductCardSkeleton = React.memo(function ProductCardSkeleton({
   imageHeightClass?: string;
 }) {
   return (
-    <div className="bg-white dark:bg-slate-900/40 rounded-2xl border border-gray-100 dark:border-slate-800 overflow-hidden">
+    <div className="rounded-2xl border overflow-hidden bg-[var(--bg-elevated)] border-[var(--border-subtle)]">
       <div className="relative">
         {!compact && showBadge && (
           <div className="absolute top-2 left-2 z-10">
@@ -138,11 +143,14 @@ export const ProductCardSkeleton = React.memo(function ProductCardSkeleton({
           </div>
         )}
 
-        <Skeleton className={cx("w-full", imageHeightClass)} rounded="rounded-none" />
+        <Skeleton
+          className={cx("w-full", imageHeightClass)}
+          rounded="rounded-none"
+        />
 
         {showHeart && (
           <div className="absolute top-2 right-2">
-            <Skeleton className="h-8 w-8" rounded="rounded-full" />
+            <Skeleton className="h-8 w-8 rounded-full" />
           </div>
         )}
       </div>
@@ -171,7 +179,13 @@ const COL_CLASS: Record<1 | 2 | 3 | 4 | 5 | 6, string> = {
 };
 
 function gridColsClass(n?: number, prefix?: string) {
-  const clamped = Math.max(1, Math.min(6, n ?? 1)) as 1 | 2 | 3 | 4 | 5 | 6;
+  const clamped = Math.max(1, Math.min(6, n ?? 1)) as
+    | 1
+    | 2
+    | 3
+    | 4
+    | 5
+    | 6;
   const base = COL_CLASS[clamped];
   return prefix ? `${prefix}:${base}` : base;
 }
@@ -192,7 +206,7 @@ export function ProductGridSkeleton({
     gridColsClass(cols?.base ?? 1),
     cols?.sm ? gridColsClass(cols.sm, "sm") : undefined,
     cols?.md ? gridColsClass(cols.md, "md") : undefined,
-    cols?.xl ? gridColsClass(cols.xl, "xl") : undefined
+    cols?.xl ? gridColsClass(cols.xl, "xl") : undefined,
   );
 
   return (
@@ -214,7 +228,7 @@ export const FiltersBarSkeleton = React.memo(function FiltersBarSkeleton({
   withClear?: boolean;
 }) {
   return (
-    <div className="w-full rounded-2xl border bg-white dark:bg-slate-900/40 dark:border-slate-800 px-4 py-3">
+    <div className="w-full rounded-2xl border bg-[var(--bg-elevated)] border-[var(--border-subtle)] px-4 py-3">
       <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
         {/* search box + clear */}
         <div className="flex-1 flex gap-2">
@@ -247,11 +261,18 @@ export function ProductDetailSkeleton({
 }) {
   const thumbCount = Math.max(0, thumbs);
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6" aria-busy="true" role="status">
+    <div
+      className="grid grid-cols-1 lg:grid-cols-5 gap-6"
+      aria-busy="true"
+      role="status"
+    >
       {/* images */}
       <div className="lg:col-span-3">
-        <div className="relative bg-white dark:bg-slate-900/40 rounded-2xl border dark:border-slate-800 overflow-hidden">
-          <Skeleton className={cx("w-full", heroHeightClass)} rounded="rounded-none" />
+        <div className="relative rounded-2xl border overflow-hidden bg-[var(--bg-elevated)] border-[var(--border-subtle)]">
+          <Skeleton
+            className={cx("w-full", heroHeightClass)}
+            rounded="rounded-none"
+          />
         </div>
 
         <div className="mt-3 grid grid-cols-4 gap-2">
@@ -274,21 +295,21 @@ export function ProductDetailSkeleton({
           <Skeleton className="h-9 w-24 rounded-lg" />
         </div>
 
-        <div className="rounded-2xl border bg-white dark:bg-slate-900/40 dark:border-slate-800 p-4 space-y-2">
+        <div className="rounded-2xl border bg-[var(--bg-elevated)] border-[var(--border-subtle)] p-4 space-y-2">
           <SkeletonLine w="w-40" h="h-6" />
           <SkeletonLine w="w-24" />
           <SkeletonLine w="w-28" />
           <SkeletonLine w="w-28" />
         </div>
 
-        <div className="rounded-2xl border bg-white dark:bg-slate-900/40 dark:border-slate-800 p-4 space-y-2">
+        <div className="rounded-2xl border bg-[var(--bg-elevated)] border-[var(--border-subtle)] p-4 space-y-2">
           <SkeletonLine w="w-28" h="h-4" />
           <SkeletonLine />
           <SkeletonLine w="w-11/12" />
           <SkeletonLine w="w-10/12" />
         </div>
 
-        <div className="rounded-2xl border bg-white dark:bg-slate-900/40 dark:border-slate-800 p-4 space-y-2">
+        <div className="rounded-2xl border bg-[var(--bg-elevated)] border-[var(--border-subtle)] p-4 space-y-2">
           <SkeletonLine w="w-24" h="h-4" />
           <SkeletonLine w="w-1/2" />
           <SkeletonLine w="w-1/3" />

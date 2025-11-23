@@ -20,7 +20,6 @@ import type { UrlObject as MediaUrlObject } from "@/app/lib/media";
 
 export type ServiceWire = {
   id: string;
-  // loosened: allow null/undefined so server shape is assignable
   name?: string | null;
   description?: string | null;
   category?: string | null;
@@ -112,7 +111,7 @@ export default function ServicePageClient({
   const { services } = useServices();
 
   const [fetched, setFetched] = useState<Detail | null>(
-    (initialData as unknown as Detail) ?? null
+    (initialData as unknown as Detail) ?? null,
   );
   const [fetching, setFetching] = useState(false);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
@@ -121,7 +120,7 @@ export default function ServicePageClient({
   const service = useMemo(() => {
     if (!id) return undefined;
     const s = services.find(
-      (x: any) => String(x.id) === String(id)
+      (x: any) => String(x.id) === String(id),
     ) as StoreRow | undefined;
     return (s as Detail) || undefined;
   }, [services, id]);
@@ -164,7 +163,8 @@ export default function ServicePageClient({
         if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
 
         const maybe: Detail | null =
-          (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
+          (j && (("service" in j ? (j as any).service : j) as Detail)) ||
+          null;
 
         const status = (maybe as any)?.status;
         if (status && String(status).toUpperCase() !== "ACTIVE") {
@@ -174,8 +174,9 @@ export default function ServicePageClient({
 
         if (!ctrl.signal.aborted) setFetched(maybe);
       } catch (e: any) {
-        if (!ctrl.signal.aborted)
+        if (!ctrl.signal.aborted) {
           setFetchErr(e?.message || "Failed to load service");
+        }
       } finally {
         if (!ctrl.signal.aborted) setFetching(false);
       }
@@ -189,7 +190,7 @@ export default function ServicePageClient({
   const didRefetchEmpty = useRef(false);
   const hasRealFromCurrent = useMemo(
     () => hasRealGallery(fetched ?? service ?? {}),
-    [fetched, service, hasRealGallery]
+    [fetched, service, hasRealGallery],
   );
 
   useEffect(() => {
@@ -237,7 +238,8 @@ export default function ServicePageClient({
         if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
 
         const maybe: Detail | null =
-          (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
+          (j && (("service" in j ? (j as any).service : j) as Detail)) ||
+          null;
 
         const status = (maybe as any)?.status;
         if (status && String(status).toUpperCase() !== "ACTIVE") {
@@ -264,7 +266,8 @@ export default function ServicePageClient({
           const j2 = await r2.json().catch(() => ({}));
           if (r2.ok) {
             const maybe2: Detail | null =
-              (j2 && (("service" in j2 ? (j2 as any).service : j2) as Detail)) ||
+              (j2 &&
+                (("service" in j2 ? (j2 as any).service : j2) as Detail)) ||
               null;
 
             const status2 = (maybe2 as any)?.status;
@@ -279,8 +282,9 @@ export default function ServicePageClient({
           }
         }
       } catch (e: any) {
-        if (!ctrl.signal.aborted)
+        if (!ctrl.signal.aborted) {
           setFetchErr(e?.message || "Failed to load service");
+        }
       } finally {
         if (backoffTimer) clearTimeout(backoffTimer);
         if (!ctrl.signal.aborted) setFetching(false);
@@ -303,12 +307,14 @@ export default function ServicePageClient({
   if (gone) {
     return (
       <div className="mx-auto max-w-2xl">
-        <div className="rounded-2xl border bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
           <div className="mx-auto mb-3 grid h-10 w-10 place-content-center rounded-lg bg-[#161748] text-white">
             404
           </div>
-          <h1 className="text-lg font-semibold">Service unavailable</h1>
-          <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
+          <h1 className="text-lg font-semibold text-foreground">
+            Service unavailable
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             This service was removed or isn’t available anymore.
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
@@ -384,7 +390,7 @@ export default function ServicePageClient({
 
   const enableLightbox = useMemo(
     () => galleryToRender.some((u) => u && u !== PLACEHOLDER),
-    [galleryToRender]
+    [galleryToRender],
   );
 
   const seller = useMemo(() => {
@@ -425,7 +431,7 @@ export default function ServicePageClient({
 
   const seo = useMemo(() => {
     const nonPlaceholder = galleryToRender.filter(
-      (u) => u && u !== PLACEHOLDER
+      (u) => u && u !== PLACEHOLDER,
     );
     return buildServiceSeo({
       id: display.id!,
@@ -476,7 +482,7 @@ export default function ServicePageClient({
         {/* Media */}
         <div className="lg:col-span-3">
           <div
-            className="relative overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm"
             data-gallery-wrap
           >
             <div className="relative aspect-[4/3] sm:aspect-[16/10]">
@@ -513,7 +519,7 @@ export default function ServicePageClient({
                     document.querySelector<HTMLElement>("[data-gallery-wrap]");
                   const opener =
                     wrap?.querySelector<HTMLElement>(
-                      '[data-gallery-opener], button[aria-label="Open image in fullscreen"]'
+                      '[data-gallery-opener], button[aria-label="Open image in fullscreen"]',
                     );
                   opener?.click();
                 }}
@@ -563,7 +569,7 @@ export default function ServicePageClient({
             </div>
 
             {(fetching || fetchErr) && (
-              <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[75] bg-black/40 p-2 text-center text-xs text-white">
+              <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[75] bg-background/80 p-2 text-center text-xs text-foreground">
                 {fetching ? "Loading…" : fetchErr || "Showing limited info"}
               </div>
             )}
@@ -573,39 +579,39 @@ export default function ServicePageClient({
         {/* Details */}
         <div className="space-y-4 lg:col-span-2">
           <div className="flex items-start justify-between gap-3">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <h1 className="text-2xl font-bold text-foreground">
               {display.name || "Service"}
             </h1>
           </div>
 
-          <div className="space-y-1 rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="space-y-1 rounded-xl border border-border bg-card p-4">
             <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">
               {fmtKES(display.price)} {rateSuffix(display.rateType ?? null)}
             </p>
             {display.serviceArea && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Service Area: {display.serviceArea}
               </p>
             )}
             {display.location && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Base Location: {display.location}
               </p>
             )}
           </div>
 
-          <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <h2 className="mb-2 font-semibold">Description</h2>
-            <p className="whitespace-pre-line text-gray-700 dark:text-slate-200">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h2 className="mb-2 font-semibold text-foreground">Description</h2>
+            <p className="whitespace-pre-line text-foreground">
               {display.description || "No description provided."}
             </p>
           </div>
 
           {/* Provider / Contact */}
-          <div className="rounded-xl border bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <h3 className="mb-3 font-semibold">Provider</h3>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h3 className="mb-3 font-semibold text-foreground">Provider</h3>
 
-            <div className="space-y-1 text-gray-700 dark:text-slate-200">
+            <div className="space-y-1 text-foreground">
               <p className="flex items-center gap-2">
                 <span className="font-medium">Name:</span>
                 <span>
@@ -626,7 +632,6 @@ export default function ServicePageClient({
               <ContactModalService
                 className="btn-gradient-primary"
                 serviceId={display.id!}
-                // force a concrete string; TS 2345 silenced correctly
                 serviceName={display.name ?? "Service"}
                 fallbackName={
                   display.sellerName ?? (display.seller as any)?.name ?? null
@@ -641,14 +646,14 @@ export default function ServicePageClient({
               <Link
                 href={storeHref}
                 prefetch={false}
-                className="btn-gradient-primary"
+                className="btn-outline"
                 aria-label="Visit provider store"
               >
                 Visit Store
               </Link>
             </div>
 
-            <div className="mt-4 text-xs text-gray-500 dark:text-slate-400">
+            <div className="mt-4 text-xs text-muted-foreground">
               Safety: meet in public places, verify identity where possible, and
               avoid prepayments.
             </div>
