@@ -45,11 +45,13 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: "QwikSale",
   title: {
-    default: "QwikSale — Kenya’s trusted marketplace for all items.",
+    // No dash here
+    default: "QwikSale, Kenya’s trusted marketplace for all items",
     template: "%s · QwikSale",
   },
+  // Richer snippet, no dash between name and tagline
   description:
-    "QwikSale — Kenya’s trusted marketplace for all items. List your items, find great deals, and contact sellers directly.",
+    "QwikSale is Kenya’s trusted marketplace for all items. Buy and sell phones, cars, electronics, furniture and services across Kenya with free listings, clear photos and direct WhatsApp or call enquiries.",
   keywords: [
     "QwikSale",
     "Kenya",
@@ -67,23 +69,32 @@ export const metadata: Metadata = {
     type: "website",
     url: siteUrl + "/",
     siteName: "QwikSale",
-    title: "QwikSale — Kenya’s trusted marketplace for all items.",
+    // No dash
+    title: "QwikSale, Kenya’s trusted marketplace for all items",
     description:
-      "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
+      "List and discover items and services across Kenya. Post free listings with photos, reach real buyers quickly and keep conversations on WhatsApp or calls.",
     images: [
-      { url: `${siteUrl}/og.png`, width: 1200, height: 630, alt: "QwikSale" },
+      {
+        url: `${siteUrl}/og.png`,
+        width: 1200,
+        height: 630,
+        alt: "QwikSale",
+      },
     ],
     locale: "en_KE",
   },
   twitter: {
     card: "summary_large_image",
-    title: "QwikSale — Kenya’s trusted marketplace for all items.",
+    // No dash
+    title: "QwikSale, Kenya’s trusted marketplace for all items",
     description:
-      "List your items, find great deals, and contact sellers directly. Verified listings get top placement.",
+      "Buy and sell phones, cars, electronics, furniture and services in Kenya. Post free listings with photos and talk directly to buyers and sellers.",
     images: [`${siteUrl}/og.png`],
   },
   icons: {
+    // Put your main logo first so browsers and Google pick it up
     icon: [
+      { url: "/brand/qwiksale-logo.jpg", type: "image/jpeg" },
       { url: "/favicon/favicon.ico" },
       { url: "/favicon/favicon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/favicon/favicon-32x32.png", sizes: "32x32", type: "image/png" },
