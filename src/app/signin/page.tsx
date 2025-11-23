@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CredsFormClient } from "@/app/signin/_components/CredentialsForm.client";
+import { GoogleSignInButton } from "@/app/signin/_components/GoogleSignInButton.client";
 import type { SearchParams15 } from "@/app/lib/next15";
 
 export const runtime = "nodejs";
@@ -133,12 +134,6 @@ export default async function Page({
       ? "Sign-in failed. Please try again."
       : null;
 
-  // Provider URLs (never bare /api/auth/signin without provider)
-  const googleHref = `/api/auth/signin/google?callbackUrl=${encodeURIComponent(
-    callbackUrl,
-  )}`;
-
-  // Keep a real POST action as a hard fallback path if JS breaks.
   const credsAction = `/api/auth/callback/credentials?callbackUrl=${encodeURIComponent(
     callbackUrl,
   )}`;
@@ -154,8 +149,8 @@ export default async function Page({
   return (
     <div className="container-page py-10">
       <div className="mx-auto max-w-xl">
-        <div className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
-          <h1 className="text-2xl md:text-3xl font-extrabold">
+        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow-soft">
+          <h1 className="text-2xl font-extrabold md:text-3xl">
             Sign in to QwikSale
           </h1>
           <p className="mt-1 text-white/85">
@@ -183,13 +178,7 @@ export default async function Page({
 
           {hasGoogle && (
             <div className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <a
-                href={googleHref}
-                className="btn-outline w-full py-3 text-center"
-                aria-label="Continue with Google"
-              >
-                Continue with Google
-              </a>
+              <GoogleSignInButton callbackUrl={callbackUrl} />
               <p className="mt-2 text-[12px] text-gray-500 dark:text-slate-400">
                 By continuing, you agree to QwikSale’s{" "}
                 <Link className="underline" href="/terms" prefetch={false}>

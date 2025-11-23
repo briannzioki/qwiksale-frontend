@@ -103,9 +103,7 @@ export default function SectionHeader({
     title.trim().toLowerCase() === "qwiksale";
 
   // Non-strip mode now uses semantic tokens for text color
-  const baseColorClass = useStrip
-    ? "text-white"
-    : "text-[color:var(--text)]";
+  const baseColorClass = useStrip ? "text-white" : "text-[var(--text)]";
 
   const titleColorClass = isHomeHero
     ? "bg-gradient-to-r from-[#f9fafb] via-[#7dd3fc] to-[#6ee7b7] bg-clip-text text-transparent"
@@ -143,7 +141,7 @@ export default function SectionHeader({
               className={cn(
                 "min-w-0",
                 align === "center" &&
-                  "md:mx-auto md:text-center md:items-center md:justify-center",
+                  "md:mx-auto md:items-center md:justify-center md:text-center",
               )}
             >
               {(kicker || icon) && (
@@ -152,7 +150,7 @@ export default function SectionHeader({
                     "flex items-center gap-2 text-xs md:text-sm",
                     useStrip
                       ? "text-white/90"
-                      : "text-[color:var(--text-muted)]",
+                      : "text-[var(--text-muted)]",
                     align === "center" ? "justify-center" : "",
                   )}
                 >
@@ -181,7 +179,7 @@ export default function SectionHeader({
                     "mt-1 max-w-2xl text-sm md:text-base",
                     useStrip
                       ? "text-white/80"
-                      : "text-[color:var(--text-muted)]",
+                      : "text-[var(--text-muted)]",
                     align === "center" ? "mx-auto" : "",
                   )}
                 >
