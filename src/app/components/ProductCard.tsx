@@ -68,7 +68,7 @@ function fmtKES(n?: number | null) {
 function track(event: string, payload?: Record<string, unknown>) {
   if (typeof window !== "undefined" && "CustomEvent" in window) {
     window.dispatchEvent(
-      new CustomEvent("qs:track", { detail: { event, payload } })
+      new CustomEvent("qs:track", { detail: { event, payload } }),
     );
   }
 }
@@ -91,7 +91,7 @@ function ProductCardImpl({
   // Canonical product detail URL
   const href = useMemo(
     () => `/product/${encodeURIComponent(id)}`,
-    [id]
+    [id],
   );
   const hrefEdit =
     editHref ?? `/product/${encodeURIComponent(id)}/edit`;
@@ -135,7 +135,7 @@ function ProductCardImpl({
           }
         }
       },
-      { rootMargin: "0px 0px -20% 0px" }
+      { rootMargin: "0px 0px -20% 0px" },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -163,7 +163,7 @@ function ProductCardImpl({
           }
         }
       },
-      { rootMargin: "300px" }
+      { rootMargin: "300px" },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -193,9 +193,9 @@ function ProductCardImpl({
   return (
     <div
       className={[
-        "group relative overflow-hidden rounded-xl border bg-white shadow-sm transition will-change-transform",
+        "group relative overflow-hidden rounded-xl border bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm transition will-change-transform",
         "hover:-translate-y-0.5 hover:shadow-md",
-        "border-black/5 dark:border-slate-800 dark:bg-slate-900",
+        "border-[var(--border-subtle)]",
         className,
       ].join(" ")}
       role="article"
@@ -208,7 +208,7 @@ function ProductCardImpl({
         <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
           <Link
             href={hrefEdit}
-            className="rounded border bg-white/90 px-2 py-1 text-xs hover:bg-white dark:border-slate-700 dark:bg-slate-900"
+            className="rounded border bg-subtle px-2 py-1 text-xs text-[var(--text)] hover:bg-[var(--bg-elevated)] border-[var(--border-subtle)]"
             title="Edit product"
             aria-label="Edit product"
             prefetch={false}
@@ -269,7 +269,7 @@ function ProductCardImpl({
         </div>
 
         <div className="p-3">
-          <div className="line-clamp-1 font-semibold text-gray-900 dark:text-gray-100">
+          <div className="line-clamp-1 font-semibold text-[var(--text)]">
             {name ?? "Product"}
           </div>
           <div className="mt-1 text-[15px] font-bold text-[#161748] dark:text-[#39a0ca]">

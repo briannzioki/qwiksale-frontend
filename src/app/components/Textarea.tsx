@@ -42,7 +42,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       rows = 4,
       ...props
     },
-    ref
+    ref,
   ) => {
     const textareaId = id ?? React.useId();
     const describedBy = message ? `${textareaId}-desc` : undefined;
@@ -54,13 +54,16 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           <label
             htmlFor={textareaId}
             className={cn(
-              "mb-1 block font-medium text-gray-700 dark:text-slate-200",
+              "mb-1 block font-medium",
+              "text-[var(--text)]",
               sz.label,
-              labelSrOnly && "sr-only"
+              labelSrOnly && "sr-only",
             )}
           >
             {label}
-            {requiredMark ? <span className="ml-0.5 text-rose-600">*</span> : null}
+            {requiredMark ? (
+              <span className="ml-0.5 text-rose-600">*</span>
+            ) : null}
           </label>
         ) : null}
 
@@ -73,24 +76,19 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           disabled={disabled}
           readOnly={readOnly}
           className={cn(
-            // Surface
-            "w-full bg-white dark:bg-slate-900/90",
-            // Lighter borders per audit
-            "border border-gray-200 dark:border-white/10",
-            // Calm placeholder
-            "placeholder:text-gray-500 dark:placeholder:text-slate-400",
-            // Keep subtle depth, not heavy
-            "shadow-inner/40",
-            // Focus treatment consistent with inputs/buttons
+            "w-full",
+            "bg-[var(--bg-elevated)] text-[var(--text)]",
+            "border border-[var(--border)]",
+            "placeholder:text-[var(--text-muted)]",
+            "shadow-inner",
             "focus:outline-none focus:ring-2 ring-focus",
-            // States
             "disabled:opacity-60 disabled:cursor-not-allowed",
             "transition",
             "resize-y",
             sz.textarea,
             className,
-            invalid && "border-rose-300 dark:border-rose-700 focus:ring-rose-500/60",
-            readOnly && "opacity-90"
+            invalid && "border-[var(--danger)]",
+            readOnly && "opacity-90",
           )}
           {...props}
         />
@@ -100,7 +98,9 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             id={describedBy}
             className={cn(
               "mt-1 text-xs",
-              invalid ? "text-rose-600" : "text-gray-500 dark:text-slate-400"
+              invalid
+                ? "text-[var(--danger)]"
+                : "text-[var(--text-muted)]",
             )}
           >
             {message}
@@ -108,7 +108,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         ) : null}
       </div>
     );
-  }
+  },
 );
 Textarea.displayName = "Textarea";
 

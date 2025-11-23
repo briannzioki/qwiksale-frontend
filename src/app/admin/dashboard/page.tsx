@@ -94,17 +94,19 @@ function StatCard({
 }) {
   const safe = Number.isFinite(value) ? value : 0;
   return (
-      <div className="rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
-          {label}
-        </div>
-        <div className="mt-1 text-2xl font-bold">
-          {safe.toLocaleString("en-KE")}
-        </div>
-        {sublabel ? (
-          <div className="mt-1 text-xs text-gray-500">{sublabel}</div>
-        ) : null}
+    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
       </div>
+      <div className="mt-1 text-2xl font-bold">
+        {safe.toLocaleString("en-KE")}
+      </div>
+      {sublabel ? (
+        <div className="mt-1 text-xs text-muted-foreground">
+          {sublabel}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -183,7 +185,7 @@ export default async function Page() {
   const metrics = await withTimeout(fetchMetrics(2000), 2200, null);
 
   const card =
-    "rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900";
+    "rounded-xl border border-border bg-card p-4 shadow-sm";
 
   // Always render the H1 so tests can assert reliably.
   if (!metrics) {
@@ -213,7 +215,7 @@ export default async function Page() {
         />
 
         <div
-          className="rounded-xl border bg-white p-4 text-sm text-rose-600 dark:border-slate-800 dark:bg-slate-900 dark:text-rose-400"
+          className="rounded-xl border border-border bg-card p-4 text-sm text-rose-600 dark:text-rose-400"
           role="status"
           aria-live="polite"
         >
@@ -283,7 +285,7 @@ export default async function Page() {
           />
         ) : (
           <div
-            className={`${card} flex items-center justify-center text-sm text-gray-500`}
+            className={`${card} flex items-center justify-center text-sm text-muted-foreground`}
           >
             No reveals tracked
           </div>
@@ -292,12 +294,12 @@ export default async function Page() {
 
       {/* Trends */}
       <section className={card}>
-        <h2 className="mb-3 text-sm font-semibold text-gray-600 dark:text-slate-300">
+        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
           Last 7 days
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
           <div>
-            <div className="mb-1 text-xs text-gray-500 dark:text-slate-400">
+            <div className="mb-1 text-xs text-muted-foreground">
               Users
             </div>
             <div className="text-[#161748]">
@@ -305,7 +307,7 @@ export default async function Page() {
             </div>
           </div>
           <div>
-            <div className="mb-1 text-xs text-gray-500 dark:text-slate-400">
+            <div className="mb-1 text-xs text-muted-foreground">
               Products
             </div>
             <div className="text-emerald-600 dark:text-emerald-400">
@@ -313,7 +315,7 @@ export default async function Page() {
             </div>
           </div>
           <div>
-            <div className="mb-1 text-xs text-gray-500 dark:text-slate-400">
+            <div className="mb-1 text-xs text-muted-foreground">
               Services
             </div>
             <div className="text-sky-600 dark:text-sky-400">
@@ -326,7 +328,7 @@ export default async function Page() {
         <div className="mt-4 overflow-auto">
           <table className="min-w-[560px] text-xs">
             <thead>
-              <tr className="text-left text-gray-500 dark:text-slate-400">
+              <tr className="text-left text-muted-foreground">
                 <Th>Date</Th>
                 <Th>Users</Th>
                 <Th>Products</Th>
@@ -337,7 +339,7 @@ export default async function Page() {
               {metrics.last7d.map((d) => (
                 <tr
                   key={d.date}
-                  className="border-t border-gray-100 dark:border-slate-800"
+                  className="border-t border-border/60"
                 >
                   <Td>{d.date}</Td>
                   <Td>{d.users.toLocaleString("en-KE")}</Td>

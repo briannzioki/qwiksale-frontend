@@ -1,3 +1,4 @@
+// src/app/product/[id]/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -168,12 +169,12 @@ export default async function ProductPage({
             Product
           </p>
           {/* Keep “Product” conceptually for tests looking for Product/Item/Listing */}
-          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground">
             {title}
           </h1>
 
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-slate-300">
-            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-semibold text-gray-900 dark:bg-slate-800 dark:text-slate-50">
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 font-semibold text-foreground">
               {priceText}
             </span>
             {locationText && (
@@ -199,7 +200,7 @@ export default async function ProductPage({
         {/* Gallery */}
         <div>
           <div
-            className="relative overflow-hidden rounded-2xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm dark:border-border"
             data-gallery-wrap
           >
             <div className="relative aspect-[4/3] sm:aspect-[16/10]">
@@ -226,8 +227,8 @@ export default async function ProductPage({
         {/* Side panels */}
         <div className="space-y-4">
           {/* Description panel */}
-          <section className="rounded-xl border bg-white p-4 text-sm text-gray-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+          <section className="rounded-xl border border-border bg-card p-4 text-sm text-foreground shadow-sm">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Description
             </h2>
             <p className="whitespace-pre-line">
@@ -236,11 +237,11 @@ export default async function ProductPage({
           </section>
 
           {/* Contact panel */}
-          <section className="rounded-xl border bg-white p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+          <section className="rounded-xl border border-border bg-card p-4 text-sm shadow-sm">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Talk to the seller
             </h2>
-            <p className="mb-3 text-xs text-gray-500 dark:text-slate-400">
+            <p className="mb-3 text-xs text-muted-foreground">
               Ask questions, negotiate, and arrange a safe meet-up directly from
               QwikSale.
             </p>

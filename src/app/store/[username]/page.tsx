@@ -1,3 +1,4 @@
+// src/app/store/[username]/page.tsx
 export const revalidate = 300;
 export const runtime = "nodejs";
 
@@ -327,7 +328,7 @@ export default async function StorePage({
     <main id="main" className="min-h-[60svh]">
       <section className="container mx-auto space-y-6 px-4 py-6">
         {/* Store header */}
-        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow-xl ring-1 ring-white/10">
+        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-primary-foreground shadow-xl ring-1 ring-border/40">
           <div className="flex flex-col gap-4 md:flex-row md:items-center">
             <div className="flex items-center gap-4">
               <UserAvatar
@@ -345,7 +346,7 @@ export default async function StorePage({
                 <h1 className="text-2xl font-extrabold md:text-3xl">
                   Store: @{displayHandle}
                 </h1>
-                <p className="text-sm text-white/90">
+                <p className="text-sm text-primary-foreground/90">
                   {user.name ? `${user.name}` : "Store profile"}
                   {memberSinceYear
                     ? ` • Member since ${memberSinceYear}`
@@ -361,18 +362,18 @@ export default async function StorePage({
 
             <div className="mt-2 flex w-full items-center justify-end gap-3 md:mt-0 md:w-auto">
               {totalListings > 0 && (
-                <div className="inline-flex items-center gap-3 rounded-full bg-black/15 px-4 py-2 text-xs font-medium text-white/90">
+                <div className="inline-flex items-center gap-3 rounded-full bg-background/20 px-4 py-2 text-xs font-medium text-primary-foreground/90">
                   <span>
                     {totalListings.toLocaleString()}{" "}
                     {totalListings === 1 ? "listing" : "listings"}
                   </span>
                   {totalProducts > 0 && (
-                    <span className="inline-flex items-center rounded-full bg-black/25 px-2 py-0.5">
+                    <span className="inline-flex items-center rounded-full bg-background/30 px-2 py-0.5">
                       {totalProducts} products
                     </span>
                   )}
                   {totalServices > 0 && (
-                    <span className="inline-flex items-center rounded-full bg-black/25 px-2 py-0.5">
+                    <span className="inline-flex items-center rounded-full bg-background/30 px-2 py-0.5">
                       {totalServices} services
                     </span>
                   )}
@@ -381,7 +382,7 @@ export default async function StorePage({
 
               <Link
                 href="/"
-                className="rounded-full border border-white/40 bg-white/10 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20"
+                className="rounded-full border border-border/60 bg-background/10 px-4 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-background/20"
               >
                 Back to Home
               </Link>
@@ -403,7 +404,7 @@ export default async function StorePage({
 
         {/* Empty state */}
         {!hasAny && (
-          <div className="card-surface rounded-xl border p-8 text-center text-gray-600 dark:border-slate-800 dark:text-slate-300">
+          <div className="card-surface rounded-xl border border-border p-8 text-center text-muted-foreground">
             <p className="text-lg font-semibold">No listings yet</p>
             <p className="mt-1 text-sm opacity-80">
               {shouldFetchListings
@@ -422,10 +423,10 @@ export default async function StorePage({
         {totalProducts > 0 && (
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-100">
+              <h2 className="text-lg font-semibold text-foreground">
                 Products
               </h2>
-              <span className="text-sm text-slate-400">
+              <span className="text-sm text-muted-foreground">
                 {totalProducts.toLocaleString()} items
               </span>
             </div>
@@ -438,13 +439,13 @@ export default async function StorePage({
                   className="group"
                   aria-label={p.name || "Product"}
                 >
-                  <div className="card-surface relative overflow-hidden rounded-xl border border-slate-800/60 bg-slate-900/80 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
+                  <div className="card-surface relative overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
                     {p.featured && (
-                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
+                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
                         Featured
                       </span>
                     )}
-                    <div className="relative h-40 w-full bg-slate-900">
+                    <div className="relative h-40 w-full bg-muted">
                       <SmartImage
                         src={p.image || undefined}
                         alt={p.name || "Product image"}
@@ -454,10 +455,10 @@ export default async function StorePage({
                       />
                     </div>
                     <div className="p-4">
-                      <h3 className="line-clamp-1 font-semibold text-slate-50">
+                      <h3 className="line-clamp-1 font-semibold text-foreground">
                         {p.name || "Unnamed item"}
                       </h3>
-                      <p className="line-clamp-1 text-xs text-slate-400">
+                      <p className="line-clamp-1 text-xs text-muted-foreground">
                         {[p.category, p.subcategory]
                           .filter(Boolean)
                           .join(" • ") || "—"}
@@ -477,10 +478,10 @@ export default async function StorePage({
         {totalServices > 0 && (
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-100">
+              <h2 className="text-lg font-semibold text-foreground">
                 Services
               </h2>
-              <span className="text-sm text-slate-400">
+              <span className="text-sm text-muted-foreground">
                 {totalServices.toLocaleString()} items
               </span>
             </div>
@@ -493,13 +494,13 @@ export default async function StorePage({
                   className="group"
                   aria-label={s.name || "Service"}
                 >
-                  <div className="card-surface relative overflow-hidden rounded-xl border border-slate-800/60 bg-slate-900/80 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
+                  <div className="card-surface relative overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
                     {s.featured && (
-                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
+                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
                         Featured
                       </span>
                     )}
-                    <div className="relative h-40 w-full bg-slate-900">
+                    <div className="relative h-40 w-full bg-muted">
                       <SmartImage
                         src={s.image || undefined}
                         alt={s.name || "Service image"}
@@ -509,10 +510,10 @@ export default async function StorePage({
                       />
                     </div>
                     <div className="p-4">
-                      <h3 className="line-clamp-1 font-semibold text-slate-50">
+                      <h3 className="line-clamp-1 font-semibold text-foreground">
                         {s.name || "Unnamed service"}
                       </h3>
-                      <p className="line-clamp-1 text-xs text-slate-400">
+                      <p className="line-clamp-1 text-xs text-muted-foreground">
                         {[s.category, s.subcategory]
                           .filter(Boolean)
                           .join(" • ") || "—"}

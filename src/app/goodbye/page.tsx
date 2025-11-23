@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 export default function GoodbyePage() {
   return (
     <main className="mx-auto flex min-h-[70vh] max-w-2xl items-center justify-center p-6">
-      <div className="w-full overflow-hidden rounded-3xl border border-gray-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="relative h-24 w-full bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+      <div className="w-full overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+        <div className="relative h-24 w-full bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
           <div className="absolute inset-y-0 left-0 flex items-center gap-2 px-6 text-white/95">
             <span className="text-2xl" aria-hidden>
               👋
@@ -29,14 +29,14 @@ export default function GoodbyePage() {
         </div>
 
         <div className="space-y-5 p-6 md:p-8">
-          <p className="text-lg font-semibold text-gray-900 dark:text-slate-100">
+          <p className="text-lg font-semibold text-foreground">
             Your account has been deleted.
           </p>
 
-          <p className="text-sm leading-relaxed text-gray-600 dark:text-slate-300">
-            If this was a mistake—or you change your mind—you’re welcome
-            back anytime. Your personal data has been scheduled for
-            removal according to our{" "}
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            If this was a mistake—or you change your mind—you’re welcome back
+            anytime. Your personal data has been scheduled for removal according
+            to our{" "}
             <Link
               href="/privacy"
               className="underline underline-offset-2"
@@ -47,20 +47,21 @@ export default function GoodbyePage() {
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Link href="/" className="btn-gradient-primary text-center">
+            <Link
+              href="/"
+              className="btn-gradient-primary text-center"
+            >
               Go to homepage
             </Link>
             <Link
-              href={`/signin?callbackUrl=${encodeURIComponent(
-                "/dashboard",
-              )}`}
+              href={`/signin?callbackUrl=${encodeURIComponent("/dashboard")}`}
               className="btn-outline text-center"
             >
               Create a new account / Sign in
             </Link>
           </div>
 
-          <div className="rounded-2xl border border-gray-200 p-4 text-sm text-gray-700 dark:border-slate-800 dark:text-slate-300">
+          <div className="rounded-2xl border border-border p-4 text-sm text-foreground">
             <p>
               Mind sharing why you left? A quick note helps us improve.{" "}
               <Link
@@ -73,9 +74,9 @@ export default function GoodbyePage() {
             </p>
           </div>
 
-          <p className="text-[12px] text-gray-500 dark:text-slate-400">
-            If you deleted your account by accident, support can help
-            within a short window.
+          <p className="text-[12px] text-muted-foreground">
+            If you deleted your account by accident, support can help within a
+            short window.
           </p>
         </div>
       </div>

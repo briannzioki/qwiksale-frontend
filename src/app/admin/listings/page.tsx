@@ -382,7 +382,7 @@ export default async function Page({ searchParams }: PageProps) {
       <form
         method="GET"
         action="/admin/listings"
-        className="rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        className="rounded-xl border border-border bg-card p-4 shadow-sm"
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-6">
@@ -429,16 +429,16 @@ export default async function Page({ searchParams }: PageProps) {
       </form>
 
       {/* Table */}
-      <section className="overflow-hidden rounded-xl border bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b px-4 py-3 dark:border-slate-800">
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="font-semibold">Listings</h2>
-          <span className="text-xs text-gray-500 dark:text-slate-400">
+          <span className="text-xs text-muted-foreground">
             Total: {total.toLocaleString()} • Page {safePage} / {totalPages}
           </span>
         </div>
 
         {pageRows.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-gray-600 dark:text-slate-300">
+          <div className="px-4 py-6 text-sm text-muted-foreground">
             No listings found.
           </div>
         ) : (
@@ -449,7 +449,7 @@ export default async function Page({ searchParams }: PageProps) {
                   Admin listing table showing products and services with seller
                   and featured status
                 </caption>
-                <thead className="bg-gray-50 text-gray-600 dark:bg-slate-800/50 dark:text-slate-300">
+                <thead className="bg-muted text-muted-foreground">
                   <tr className="text-left">
                     <Th>Type</Th>
                     <Th>Name</Th>
@@ -460,11 +460,11 @@ export default async function Page({ searchParams }: PageProps) {
                     <Th>Actions</Th>
                   </tr>
                 </thead>
-                <tbody className="divide-y dark:divide-slate-800">
+                <tbody className="divide-y divide-border">
                   {pageRows.map((r) => (
                     <tr
                       key={`${r.kind}:${r.id}`}
-                      className="hover:bg-gray-50/60 dark:hover:bg-slate-800/60"
+                      className="hover:bg-muted"
                     >
                       <Td>
                         <Badge tone={r.kind === "product" ? "indigo" : "green"}>
@@ -510,7 +510,7 @@ export default async function Page({ searchParams }: PageProps) {
                                 : `/service/${r.id}/edit`
                             }
                             prefetch={false}
-                            className="rounded border px-2 py-1 text-xs hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                            className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
                           >
                             Edit
                           </Link>
@@ -521,7 +521,7 @@ export default async function Page({ searchParams }: PageProps) {
                                 : `/service/${r.id}`
                             }
                             prefetch={false}
-                            className="rounded border px-2 py-1 text-xs hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                            className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
                           >
                             View
                           </Link>
@@ -535,7 +535,7 @@ export default async function Page({ searchParams }: PageProps) {
 
             {/* Pagination */}
             <nav
-              className="flex items-center justify-between border-t px-4 py-3 text-sm dark:border-slate-800"
+              className="flex items-center justify-between border-t border-border px-4 py-3 text-sm"
               aria-label="Pagination"
             >
               <Link
@@ -548,10 +548,8 @@ export default async function Page({ searchParams }: PageProps) {
                 }
                 prefetch={false}
                 aria-disabled={safePage <= 1}
-                className={`rounded border px-3 py-1 transition ${
-                  safePage > 1
-                    ? "hover:shadow dark:border-slate-800"
-                    : "opacity-50 dark:border-slate-800"
+                className={`rounded border border-border px-3 py-1 transition ${
+                  safePage > 1 ? "hover:shadow" : "opacity-50"
                 }`}
               >
                 ← Prev
@@ -581,8 +579,8 @@ export default async function Page({ searchParams }: PageProps) {
                         aria-current={isCurrent ? "page" : undefined}
                         className={`rounded px-2 py-1 ${
                           isCurrent
-                            ? "bg-[#161748] text-white"
-                            : "hover:bg-black/5 dark:hover:bg:white/10"
+                            ? "bg-[#161748] text-primary-foreground"
+                            : "hover:bg-muted"
                         }`}
                       >
                         {p}
@@ -602,10 +600,8 @@ export default async function Page({ searchParams }: PageProps) {
                 }
                 prefetch={false}
                 aria-disabled={safePage >= totalPages}
-                className={`rounded border px-3 py-1 transition ${
-                  safePage < totalPages
-                    ? "hover:shadow dark:border-slate-800"
-                    : "opacity-50 dark:border-slate-800"
+                className={`rounded border border-border px-3 py-1 transition ${
+                  safePage < totalPages ? "hover:shadow" : "opacity-50"
                 }`}
               >
                 Next →
@@ -652,8 +648,7 @@ function Badge({
   tone?: "slate" | "green" | "amber" | "rose" | "indigo";
 }) {
   const map: Record<string, string> = {
-    slate:
-      "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    slate: "bg-muted text-muted-foreground",
     green:
       "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
     amber:

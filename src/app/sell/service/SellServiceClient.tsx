@@ -475,11 +475,11 @@ export default function SellServiceClient({
       data-authed={isAuthenticated ? "true" : "false"}
     >
       {notSignedIn && (
-        <div className="mb-4 rounded-xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-4 rounded-xl border border-border bg-card p-6 shadow-sm">
           <h2 className="text-xl font-semibold">
             You’re not signed in
           </h2>
-          <p className="mt-2 text-gray-600 dark:text-slate-300">
+          <p className="mt-2 text-muted-foreground">
             You can sketch out your service, but you’ll need to sign in
             before publishing.
           </p>
@@ -496,7 +496,7 @@ export default function SellServiceClient({
         </div>
       )}
 
-      <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft">
+      <div className="rounded-xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-5 text-white shadow-soft">
         <h1 className="text-2xl font-bold">
           {editId ? "Edit Service" : "Post a Service"}
         </h1>
@@ -508,7 +508,7 @@ export default function SellServiceClient({
       </div>
 
       <form
-        className="mt-6 space-y-4 rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        className="mt-6 space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
         onSubmit={onSubmit}
       >
         {/* Name + Price + RateType */}
@@ -524,7 +524,7 @@ export default function SellServiceClient({
               id="sf-name"
               value={name}
               onChange={(e) => setName(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
               required
               minLength={3}
               placeholder="e.g. House Cleaning, Plumbing, Tutoring…"
@@ -559,13 +559,13 @@ export default function SellServiceClient({
               onWheel={(e) =>
                 (e.currentTarget as HTMLInputElement).blur()
               }
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
               placeholder='Leave empty for "Contact for quote"'
               aria-describedby="sf-price-help"
             />
             <p
               id="sf-price-help"
-              className="mt-1 text-xs text-gray-600 dark:text-gray-400"
+              className="mt-1 text-xs text-muted-foreground"
             >
               Leave empty to show <em>Contact for quote</em>.
             </p>
@@ -578,7 +578,7 @@ export default function SellServiceClient({
                   value="fixed"
                   checked={rateType === "fixed"}
                   onChange={() => setRateType("fixed")}
-                  className="rounded border-gray-300 dark:border-slate-600"
+                  className="rounded border border-border"
                 />
                 Fixed
               </label>
@@ -589,7 +589,7 @@ export default function SellServiceClient({
                   value="hour"
                   checked={rateType === "hour"}
                   onChange={() => setRateType("hour")}
-                  className="rounded border-gray-300 dark:border-slate-600"
+                  className="rounded border border-border"
                 />
                 /hour
               </label>
@@ -600,7 +600,7 @@ export default function SellServiceClient({
                   value="day"
                   checked={rateType === "day"}
                   onChange={() => setRateType("day")}
-                  className="rounded border-gray-300 dark:border-slate-600"
+                  className="rounded border border-border"
                 />
                 /day
               </label>
@@ -621,7 +621,7 @@ export default function SellServiceClient({
               id="sf-category"
               value={category}
               onChange={(e) => setCategory(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
             >
               {cats.map((c) => (
                 <option key={c.name} value={c.name}>
@@ -644,7 +644,7 @@ export default function SellServiceClient({
               onChange={(e) =>
                 setSubcategory(e.currentTarget.value)
               }
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
             >
               {subcats.length > 0 ? (
                 subcats.map((s) => (
@@ -671,7 +671,7 @@ export default function SellServiceClient({
               onChange={(e) =>
                 setServiceArea(e.currentTarget.value)
               }
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
               placeholder="e.g. Nairobi & Kiambu"
             />
           </div>
@@ -692,7 +692,7 @@ export default function SellServiceClient({
               onChange={(e) =>
                 setAvailability(e.currentTarget.value)
               }
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
               placeholder="e.g. Mon–Sat, 8am–6pm"
             />
           </div>
@@ -709,7 +709,7 @@ export default function SellServiceClient({
               onChange={(e) =>
                 setLocation(e.currentTarget.value)
               }
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
               placeholder="e.g. Nairobi"
             />
           </div>
@@ -724,12 +724,12 @@ export default function SellServiceClient({
               id="sf-phone"
               value={phone}
               onChange={(e) => setPhone(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
               placeholder="2547XXXXXXXX"
               inputMode="tel"
               aria-invalid={phone && !phoneOk ? "true" : undefined}
             />
-            <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            <div className="mt-1 text-xs text-muted-foreground">
               {phone
                 ? phoneOk
                   ? `Normalized: ${normalizedPhone}`
@@ -754,7 +754,7 @@ export default function SellServiceClient({
               setDescription(e.currentTarget.value)
             }
             rows={5}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
             placeholder="Describe your service, experience, what’s included, etc."
             required
             minLength={10}
@@ -765,7 +765,7 @@ export default function SellServiceClient({
         {!hideMedia && (
           <section className="mt-4 space-y-3">
             <div
-              className="rounded-lg border border-dashed p-4 text-sm text-gray-600 dark:border-slate-700 dark:text-slate-300"
+              className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground"
               onDrop={onDrop}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -789,14 +789,14 @@ export default function SellServiceClient({
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               {existingImage && existingGallery.length === 0 && (
-                <div className="rounded border p-2 text-xs">
+                <div className="rounded border border-border p-2 text-xs">
                   Existing cover image
                 </div>
               )}
               {existingGallery.map((url) => (
                 <div
                   key={url}
-                  className="rounded border p-2 text-xs"
+                  className="rounded border border-border p-2 text-xs"
                 >
                   Existing photo
                 </div>
@@ -804,7 +804,7 @@ export default function SellServiceClient({
               {previews.map((p, idx) => (
                 <div
                   key={p.key}
-                  className="space-y-1 rounded border p-2 text-xs"
+                  className="space-y-1 rounded border border-border p-2 text-xs"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -820,21 +820,21 @@ export default function SellServiceClient({
                       <button
                         type="button"
                         onClick={() => move(idx, -1)}
-                        className="rounded border px-1"
+                        className="rounded border border-border px-1"
                       >
                         ↑
                       </button>
                       <button
                         type="button"
                         onClick={() => move(idx, 1)}
-                        className="rounded border px-1"
+                        className="rounded border border-border px-1"
                       >
                         ↓
                       </button>
                       <button
                         type="button"
                         onClick={() => removeAt(idx)}
-                        className="rounded border px-1 text-red-600"
+                        className="rounded border border-border px-1 text-red-600"
                       >
                         ✕
                       </button>
@@ -845,7 +845,7 @@ export default function SellServiceClient({
             </div>
 
             {uploadPct > 0 && submitting && (
-              <div className="text-xs text-gray-600 dark:text-slate-300">
+              <div className="text-xs text-muted-foreground">
                 Uploading photos… {uploadPct}%
               </div>
             )}
@@ -866,7 +866,7 @@ export default function SellServiceClient({
               ? "Save changes"
               : "Post service"}
           </button>
-          <p className="text-xs text-gray-500 dark:text-slate-400">
+          <p className="text-xs text-muted-foreground">
             You can edit this service later from your dashboard.
           </p>
         </div>

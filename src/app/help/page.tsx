@@ -25,11 +25,9 @@ function Card({
   href?: string;
 }) {
   const inner = (
-    <div className="card group block rounded-xl border p-5 shadow-sm transition hover:shadow-md dark:border-slate-800">
+    <div className="card group block rounded-xl border border-border bg-card p-5 text-foreground shadow-sm transition hover:shadow-md">
       <h3 className="font-semibold">{title}</h3>
-      <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
-        {children}
-      </p>
+      <p className="mt-1 text-sm text-muted-foreground">{children}</p>
     </div>
   );
   return href ? (
@@ -87,25 +85,29 @@ export default function HelpCenterPage() {
 
       {/* FAQs (native details/summary) */}
       <section className="mt-8">
-        <h2 className="text-lg font-semibold">Frequently Asked Questions</h2>
-        <div className="mt-4 divide-y rounded-xl border bg-white shadow-sm brand-noise dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+        <h2 className="text-lg font-semibold text-foreground">
+          Frequently Asked Questions
+        </h2>
+        <div className="mt-4 divide-y divide-border rounded-xl border border-border bg-card brand-noise shadow-sm">
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
-              <span className="font-medium">How do I create an account?</span>
-              <span className="text-sm text-gray-500 group-open:hidden">
+              <span className="font-medium text-foreground">
+                How do I create an account?
+              </span>
+              <span className="text-sm text-muted-foreground group-open:hidden">
                 Show
               </span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">
+              <span className="hidden text-sm text-muted-foreground group-open:inline">
                 Hide
               </span>
             </summary>
-            <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
+            <div className="mt-2 text-sm text-foreground">
               Go to{" "}
               <Link className="underline" href="/signup" prefetch={false}>
                 Create account
               </Link>
-              , enter your email & password, or continue with Google. After
-              signing up, complete your{" "}
+              , enter your email &amp; password, or continue with Google.
+              After signing up, complete your{" "}
               <Link
                 className="underline"
                 href="/account/profile"
@@ -119,15 +121,17 @@ export default function HelpCenterPage() {
 
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
-              <span className="font-medium">How do I post a listing?</span>
-              <span className="text-sm text-gray-500 group-open:hidden">
+              <span className="font-medium text-foreground">
+                How do I post a listing?
+              </span>
+              <span className="text-sm text-muted-foreground group-open:hidden">
                 Show
               </span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">
+              <span className="hidden text-sm text-muted-foreground group-open:inline">
                 Hide
               </span>
             </summary>
-            <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
+            <div className="mt-2 text-sm text-foreground">
               Visit{" "}
               <Link className="underline" href="/sell" prefetch={false}>
                 Post a listing
@@ -140,17 +144,17 @@ export default function HelpCenterPage() {
 
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
-              <span className="font-medium">
+              <span className="font-medium text-foreground">
                 How do I save or share items?
               </span>
-              <span className="text-sm text-gray-500 group-open:hidden">
+              <span className="text-sm text-muted-foreground group-open:hidden">
                 Show
               </span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">
+              <span className="hidden text-sm text-muted-foreground group-open:inline">
                 Hide
               </span>
             </summary>
-            <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
+            <div className="mt-2 text-sm text-foreground">
               Tap the heart on a product page to save it. Access everything
               under{" "}
               <Link className="underline" href="/saved" prefetch={false}>
@@ -162,15 +166,17 @@ export default function HelpCenterPage() {
 
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
-              <span className="font-medium">How do payments work?</span>
-              <span className="text-sm text-gray-500 group-open:hidden">
+              <span className="font-medium text-foreground">
+                How do payments work?
+              </span>
+              <span className="text-sm text-muted-foreground group-open:hidden">
                 Show
               </span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">
+              <span className="hidden text-sm text-muted-foreground group-open:inline">
                 Hide
               </span>
             </summary>
-            <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
+            <div className="mt-2 text-sm text-foreground">
               QwikSale is a neutral marketplace. Coordinate with the seller
               directly. Prefer in-person meetups in public places and confirm
               item condition before paying. For tips, see{" "}
@@ -183,15 +189,17 @@ export default function HelpCenterPage() {
 
           <details className="group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">
-              <span className="font-medium">I can’t sign in / Google loop</span>
-              <span className="text-sm text-gray-500 group-open:hidden">
+              <span className="font-medium text-foreground">
+                I can’t sign in / Google loop
+              </span>
+              <span className="text-sm text-muted-foreground group-open:hidden">
                 Show
               </span>
-              <span className="hidden text-sm text-gray-500 group-open:inline">
+              <span className="hidden text-sm text-muted-foreground group-open:inline">
                 Hide
               </span>
             </summary>
-            <div className="mt-2 text-sm text-gray-700 dark:text-slate-300">
+            <div className="mt-2 text-sm text-foreground">
               Clear cookies for{" "}
               <span className="font-mono">qwiksale.sale</span>, ensure
               third-party cookies are allowed, and try again. If you signed up
@@ -207,11 +215,11 @@ export default function HelpCenterPage() {
       </section>
 
       {/* Contact strip */}
-      <section className="mt-8 card rounded-2xl p-5 shadow-sm brand-noise">
+      <section className="mt-8 card rounded-2xl bg-card p-5 text-foreground shadow-sm brand-noise">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Need personal help?</h2>
-            <p className="text-sm text-gray-600 dark:text-slate-300">
+            <p className="text-sm text-muted-foreground">
               Our team responds within 1–2 business days.
             </p>
           </div>

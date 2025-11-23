@@ -107,7 +107,7 @@ function MixedTile({
     ? "Service image"
     : "Product image";
 
-  // Prefer border-only (no heavy shadow) to match lighter glass audit
+  // Border-first card using semantic tokens
   return (
     <Link
       href={href}
@@ -116,14 +116,14 @@ function MixedTile({
       aria-label={`${it.type === "service" ? "Service" : "Product"}: ${it.name ?? "Listing"}`}
       title={it.name ?? undefined}
     >
-      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white transition dark:border-white/10 dark:bg-slate-900">
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-card transition">
         {it.featured ? (
           <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white">
             Featured
           </span>
         ) : null}
 
-        <div className="relative h-40 w-full bg-gray-100 dark:bg-slate-800">
+        <div className="relative h-40 w-full bg-muted">
           <SmartImage
             src={url}
             alt={alt}
@@ -136,13 +136,13 @@ function MixedTile({
         </div>
 
         <div className="p-3">
-          <h3 className="line-clamp-1 font-semibold text-gray-900 dark:text-slate-100">
+          <h3 className="line-clamp-1 font-semibold text-foreground">
             {it.name}
           </h3>
           <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
             {fmtKES(it.price)}
           </p>
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {it.type === "service" ? "Service" : "Product"}
           </p>
         </div>
@@ -206,11 +206,11 @@ export default function ProductGrid(props: Props) {
           Array.from({ length: pageSize }).map((_, i) => (
             <div
               key={`skeleton-${i}`}
-              className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900"
+              className="rounded-2xl border border-border bg-card p-3"
             >
-              <div className="h-40 w-full rounded-lg bg-gray-200 dark:bg-slate-800 animate-pulse" />
-              <div className="mt-2 h-4 w-3/4 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
-              <div className="mt-1 h-4 w-1/2 rounded bg-gray-200 dark:bg-slate-800 animate-pulse" />
+              <div className="h-40 w-full animate-pulse rounded-lg bg-muted" />
+              <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-muted" />
+              <div className="mt-1 h-4 w-1/2 animate-pulse rounded bg-muted" />
             </div>
           ))}
       </div>
@@ -220,7 +220,7 @@ export default function ProductGrid(props: Props) {
         {error ? (
           <div className="text-sm text-red-600">{error}</div>
         ) : !loading && items.length === 0 ? (
-          <div className="text-sm text-gray-600 dark:text-slate-300">{emptyText}</div>
+          <div className="text-sm text-muted-foreground">{emptyText}</div>
         ) : null}
       </div>
 
@@ -230,7 +230,7 @@ export default function ProductGrid(props: Props) {
           <button
             onClick={() => onLoadMoreAction && onLoadMoreAction()}
             disabled={loading}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 disabled:opacity-60"
+            className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted disabled:opacity-60"
           >
             {loading ? "Loading…" : "Load more"}
           </button>

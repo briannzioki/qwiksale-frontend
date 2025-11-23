@@ -33,8 +33,8 @@ const isPreview =
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b1220" },
+    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
+    { media: "(prefers-color-scheme: dark)", color: "#020617" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -163,7 +163,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body
-        className={`${fontVars} h-full text-gray-900 antialiased dark:text-slate-100`}
+        className={`${fontVars} h-full antialiased bg-app text-strong`}
         style={{ fontFeatureSettings: "'kern' 1, 'liga' 1, 'calt' 1" }}
         data-env={isPreview ? "preview" : "prod"}
       >

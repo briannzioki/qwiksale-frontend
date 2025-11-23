@@ -31,7 +31,10 @@ function cn(...xs: Array<string | undefined | false | null>) {
   return xs.filter(Boolean).join(" ");
 }
 
-const sizeMap: Record<Size, { input: string; left: string; right: string; label: string }> = {
+const sizeMap: Record<
+  Size,
+  { input: string; left: string; right: string; label: string }
+> = {
   sm: {
     input: "h-9 text-sm rounded-lg pl-8 pr-8",
     left: "left-2.5 text-[15px]",
@@ -70,7 +73,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       readOnly,
       ...props
     },
-    ref
+    ref,
   ) => {
     const inputId = id ?? React.useId();
     const describedBy = message ? `${inputId}-desc` : undefined;
@@ -82,13 +85,16 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <label
             htmlFor={inputId}
             className={cn(
-              "mb-1 block font-medium text-gray-700 dark:text-slate-200",
+              "mb-1 block font-medium",
+              "text-[var(--text)]",
               sz.label,
-              labelSrOnly && "sr-only"
+              labelSrOnly && "sr-only",
             )}
           >
             {label}
-            {requiredMark ? <span className="ml-0.5 text-rose-600">*</span> : null}
+            {requiredMark ? (
+              <span className="ml-0.5 text-rose-600">*</span>
+            ) : null}
           </label>
         ) : null}
 
@@ -96,8 +102,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {iconLeft ? (
             <span
               className={cn(
-                "pointer-events-none absolute inset-y-0 flex items-center text-gray-500 dark:text-slate-400",
-                sz.left
+                "pointer-events-none absolute inset-y-0 flex items-center",
+                "text-[var(--text-muted)]",
+                sz.left,
               )}
               aria-hidden
             >
@@ -113,17 +120,18 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             disabled={disabled}
             readOnly={readOnly}
             className={cn(
-              "w-full bg-white dark:bg-slate-800",
-              "border border-gray-300 dark:border-slate-700",
-              "placeholder:text-gray-500 dark:placeholder:text-slate-400",
+              "w-full",
+              "bg-[var(--bg-elevated)] text-[var(--text)]",
+              "border border-[var(--border)]",
+              "placeholder:text-[var(--text-muted)]",
               "shadow-inner",
               "focus:outline-none focus:ring-2 ring-focus",
               "disabled:opacity-60 disabled:cursor-not-allowed",
               "transition",
               sz.input,
-              invalid &&
-                "border-rose-300 dark:border-rose-700 focus:ring-rose-500/60",
-              readOnly && "opacity-90"
+              invalid && "border-[var(--danger)]",
+              readOnly && "opacity-90",
+              className,
             )}
             {...props}
           />
@@ -131,8 +139,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {iconRight ? (
             <span
               className={cn(
-                "pointer-events-none absolute inset-y-0 flex items-center text-gray-500 dark:text-slate-400",
-                sz.right
+                "pointer-events-none absolute inset-y-0 flex items-center",
+                "text-[var(--text-muted)]",
+                sz.right,
               )}
               aria-hidden
             >
@@ -146,7 +155,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             id={describedBy}
             className={cn(
               "mt-1 text-xs",
-              invalid ? "text-rose-600" : "text-gray-500 dark:text-slate-400"
+              invalid
+                ? "text-[var(--danger)]"
+                : "text-[var(--text-muted)]",
             )}
           >
             {message}
@@ -154,7 +165,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         ) : null}
       </div>
     );
-  }
+  },
 );
 Input.displayName = "Input";
 

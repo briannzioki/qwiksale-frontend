@@ -1,4 +1,6 @@
+// src/app/saved/page.tsx
 "use client";
+
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -68,7 +70,9 @@ export default function SavedPage() {
     setLoading(true);
     setErr(null);
     try {
-      const data = await getJson<ApiResponse>("/api/favorites?format=full&limit=100");
+      const data = await getJson<ApiResponse>(
+        "/api/favorites?format=full&limit=100",
+      );
       setFavItems(Array.isArray(data?.items) ? data.items : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load favorites");
@@ -85,8 +89,11 @@ export default function SavedPage() {
       setErr(null);
       setFavItems(null);
       try {
-        const data = await getJson<ApiResponse>("/api/favorites?format=full&limit=100");
-        if (!cancelled) setFavItems(Array.isArray(data?.items) ? data.items : []);
+        const data = await getJson<ApiResponse>(
+          "/api/favorites?format=full&limit=100",
+        );
+        if (!cancelled)
+          setFavItems(Array.isArray(data?.items) ? data.items : []);
       } catch (e: any) {
         if (!cancelled) setErr(e?.message || "Failed to load favorites");
       } finally {
@@ -138,17 +145,25 @@ export default function SavedPage() {
   }
 
   return (
-    <div className="container-page py-6 space-y-6">
-      <div className="rounded-2xl p-8 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandBlue via-brandGreen to-brandNavy">
-        <h1 className="text-2xl md:text-3xl font-extrabold">Saved Items</h1>
-        <p className="text-white/90">Your favorites live here. {count ? `(${count})` : ""}</p>
+    <div className="container-page space-y-6 py-6">
+      <div className="rounded-2xl bg-gradient-to-r from-brandBlue via-brandGreen to-brandNavy p-8 text-primary-foreground shadow-soft">
+        <h1 className="text-2xl font-extrabold md:text-3xl">Saved Items</h1>
+        <p className="text-primary-foreground/90">
+          Your favorites live here. {count ? `(${count})` : ""}
+        </p>
       </div>
 
       {/* Re-triable fetch error banner (non-blocking; we still render any fallbacks below) */}
-      {err ? <ErrorBanner message={err} onRetryAction={loadFavorites} className="mt-0" /> : null}
+      {err ? (
+        <ErrorBanner
+          message={err}
+          onRetryAction={loadFavorites}
+          className="mt-0"
+        />
+      ) : null}
 
       {sessionStatus === "loading" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="card p-4">
               <div className="skeleton h-44 w-full rounded-lg" />
@@ -161,19 +176,25 @@ export default function SavedPage() {
           ))}
         </div>
       ) : sessionStatus === "unauthenticated" ? (
-        <div className="card p-6 flex items-center justify-between">
-          <div className="text-sm text-gray-700 dark:text-slate-200">
-            You’re not signed in. Sign in to see your saved items synced across devices.
+        <div className="card flex items-center justify-between p-6">
+          <div className="text-sm text-muted-foreground">
+            You’re not signed in. Sign in to see your saved items synced across
+            devices.
           </div>
-          <a className="btn-gradient-primary" href={`/signin?callbackUrl=${encodeURIComponent("/saved")}`}>
+          <a
+            className="btn-gradient-primary"
+            href={`/signin?callbackUrl=${encodeURIComponent("/saved")}`}
+          >
             Sign in
           </a>
         </div>
       ) : loading ? (
-        <div className="text-gray-600 dark:text-slate-300">Loading your favorites…</div>
+        <div className="text-muted-foreground">
+          Loading your favorites…
+        </div>
       ) : list.length === 0 ? (
-        <div className="card p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="text-gray-700 dark:text-slate-200">
+        <div className="card flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-muted-foreground">
             No saved items yet. Browse the{" "}
             <Link href="/" className="link">
               homepage
@@ -191,23 +212,28 @@ export default function SavedPage() {
         </div>
       ) : (
         <>
-          <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+          <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
             {list.map((fav) => {
               const p = fav.product;
               const fallback = "/placeholder/default.jpg";
               const imgUrl = p.image || fallback;
 
               return (
-                <Link key={p.id} href={`/product/${p.id}`} className="group relative" prefetch={false}>
-                  <div className="bg-white dark:bg-slate-900 rounded-xl shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-gray-100 dark:border-slate-800 group-hover:border-brandBlue/60">
+                <Link
+                  key={p.id}
+                  href={`/product/${p.id}`}
+                  className="group relative"
+                  prefetch={false}
+                >
+                  <div className="relative cursor-pointer overflow-hidden rounded-xl border border-border bg-card shadow transition hover:shadow-lg">
                     <div className="relative">
                       {p.featured ? (
-                        <span className="absolute top-2 left-2 z-10 rounded-md bg-brandNavy text-white text-xs px-2 py-1 shadow">
+                        <span className="absolute left-2 top-2 z-10 rounded-md bg-brandNavy px-2 py-1 text-xs text-primary-foreground shadow">
                           Featured
                         </span>
                       ) : null}
 
-                      <div className="relative w-full h-44">
+                      <div className="relative h-44 w-full">
                         <Image
                           src={imgUrl}
                           alt={p.name}
@@ -221,7 +247,7 @@ export default function SavedPage() {
                         />
                       </div>
 
-                      <div className="absolute top-2 right-2 z-10 flex gap-1">
+                      <div className="absolute right-2 top-2 z-10 flex gap-1">
                         <FavoriteButton productId={p.id} />
                         <button
                           type="button"
@@ -239,18 +265,20 @@ export default function SavedPage() {
                     </div>
 
                     <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 dark:text-white line-clamp-1">
+                      <h3 className="line-clamp-1 font-semibold text-foreground">
                         {p.name}
                       </h3>
-                      <p className="text-sm text-gray-500 dark:text-slate-400 line-clamp-1">
+                      <p className="line-clamp-1 text-sm text-muted-foreground">
                         {p.category} • {p.subcategory}
                       </p>
                       {p.brand && (
-                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                        <p className="mt-0.5 text-xs text-muted-foreground">
                           Brand: {p.brand}
                         </p>
                       )}
-                      <p className="text-brandBlue font-bold mt-2">{fmtKES(p.price)}</p>
+                      <p className="mt-2 font-bold text-brandBlue">
+                        {fmtKES(p.price)}
+                      </p>
                     </div>
                   </div>
                 </Link>

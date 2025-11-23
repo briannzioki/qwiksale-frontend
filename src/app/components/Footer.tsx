@@ -1,5 +1,5 @@
-"use client";
 // src/app/components/Footer.tsx
+"use client";
 
 import * as React from "react";
 import Link from "next/link";
@@ -9,8 +9,8 @@ import { toast } from "@/app/components/ToasterClient";
 export default function Footer() {
   const year = new Date().getFullYear();
   const base =
-    (process.env['NEXT_PUBLIC_APP_URL'] || "https://qwiksale.sale").replace(/\/+$/, "") ||
-    "https://qwiksale.sale";
+    (process.env["NEXT_PUBLIC_APP_URL"] || "https://qwiksale.sale")
+      .replace(/\/+$/, "") || "https://qwiksale.sale";
 
   // Lightweight Organization JSON-LD for richer snippets
   const orgLd = {
@@ -37,7 +37,7 @@ export default function Footer() {
   };
 
   const linkClass =
-    "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 rounded-sm";
+    "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-focus rounded-sm";
 
   // --- Newsletter state/handlers (client-only) ---
   const [email, setEmail] = React.useState("");
@@ -57,12 +57,15 @@ export default function Footer() {
 
     setBusy(true);
 
-    const endpoint = process.env['NEXT_PUBLIC_NEWSLETTER_POST_URL'];
+    const endpoint = process.env["NEXT_PUBLIC_NEWSLETTER_POST_URL"];
     try {
       if (endpoint) {
         const r = await fetch(endpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
           body: JSON.stringify({ email: trimmed, source: "footer" }),
         });
         if (!r.ok) {
@@ -90,7 +93,7 @@ export default function Footer() {
 
   return (
     <footer
-      className="mt-12 border-t bg-white/70 dark:bg-slate-900/70 backdrop-blur supports-[backdrop-filter]:backdrop-blur-md"
+      className="mt-12 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] backdrop-blur supports-[backdrop-filter]:backdrop-blur-md"
       aria-labelledby="site-footer-title"
       role="contentinfo"
     >
@@ -103,28 +106,33 @@ export default function Footer() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(orgLd) }}
       />
 
-      <div className="container-page">
+      <div className="container-page text-[var(--text-muted)]">
         <h2 id="site-footer-title" className="sr-only">
           QwikSale footer
         </h2>
 
         {/* Top: brand + nav blocks */}
-        <div className="py-10 grid gap-8 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 text-sm">
+        <div className="grid gap-8 py-10 text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
           {/* Brand / blurb */}
           <div className="space-y-2 lg:col-span-2">
-            <div className="font-extrabold text-[#161748] dark:text-white text-lg tracking-tight">
+            <div className="text-lg font-extrabold tracking-tight text-[var(--text)]">
               QwikSale
             </div>
-            <p className="text-gray-700 dark:text-slate-400 leading-relaxed">
-              Buy & sell, faster. <span className="whitespace-nowrap">Made in Kenya.</span>
+            <p className="leading-relaxed text-[var(--text-muted)]">
+              Buy & sell, faster.{" "}
+              <span className="whitespace-nowrap">Made in Kenya.</span>
             </p>
-            <p className="text-xs text-gray-500 dark:text-slate-500">
+            <p className="text-xs text-[var(--text-muted)]">
               Secure listings • KES pricing • Community moderation
             </p>
 
             {/* Newsletter */}
-            <form className="mt-4 flex items-stretch gap-2" onSubmit={onSubscribe} noValidate>
-              {/* Rename label so it no longer matches /email/i in tests */}
+            <form
+              className="mt-4 flex items-stretch gap-2"
+              onSubmit={onSubscribe}
+              noValidate
+            >
+              {/* Label intentionally not matching /email/i */}
               <label htmlFor="newsletter-email" className="sr-only">
                 Newsletter
               </label>
@@ -133,10 +141,17 @@ export default function Footer() {
                 type="email"
                 inputMode="email"
                 placeholder="Email for deals & tips"
-                className="w-full rounded-lg border px-3 py-2 bg-white/80 dark:bg-slate-900/70 border-gray-300 dark:border-slate-700 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 ring-focus"
+                className={[
+                  "w-full rounded-lg px-3 py-2",
+                  "bg-[var(--bg-elevated)] text-[var(--text)]",
+                  "border border-[var(--border)]",
+                  "placeholder:text-[var(--text-muted)]",
+                  "shadow-inner",
+                  "focus:outline-none focus:ring-2 ring-focus",
+                  "disabled:opacity-60 disabled:cursor-not-allowed",
+                ].join(" ")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                /* remove aria-label to avoid matching /email/i */
                 disabled={busy}
                 autoComplete="email"
               />
@@ -152,7 +167,7 @@ export default function Footer() {
             </form>
 
             {/* Trust row */}
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-slate-400">
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-[var(--text-muted)]">
               <span className="inline-flex items-center gap-1">
                 <ShieldIcon /> Buyer Safety
               </span>
@@ -167,8 +182,8 @@ export default function Footer() {
 
           {/* Company */}
           <nav aria-label="Company" className="space-y-3">
-            <div className="font-semibold text-gray-900 dark:text-slate-100">Company</div>
-            <ul className="space-y-2 text-gray-700 dark:text-slate-400">
+            <div className="font-semibold text-[var(--text)]">Company</div>
+            <ul className="space-y-2">
               <li>
                 <Link className={linkClass} href="/about" prefetch={false}>
                   About
@@ -199,8 +214,8 @@ export default function Footer() {
 
           {/* Legal */}
           <nav aria-label="Legal" className="space-y-3">
-            <div className="font-semibold text-gray-900 dark:text-slate-100">Legal</div>
-            <ul className="space-y-2 text-gray-700 dark:text-slate-400">
+            <div className="font-semibold text-[var(--text)]">Legal</div>
+            <ul className="space-y-2">
               <li>
                 <Link className={linkClass} href="/terms" prefetch={false}>
                   Terms
@@ -226,30 +241,50 @@ export default function Footer() {
 
           {/* Popular on QwikSale */}
           <nav aria-label="Popular categories" className="space-y-3">
-            <div className="font-semibold text-gray-900 dark:text-slate-100">Popular</div>
-            <ul className="space-y-2 text-gray-700 dark:text-slate-400">
+            <div className="font-semibold text-[var(--text)]">Popular</div>
+            <ul className="space-y-2">
               <li>
-                <Link className={linkClass} href="/?category=Phones" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Phones"
+                  prefetch={false}
+                >
                   Phones
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Electronics" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Electronics"
+                  prefetch={false}
+                >
                   Electronics
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Home%20%26%20Living" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Home%20%26%20Living"
+                  prefetch={false}
+                >
                   Home &amp; Living
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Fashion" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Fashion"
+                  prefetch={false}
+                >
                   Fashion
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Vehicles" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Vehicles"
+                  prefetch={false}
+                >
                   Vehicles
                 </Link>
               </li>
@@ -258,8 +293,8 @@ export default function Footer() {
 
           {/* Social / Press / Apps */}
           <nav aria-label="Social & Press" className="space-y-3">
-            <div className="font-semibold text-gray-900 dark:text-slate-100">Social</div>
-            <ul className="space-y-2 text-gray-700 dark:text-slate-400">
+            <div className="font-semibold text-[var(--text)]">Social</div>
+            <ul className="space-y-2">
               <li>
                 <a
                   className={`${linkClass} inline-flex items-center gap-1.5`}
@@ -305,12 +340,14 @@ export default function Footer() {
                 </a>
               </li>
               <li className="pt-1">
-                <div className="text-xs mb-1 text-gray-500 dark:text-slate-500">Get the app</div>
+                <div className="mb-1 text-xs text-[var(--text-muted)]">
+                  Get the app
+                </div>
                 <div className="flex gap-2">
                   <a
                     href="#"
                     aria-label="Get it on Google Play (coming soon)"
-                    className="inline-flex items-center rounded-md border px-2 py-1 text-xs bg-white/70 dark:bg-white/[0.08] border-black/5 dark:border-white/10"
+                    className="inline-flex items-center rounded-md border border-[var(--border-subtle)] bg-subtle px-2 py-1 text-xs"
                     rel="nofollow noopener"
                     target="_blank"
                   >
@@ -320,7 +357,7 @@ export default function Footer() {
                   <a
                     href="#"
                     aria-label="Download on the App Store (coming soon)"
-                    className="inline-flex items-center rounded-md border px-2 py-1 text-xs bg-white/70 dark:bg-white/[0.08] border-black/5 dark:border-white/10"
+                    className="inline-flex items-center rounded-md border border-[var(--border-subtle)] bg-subtle px-2 py-1 text-xs"
                     rel="nofollow noopener"
                     target="_blank"
                   >
@@ -334,19 +371,19 @@ export default function Footer() {
         </div>
 
         {/* Payment / badges strip */}
-        <div className="border-t py-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3 text-gray-500 dark:text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] py-4 text-xs text-[var(--text-muted)]">
+          <div className="flex items-center gap-3">
             <span className="opacity-80">We accept</span>
-            <span className="inline-flex items-center gap-1 rounded border px-2 py-0.5 bg-white/70 dark:bg-white/[0.06] border-black/5 dark:border-white/10">
+            <span className="inline-flex items-center gap-1 rounded border border-[var(--border-subtle)] bg-subtle px-2 py-0.5">
               <MpesaIcon /> M-Pesa
             </span>
-            <span className="inline-flex items-center gap-1 rounded border px-2 py-0.5 bg-white/70 dark:bg-white/[0.06] border-black/5 dark:border-white/10">
+            <span className="inline-flex items-center gap-1 rounded border border-[var(--border-subtle)] bg-subtle px-2 py-0.5">
               <CardIcon /> Cards
             </span>
           </div>
 
           {/* Language (placeholder) */}
-          <div className="flex items-center gap-2 text-gray-600 dark:text-slate-400">
+          <div className="flex items-center gap-2">
             <GlobeIcon />
             <label htmlFor="lang" className="sr-only">
               Language
@@ -354,7 +391,7 @@ export default function Footer() {
             <select
               id="lang"
               aria-label="Language"
-              className="bg-transparent border rounded px-2 py-1 text-xs border-black/10 dark:border-white/20"
+              className="rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-muted)]"
               defaultValue="en"
             >
               <option value="en">English (KE)</option>
@@ -364,7 +401,7 @@ export default function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-4 border-t text-xs text-gray-600 dark:text-slate-400">
+        <div className="flex flex-col items-start justify-between gap-3 border-t border-[var(--border-subtle)] py-4 text-xs text-[var(--text-muted)] sm:flex-row sm:items-center">
           <p>
             © {year} QwikSale. All rights reserved.
             <span className="ml-2 opacity-80">Built in Nairobi, Kenya.</span>
@@ -444,7 +481,11 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M3 12h18M12 3c3 4 3 14 0 18M12 3c-3 4-3 14 0 18" stroke="currentColor" strokeWidth="1.2" />
+      <path
+        d="M3 12h18M12 3c3 4 3 14 0 18M12 3c-3 4-3 14 0 18"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
     </svg>
   );
 }
@@ -452,15 +493,29 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
 /* Social icons */
 function TikTokIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 48 48" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M33.6 12.1c2.4 1.8 5.2 3 8.3 3.3v6.6c-3.5-.1-6.9-1.2-9.8-3.1v12.3c0 7-5.7 12.6-12.6 12.6S6.9 38.2 6.9 31.3c0-6.9 5.6-12.6 12.6-12.6 1 0 2 .1 2.9.4v6.9a6 6 0 00-2.9-.7c-3.2 0-5.7 2.6-5.7 5.8s2.6 5.8 5.7 5.8 5.8-2.6 5.8-5.8V5h6.3c.2 2.7 1.1 5 2.9 7.1z"/>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 48 48"
+      fill="currentColor"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M33.6 12.1c2.4 1.8 5.2 3 8.3 3.3v6.6c-3.5-.1-6.9-1.2-9.8-3.1v12.3c0 7-5.7 12.6-12.6 12.6S6.9 38.2 6.9 31.3c0-6.9 5.6-12.6 12.6-12.6 1 0 2 .1 2.9.4v6.9a6 6 0 00-2.9-.7c-3.2 0-5.7 2.6-5.7 5.8s2.6 5.8 5.7 5.8 5.8-2.6 5.8-5.8V5h6.3c.2 2.7 1.1 5 2.9 7.1z" />
     </svg>
   );
 }
 function LinkedInIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M4.98 3.5C4.98 4.88 3.86 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1 4.98 2.12 4.98 3.5zM.5 8.5h4V23h-4V8.5zM8.5 8.5h3.8v2h.1c.5-.9 1.8-2.2 3.9-2.2 4.2 0 5 2.8 5 6.5V23h-4v-6.5c0-1.5 0-3.5-2.2-3.5s-2.5 1.7-2.5 3.4V23h-4V8.5z"/>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M4.98 3.5C4.98 4.88 3.86 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1 4.98 2.12 4.98 3.5zM.5 8.5h4V23h-4V8.5zM8.5 8.5h3.8v2h.1c.5-.9 1.8-2.2 3.9-2.2 4.2 0 5 2.8 5 6.5V23h-4v-6.5c0-1.5 0-3.5-2.2-3.5s-2.5 1.7-2.5 3.4V23h-4V8.5z" />
     </svg>
   );
 }

@@ -36,9 +36,9 @@ function splitAccept(accept: string): string[] {
 function isAcceptedByToken(file: File, token: string): boolean {
   const name = file.name.toLowerCase();
   const type = (file.type || "").toLowerCase();
-  if (token.startsWith(".")) return name.endsWith(token);               // extension like ".jpg"
+  if (token.startsWith(".")) return name.endsWith(token); // extension like ".jpg"
   if (token.endsWith("/*")) return type.startsWith(token.slice(0, -1)); // wildcard "image/*"
-  return type === token;                                                // exact MIME
+  return type === token; // exact MIME
 }
 
 function isAccepted(file: File, accept: string): boolean {
@@ -272,7 +272,7 @@ export default function GalleryUploader({
       // Ignore child leave; only reset when leaving root
       if (e.target === node) setDropping(false);
     };
-    const onDrop = async (e: DragEvent) => {
+    const onDropEvent = async (e: DragEvent) => {
       e.preventDefault();
       setDropping(false);
       if (!canAddMore) return;
@@ -284,12 +284,12 @@ export default function GalleryUploader({
     node.addEventListener("dragenter", onDragEnter);
     node.addEventListener("dragover", onDragOver);
     node.addEventListener("dragleave", onDragLeave);
-    node.addEventListener("drop", onDrop);
+    node.addEventListener("drop", onDropEvent);
     return () => {
       node.removeEventListener("dragenter", onDragEnter);
       node.removeEventListener("dragover", onDragOver);
       node.removeEventListener("dragleave", onDragLeave);
-      node.removeEventListener("drop", onDrop);
+      node.removeEventListener("drop", onDropEvent);
     };
   }, [handleFiles, canAddMore]);
 
@@ -315,7 +315,9 @@ export default function GalleryUploader({
       ref={wrapRef}
       className={[
         "w-full rounded-2xl border p-3 transition",
-        dropping ? "ring-2 ring-[#39a0ca] border-dashed bg-sky-50/40 dark:bg-sky-900/10" : "border-gray-200 dark:border-gray-800",
+        dropping
+          ? "border-dashed bg-muted ring-2 ring-primary"
+          : "border-border bg-card",
         className,
       ].join(" ")}
       aria-busy={busy ? "true" : "false"}
@@ -326,11 +328,14 @@ export default function GalleryUploader({
       </span>
 
       <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-medium" htmlFor={`gu-files-${uid}`}>
+        <label className="text-sm font-medium text-foreground" htmlFor={`gu-files-${uid}`}>
           {labelText}
         </label>
 
-        <div id={`gu-help-${uid}`} className="text-xs text-gray-500 dark:text-gray-400">
+        <div
+          id={`gu-help-${uid}`}
+          className="text-xs text-muted-foreground"
+        >
           Drag & drop or paste images. Max {CAP}.
         </div>
       </div>
@@ -342,13 +347,13 @@ export default function GalleryUploader({
       >
         {/* Add tile */}
         {canAddMore && (
-          <li className="relative rounded-lg border border-dashed p-2 text-center">
+          <li className="relative rounded-lg border border-dashed border-border p-2 text-center">
             <div className="flex h-28 w-full items-center justify-center">
               <IconButton
                 icon="upload"
-                labelText={busy ? "Uploading…" : "Upload photos"}
                 variant="outline"
                 size="sm"
+                labelText={busy ? "Uploading…" : "Upload photos"}
                 loading={busy}
                 onClick={pickFiles}
                 disabled={busy}
@@ -360,7 +365,7 @@ export default function GalleryUploader({
 
         {images.length === 0 && (
           <li className="col-span-full">
-            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-600 dark:border-slate-700 dark:text-slate-300">
+            <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
               No photos yet. Click <span className="font-semibold">Upload photos</span>, drag & drop, or paste.
             </div>
           </li>
@@ -372,8 +377,9 @@ export default function GalleryUploader({
             <li
               key={`${url}-${i}`}
               className={[
-                "relative rounded-lg border p-2 transition dark:border-gray-800",
-                isOver ? "ring-2 ring-[#39a0ca]" : "",
+                "relative rounded-lg border p-2 transition",
+                isOver ? "border-transparent ring-2 ring-primary" : "border-border",
+                "bg-card",
               ].join(" ")}
               draggable={draggable}
               onDragStart={onDragStart(i)}
@@ -383,17 +389,17 @@ export default function GalleryUploader({
               aria-roledescription="Draggable gallery item"
               aria-grabbed={dragIdx === i}
             >
-              <div className="relative h-28 w-full overflow-hidden rounded-md bg-slate-100 dark:bg-slate-900">
+              <div className="relative h-28 w-full overflow-hidden rounded-md bg-muted">
                 <SmartImage src={url} alt={`Photo ${i + 1}`} fill className="object-cover" />
               </div>
 
-              <div className="mt-2 flex items-center justify-between text-xs">
+              <div className="mt-2 flex items-center justify-between text-xs text-foreground">
                 <span className="truncate">{i === 0 ? "Cover" : `#${i + 1}`}</span>
 
                 <div className="flex gap-1">
                   <button
                     type="button"
-                    className="rounded border px-2 py-0.5 dark:border-gray-700 disabled:opacity-40"
+                    className="rounded border border-border px-2 py-0.5 disabled:opacity-40"
                     onClick={() => move(i, -1)}
                     title="Move left"
                     aria-label={`Move photo ${i + 1} left`}
@@ -403,7 +409,7 @@ export default function GalleryUploader({
                   </button>
                   <button
                     type="button"
-                    className="rounded border px-2 py-0.5 dark:border-gray-700 disabled:opacity-40"
+                    className="rounded border border-border px-2 py-0.5 disabled:opacity-40"
                     onClick={() => move(i, +1)}
                     title="Move right"
                     aria-label={`Move photo ${i + 1} right`}
@@ -414,7 +420,7 @@ export default function GalleryUploader({
                   {i !== 0 && (
                     <button
                       type="button"
-                      className="rounded border px-2 py-0.5 dark:border-gray-700"
+                      className="rounded border border-border px-2 py-0.5"
                       onClick={() => makeCover(i)}
                       title="Make cover"
                       aria-label={`Make photo ${i + 1} the cover`}
@@ -424,7 +430,7 @@ export default function GalleryUploader({
                   )}
                   <button
                     type="button"
-                    className="rounded border px-2 py-0.5 dark:border-gray-700"
+                    className="rounded border border-border px-2 py-0.5"
                     onClick={() => removeAt(i)}
                     title="Remove"
                     aria-label={`Remove photo ${i + 1}`}
@@ -459,7 +465,7 @@ export default function GalleryUploader({
           className="hidden"
           onChange={onFiles}
         />
-        <div className="text-xs text-gray-600 dark:text-gray-400">
+        <div className="text-xs text-muted-foreground">
           {images.length}/{CAP} images
         </div>
         {errorMsg && (

@@ -1,5 +1,5 @@
-"use client";
 // src/app/components/Button.tsx
+"use client";
 
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
@@ -24,7 +24,7 @@ function cn(...xs: Array<string | false | null | undefined>) {
 
 const base =
   "inline-flex items-center justify-center select-none whitespace-nowrap font-semibold transition " +
-  "focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900 focus-visible:ring-2 ring-focus " +
+  "focus:outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 ring-focus " +
   "disabled:opacity-60 disabled:cursor-not-allowed relative";
 
 const sizeMap: Record<Size, string> = {
@@ -35,27 +35,38 @@ const sizeMap: Record<Size, string> = {
 };
 
 const variantMap: Record<Variant, string> = {
-  // keep gradient primary as-is
-  primary: "text-white shadow-soft btn-gradient-primary hover:opacity-90 active:opacity-100",
+  // keep gradient primary as-is, tokens drive the colors via globals
+  primary:
+    "text-primary-foreground shadow-soft btn-gradient-primary hover:opacity-90 active:opacity-100",
 
-  // lighter borders to match the lighter glass header
+  // Token-based solid outline button
   outline:
-    "bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 " +
-    "border border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700",
+    "bg-[var(--bg-elevated)] text-[var(--text)] border border-[var(--border-subtle)] " +
+    "hover:bg-subtle shadow-sm",
 
-  ghost: "bg-transparent text-gray-800 dark:text-slate-100 hover:bg-gray-100/60 dark:hover:bg-white/10",
+  // Ghost button – text uses tokens, hover uses subtle surface token
+  ghost:
+    "bg-transparent text-[var(--text)] hover:bg-subtle",
 
+  // Slightly filled, still token-based surface
   subtle:
-    "bg-white/80 dark:bg-white/5 text-gray-900 dark:text-slate-100 " +
-    "border border-gray-200 dark:border-white/10 hover:bg-white dark:hover:bg-white/10 shadow-sm",
+    "bg-subtle text-[var(--text)] border border-[var(--border-subtle)] " +
+    "hover:bg-[var(--bg-elevated)] shadow-sm",
 
+  // Danger uses semantic error tokens for background/border
   danger:
-    "text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-700 " +
-    "shadow-sm border border-rose-700/40 dark:border-rose-500/40",
+    "text-primary-foreground bg-[var(--danger)] border border-[var(--danger-soft)] " +
+    "hover:brightness-105 active:brightness-95 shadow-sm",
 };
 
-function isSingleElementNode(children: React.ReactNode): children is React.ReactElement {
-  return React.isValidElement(children) && !Array.isArray(children) && children.type !== React.Fragment;
+function isSingleElementNode(
+  children: React.ReactNode,
+): children is React.ReactElement {
+  return (
+    React.isValidElement(children) &&
+    !Array.isArray(children) &&
+    children.type !== React.Fragment
+  );
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -73,7 +84,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       disabled,
       ...props
     },
-    ref
+    ref,
   ) => {
     const isDisabled = disabled || loading;
     const useSlot = !!asChild && isSingleElementNode(children);
@@ -88,7 +99,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       fullWidth && "w-full",
       // Make non-button elements reflect disabled state visually
       "aria-disabled:opacity-60 aria-disabled:cursor-not-allowed",
-      className
+      className,
     );
 
     if (useSlot) {
@@ -112,7 +123,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
-        type={(type as React.ButtonHTMLAttributes<HTMLButtonElement>["type"]) ?? "button"}
+        type={
+          (type as React.ButtonHTMLAttributes<HTMLButtonElement>["type"]) ??
+          "button"
+        }
         className={classes}
         disabled={isDisabled}
         aria-busy={loading ? "true" : "false"}
@@ -120,23 +134,48 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       >
         {/* Loading overlay spinner */}
         {loading && (
-          <span className="absolute inset-0 grid place-items-center rounded-[inherit]" aria-hidden="true">
-            <svg className="h-4 w-4 animate-spin-slow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-              <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          <span
+            className="absolute inset-0 grid place-items-center rounded-[inherit]"
+            aria-hidden="true"
+          >
+            <svg
+              className="h-4 w-4 animate-spin-slow"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="9"
+                stroke="currentColor"
+                strokeWidth="3"
+                opacity="0.25"
+              />
+              <path
+                d="M21 12a9 9 0 0 0-9-9"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
             </svg>
           </span>
         )}
 
         {/* Content (dim when loading so spinner reads) */}
-        <span className={cn("inline-flex items-center gap-2", loading && "opacity-0")}>
+        <span
+          className={cn(
+            "inline-flex items-center gap-2",
+            loading && "opacity-0",
+          )}
+        >
           {iconLeft ? <span aria-hidden>{iconLeft}</span> : null}
           <span>{children}</span>
           {iconRight ? <span aria-hidden>{iconRight}</span> : null}
         </span>
       </button>
     );
-  }
+  },
 );
 
 Button.displayName = "Button";

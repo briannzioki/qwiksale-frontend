@@ -42,15 +42,17 @@ const iconGap: Record<Size, string> = {
 
 function classes(variant: Variant, tone: Tone) {
   const common =
-    "inline-flex items-center justify-center font-semibold transition focus:outline-none focus:ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 disabled:opacity-60 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center font-semibold transition " +
+    "focus:outline-none focus:ring-2 ring-offset-2 ring-offset-background " +
+    "disabled:opacity-60 disabled:cursor-not-allowed";
 
   if (variant === "ghost") {
-    return `${common} border border-transparent bg-transparent hover:bg-black/[.06] dark:hover:bg-white/[.08]`;
+    return `${common} border border-transparent bg-transparent hover:bg-muted`;
   }
 
   if (variant === "outline") {
     const base =
-      "border bg-white text-gray-900 hover:bg-gray-50 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-700/80";
+      "border bg-card text-foreground hover:bg-muted";
     const toneMap: Record<Tone, string> = {
       default: base,
       primary:
@@ -63,13 +65,13 @@ function classes(variant: Variant, tone: Tone) {
 
   // solid
   const base =
-    "text-white shadow-sm hover:opacity-95 active:opacity-90 border border-black/5 dark:border-white/10";
+    "shadow-sm hover:opacity-95 active:opacity-90 border border-border/60";
   const toneMap: Record<Tone, string> = {
     default:
-      "bg-gray-900 hover:bg-gray-800 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-slate-100",
+      "bg-muted text-foreground hover:bg-muted/80",
     primary:
-      "bg-brandNavy hover:brightness-[.98] dark:bg-brandBlue-600 dark:hover:bg-brandBlue-500",
-    danger: "bg-red-600 hover:bg-red-700",
+      "bg-brandNavy text-primary-foreground hover:brightness-[.98]",
+    danger: "bg-red-600 text-primary-foreground hover:bg-red-700",
   };
   return `${common} ${base} ${toneMap[tone]}`;
 }
@@ -136,7 +138,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         {/* Optional badge dot / count */}
         {typeof badgeCount === "number" && badgeCount > 0 && (
           <span
-            className="absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] leading-none shadow"
+            className="absolute -top-1.5 -right-1.5 inline-flex h-[1.1rem] min-w-[1.1rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] leading-none text-primary-foreground shadow"
             aria-label={`${badgeCount} new`}
           >
             {badgeCount > 99 ? "99+" : badgeCount}

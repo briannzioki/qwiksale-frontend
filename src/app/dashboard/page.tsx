@@ -185,7 +185,7 @@ export default async function DashboardPage({
             data-e2e="dashboard-guest"
           >
             <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-            <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
               <p className="text-sm">
                 Something went wrong loading your dashboard or your session has
                 expired. Please{" "}
@@ -214,7 +214,7 @@ export default async function DashboardPage({
         >
           <div className="mx-auto flex max-w-6xl flex-col gap-4">
             <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-            <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
               <p className="text-sm">
                 We couldn&apos;t fully load your account details right now, but
                 your session appears to be active. Please refresh this page or
@@ -259,7 +259,7 @@ export default async function DashboardPage({
           >
             <div className="mx-auto flex max-w-6xl flex-col gap-4">
               <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-              <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
                 <p className="text-sm">
                   We couldn&apos;t load your account details. Your session
                   appears to be active, but the dashboard data failed to load.
@@ -280,7 +280,7 @@ export default async function DashboardPage({
         >
           <div className="mx-auto flex max-w-6xl flex-col gap-4">
             <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-            <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
               <p className="text-sm">
                 We couldn&apos;t load your account. Please{" "}
                 <Link
@@ -450,7 +450,7 @@ export default async function DashboardPage({
 
             <section
               aria-label="Account overview"
-              className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#161748] via-[#1b244f] to-[#39a0ca] p-6 shadow-lg shadow-black/25 ring-1 ring-white/10"
+              className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#161748] via-[#1b244f] to-[#39a0ca] p-6 text-primary-foreground shadow-lg ring-1 ring-border/40"
             >
               <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-4">
@@ -460,20 +460,20 @@ export default async function DashboardPage({
                     size={56}
                   />
                   <div>
-                    <p className="text-sm font-medium text-slate-100/80">
+                    <p className="text-sm font-medium text-primary-foreground/80">
                       Welcome 👋
                     </p>
-                    <p className="text-xl font-semibold text-white md:text-2xl">
+                    <p className="text-xl font-semibold text-primary-foreground md:text-2xl">
                       {me.name || me.email || "Your QwikSale dashboard"}
                     </p>
-                    <p className="mt-1 text-sm text-slate-100/80">
+                    <p className="mt-1 text-sm text-primary-foreground/80">
                       Manage your listings, favorites, and account.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-col items-start gap-2 md:items-end">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-black/30 px-3 py-1 text-xs font-medium text-slate-50">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-background/20 px-3 py-1 text-xs font-medium text-primary-foreground">
                     <span
                       className="h-2 w-2 rounded-full bg-emerald-400"
                       aria-hidden="true"
@@ -508,27 +508,27 @@ export default async function DashboardPage({
                 <Link
                   href="/sell"
                   prefetch={false}
-                  className="btn-outline bg-white/10 text-sm text-slate-50 hover:bg-white/20"
+                  className="btn-outline bg-background/10 text-sm text-primary-foreground hover:bg-background/20"
                 >
                   + Post a Listing
                 </Link>
                 <Link
                   href="/saved"
                   prefetch={false}
-                  className="btn-outline bg-white/5 text-sm text-slate-50 hover:bg-white/15"
+                  className="btn-outline bg-background/5 text-sm text-primary-foreground hover:bg-background/15"
                 >
                   View Saved
                 </Link>
                 <Link
                   href="/settings/billing"
                   prefetch={false}
-                  className="btn-outline bg-white/5 text-sm text-slate-50 hover:bg-white/15"
+                  className="btn-outline bg-background/5 text-sm text-primary-foreground hover:bg-background/15"
                 >
                   Billing &amp; Subscription
                 </Link>
                 <a
                   href="/api/auth/signout"
-                  className="btn-outline ml-auto bg-black/30 text-sm text-slate-50 hover:bg-black/40"
+                  className="btn-outline ml-auto bg-background/20 text-sm text-primary-foreground hover:bg-background/30"
                   rel="nofollow"
                 >
                   Sign out
@@ -562,17 +562,17 @@ export default async function DashboardPage({
             </div>
 
             {recentListings.length === 0 ? (
-              <div className="rounded-2xl border bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/illustrations/empty-box.svg"
                   alt=""
                   className="mx-auto h-24 w-24 opacity-90"
                 />
-                <p className="mt-3 text-lg font-semibold text-gray-700 dark:text-slate-200">
+                <p className="mt-3 text-lg font-semibold text-foreground">
                   No listings yet
                 </p>
-                <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+                <p className="mt-1 text-sm text-muted-foreground">
                   Post your first item to get started.
                 </p>
                 <div className="mt-4">
@@ -628,9 +628,9 @@ export default async function DashboardPage({
 
 function Metric({ title, value }: { title: string; value: number }) {
   return (
-    <div className="rounded-2xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="text-sm text-gray-500 dark:text-slate-400">{title}</div>
-      <div className="text-2xl font-bold text-[#161748] dark:text-white">
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="text-sm text-muted-foreground">{title}</div>
+      <div className="text-2xl font-bold text-foreground">
         {fmtInt(value)}
       </div>
     </div>

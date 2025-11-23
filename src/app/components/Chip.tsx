@@ -5,11 +5,11 @@ import * as React from "react";
 
 export type ChipProps = {
   children: React.ReactNode;
-  dense?: boolean;            // use text-xs + tighter padding
+  dense?: boolean; // use text-xs + tighter padding
   leadingIcon?: React.ReactNode;
   trailingIcon?: React.ReactNode;
   as?: "span" | "button" | "a";
-  href?: string;              // only used when as="a"
+  href?: string; // only used when as="a"
   /** Next 15: function props must be named *Action to be serializable */
   onClickAction?: React.MouseEventHandler<HTMLButtonElement>;
   className?: string;
@@ -22,9 +22,9 @@ function cn(...xs: Array<string | false | null | undefined>) {
 
 /**
  * Design goals:
- * - Default = calm/neutral chip.
+ * - Default = calm/neutral chip using semantic tokens.
  * - Outline on dark (dark:bg transparent, light border).
- * - Filled *very* lightly on light mode.
+ * - Filled very lightly on light mode.
  * - `dense` toggles text-xs and tighter paddings for crowded rows.
  */
 export default function Chip({
@@ -39,11 +39,8 @@ export default function Chip({
   title,
 }: ChipProps) {
   const base =
-    "inline-flex items-center gap-1.5 rounded-full " +
-    "border text-gray-700 dark:text-slate-200 " +
-    "bg-white/80 dark:bg-transparent " +
-    "border-gray-200 dark:border-white/10 " +
-    "hover:bg-white dark:hover:bg-white/5 " +
+    "inline-flex items-center gap-1.5 rounded-full border border-border " +
+    "bg-card/80 text-foreground hover:bg-card " +
     "transition";
 
   const size = dense ? "text-xs px-2.5 py-1" : "text-sm px-3 py-1.5";

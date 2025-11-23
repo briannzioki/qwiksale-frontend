@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useId,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -204,20 +203,6 @@ export default function FiltersBar({
   const idBrand = useId();
   const idDetails = useId(); // controls the <details> “More filters”
 
-  const placeholder = useMemo(() => "Search by name, brand, category…", []);
-
-  // Keyboard affordances with the plain input (SuggestInput handles its own keys)
-  const onSearchKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") void applyNow();
-      if (e.key === "Escape") {
-        setQLocal("");
-        update({ query: "" }, "query");
-      }
-    },
-    [applyNow, update]
-  );
-
   // Clamp helper for price fields (accepts commas and trims junk)
   const parsePrice = useCallback((v: string): number | "" => {
     const raw = (v ?? "").toString().replace(/,/g, "").replace(/[^\d]/g, "");
@@ -232,22 +217,21 @@ export default function FiltersBar({
 
   const inputBase =
     "w-full rounded-lg px-3 py-2 " +
-    "text-gray-900 dark:text-slate-100 " +
-    "bg-white dark:bg-slate-800 " +
-    "border border-gray-200 dark:border-white/10 " + // toned-down borders
-    "placeholder:text-gray-500 dark:placeholder:text-slate-400 " +
-    "focus:outline-none focus:ring-2 focus:ring-[#39a0ca] disabled:opacity-60";
+    "text-foreground bg-background " +
+    "border border-border " +
+    "placeholder:text-muted-foreground " +
+    "focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60";
 
   const selectBase =
     "w-full rounded-lg px-3 py-2 " +
-    "text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-800 " +
-    "border border-gray-200 dark:border-white/10";
+    "text-foreground bg-background " +
+    "border border-border";
 
   const buttonBase =
     "px-3 md:px-4 py-2 rounded-lg " +
-    "bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 " +
-    "border border-gray-200 dark:border-white/10 " +
-    "hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-60";
+    "bg-card text-foreground " +
+    "border border-border " +
+    "hover:bg-muted disabled:opacity-60";
 
   // ----- Mobile Refine & Sort via IconButtons -----
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
@@ -275,7 +259,6 @@ export default function FiltersBar({
 
   const focusSort = useCallback(() => {
     sortRef.current?.focus();
-    // Optionally nudge a small highlight
     sortRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, []);
 
@@ -322,7 +305,7 @@ export default function FiltersBar({
           {suggestEndpoint ? (
             <div className="w-full">
               <SuggestInput
-                name="q"                         // ← expected name
+                name="q"
                 ariaLabel="Keywords"
                 endpoint={suggestEndpoint}
                 value={qLocal}
@@ -337,11 +320,10 @@ export default function FiltersBar({
           ) : (
             <input
               id={idSearch}
-              name="q"                          // ← expected name
+              name="q"
               type="text"
               value={qLocal}
               onChange={(e) => setQLocal(e.target.value)}
-              onKeyDown={onSearchKeyDown}
               inputMode="search"
               enterKeyHint="search"
               placeholder="Search by name, brand, category…"
@@ -382,7 +364,7 @@ export default function FiltersBar({
           </label>
           <input
             id={idCategory}
-            name="category"                   // ← expected name
+            name="category"
             type="text"
             value={value.category ?? ""}
             onChange={(e) => update({ category: e.target.value }, "category")}
@@ -399,7 +381,7 @@ export default function FiltersBar({
           </label>
           <input
             id={idSubcategory}
-            name="subcategory"               // ← expected name
+            name="subcategory"
             type="text"
             value={value.subcategory ?? ""}
             onChange={(e) => update({ subcategory: e.target.value }, "subcategory")}
@@ -416,7 +398,7 @@ export default function FiltersBar({
           </label>
           <select
             id={idSort}
-            name="sort"                       // ← expected name
+            name="sort"
             ref={sortRef}
             value={sortValue}
             onChange={(e) => update({ sort: e.target.value as Filters["sort"] }, "sort")}
@@ -437,21 +419,19 @@ export default function FiltersBar({
             <label
               htmlFor={idVerified}
               className="
-                inline-flex items-center gap-2 rounded-lg
-                bg-white dark:bg-slate-800
-                text-gray-900 dark:text-slate-100
-                border border-gray-200 dark:border-white/10
-                px-3 py-2 text-sm select-none w-full justify-center
+                inline-flex w-full select-none items-center justify-center gap-2
+                rounded-lg border border-border bg-card
+                px-3 py-2 text-sm text-foreground
               "
               title="Featured (verified) listings only"
             >
               <input
                 id={idVerified}
-                name="featured"               // ← expected name
+                name="featured"
                 type="checkbox"
                 checked={!!value.verifiedOnly}
                 onChange={(e) => update({ verifiedOnly: e.target.checked }, "verifiedOnly")}
-                className="rounded border-gray-300 dark:border-slate-600"
+                className="rounded border border-border"
                 disabled={disabled}
               />
               Featured only
@@ -465,12 +445,12 @@ export default function FiltersBar({
         <details
           ref={detailsRef}
           id={idDetails}
-          className="group rounded-xl border border-gray-200 dark:border-white/10 bg-white/70 dark:bg-white/[0.03]"
+          className="group rounded-xl border border-border bg-card/70"
         >
-          <summary className="cursor-pointer list-none px-3 py-2 text-sm text-gray-700 dark:text-slate-200 flex items-center justify-between">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-foreground">
             <span className="inline-flex items-center gap-2">
               More filters
-              <span className="text-gray-500 dark:text-slate-400 hidden md:inline">
+              <span className="hidden text-muted-foreground md:inline">
                 (brand, condition, price range)
               </span>
             </span>
@@ -478,7 +458,7 @@ export default function FiltersBar({
               width="16"
               height="16"
               viewBox="0 0 24 24"
-              className="transition-transform duration-200 group-open:rotate-180 text-gray-500 dark:text-slate-400"
+              className="text-muted-foreground transition-transform duration-200 group-open:rotate-180"
               fill="currentColor"
               aria-hidden="true"
             >
@@ -486,7 +466,7 @@ export default function FiltersBar({
             </svg>
           </summary>
 
-          <div className="px-3 pb-3 pt-1 grid grid-cols-1 gap-2 md:grid-cols-12">
+          <div className="grid grid-cols-1 gap-2 px-3 pb-3 pt-1 md:grid-cols-12">
             {/* Brand */}
             <div className="md:col-span-3">
               <label htmlFor={idBrand} className="sr-only">
@@ -494,7 +474,7 @@ export default function FiltersBar({
               </label>
               <input
                 id={idBrand}
-                name="brand"                   // ← expected name
+                name="brand"
                 type="text"
                 value={value.brand ?? ""}
                 onChange={(e) => update({ brand: e.target.value }, "brand")}
@@ -511,7 +491,7 @@ export default function FiltersBar({
               </label>
               <select
                 id={idCond}
-                name="condition"               // ← expected name
+                name="condition"
                 value={conditionValue}
                 onChange={(e) =>
                   update({ condition: e.target.value as Filters["condition"] }, "condition")
@@ -533,7 +513,7 @@ export default function FiltersBar({
               </label>
               <NumberInputNoWheel
                 id={idMin}
-                name="minPrice"                // ← expected name
+                name="minPrice"
                 min={0}
                 step={1}
                 inputMode="numeric"
@@ -541,7 +521,9 @@ export default function FiltersBar({
                 onChange={(e) => update({ minPrice: parsePrice(e.currentTarget.value) }, "minPrice")}
                 onBlur={(e) => update({ minPrice: parsePrice(e.currentTarget.value) }, "minPrice")}
                 placeholder="Min KES"
-                className={`${inputBase} ${rangeInvalid ? "border-red-400 focus:ring-red-300" : ""}`}
+                className={`${inputBase} ${
+                  rangeInvalid ? "border-red-400 focus:ring-red-300" : ""
+                }`}
                 title="Min price"
                 aria-invalid={rangeInvalid}
                 aria-describedby={rangeInvalid ? idRangeHint : undefined}
@@ -556,7 +538,7 @@ export default function FiltersBar({
               </label>
               <NumberInputNoWheel
                 id={idMax}
-                name="maxPrice"                // ← expected name
+                name="maxPrice"
                 min={0}
                 step={1}
                 inputMode="numeric"
@@ -564,7 +546,9 @@ export default function FiltersBar({
                 onChange={(e) => update({ maxPrice: parsePrice(e.currentTarget.value) }, "maxPrice")}
                 onBlur={(e) => update({ maxPrice: parsePrice(e.currentTarget.value) }, "maxPrice")}
                 placeholder="Max KES"
-                className={`${inputBase} ${rangeInvalid ? "border-red-400 focus:ring-red-300" : ""}`}
+                className={`${inputBase} ${
+                  rangeInvalid ? "border-red-400 focus:ring-red-300" : ""
+                }`}
                 title="Max price"
                 aria-invalid={rangeInvalid}
                 aria-describedby={rangeInvalid ? idRangeHint : undefined}
@@ -583,10 +567,22 @@ export default function FiltersBar({
 
       {/* Footer actions */}
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" onClick={() => void applyNow()} disabled={disabled} className={buttonBase} title="Apply">
+        <button
+          type="button"
+          onClick={() => void applyNow()}
+          disabled={disabled}
+          className={buttonBase}
+          title="Apply"
+        >
           Apply filters
         </button>
-        <button type="button" onClick={() => void reset()} disabled={disabled} className={buttonBase} title="Reset all">
+        <button
+          type="button"
+          onClick={() => void reset()}
+          disabled={disabled}
+          className={buttonBase}
+          title="Reset all"
+        >
           Reset all
         </button>
       </div>

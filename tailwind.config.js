@@ -64,7 +64,7 @@ const config = {
         },
 
         brandNavy: {
-          50:  "#f3f4fb",
+          50: "#f3f4fb",
           100: "#e6e7f6",
           200: "#c7c9ea",
           300: "#a4a6dd",
@@ -77,7 +77,7 @@ const config = {
           DEFAULT: "#161748",
         },
         brandGreen: {
-          50:  "#edf7f0",
+          50: "#edf7f0",
           100: "#d6efde",
           200: "#aedad0",
           300: "#83c2b0",
@@ -90,7 +90,7 @@ const config = {
           DEFAULT: "#478559",
         },
         brandBlue: {
-          50:  "#ebf7fc",
+          50: "#ebf7fc",
           100: "#d1eef9",
           200: "#a5dff1",
           300: "#72cbe6",
@@ -103,7 +103,7 @@ const config = {
           DEFAULT: "#39a0ca",
         },
         accent: {
-          50:  "#fff1f6",
+          50: "#fff1f6",
           100: "#ffe4ee",
           200: "#ffc0d7",
           300: "#ff97bd",
@@ -140,7 +140,8 @@ const config = {
       /* ------------------------- Gradients ------------------------- */
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
-        "gradient-conic": "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
+        "gradient-conic":
+          "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
         "brand-hero":
           "linear-gradient(90deg, var(--brand-start) 0%, var(--brand-mid) 50%, var(--brand-end) 100%)",
         "brand-accent":
@@ -170,8 +171,13 @@ const config = {
           "66%": { transform: "translate(-10px,10px) scale(0.98)" },
           "100%": { transform: "translate(0,0) scale(1)" },
         },
-        shimmer: { "0%": { backgroundPosition: "-200% 0" }, "100%": { backgroundPosition: "200% 0" } },
-        "ping-soft": { "75%,100%": { transform: "scale(1.2)", opacity: "0" } },
+        shimmer: {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
+        "ping-soft": {
+          "75%,100%": { transform: "scale(1.2)", opacity: "0" },
+        },
         "spin-slow": { to: { transform: "rotate(360deg)" } },
       },
       animation: {
@@ -203,21 +209,39 @@ const config = {
   plugins: [
     forms({ strategy: "class" }),
     typography,
-    aspectRatio, // ✅ ensure aspect-ratio utilities are available
+    aspectRatio,
     tailwindAnimate,
     containerQueries,
 
     /* ---------------------- Custom tokens/utilities ---------------------- */
     plugin(function ({ addBase, addComponents, addUtilities, theme }) {
-      // Semantic CSS vars for surfaces & brand ramps (mirror globals.css)
+      // Semantic CSS vars for surfaces & brand ramps (keep in sync with globals.css)
       addBase({
         ":root": {
+          // Surfaces
           "--bg-app": colors.slate[50],
           "--bg-elevated": "#ffffff",
           "--bg-muted": colors.slate[100],
+          "--bg-subtle": colors.slate[50],
+
+          // Borders
           "--border": colors.slate[200],
-          "--text": colors.slate[800],
+          "--border-subtle": colors.slate[200],
+          "--border-strong": colors.slate[300],
+
+          // Text
+          "--text-strong": colors.slate[950],
+          "--text": colors.slate[900],
           "--text-muted": colors.slate[600],
+          "--text-soft": colors.slate[500],
+
+          // Semantic palette
+          "--primary": theme("colors.brandNavy.600"),
+          "--primary-soft": theme("colors.brandNavy.50"),
+          "--accent": theme("colors.accent.DEFAULT"),
+          "--accent-soft": theme("colors.accent.50"),
+          "--danger": colors.rose[600],
+          "--danger-soft": colors.rose[50],
 
           "--brand-start": theme("colors.brandNavy.600"),
           "--brand-mid": theme("colors.brandGreen.600"),
@@ -227,9 +251,23 @@ const config = {
           "--bg-app": colors.slate[950],
           "--bg-elevated": "#0b1220",
           "--bg-muted": colors.slate[900],
+          "--bg-subtle": "#020617",
+
           "--border": colors.slate[700],
-          "--text": colors.slate[200],
+          "--border-subtle": colors.slate[800],
+          "--border-strong": colors.slate[600],
+
+          "--text-strong": "#f9fafb",
+          "--text": colors.slate[100],
           "--text-muted": colors.slate[400],
+          "--text-soft": colors.slate[500],
+
+          "--primary": theme("colors.brandNavy.300"),
+          "--primary-soft": "rgba(15,23,42,0.7)",
+          "--accent": theme("colors.accent.300"),
+          "--accent-soft": "rgba(248,113,166,0.24)",
+          "--danger": colors.rose[500],
+          "--danger-soft": "rgba(248,113,113,0.27)",
 
           "--brand-start": theme("colors.brandNavy.500"),
           "--brand-mid": theme("colors.brandGreen.500"),
@@ -237,7 +275,6 @@ const config = {
         },
       });
 
-      // Buttons & surfaces
       const btnBase = {
         display: "inline-flex",
         alignItems: "center",
@@ -250,7 +287,8 @@ const config = {
         cursor: "pointer",
         userSelect: "none",
         outline: "none",
-        transition: "opacity 120ms ease, filter 120ms ease, transform 120ms ease",
+        transition:
+          "opacity 120ms ease, filter 120ms ease, transform 120ms ease",
         boxShadow: theme("boxShadow.elev2"),
       };
 
@@ -272,13 +310,19 @@ const config = {
         ".card-surface": {
           borderRadius: theme("borderRadius.2xl"),
           backgroundColor: "var(--bg-elevated)",
-          border: "1px solid var(--border)",
+          border: "1px solid var(--border-subtle)",
           boxShadow: theme("boxShadow.card"),
         },
         ".shadow-soft": { boxShadow: theme("boxShadow.soft") },
 
-        ".btn-gradient-primary": { ...btnBase, backgroundImage: theme("backgroundImage.brand-hero") },
-        ".btn-gradient-accent": { ...btnBase, backgroundImage: theme("backgroundImage.brand-accent") },
+        ".btn-gradient-primary": {
+          ...btnBase,
+          backgroundImage: theme("backgroundImage.brand-hero"),
+        },
+        ".btn-gradient-accent": {
+          ...btnBase,
+          backgroundImage: theme("backgroundImage.brand-accent"),
+        },
         ".btn-gradient-hero": {
           ...btnBase,
           padding: "0.75rem 1.25rem",
@@ -286,7 +330,7 @@ const config = {
         },
       });
 
-      // Utilities
+      // Utilities – including token-based helpers
       addUtilities({
         ".text-gradient": {
           backgroundImage: theme("backgroundImage.brand-hero"),
@@ -298,6 +342,23 @@ const config = {
         ".glow": { boxShadow: theme("boxShadow.glow") },
         ".rounded-inherit": { borderRadius: "inherit" },
         ".animate-spin-slow": { animation: theme("animation.spin-slow") },
+
+        // Token-powered helpers
+        ".bg-app": { backgroundColor: "var(--bg-app)" },
+        ".bg-surface": { backgroundColor: "var(--bg-elevated)" },
+        ".bg-subtle": { backgroundColor: "var(--bg-muted)" },
+        ".border-subtle": { borderColor: "var(--border-subtle)" },
+        ".border-strong": { borderColor: "var(--border-strong)" },
+        ".text-strong": { color: "var(--text)" },
+        ".text-muted-token": { color: "var(--text-muted)" },
+        ".surface-card": {
+          backgroundColor: "var(--bg-elevated)",
+          borderRadius: theme("borderRadius.2xl"),
+          borderWidth: "1px",
+          borderStyle: "solid",
+          borderColor: "var(--border-subtle)",
+          boxShadow: theme("boxShadow.card"),
+        },
       });
     }),
   ],

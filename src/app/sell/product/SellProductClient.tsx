@@ -480,7 +480,7 @@ export default function SellProductClient({
       data-authed={isAuthenticated ? "true" : "false"}
     >
       {/* Header card */}
-      <div className="rounded-xl p-5 text-white bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
+      <div className="rounded-xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-5 text-white shadow-soft dark:shadow-none">
         <h1 className="text-2xl font-bold text-balance">
           {id ? "Edit Product" : "Post a Product"}
         </h1>
@@ -493,7 +493,7 @@ export default function SellProductClient({
 
       {/* Form */}
       <form
-        className="mt-6 space-y-4 rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        className="mt-6 space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
         onSubmit={onSubmit}
       >
         {/* Basic fields */}
@@ -553,7 +553,7 @@ export default function SellProductClient({
                 setPrice(v === "" ? "" : Number(v));
               }}
             />
-            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               Leave blank for “Contact for price”.
             </p>
           </label>
@@ -561,7 +561,7 @@ export default function SellProductClient({
             Negotiable
             <input
               type="checkbox"
-              className="ml-2 h-4 w-4 rounded border-gray-300 text-brandNavy"
+              className="ml-2 h-4 w-4 rounded border border-border text-brandNavy"
               checked={negotiable}
               onChange={(e) => setNegotiable(e.target.checked)}
             />
@@ -632,7 +632,7 @@ export default function SellProductClient({
         {!hideMedia && (
           <section className="space-y-3">
             <div
-              className="rounded-lg border border-dashed p-4 text-sm text-gray-600 dark:border-slate-700 dark:text-slate-300"
+              className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground"
               onDrop={onDrop}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -656,14 +656,14 @@ export default function SellProductClient({
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               {existingImage && existingGallery.length === 0 && (
-                <div className="rounded border p-2 text-xs">
+                <div className="rounded border border-border p-2 text-xs">
                   Existing cover image
                 </div>
               )}
               {existingGallery.map((url) => (
                 <div
                   key={url}
-                  className="rounded border p-2 text-xs"
+                  className="rounded border border-border p-2 text-xs"
                 >
                   Existing photo
                 </div>
@@ -671,7 +671,7 @@ export default function SellProductClient({
               {previews.map((p, idx) => (
                 <div
                   key={p.key}
-                  className="space-y-1 rounded border p-2 text-xs"
+                  className="space-y-1 rounded border border-border p-2 text-xs"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -687,21 +687,21 @@ export default function SellProductClient({
                       <button
                         type="button"
                         onClick={() => move(idx, -1)}
-                        className="rounded border px-1"
+                        className="rounded border border-border px-1"
                       >
                         ↑
                       </button>
                       <button
                         type="button"
                         onClick={() => move(idx, 1)}
-                        className="rounded border px-1"
+                        className="rounded border border-border px-1"
                       >
                         ↓
                       </button>
                       <button
                         type="button"
                         onClick={() => removeAt(idx)}
-                        className="rounded border px-1 text-red-600"
+                        className="rounded border border-border px-1 text-red-600"
                       >
                         ✕
                       </button>
@@ -712,7 +712,7 @@ export default function SellProductClient({
             </div>
 
             {uploadPct > 0 && submitting && (
-              <div className="text-xs text-gray-600 dark:text-slate-300">
+              <div className="text-xs text-muted-foreground">
                 Uploading photos… {uploadPct}%
               </div>
             )}
@@ -733,7 +733,7 @@ export default function SellProductClient({
               ? "Update listing"
               : "Post listing"}
           </button>
-          <p className="text-xs text-gray-500 dark:text-slate-400">
+          <p className="text-xs text-muted-foreground">
             You can edit this listing later from your dashboard.
           </p>
         </div>
