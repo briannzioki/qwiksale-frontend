@@ -1,8 +1,12 @@
+// src/app/_components/SuggestInput.tsx
 "use client";
 // src/app/components/SuggestInput.tsx
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import useSuggest, { type Suggestion, type SuggestionType } from "@/app/hooks/useSuggest";
+import useSuggest, {
+  type Suggestion,
+  type SuggestionType,
+} from "@/app/hooks/useSuggest";
 
 type Props = {
   endpoint: string;
@@ -18,8 +22,8 @@ type Props = {
   listClassName?: string;
   disabled?: boolean;
   name?: string;
-  label?: string;          // optional visible label
-  ariaLabel?: string;      // if no visible label
+  label?: string; // optional visible label
+  ariaLabel?: string; // if no visible label
   autoFocus?: boolean;
 
   /** Minimum characters before fetching (default 2). */
@@ -40,7 +44,9 @@ function emit(name: string, detail?: unknown) {
     if (typeof window !== "undefined" && "CustomEvent" in window) {
       window.dispatchEvent(new CustomEvent(name, { detail }));
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
 
 export default function SuggestInput({
@@ -63,6 +69,7 @@ export default function SuggestInput({
   extraParams,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputId = useId();
   const listboxId = useId();
   const optionIdBase = useId();
 
@@ -72,13 +79,17 @@ export default function SuggestInput({
       ? { endpoint, debounceMs: 200, minLength, limit, extraParams }
       : { endpoint, debounceMs: 200, minLength, limit };
 
-  const { query, setQuery, items, loading, error, clear, cancel } = useSuggest(hookArgs);
+  const { query, setQuery, items, loading, error, cancel } = useSuggest(hookArgs);
 
-  // Keep hook's query in sync with external value (when parent controls value)
+  // Local input value; value prop is just the initial/external value
+  const [innerValue, setInnerValue] = useState(value ?? "");
+
+  // Keep local value + hook query in sync when parent changes value (e.g. SSR q)
   useEffect(() => {
-    if ((value ?? "") !== (query ?? "")) setQuery(value ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+    const next = value ?? "";
+    setInnerValue(next);
+    setQuery(next);
+  }, [value, setQuery]);
 
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<number>(-1);
@@ -96,18 +107,21 @@ export default function SuggestInput({
   const showList = useMemo(() => {
     if (disabled) return false;
     if (!open) return false;
-    if ((value?.trim().length ?? 0) < Math.max(0, minLength)) return false;
+    if ((innerValue?.trim().length ?? 0) < Math.max(0, minLength)) return false;
     return true;
-  }, [disabled, open, value, minLength]);
+  }, [disabled, open, innerValue, minLength]);
 
   const handleChange = useCallback(
     async (next: string) => {
-      await onChangeAction?.(next);
+      setInnerValue(next);
       setQuery(next);
       setOpen(true);
       setActive(-1);
+      if (onChangeAction) {
+        await onChangeAction(next);
+      }
     },
-    [onChangeAction, setQuery]
+    [onChangeAction, setQuery],
   );
 
   const closeList = useCallback(() => {
@@ -119,15 +133,21 @@ export default function SuggestInput({
     async (idx: number) => {
       const item = filtered[idx];
       if (!item) return;
-      await onChangeAction?.(item.value);
-      setQuery(item.value);
+      const next = item.value;
+      setInnerValue(next);
+      setQuery(next);
       emit("qs:suggest:pick", { item });
       try {
+        if (onChangeAction) {
+          await onChangeAction(next);
+        }
         await onPickAction?.(item);
-      } catch {}
+      } catch {
+        // swallow errors from callbacks
+      }
       closeList();
     },
-    [filtered, onChangeAction, onPickAction, setQuery, closeList]
+    [filtered, onChangeAction, onPickAction, setQuery, closeList],
   );
 
   // Keyboard navigation
@@ -159,7 +179,7 @@ export default function SuggestInput({
         closeList();
       }
     },
-    [active, filtered, onSelect, showList, closeList, hasResults]
+    [active, filtered, onSelect, showList, closeList, hasResults],
   );
 
   // Blur handling (delay to allow click on options)
@@ -177,7 +197,12 @@ export default function SuggestInput({
     }
   }, []);
 
-  useEffect(() => () => cancel(), [cancel]);
+  useEffect(
+    () => () => {
+      cancel();
+    },
+    [cancel],
+  );
 
   return (
     <div
@@ -186,13 +211,16 @@ export default function SuggestInput({
       onFocus={onFocusContainer}
     >
       {label ? (
-        <label className="sr-only">{label}</label>
+        <label htmlFor={inputId} className="sr-only">
+          {label}
+        </label>
       ) : null}
       <input
+        id={inputId}
         ref={inputRef}
         name={name}
         type="text"
-        value={value}
+        value={innerValue}
         onChange={(e) => void handleChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
@@ -207,10 +235,9 @@ export default function SuggestInput({
         aria-activedescendant={active >= 0 ? `${optionIdBase}-${active}` : undefined}
         aria-label={!label ? ariaLabel : undefined}
         className={[
-          "w-full px-4 py-2 rounded-lg",
+          "w-full rounded-lg px-4 py-2",
           "text-gray-900 dark:text-slate-100",
           "placeholder:text-gray-500 dark:placeholder:text-slate-400",
-          // ↓ lighter, calmer surfaces per audit
           "bg-white dark:bg-slate-900",
           "border border-gray-200 dark:border-white/10",
           "focus:outline-none focus:ring-2 focus:ring-brandBlue",
@@ -225,7 +252,6 @@ export default function SuggestInput({
         <div
           className={[
             "absolute z-20 mt-1 w-full rounded-xl shadow-lg",
-            // ↓ toned glass / lighter borders
             "bg-white dark:bg-slate-900",
             "border border-gray-200 dark:border-white/10",
             listClassName || "",
@@ -233,13 +259,19 @@ export default function SuggestInput({
         >
           <ul id={listboxId} role="listbox" className="max-h-72 overflow-auto py-1">
             {loading && (
-              <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">Loading…</li>
+              <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
+                Loading…
+              </li>
             )}
             {!loading && error && (
-              <li className="px-3 py-2 text-sm text-rose-600 dark:text-rose-400">Error: {error}</li>
+              <li className="px-3 py-2 text-sm text-rose-600 dark:text-rose-400">
+                Error: {error}
+              </li>
             )}
             {!loading && !error && !hasResults && (
-              <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">No suggestions</li>
+              <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
+                No suggestions
+              </li>
             )}
             {!loading &&
               !error &&
@@ -252,7 +284,7 @@ export default function SuggestInput({
                     role="option"
                     aria-selected={isActive}
                     className={[
-                      "px-3 py-2 text-sm cursor-pointer select-none",
+                      "cursor-pointer select-none px-3 py-2 text-sm",
                       "text-gray-900 dark:text-slate-100",
                       isActive
                         ? "bg-gray-100 dark:bg-white/5"
@@ -270,8 +302,7 @@ export default function SuggestInput({
                       <span className="truncate">{sug.label}</span>
                       <span
                         className={[
-                          "ml-auto text-[11px] px-2 py-[2px] rounded-full",
-                          // outline pill that matches new chip tone
+                          "ml-auto rounded-full px-2 py-[2px] text-[11px]",
                           "border border-gray-200 dark:border-white/10",
                           "text-gray-600 dark:text-slate-300",
                         ].join(" ")}
@@ -285,6 +316,10 @@ export default function SuggestInput({
           </ul>
         </div>
       )}
+
+      <p className="mt-1 text-xs text-muted-foreground">
+        Use ↑/↓ to navigate, Enter to pick, Esc to close.
+      </p>
     </div>
   );
 }

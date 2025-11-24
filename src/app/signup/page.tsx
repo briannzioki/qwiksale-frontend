@@ -114,7 +114,7 @@ function SignUpPageInner() {
   return (
     <div className="container-page py-10">
       <div className="mx-auto max-w-2xl">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#161748] via-[#1d2b64] to-[#0b1220] p-8 text-white shadow-xl ring-1 ring-white/10">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-8 text-white shadow-soft dark:shadow-none">
           <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
             Create your QwikSale account
@@ -139,11 +139,11 @@ function SignUpPageInner() {
         ) : null}
 
         <div className="mt-8 grid gap-6">
-          <div className="rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+          <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 transition hover:shadow-md dark:border-white/10 dark:bg-slate-950/80">
             <button
               onClick={onGoogle}
               disabled={!!working}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[.99] dark:border-slate-700 dark:hover:bg-slate-800 disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200/80 px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[.99] dark:border-white/20 dark:hover:bg-slate-800 disabled:opacity-60"
               aria-label="Continue with Google"
               type="button"
             >
@@ -164,15 +164,16 @@ function SignUpPageInner() {
 
           <form
             onSubmit={onCreate}
-            className="rounded-2xl border bg-white p-6 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+            className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 transition hover:shadow-md dark:border-white/10 dark:bg-slate-950/80"
             noValidate
           >
             <div className="space-y-4">
+              {/* Email */}
               <label className="block">
                 <span className="mb-1 block text-sm font-semibold">Email</span>
                 <input
                   type="email"
-                  className="w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -184,14 +185,19 @@ function SignUpPageInner() {
                 </span>
               </label>
 
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold">
+              {/* Password */}
+              <div>
+                <label
+                  htmlFor="signup-password"
+                  className="mb-1 block text-sm font-semibold"
+                >
                   Password
-                </span>
+                </label>
                 <div className="relative">
                   <input
+                    id="signup-password"
                     type={showPassword ? "text" : "password"}
-                    className="w-full rounded-xl border px-3 py-2 pr-12 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pr-12 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                     placeholder="At least 6 characters"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -226,15 +232,20 @@ function SignUpPageInner() {
                     Strength: {pwStrength}
                   </div>
                 </div>
-              </label>
+              </div>
 
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold">
+              {/* Confirm password */}
+              <div>
+                <label
+                  htmlFor="signup-confirm-password"
+                  className="mb-1 block text-sm font-semibold"
+                >
                   Confirm password
-                </span>
+                </label>
                 <input
+                  id="signup-confirm-password"
                   type="password"
-                  className="w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                   placeholder="Repeat your password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
@@ -242,7 +253,7 @@ function SignUpPageInner() {
                   minLength={6}
                   required
                 />
-              </label>
+              </div>
 
               <button
                 type="submit"
@@ -285,7 +296,7 @@ function SignUpPageInner() {
             </div>
           </form>
 
-          <section className="rounded-2xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <section className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80">
             <h2 className="text-base font-semibold">
               Why people stay with QwikSale
             </h2>

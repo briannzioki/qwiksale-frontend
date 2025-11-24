@@ -76,16 +76,15 @@ export default function ProductForm(props: Props) {
 
   const defaultCategory = cats[0]?.name ?? "";
   const startCategory = s(initial?.category, defaultCategory);
-  const startSubcategory =
-    s(
-      initial?.subcategory,
-      (cats.find((c) => c.name === startCategory)?.subcategories ?? [])[0]?.name ?? ""
-    );
+  const startSubcategory = s(
+    initial?.subcategory,
+    (cats.find((c) => c.name === startCategory)?.subcategories ?? [])[0]?.name ?? "",
+  );
 
   // fields (consistent defaults/order with edit page)
   const [name, setName] = useState<string>(s(initial?.name));
   const [price, setPrice] = useState<number | "">(
-    typeof initial?.price === "number" ? initial.price : ""
+    typeof initial?.price === "number" ? initial.price : "",
   );
   const [negotiable, setNegotiable] = useState<boolean>(Boolean(initial?.negotiable));
   const normalizedCondition =
@@ -120,14 +119,16 @@ export default function ProductForm(props: Props) {
   // Keep subcategory valid when category changes
   useEffect(() => {
     if (!category) return;
-    const subs = (cats.find((c) => c.name === category)?.subcategories ?? []).map((s) => s.name);
+    const subs = (cats.find((c) => c.name === category)?.subcategories ?? []).map(
+      (s) => s.name,
+    );
     const has = subs.includes(subcategory);
     if (!has) setSubcategory(subs[0] ?? "");
   }, [category, subcategory, cats]);
 
   const subcats = useMemo(
     () => (cats.find((c) => c.name === category)?.subcategories ?? []).map((s) => s.name),
-    [category, cats]
+    [category, cats],
   );
 
   // Phone helpers (same as edit page)
@@ -166,7 +167,7 @@ export default function ProductForm(props: Props) {
         (cats.find((c) => c.name === nextCat)?.subcategories ?? [])[0]?.name ?? "";
       setSubcategory(first);
     },
-    [cats]
+    [cats],
   );
 
   const submit = useCallback(
@@ -182,7 +183,7 @@ export default function ProductForm(props: Props) {
       // ✅ Guard: avoid trying to upload if image uploads aren’t configured
       if (pendingFiles.length > 0 && !CLOUD_NAME) {
         toast.error(
-          "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
+          "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET).",
         );
         return;
       }
@@ -218,13 +219,15 @@ export default function ProductForm(props: Props) {
           const newId =
             typeof created === "string"
               ? created
-              : (created && typeof created === "object" && "id" in created
-                  ? String((created as any).id)
-                  : undefined);
+              : created && typeof created === "object" && "id" in created
+              ? String((created as any).id)
+              : undefined;
           if (!newId) throw new Error("Create failed: no id returned");
 
           toast.success("Listing created");
-          (window as any).plausible?.("Listing Created", { props: { category, subcategory } });
+          (window as any).plausible?.("Listing Created", {
+            props: { category, subcategory },
+          });
           await props.onCreatedAction?.(newId);
           setPendingFiles([]);
           return;
@@ -237,7 +240,10 @@ export default function ProductForm(props: Props) {
         await props.onUpdatedAction?.(productId);
         setPendingFiles([]);
       } catch (err: any) {
-        toast.error(err?.message || (isEdit ? "Failed to save changes" : "Failed to create listing"));
+        toast.error(
+          err?.message ||
+            (isEdit ? "Failed to save changes" : "Failed to create listing"),
+        );
       } finally {
         setBusy(false);
       }
@@ -261,35 +267,38 @@ export default function ProductForm(props: Props) {
       props,
       subcategory,
       updateProduct,
-    ]
+    ],
   );
 
   return (
     <form
       onSubmit={submit}
       className={[
-        "rounded-2xl border bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900",
+        "rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80",
         className,
       ].join(" ")}
       aria-labelledby="sell-form-title"
       noValidate
     >
-      <h2 id="sell-form-title" className="text-lg font-bold">
+      <h2 id="sell-form-title" className="text-lg font-bold text-gray-900 dark:text-slate-100">
         {isEdit ? "Edit Product" : "Post a Product"}
       </h2>
 
       <div className="mt-4 grid grid-cols-1 gap-4">
         {/* Title & Price (match edit page grouping) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <label className="text-sm font-medium" htmlFor="pf-title">
+            <label
+              className="text-sm font-medium text-gray-800 dark:text-slate-100"
+              htmlFor="pf-title"
+            >
               Title
             </label>
             <input
               id="pf-title"
               value={name}
               onChange={(e) => setName(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               required
               minLength={3}
               placeholder="e.g. iPhone 13 Pro 256GB"
@@ -297,7 +306,10 @@ export default function ProductForm(props: Props) {
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-price">
+            <label
+              className="text-sm font-medium text-gray-800 dark:text-slate-100"
+              htmlFor="pf-price"
+            >
               Price (KES)
             </label>
             <input
@@ -311,11 +323,14 @@ export default function ProductForm(props: Props) {
                 setPrice(v === "" ? "" : Math.max(0, Math.floor(Number(v) || 0)));
               }}
               onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder='Leave empty for "Contact for price"'
               aria-describedby="pf-price-help"
             />
-            <p id="pf-price-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            <p
+              id="pf-price-help"
+              className="mt-1 text-xs text-gray-600 dark:text-slate-400"
+            >
               Leave empty to show <em>Contact for price</em>.
             </p>
 
@@ -336,7 +351,7 @@ export default function ProductForm(props: Props) {
             </div>
 
             {typeof price === "number" && price > 0 && (
-              <div className="text-xs mt-1 text-gray-600 dark:text-gray-400">
+              <div className="mt-1 text-xs text-gray-600 dark:text-slate-400">
                 You entered: KES {fmtKES(priceNum)}
               </div>
             )}
@@ -344,9 +359,12 @@ export default function ProductForm(props: Props) {
         </div>
 
         {/* Condition, Category, Subcategory (same order as edit page) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-condition">
+            <label
+              className="text-sm font-medium text-gray-800 dark:text-slate-100"
+              htmlFor="pf-condition"
+            >
               Condition
             </label>
             <select
@@ -355,7 +373,7 @@ export default function ProductForm(props: Props) {
               onChange={(e) =>
                 setCondition(e.currentTarget.value as "brand new" | "pre-owned")
               }
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
             >
               <option value="brand new">Brand new</option>
               <option value="pre-owned">Pre-owned</option>
@@ -363,14 +381,17 @@ export default function ProductForm(props: Props) {
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-category">
+            <label
+              className="text-sm font-medium text-gray-800 dark:text-slate-100"
+              htmlFor="pf-category"
+            >
               Category
             </label>
             <select
               id="pf-category"
               value={category}
               onChange={(e) => onChangeCategory(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
             >
               {cats.map((c) => (
                 <option key={c.name} value={c.name}>
@@ -381,14 +402,17 @@ export default function ProductForm(props: Props) {
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-subcategory">
+            <label
+              className="text-sm font-medium text-gray-800 dark:text-slate-100"
+              htmlFor="pf-subcategory"
+            >
               Subcategory
             </label>
             <select
               id="pf-subcategory"
               value={subcategory}
               onChange={(e) => setSubcategory(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
             >
               {subcats.map((name) => (
                 <option key={name} value={name}>
@@ -400,42 +424,51 @@ export default function ProductForm(props: Props) {
         </div>
 
         {/* Brand, Location, Phone (same order) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-brand">
+            <label
+              className="text-sm font-medium text-gray-800 dark:text-slate-100"
+              htmlFor="pf-brand"
+            >
               Brand (optional)
             </label>
             <input
               id="pf-brand"
               value={brand}
               onChange={(e) => setBrand(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder="e.g. Samsung"
             />
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-location">
+            <label
+              className="text-sm font-medium text-gray-800 dark:text-slate-100"
+              htmlFor="pf-location"
+            >
               Location
             </label>
             <input
               id="pf-location"
               value={location}
               onChange={(e) => setLocation(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder="e.g. Nairobi"
             />
           </div>
 
           <div>
-            <label className="text-sm font-medium" htmlFor="pf-phone">
+            <label
+              className="text-sm font-medium text-gray-800 dark:text-slate-100"
+              htmlFor="pf-phone"
+            >
               Phone (WhatsApp, optional)
             </label>
             <input
               id="pf-phone"
               value={phone}
               onChange={(e) => setPhone(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+              className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder="07XXXXXXXX or +2547XXXXXXXX"
               inputMode="tel"
               aria-invalid={!!phone && !phoneOk}
@@ -443,25 +476,30 @@ export default function ProductForm(props: Props) {
             />
             <div
               id="pf-phone-help"
-              className="mt-1 text-xs text-gray-600 dark:text-gray-400"
+              className="mt-1 text-xs text-gray-600 dark:text-slate-400"
             >
-              {phone
-                ? phoneOk
-                  ? (
-                    <>
-                      Normalized:{" "}
-                      <code className="font-mono">{normalizedPhone}</code>
-                    </>
-                    )
-                  : "Please enter a valid Kenyan mobile."
-                : "Optional. Buyers can call or WhatsApp."}
+              {phone ? (
+                phoneOk ? (
+                  <>
+                    Normalized:{" "}
+                    <code className="font-mono">{normalizedPhone}</code>
+                  </>
+                ) : (
+                  "Please enter a valid Kenyan mobile."
+                )
+              ) : (
+                "Optional. Buyers can call or WhatsApp."
+              )}
             </div>
           </div>
         </div>
 
         {/* Description */}
         <div>
-          <label className="text-sm font-medium" htmlFor="pf-description">
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="pf-description"
+          >
             Description
           </label>
           <textarea
@@ -469,7 +507,7 @@ export default function ProductForm(props: Props) {
             value={description}
             onChange={(e) => setDescription(e.currentTarget.value)}
             rows={5}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
             placeholder="Describe the item, condition, accessories, warranty, etc."
             required
             minLength={10}
@@ -489,7 +527,7 @@ export default function ProductForm(props: Props) {
             maxSizeMB={10}
           />
           <div
-            className="mt-2 text-xs text-gray-600 dark:text-gray-400"
+            className="mt-2 text-xs text-gray-600 dark:text-slate-400"
             aria-live="polite"
           >
             {pendingFiles.length
@@ -504,8 +542,8 @@ export default function ProductForm(props: Props) {
         <button
           type="submit"
           disabled={!canSubmit || busy}
-          className={`rounded-xl px-4 py-2 text-white ${
-            !canSubmit || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"
+          className={`rounded-xl px-4 py-2 text-sm font-medium text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brandBlue focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-950 ${
+            !canSubmit || busy ? "bg-gray-400 cursor-not-allowed" : 'bg-[#161748] hover:opacity-90'
           }`}
           aria-busy={busy ? "true" : "false"}
           data-testid="product-form-submit"

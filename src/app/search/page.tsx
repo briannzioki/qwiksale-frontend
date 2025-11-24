@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";
 import NumberInputNoWheel from "@/app/components/ui/NumberInputNoWheel";
+import SuggestInput from "@/app/components/SuggestInput";
 import type { SearchParams15 } from "@/app/lib/next15";
 import type { Sort } from "./SearchClient";
 
@@ -448,15 +449,28 @@ export default async function SearchPage({
           <Link
             href="/"
             prefetch={false}
-            className="rounded-lg bg-black/5 px-3 py-1.5 text-sm font-semibold text-gray-900 hover:bg-black/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+            className="rounded-lg border border-border bg-card/80 px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm hover:bg-card"
           >
             Home
           </Link>
         }
       />
 
+      {/* SuggestInput powered by /api/suggest (Playwright checks this combobox) */}
+      <div className="mt-4 max-w-xl">
+        <SuggestInput
+          endpoint="/api/suggest"
+          value={q}
+          name="q"
+          placeholder="Search products, services, or stores…"
+          ariaLabel="Search"
+          minLength={2}
+          limit={10}
+        />
+      </div>
+
       {/* Tabs: driven by URL; SSR-stable */}
-      <nav className="mt-3 flex items-center gap-2">
+      <nav className="mt-4 flex items-center gap-2">
         <TabLink href={tabAllHref} current={type === "all"}>
           All
         </TabLink>
@@ -470,32 +484,32 @@ export default async function SearchPage({
 
       {/* Canonical GET filter form; SSR-visible; no client gating */}
       <form
-        className="mt-4 grid grid-cols-1 gap-3 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        className="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted/40 p-4 shadow-sm"
         method="GET"
         action="/search"
       >
         {/* Row 1: query + type */}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-7">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Search
             </label>
             <input
               name="q"
               defaultValue={q}
               placeholder="Search products & services…"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Type
             </label>
             <select
               name="type"
               defaultValue={type}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="all">All</option>
               <option value="product">Products</option>
@@ -504,7 +518,7 @@ export default async function SearchPage({
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Featured only
             </label>
             <div className="mt-2 flex items-center gap-2">
@@ -514,11 +528,11 @@ export default async function SearchPage({
                 name="featured"
                 value="1"
                 defaultChecked={featuredOnly}
-                className="h-4 w-4 rounded border-slate-300 text-[#161748] focus:ring-[#161748]"
+                className="h-4 w-4 rounded border-border text-[#161748] focus:ring-[#161748]"
               />
               <label
                 htmlFor="featured-only"
-                className="text-xs text-slate-700 dark:text-slate-300"
+                className="text-xs text-muted-foreground"
               >
                 Only featured
               </label>
@@ -529,36 +543,36 @@ export default async function SearchPage({
         {/* Row 2: category / brand / condition */}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Category
             </label>
             <input
               name="category"
               defaultValue={category}
               placeholder="Any category"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Subcategory
             </label>
             <input
               name="subcategory"
               defaultValue={subcategory}
               placeholder="Any subcategory"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Brand
             </label>
             <input
               name="brand"
               defaultValue={brand}
               placeholder="Any brand"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
         </div>
@@ -566,46 +580,46 @@ export default async function SearchPage({
         {/* Row 3: price + condition + sort */}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Min price (KES)
             </label>
             <NumberInputNoWheel
               name="minPrice"
               defaultValue={minPrice ?? ""}
               placeholder="0"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Max price (KES)
             </label>
             <NumberInputNoWheel
               name="maxPrice"
               defaultValue={maxPrice ?? ""}
               placeholder="Any"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Condition
             </label>
             <input
               name="condition"
               defaultValue={condition}
               placeholder="Any"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-muted-foreground">
               Sort
             </label>
             <select
               name="sort"
               defaultValue={sort}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="newest">Newest</option>
               <option value="featured">Featured first</option>
@@ -622,19 +636,19 @@ export default async function SearchPage({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="submit"
-            className="inline-flex items-center rounded-lg bg-[#161748] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#161748]/90 dark:bg-[#39a0ca] dark:hover:bg-[#39a0ca]/90"
+            className="inline-flex items-center rounded-lg bg-[#161748] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#161748]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Apply filters
           </button>
           <Link
             href="/search"
             prefetch={false}
-            className="text-xs text-slate-600 underline hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+            className="text-xs text-muted-foreground underline hover:text-foreground"
           >
             Reset
           </Link>
           {anyAdvanced && (
-            <span className="ml-1 text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground">
               Advanced filters active
             </span>
           )}
@@ -642,18 +656,18 @@ export default async function SearchPage({
       </form>
 
       {/* Result shell: SSR-only, stable, always includes "Showing" */}
-      <section className="mt-6 rounded-xl border bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <section className="mt-6 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-800 dark:text-slate-100">
+          <h2 className="text-sm font-semibold text-foreground">
             {resultsLabel}
           </h2>
-          <span className="text-xs text-gray-500 dark:text-slate-400">
+          <span className="text-xs text-muted-foreground">
             Showing {total} result{total === 1 ? "" : "s"}
           </span>
         </div>
 
         {items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">
+          <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
             No results yet. Try adjusting your filters.
           </div>
         ) : (
@@ -663,10 +677,10 @@ export default async function SearchPage({
                 <Link
                   href={r.href}
                   prefetch={false}
-                  className="group block h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 shadow-sm hover:border-brandBlue/60 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-brandBlue/70 dark:hover:bg-slate-800 transition"
+                  className="group block h-full overflow-hidden rounded-2xl border border-border bg-card/90 shadow-sm transition hover:border-brandBlue/70 hover:bg-card"
                   aria-label={`${r.kind === "product" ? "Product" : "Service"}: ${r.name}`}
                 >
-                  <div className="relative aspect-[4/3] overflow-hidden bg-slate-900/60">
+                  <div className="relative aspect-[4/3] overflow-hidden bg-muted">
                     {r.imageUrl ? (
                       <img
                         src={r.imageUrl}
@@ -675,25 +689,25 @@ export default async function SearchPage({
                         className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">
                         No photo
                       </div>
                     )}
                   </div>
                   <div className="p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {r.kind === "product" ? "Product" : "Service"}
                     </div>
-                    <div className="mt-1 line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                    <div className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
                       {r.name}
                     </div>
                     {r.categoryLabel && (
-                      <div className="mt-0.5 line-clamp-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
                         {r.categoryLabel}
                       </div>
                     )}
                     {r.priceLabel && (
-                      <div className="mt-2 text-sm font-semibold text-brandBlue dark:text-brandBlue">
+                      <div className="mt-2 text-sm font-semibold text-brandBlue">
                         {r.priceLabel}
                       </div>
                     )}
@@ -726,8 +740,8 @@ function TabLink({
       aria-current={current ? "page" : undefined}
       className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
         current
-          ? "bg-[#161748] text-white"
-          : "bg-black/5 text-gray-800 hover:bg-black/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+          ? "bg-[#161748] text-white shadow-sm"
+          : "bg-muted/40 text-muted-foreground hover:bg-muted/60"
       }`}
     >
       {children}

@@ -191,7 +191,6 @@ function isProtectedPath(p: string) {
   return (
     p.startsWith("/sell") ||
     p.startsWith("/account") ||
-    p.startsWith("/messages") ||
     p.startsWith("/saved") ||
     p.startsWith("/settings")
   );

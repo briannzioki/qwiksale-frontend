@@ -155,8 +155,11 @@ export default function ListingCard({
                 priority={false}
               />
             ) : (
-              <div className="grid h-full w-full place-items-center bg-gradient-to-br from-gray-100 to-gray-200 dark:from-slate-800 dark:to-slate-900">
-                <Icon name="image" className="opacity-40" />
+              <div className="grid h-full w-full place-items-center bg-muted">
+                <Icon
+                  name="image"
+                  className="opacity-40 text-muted-foreground"
+                />
               </div>
             )}
           </div>
@@ -168,27 +171,17 @@ export default function ListingCard({
             aria-pressed={isSaved ? "true" : "false"}
             aria-label={isSaved ? "Unfavorite" : "Favorite"}
             className={cn(
-              "absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center",
-              "rounded-full border border-black/10 dark:border-white/10",
-              "backdrop-blur-md bg-white/60 dark:bg-slate-900/50",
-              "transition hover:bg-white/80 dark:hover:bg-slate-900/70",
+              "absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full",
+              "border border-border/60 bg-card/80 text-[var(--text)] shadow-sm backdrop-blur-md",
+              "transition hover:bg-card",
               isSaved && "ring-2 ring-brandPink/40",
             )}
           >
-            <span
-              className={cn(
-                "absolute inset-0 rounded-full",
-                "bg-gradient-to-br from-white/40 to-white/10 dark:from-slate-900/40 dark:to-slate-900/10",
-              )}
-              aria-hidden
-            />
             <Icon
               name="heart"
               className={cn(
-                "relative",
-                isSaved
-                  ? "text-pink-600 dark:text-pink-400"
-                  : "text-gray-700 dark:text-slate-200",
+                "text-sm",
+                isSaved ? "text-pink-500" : "text-muted-foreground",
               )}
               aria-hidden
             />
@@ -225,9 +218,7 @@ export default function ListingCard({
                 </span>
               ) : null}
               {conditionLabel ? (
-                <span className="hidden sm:inline">
-                  • {conditionLabel}
-                </span>
+                <span className="hidden sm:inline">• {conditionLabel}</span>
               ) : null}
               {kind === "service" ? (
                 <span className="hidden sm:inline">• Service</span>

@@ -1,3 +1,4 @@
+// src/app/components/sell/ServiceForm.tsx
 "use client";
 // src/app/components/sell/ServiceForm.tsx
 
@@ -76,10 +77,10 @@ export default function ServiceForm(props: Props) {
 
   const [name, setName] = useState<string>(sv(initial?.name));
   const [price, setPrice] = useState<number | "">(
-    typeof initial?.price === "number" ? initial.price : ""
+    typeof initial?.price === "number" ? initial.price : "",
   );
   const [rateType, setRateType] = useState<RateType>(
-    ((initial?.rateType as RateType) ?? "fixed") as RateType
+    ((initial?.rateType as RateType) ?? "fixed") as RateType,
   );
   const [serviceArea, setServiceArea] = useState<string>(sv(initial?.serviceArea));
   const [availability, setAvailability] = useState<string>(sv(initial?.availability));
@@ -99,7 +100,10 @@ export default function ServiceForm(props: Props) {
 
   const [busy, setBusy] = useState(false);
 
-  const subOpts = useMemo(() => subcategoryOptions(category) ?? [], [category]);
+  const subOpts = useMemo(
+    () => subcategoryOptions(category) ?? [],
+    [category],
+  );
 
   // Keep subcategory valid when category changes
   useEffect(() => {
@@ -120,7 +124,7 @@ export default function ServiceForm(props: Props) {
       setCategory(value);
       setSubcategory(firstSubFor(value));
     },
-    [firstSubFor]
+    [firstSubFor],
   );
 
   // cache-aware actions
@@ -155,7 +159,7 @@ export default function ServiceForm(props: Props) {
       // ✅ Guard: avoid trying to upload if image uploads aren’t configured
       if (pendingFiles.length > 0 && !CLOUD_NAME) {
         toast.error(
-          "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET)."
+          "Image uploads are not configured. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME (and optionally NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET).",
         );
         return;
       }
@@ -188,12 +192,14 @@ export default function ServiceForm(props: Props) {
           const newId =
             typeof created === "string"
               ? created
-              : (created && typeof created === "object" && "id" in created
-                  ? String((created as any).id)
-                  : undefined);
+              : created && typeof created === "object" && "id" in created
+              ? String((created as any).id)
+              : undefined;
           if (!newId) throw new Error("Create failed: no id returned");
           toast.success("Service posted");
-          (window as any).plausible?.("Service Created", { props: { category, subcategory } });
+          (window as any).plausible?.("Service Created", {
+            props: { category, subcategory },
+          });
           await props.onCreatedAction?.(newId);
           setPendingFiles([]);
           return;
@@ -205,7 +211,10 @@ export default function ServiceForm(props: Props) {
         await props.onUpdatedAction?.(id);
         setPendingFiles([]);
       } catch (err: any) {
-        toast.error(err?.message || (isEdit ? "Failed to save changes" : "Failed to create service"));
+        toast.error(
+          err?.message ||
+            (isEdit ? "Failed to save changes" : "Failed to create service"),
+        );
       } finally {
         setBusy(false);
       }
@@ -228,29 +237,40 @@ export default function ServiceForm(props: Props) {
       serviceArea,
       subcategory,
       updateService,
-    ]
+    ],
   );
 
   return (
     <form
       onSubmit={submit}
-      className={["rounded-2xl border bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900", className].join(" ")}
+      className={[
+        "rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80",
+        className,
+      ].join(" ")}
       aria-labelledby="service-form-title"
       noValidate
     >
-      <h2 id="service-form-title" className="text-lg font-bold">
+      <h2
+        id="service-form-title"
+        className="text-lg font-bold text-gray-900 dark:text-slate-100"
+      >
         {isEdit ? "Edit Service" : "Post a Service"}
       </h2>
 
       {/* Name + Price + RateType */}
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="md:col-span-2">
-          <label className="text-sm font-medium" htmlFor="sf-name">Service name</label>
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="sf-name"
+          >
+            Service name
+          </label>
           <input
             id="sf-name"
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
             required
             minLength={3}
             placeholder="e.g. House Cleaning, Plumbing, Tutoring…"
@@ -258,7 +278,12 @@ export default function ServiceForm(props: Props) {
         </div>
 
         <div>
-          <label className="text-sm font-medium" htmlFor="sf-price">Price (KES)</label>
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="sf-price"
+          >
+            Price (KES)
+          </label>
           <input
             id="sf-price"
             type="number"
@@ -266,19 +291,26 @@ export default function ServiceForm(props: Props) {
             inputMode="numeric"
             value={price === "" ? "" : price}
             onChange={(e) =>
-              setPrice(e.currentTarget.value === "" ? "" : Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)))
+              setPrice(
+                e.currentTarget.value === ""
+                  ? ""
+                  : Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)),
+              )
             }
             onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
             placeholder="Leave empty for “Contact for quote”"
             aria-describedby="sf-price-help"
           />
-          <p id="sf-price-help" className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+          <p
+            id="sf-price-help"
+            className="mt-1 text-xs text-gray-600 dark:text-slate-400"
+          >
             Leave empty to show <em>Contact for quote</em>.
           </p>
 
           <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
-            <label className="inline-flex items-center gap-2">
+            <label className="inline-flex items-center gap-2 text-gray-700 dark:text-slate-200">
               <input
                 type="radio"
                 name="rateType"
@@ -289,7 +321,7 @@ export default function ServiceForm(props: Props) {
               />
               Fixed
             </label>
-            <label className="inline-flex items-center gap-2">
+            <label className="inline-flex items-center gap-2 text-gray-700 dark:text-slate-200">
               <input
                 type="radio"
                 name="rateType"
@@ -300,7 +332,7 @@ export default function ServiceForm(props: Props) {
               />
               /hour
             </label>
-            <label className="inline-flex items-center gap-2">
+            <label className="inline-flex items-center gap-2 text-gray-700 dark:text-slate-200">
               <input
                 type="radio"
                 name="rateType"
@@ -316,14 +348,19 @@ export default function ServiceForm(props: Props) {
       </div>
 
       {/* Category/Subcategory/ServiceArea */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div>
-          <label className="text-sm font-medium" htmlFor="sf-category">Category</label>
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="sf-category"
+          >
+            Category
+          </label>
           <select
             id="sf-category"
             value={category}
             onChange={(e) => onChangeCategory(e.currentTarget.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
           >
             {(catOpts ?? []).map((o: any) => {
               const val = sv(o?.value);
@@ -338,73 +375,100 @@ export default function ServiceForm(props: Props) {
         </div>
 
         <div>
-          <label className="text-sm font-medium" htmlFor="sf-subcategory">Subcategory (optional)</label>
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="sf-subcategory"
+          >
+            Subcategory (optional)
+          </label>
           <select
             id="sf-subcategory"
             value={subcategory}
             onChange={(e) => setSubcategory(e.currentTarget.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
           >
-            {subOpts.length > 0
-              ? subOpts.map((o: any) => {
-                  const val = sv(o?.value);
-                  const key = String(o?.value ?? o?.label ?? val);
-                  return (
-                    <option key={key} value={val}>
-                      {o?.label ?? val}
-                    </option>
-                  );
-                })
-              : <option value="">—</option>}
+            {subOpts.length > 0 ? (
+              subOpts.map((o: any) => {
+                const val = sv(o?.value);
+                const key = String(o?.value ?? o?.label ?? val);
+                return (
+                  <option key={key} value={val}>
+                    {o?.label ?? val}
+                  </option>
+                );
+              })
+            ) : (
+              <option value="">—</option>
+            )}
           </select>
         </div>
 
         <div>
-          <label className="text-sm font-medium" htmlFor="sf-area">Service area (optional)</label>
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="sf-area"
+          >
+            Service area (optional)
+          </label>
           <input
             id="sf-area"
             value={serviceArea}
             onChange={(e) => setServiceArea(e.currentTarget.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
             placeholder="e.g. Nairobi & Kiambu"
           />
         </div>
       </div>
 
       {/* Availability/Location/Phone */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div>
-          <label className="text-sm font-medium" htmlFor="sf-avail">Availability (optional)</label>
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="sf-avail"
+          >
+            Availability (optional)
+          </label>
           <input
             id="sf-avail"
             value={availability}
             onChange={(e) => setAvailability(e.currentTarget.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
             placeholder="e.g. Mon–Sat, 8am–6pm"
           />
         </div>
         <div>
-          <label className="text-sm font-medium" htmlFor="sf-location">Base location</label>
-        <input
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="sf-location"
+          >
+            Base location
+          </label>
+          <input
             id="sf-location"
             value={location}
             onChange={(e) => setLocation(e.currentTarget.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
             placeholder="e.g. Nairobi"
           />
         </div>
         <div>
-          <label className="text-sm font-medium" htmlFor="sf-phone">Seller phone (optional)</label>
+          <label
+            className="text-sm font-medium text-gray-800 dark:text-slate-100"
+            htmlFor="sf-phone"
+          >
+            Seller phone (optional)
+          </label>
           <input
             id="sf-phone"
             value={phone}
             onChange={(e) => setPhone(e.currentTarget.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
             placeholder="2547XXXXXXXX"
             inputMode="tel"
             aria-invalid={phoneInvalid || undefined}
           />
-          <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+          <div className="mt-1 text-xs text-gray-600 dark:text-slate-400">
             {phone
               ? phoneInvalid
                 ? "Please use Safaricom format: 2547XXXXXXXX"
@@ -416,13 +480,18 @@ export default function ServiceForm(props: Props) {
 
       {/* Description */}
       <div className="mt-4">
-        <label className="text-sm font-medium" htmlFor="sf-description">Description</label>
+        <label
+          className="text-sm font-medium text-gray-800 dark:text-slate-100"
+          htmlFor="sf-description"
+        >
+          Description
+        </label>
         <textarea
           id="sf-description"
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
           rows={5}
-          className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-gray-700 dark:bg-gray-950"
+          className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
           placeholder="Describe your service, experience, what’s included, etc."
           required
           minLength={10}
@@ -430,7 +499,7 @@ export default function ServiceForm(props: Props) {
       </div>
 
       {/* Photos */}
-      <div className="md:col-span-2 mt-4">
+      <div className="mt-4 md:col-span-2">
         <GalleryUploader
           value={gallery}
           onChangeAction={(next) => setGallery(next)}
@@ -441,8 +510,13 @@ export default function ServiceForm(props: Props) {
           accept="image/*,.jpg,.jpeg,.png,.webp"
           maxSizeMB={10}
         />
-        <div className="mt-2 text-xs text-gray-600 dark:text-gray-400" aria-live="polite">
-          {pendingFiles.length ? `${pendingFiles.length} new selected (to upload on save)` : "No new files selected"}
+        <div
+          className="mt-2 text-xs text-gray-600 dark:text-slate-400"
+          aria-live="polite"
+        >
+          {pendingFiles.length
+            ? `${pendingFiles.length} new selected (to upload on save)`
+            : "No new files selected"}
         </div>
       </div>
 
@@ -450,7 +524,9 @@ export default function ServiceForm(props: Props) {
         <button
           type="submit"
           disabled={!canSubmit || busy}
-          className={`rounded-xl px-4 py-2 text-white ${!canSubmit || busy ? "bg-gray-400" : "bg-[#161748] hover:opacity-90"}`}
+          className={`rounded-xl px-4 py-2 text-sm font-medium text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brandBlue focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-950 ${
+            !canSubmit || busy ? "bg-gray-400 cursor-not-allowed" : 'bg-[#161748] hover:opacity-90'
+          }`}
           aria-busy={busy ? "true" : "false"}
         >
           {busy ? (isEdit ? "Saving…" : "Posting…") : isEdit ? "Save changes" : "Post service"}

@@ -139,7 +139,7 @@ function MixedTile({
           <h3 className="line-clamp-1 font-semibold text-foreground">
             {it.name}
           </h3>
-          <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
+          <p className="mt-1 font-bold text-brandBlue">
             {fmtKES(it.price)}
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">

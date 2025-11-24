@@ -1,5 +1,4 @@
 "use client";
-// src/app/messages/MessagesClient.client.tsx
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -286,7 +285,7 @@ export default function MessagesClient({ meId }: Props) {
         <div className="card p-0 overflow-hidden">
           <div className="border-b px-4 py-3 dark:border-slate-800">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Conversations</h2>
+              <h3 className="text-sm font-semibold">Conversations</h3>
               <span className="text-xs text-gray-500 dark:text-slate-400">
                 {threadsLoading ? "…" : threads.length}
               </span>
@@ -410,7 +409,7 @@ export default function MessagesClient({ meId }: Props) {
                           "max-w-[80%] rounded-2xl px-3 py-2 shadow-sm",
                           mine
                             ? "bg-[#161748] text-white dark:bg-[#161748]"
-                            : "bg-white text-gray-900 ring-1 ring-black/5 dark:bg-slate-900 dark:text-slate-100 dark:ring-white/10"
+                            : "bg-white/90 text-gray-900 ring-1 ring-black/5 dark:bg-slate-900 dark:text-slate-100 dark:ring-white/10"
                         )}
                       >
                         <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">

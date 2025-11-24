@@ -39,14 +39,10 @@ function Badge({
 }) {
   const map: Record<string, string> = {
     slate: "bg-muted text-muted-foreground",
-    green:
-      "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
-    amber:
-      "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-    rose:
-      "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
-    indigo:
-      "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+    green: "bg-green-100 text-green-800",
+    amber: "bg-amber-100 text-amber-800",
+    rose: "bg-rose-100 text-rose-800",
+    indigo: "bg-indigo-100 text-indigo-800",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${map[tone]}`}>

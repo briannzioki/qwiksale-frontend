@@ -1,5 +1,5 @@
-"use client";
 // src/app/account/billing/UpgradePanel.tsx
+"use client";
 
 import { useMemo, useRef, useState } from "react";
 import UpgradeWatcher from "@/components/billing/UpgradeWatcher";
@@ -88,55 +88,72 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
 
   return (
     <section
-      className="mt-6 rounded-2xl border border-gray-200 p-5 shadow-sm"
+      className="mt-6 rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
       aria-busy={busy || undefined}
       aria-describedby="upgrade-status"
     >
       {/* Tiers */}
       <div className="grid gap-4 sm:grid-cols-2" role="group" aria-label="Choose plan">
-        {(["GOLD", "PLATINUM"] as Tier[]).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTier(t)}
-            aria-pressed={tier === t}
-            className={`rounded-2xl border p-4 text-left transition ${
-              tier === t ? "border-gray-900 shadow-sm" : "border-gray-300 hover:border-gray-400"
-            }`}
-          >
-            <div className="text-lg font-semibold">{t === "GOLD" ? "Gold" : "Platinum"}</div>
-            <div className="text-sm text-gray-600">KES {TIER_PRICE[t].toLocaleString("en-KE")}</div>
-            <ul className="mt-2 list-disc pl-4 text-sm text-gray-700">
-              {t === "GOLD" ? (
-                <>
-                  <li>Priority placement</li>
-                  <li>Seller badge</li>
-                </>
-              ) : (
-                <>
-                  <li>Top placement</li>
-                  <li>Pro seller badge</li>
-                </>
-              )}
-            </ul>
-          </button>
-        ))}
+        {(["GOLD", "PLATINUM"] as Tier[]).map((t) => {
+          const isActive = tier === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTier(t)}
+              aria-pressed={isActive}
+              className={[
+                "rounded-2xl border p-4 text-left transition",
+                "bg-white/90 dark:bg-slate-950/80",
+                isActive
+                  ? "border-gray-900 shadow-sm shadow-slate-900/10 dark:border-white"
+                  : "border-gray-200 dark:border-white/10 hover:border-gray-400 dark:hover:border-white/30",
+              ].join(" ")}
+            >
+              <div className="text-lg font-semibold text-gray-900 dark:text-slate-100">
+                {t === "GOLD" ? "Gold" : "Platinum"}
+              </div>
+              <div className="text-sm text-gray-600 dark:text-slate-300">
+                KES {TIER_PRICE[t].toLocaleString("en-KE")}
+              </div>
+              <ul className="mt-2 list-disc pl-4 text-sm text-gray-700 dark:text-slate-200">
+                {t === "GOLD" ? (
+                  <>
+                    <li>Priority placement</li>
+                    <li>Seller badge</li>
+                  </>
+                ) : (
+                  <>
+                    <li>Top placement</li>
+                    <li>Pro seller badge</li>
+                  </>
+                )}
+              </ul>
+            </button>
+          );
+        })}
       </div>
 
       {/* Payment inputs */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <label className="text-sm">
-          <span className="block text-gray-600">M-Pesa Number (2547XXXXXXXX)</span>
+        <label className="text-sm text-gray-800 dark:text-slate-100">
+          <span className="block text-gray-600 dark:text-slate-300">
+            M-Pesa Number (2547XXXXXXXX)
+          </span>
           <input
             ref={phoneInputRef}
             type="tel"
             inputMode="numeric"
             placeholder="07XXXXXXXX or 2547XXXXXXXX"
-            className={`mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring-2 ${
+            className={[
+              "mt-1 w-full rounded-xl border px-3 py-2 outline-none",
+              "bg-white dark:bg-slate-900",
+              "text-gray-900 dark:text-slate-100",
+              "placeholder:text-gray-500 dark:placeholder:text-slate-400",
               phone && !phoneValid
-                ? "border-red-400 focus:ring-red-200"
-                : "border-gray-300 focus:ring-gray-300"
-            }`}
+                ? "border-red-400 focus:ring-2 focus:ring-red-200"
+                : "border-gray-300 dark:border-white/10 focus:ring-2 focus:ring-brandBlue",
+            ].join(" ")}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             onBlur={(e) => setPhone(e.target.value.trim())}
@@ -144,15 +161,18 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
             aria-describedby="phone-help"
             autoComplete="tel"
           />
-          <div id="phone-help" className="mt-1 text-xs text-gray-500">
-            Will be used as <code className="font-mono">{normalized || "—"}</code>
+          <div id="phone-help" className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+            Will be used as{" "}
+            <code className="font-mono">
+              {normalized || "—"}
+            </code>
           </div>
         </label>
 
-        <label className="text-sm">
-          <span className="block text-gray-600">Pay via</span>
+        <label className="text-sm text-gray-800 dark:text-slate-100">
+          <span className="block text-gray-600 dark:text-slate-300">Pay via</span>
           <select
-            className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-gray-300"
+            className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
             value={mode}
             onChange={(e) => setMode(e.target.value as "paybill" | "till")}
           >
@@ -164,16 +184,20 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
 
       {/* CTA */}
       <div className="mt-5 flex items-center justify-between">
-        <div className="text-sm text-gray-700">
-          Selected: <strong>{tier}</strong> — KES {TIER_PRICE[tier].toLocaleString("en-KE")}
+        <div className="text-sm text-gray-700 dark:text-slate-200">
+          Selected: <strong>{tier}</strong> — KES{" "}
+          {TIER_PRICE[tier].toLocaleString("en-KE")}
         </div>
         <button
           type="button"
           onClick={startUpgrade}
           disabled={busy || !phoneValid}
-          className={`rounded-2xl px-4 py-2 text-white transition ${
-            busy || !phoneValid ? "bg-gray-400" : "bg-gray-900 hover:bg-gray-800"
-          }`}
+          className={[
+            "rounded-2xl px-4 py-2 text-sm font-medium text-white transition",
+            busy || !phoneValid
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-[#161748] hover:bg-[#161748]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brandBlue focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-950",
+          ].join(" ")}
           title={!phoneValid && phone ? "Enter a valid M-Pesa number" : "Start upgrade"}
         >
           {busy ? "Starting…" : "Upgrade"}
@@ -184,13 +208,23 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
       <p id="upgrade-status" className="sr-only" aria-live="polite">
         {busy ? "Starting upgrade…" : message || error || ""}
       </p>
-      {message && <p className="mt-3 text-sm text-green-700">{message}</p>}
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {message && (
+        <p className="mt-3 text-sm text-green-700 dark:text-emerald-400">
+          {message}
+        </p>
+      )}
+      {error && (
+        <p className="mt-3 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
 
       {/* Watcher */}
       {paymentId && (
-        <div className="mt-5 rounded-xl border border-blue-200 p-3">
-          <div className="text-sm text-blue-800">Waiting for payment confirmation…</div>
+        <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50/60 p-3 dark:border-blue-400/40 dark:bg-blue-950/30">
+          <div className="text-sm text-blue-800 dark:text-blue-200">
+            Waiting for payment confirmation…
+          </div>
           <div className="mt-2">
             <UpgradeWatcher
               paymentId={paymentId}
@@ -208,17 +242,17 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
 
       {/* Final status */}
       {statusDone === "SUCCESS" && (
-        <div className="mt-4 rounded-xl bg-green-50 p-3 text-green-800">
+        <div className="mt-4 rounded-xl bg-green-50 p-3 text-green-800 dark:bg-emerald-950/30 dark:text-emerald-300">
           Payment confirmed! Your account will reflect the new tier shortly.
         </div>
       )}
       {statusDone === "FAILED" && (
-        <div className="mt-4 rounded-xl bg-red-50 p-3 text-red-800">
+        <div className="mt-4 rounded-xl bg-red-50 p-3 text-red-800 dark:bg-rose-950/30 dark:text-rose-300">
           Payment failed. Please try again.
         </div>
       )}
       {statusDone === "TIMEOUT" && (
-        <div className="mt-4 rounded-xl bg-yellow-50 p-3 text-yellow-800">
+        <div className="mt-4 rounded-xl bg-yellow-50 p-3 text-yellow-800 dark:bg-amber-950/30 dark:text-amber-200">
           Timed out waiting for confirmation. You can check later in Billing.
         </div>
       )}

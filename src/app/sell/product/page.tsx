@@ -29,18 +29,18 @@ export default async function Page({
       isAuthenticated = true;
     }
   } catch {
-    // Soft page – we do not want auth lookup failures to 500.
+    // Soft page – do not let auth lookup failures 500 this route.
     isAuthenticated = false;
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
-      <h1 className="text-xl font-semibold">
-        {isEdit ? "Edit product" : "Sell a Product"}
+    <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      <h1 className="mb-4 text-xl font-semibold">
+        {isEdit ? "Edit Product" : "Sell a Product"}
       </h1>
 
       {!isAuthenticated && (
-        <p className="mb-2 text-sm text-gray-700 dark:text-slate-200">
+        <p className="mb-4 text-sm text-gray-700 dark:text-slate-200">
           <a
             href={`/signin?callbackUrl=${encodeURIComponent("/sell/product")}`}
             className="btn-outline"
@@ -51,8 +51,8 @@ export default async function Page({
         </p>
       )}
 
-      {/* Server-side CTA that Playwright hits */}
-      <div className="mb-2">
+      {/* Server-side CTA that Playwright can assert without JS. */}
+      <div className="mb-4">
         <button
           type="button"
           data-testid="sell-product-mode-cta"
@@ -62,6 +62,7 @@ export default async function Page({
         </button>
       </div>
 
+      {/* Real implementation (create/edit) lives in SellProductClient */}
       <SellProductClient id={id} isAuthenticated={isAuthenticated} />
     </main>
   );

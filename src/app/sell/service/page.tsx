@@ -50,35 +50,6 @@ export default async function Page({
         </p>
       )}
 
-      {/* Tiny SSR-visible “quick details” stub; does not own the real flow */}
-      <form
-        aria-label="Quick service details"
-        className="mb-6 space-y-3"
-        action="#"
-        method="post"
-      >
-        <div>
-          <label
-            htmlFor="ss-name"
-            className="mb-1 block text-sm font-medium text-gray-700 dark:text-slate-200"
-          >
-            Service Name
-          </label>
-          <input
-            id="ss-name"
-            name="name"
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-[#161748] focus:ring-1 focus:ring-[#161748] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            placeholder="E.g. House cleaning, plumbing, makeup artist…"
-          />
-        </div>
-        <button
-          type="button"
-          className="rounded-lg bg-[#161748] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 dark:bg-[#39a0ca] dark:hover:bg-[#39a0ca]/90"
-        >
-          {isEdit ? "Update" : "Save"}
-        </button>
-      </form>
-
       {/* Real implementation (create/edit) lives in SellServiceClient */}
       <SellServiceClient editId={id} isAuthenticated={isAuthenticated} />
     </main>

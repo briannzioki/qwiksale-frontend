@@ -1,4 +1,3 @@
-// src/app/messages/page.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -32,14 +31,14 @@ export default async function MessagesPage() {
     if (!hasAuthCookie) {
       return (
         <div className="container-page py-10 space-y-4">
-          <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+          <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
             <h1 className="text-2xl md:text-3xl font-extrabold">Messages</h1>
             <p className="text-white/90">
               Chat with buyers and sellers in real-time.
             </p>
           </div>
 
-          <div className="rounded-2xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80">
             <h2 className="text-xl font-semibold">You’re not signed in</h2>
             <p className="mt-2 text-gray-600 dark:text-slate-300">
               Please sign in to view your messages.
@@ -62,7 +61,7 @@ export default async function MessagesPage() {
     // For the prod.no-auto-logout spec, this must NOT surface a "Sign in" link.
     return (
       <div className="container-page py-10 space-y-4">
-        <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+        <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
           <h1 className="text-2xl md:text-3xl font-extrabold">Messages</h1>
           <p className="text-white/90">
             Chat with buyers and sellers in real-time.
@@ -70,7 +69,7 @@ export default async function MessagesPage() {
         </div>
 
         <div
-          className="rounded-2xl border bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
           data-soft-error="messages"
           data-e2e="messages-soft-error"
         >
@@ -88,14 +87,28 @@ export default async function MessagesPage() {
   // Normal authenticated flow.
   return (
     <div className="container-page py-6 space-y-4">
-      <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+      <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
         <h1 className="text-2xl md:text-3xl font-extrabold">Messages</h1>
         <p className="text-white/90">
           Chat with buyers and sellers in real-time.
         </p>
       </div>
 
-      <MessagesClient meId={uid} />
+      <section
+        className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
+        aria-label="Conversations"
+      >
+        <div className="mb-4 flex items-center justify-between gap-2">
+          {/* No "Conversations" heading here to avoid duplicate heading names */}
+          <p className="text-sm font-medium text-gray-900 dark:text-slate-100">
+            Inbox
+          </p>
+          <p className="text-xs text-gray-500 dark:text-slate-400">
+            Your active chats will appear here. Start a conversation from any listing.
+          </p>
+        </div>
+        <MessagesClient meId={uid} />
+      </section>
     </div>
   );
 }
