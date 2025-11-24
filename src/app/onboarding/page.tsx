@@ -40,6 +40,11 @@ function OnboardingPageInner() {
   const retRaw = sp.get("return") || sp.get("callbackUrl") || "/dashboard";
   const returnTo = isSafePath(retRaw) ? retRaw : "/dashboard";
 
+  // E2E expects: /signin?callbackUrl=%2Fonboarding?return=%2Fdashboard
+  const encodedOnboardingPath = encodeURIComponent("/onboarding");
+  const encodedReturnTo = encodeURIComponent(returnTo);
+  const signInHref = `/signin?callbackUrl=${encodedOnboardingPath}?return=${encodedReturnTo}`;
+
   const [form, setForm] = useState<Profile>({
     username: "",
     whatsapp: "",
@@ -230,7 +235,7 @@ function OnboardingPageInner() {
     return (
       <div className="container-page py-8">
         <div className="mx-auto max-w-xl">
-          <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+          <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
             <h1 className="text-2xl md:text-3xl font-extrabold">Finish your profile</h1>
             <p className="mt-1 text-white/85">Loading…</p>
           </div>
@@ -249,7 +254,7 @@ function OnboardingPageInner() {
   return (
     <div className="container-page py-8">
       <div className="mx-auto max-w-xl">
-        <div className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
+        <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
           <h1 className="text-2xl md:text-3xl font-extrabold">Finish your profile</h1>
           <p className="mt-1 text-white/90">
             Only <b>username</b> is required now. You can add the rest later in{" "}
@@ -266,12 +271,7 @@ function OnboardingPageInner() {
             className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
           >
             Please{" "}
-            <Link
-              className="underline"
-              href={`/signin?callbackUrl=${encodeURIComponent(
-                `/onboarding?return=${encodeURIComponent(returnTo)}`,
-              )}`}
-            >
+            <Link className="underline" href={signInHref}>
               sign in
             </Link>{" "}
             to finish onboarding.
@@ -289,7 +289,7 @@ function OnboardingPageInner() {
 
         <form
           onSubmit={onSubmit}
-          className="mt-6 space-y-4 rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          className="mt-6 space-y-4 rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
           noValidate
         >
           {/* Username */}
@@ -300,7 +300,7 @@ function OnboardingPageInner() {
             <div className="relative">
               <input
                 id="username"
-                className="w-full rounded-lg border px-3 py-2 pr-24 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pr-24 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                 placeholder="e.g. brian254"
                 value={form.username}
                 onChange={(e) => onUsernameChange(e.target.value)}
@@ -332,7 +332,7 @@ function OnboardingPageInner() {
             </label>
             <input
               id="whatsapp"
-              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder="07XXXXXXXX or +2547XXXXXXX"
               value={form.whatsapp}
               onChange={(e) =>
@@ -365,7 +365,7 @@ function OnboardingPageInner() {
               </label>
               <input
                 id="city"
-                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                 placeholder="Nairobi"
                 value={form.city}
                 onChange={(e) =>
@@ -379,7 +379,7 @@ function OnboardingPageInner() {
               </label>
               <input
                 id="country"
-                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                 placeholder="Kenya"
                 value={form.country}
                 onChange={(e) =>
@@ -397,7 +397,7 @@ function OnboardingPageInner() {
               </label>
               <input
                 id="postal"
-                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                 placeholder="00100"
                 value={form.postalCode}
                 onChange={(e) =>
@@ -412,7 +412,7 @@ function OnboardingPageInner() {
               </label>
               <input
                 id="address"
-                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-[#39a0ca]/40 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                 placeholder="Street, building, etc."
                 value={form.address}
                 onChange={(e) =>

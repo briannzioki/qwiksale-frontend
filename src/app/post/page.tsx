@@ -68,7 +68,7 @@ export default function PostLandingPage() {
           <div className="mt-6">
             <Link
               href="/sell/product"
-              className="relative block w-full rounded-xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] px-4 py-2.5 text-center text-sm font-semibold text-white shadow transition hover:opacity-95"
+              className="relative block w-full rounded-xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue px-4 py-2.5 text-center text-sm font-semibold text-white shadow transition hover:opacity-95"
               aria-label="Start a product listing"
             >
               Start product listing
@@ -106,7 +106,7 @@ export default function PostLandingPage() {
           <div className="mt-6">
             <Link
               href="/sell/service"
-              className="relative block w-full rounded-xl border border-black/10 px-4 py-2.5 text-center text-sm font-semibold text-gray-900 transition hover:bg-black/5 dark:border-white/10 dark:text-white dark:hover:bg-white/10"
+              className="btn-outline block w-full text-center"
               aria-label="Start a service listing"
             >
               Start service listing
@@ -117,7 +117,7 @@ export default function PostLandingPage() {
 
       {/* Compare strip */}
       <section className="mx-auto mt-6 max-w-5xl">
-        <div className="rounded-xl border bg-white p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-4 text-sm shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80">
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-lg bg-black/[0.03] p-3 dark:bg-white/[0.04]">
               <p className="font-semibold">Best for Products</p>
@@ -140,20 +140,26 @@ export default function PostLandingPage() {
         <div className="card p-6 md:p-7">
           <h3 className="text-lg font-semibold">How it works</h3>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border p-4 dark:border-slate-700">
-              <div className="text-2xl" aria-hidden>1</div>
+            <div className="rounded-xl border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
+              <div className="text-2xl" aria-hidden>
+                1
+              </div>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
                 Create a listing with clear photos and details.
               </p>
             </div>
-            <div className="rounded-xl border p-4 dark:border-slate-700">
-              <div className="text-2xl" aria-hidden>2</div>
+            <div className="rounded-xl border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
+              <div className="text-2xl" aria-hidden>
+                2
+              </div>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
                 Buyers contact you directly via call or WhatsApp.
               </p>
             </div>
-            <div className="rounded-xl border p-4 dark:border-slate-700">
-              <div className="text-2xl" aria-hidden>3</div>
+            <div className="rounded-xl border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
+              <div className="text-2xl" aria-hidden>
+                3
+              </div>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
                 Meet safely, close the deal, and get paid.
               </p>
@@ -162,7 +168,10 @@ export default function PostLandingPage() {
 
           <p className="mt-4 text-xs text-gray-500 dark:text-slate-400">
             New to selling? See tips and safety guidelines in{" "}
-            <Link href="/help" className="underline underline-offset-2">Help</Link>.
+            <Link href="/help" className="underline underline-offset-2">
+              Help
+            </Link>
+            .
           </p>
         </div>
       </section>
@@ -172,19 +181,19 @@ export default function PostLandingPage() {
         <div className="card p-6 md:p-7">
           <h3 className="text-lg font-semibold">Common questions</h3>
           <div className="mt-4 space-y-3">
-            <details className="group rounded-lg border p-4 dark:border-slate-700">
+            <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
               <summary className="cursor-pointer font-medium">Do I pay to post?</summary>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
                 Posting is free. We may add optional boosts later for extra visibility.
               </p>
             </details>
-            <details className="group rounded-lg border p-4 dark:border-slate-700">
+            <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
               <summary className="cursor-pointer font-medium">How do buyers contact me?</summary>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
                 Through the number you provide (calls/WhatsApp). You can keep chats in-app if you prefer.
               </p>
             </details>
-            <details className="group rounded-lg border p-4 dark:border-slate-700">
+            <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
               <summary className="cursor-pointer font-medium">Any safety tips?</summary>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
                 Meet in public places, verify payments (M-Pesa SMS vs app), and don’t share sensitive info.

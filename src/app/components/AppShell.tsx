@@ -13,12 +13,12 @@ type Subcategory = { name: string; subsubcategories?: ReadonlyArray<LeafName> };
 type Category = { name: string; subcategories?: ReadonlyArray<Subcategory> };
 
 function hasSubcategories(
-  cat: unknown
+  cat: unknown,
 ): cat is Category & { subcategories: ReadonlyArray<Subcategory> } {
   return !!cat && Array.isArray((cat as any).subcategories);
 }
 function hasSubsubcategories(
-  sub: unknown
+  sub: unknown,
 ): sub is Subcategory & { subsubcategories: ReadonlyArray<LeafName> } {
   return !!sub && Array.isArray((sub as any).subsubcategories);
 }
@@ -42,7 +42,9 @@ export default function AppShell({
   useEffect(() => {
     if (open && !cats) {
       import("../data/categories")
-        .then((m) => setCats((m as any).categories as ReadonlyArray<Category>))
+        .then((m) =>
+          setCats((m as any).categories as ReadonlyArray<Category>),
+        )
         .catch(() => setCats([]));
     }
   }, [open, cats]);
@@ -69,7 +71,8 @@ export default function AppShell({
   // Open/close helpers
   const openDrawer = useCallback(() => {
     if (typeof document !== "undefined") {
-      (openerRef as any).current = (document.activeElement as HTMLElement) ?? null;
+      (openerRef as any).current =
+        ((document.activeElement as HTMLElement) ?? null);
     }
     setOpen(true);
   }, []);
@@ -83,15 +86,22 @@ export default function AppShell({
     window.addEventListener("qs:categories:open", onOpen as EventListener);
     window.addEventListener("qs:categories:close", onClose as EventListener);
     return () => {
-      window.removeEventListener("qs:categories:open", onOpen as EventListener);
-      window.removeEventListener("qs:categories:close", onClose as EventListener);
+      window.removeEventListener(
+        "qs:categories:open",
+        onOpen as EventListener,
+      );
+      window.removeEventListener(
+        "qs:categories:close",
+        onClose as EventListener,
+      );
     };
   }, [openDrawer, closeDrawer]);
 
   // Escape to close
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeDrawer();
+    const onKey = (e: KeyboardEvent) =>
+      e.key === "Escape" && closeDrawer();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [closeDrawer]);
@@ -110,9 +120,10 @@ export default function AppShell({
     function trapFocus(e: KeyboardEvent) {
       if (!open || e.key !== "Tab" || !drawerRef.current) return;
 
-      const nodeList = drawerRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), textarea, input, select, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])'
-      );
+      const nodeList =
+        drawerRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea, input, select, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])',
+        );
       const focusable: HTMLElement[] = Array.from(nodeList);
       if (focusable.length === 0) return;
 
@@ -167,21 +178,26 @@ export default function AppShell({
   }, [open, announce]);
 
   const categoryHref = useCallback(
-    (value: string) => `/search?type=product&category=${encodeURIComponent(value)}`,
-    []
+    (value: string) =>
+      `/search?type=product&category=${encodeURIComponent(value)}`,
+    [],
   );
   const leafHref = useCallback(
     (parent: string, leaf: string) =>
-      `/search?type=product&category=${encodeURIComponent(parent)}&subcategory=${encodeURIComponent(
-        leaf
-      )}`,
-    []
+      `/search?type=product&category=${encodeURIComponent(
+        parent,
+      )}&subcategory=${encodeURIComponent(leaf)}`,
+    [],
   );
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       {/* Live region for announcements */}
-      <span ref={liveRef} className="sr-only" aria-live="polite" />
+      <span
+        ref={liveRef}
+        className="sr-only"
+        aria-live="polite"
+      />
 
       {/* Skip link for a11y */}
       <a
@@ -211,7 +227,7 @@ export default function AppShell({
         id="main"
         ref={mainRef}
         tabIndex={-1}
-        className="flex-1 focus:outline-none bg-background"
+        className="flex-1 bg-background focus:outline-none"
       >
         <div className="container-page py-5 md:py-6">{children}</div>
       </main>
@@ -292,7 +308,10 @@ export default function AppShell({
                 Loading categories…
               </div>
             ) : (
-              <ul className="space-y-2" aria-label="Browse categories">
+              <ul
+                className="space-y-2"
+                aria-label="Browse categories"
+              >
                 {cats.map((cat) => {
                   const c = cat as unknown as Category;
                   return (
@@ -302,7 +321,9 @@ export default function AppShell({
                     >
                       <details className="group">
                         <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-foreground">
-                          <span className="font-medium">{c.name}</span>
+                          <span className="font-medium">
+                            {c.name}
+                          </span>
                           <svg
                             width="16"
                             height="16"
@@ -336,73 +357,93 @@ export default function AppShell({
                           </Link>
                         </div>
 
-                        {hasSubcategories(c) && c.subcategories.length > 0 && (
-                          <ul className="border-t border-border/60">
-                            {c.subcategories.map((sub) => {
-                              const s = sub as Subcategory;
-                              return (
-                                <li key={s.name} className="pl-2">
-                                  <details>
-                                    <summary className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-foreground hover:bg-muted">
-                                      <span className="flex-1">{s.name}</span>
-                                      <svg
-                                        width="14"
-                                        height="14"
-                                        viewBox="0 0 24 24"
-                                        className="text-muted-foreground"
-                                        fill="currentColor"
-                                        aria-hidden="true"
-                                      >
-                                        <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
-                                      </svg>
-                                    </summary>
-
-                                    <div className="px-3 pt-1">
-                                      <Link
-                                        href={categoryHref(s.name)}
-                                        onClick={closeDrawer}
-                                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm underline underline-offset-2"
-                                        prefetch={false}
-                                      >
-                                        View all {s.name}
+                        {hasSubcategories(c) &&
+                          c.subcategories.length > 0 && (
+                            <ul className="border-t border-border/60">
+                              {c.subcategories.map((sub) => {
+                                const s = sub as Subcategory;
+                                return (
+                                  <li
+                                    key={s.name}
+                                    className="pl-2"
+                                  >
+                                    <details>
+                                      <summary className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-foreground hover:bg-muted">
+                                        <span className="flex-1">
+                                          {s.name}
+                                        </span>
                                         <svg
                                           width="14"
                                           height="14"
                                           viewBox="0 0 24 24"
-                                          className="opacity-70"
+                                          className="text-muted-foreground"
                                           fill="currentColor"
                                           aria-hidden="true"
                                         >
                                           <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
                                         </svg>
-                                      </Link>
-                                    </div>
+                                      </summary>
 
-                                    {hasSubsubcategories(s) &&
-                                      s.subsubcategories.length > 0 && (
-                                        <ul className="mb-2 ml-3">
-                                          {s.subsubcategories.map(
-                                            (leaf: LeafName) => (
-                                              <li key={leaf}>
-                                                <Link
-                                                  href={leafHref(s.name, leaf)}
-                                                  onClick={closeDrawer}
-                                                  className="block border-l-2 border-transparent py-1.5 pl-3 pr-2 text-sm text-muted-foreground transition hover:border-brandBlue-600 hover:bg-muted"
-                                                  prefetch={false}
-                                                >
-                                                  {leaf}
-                                                </Link>
-                                              </li>
-                                            )
+                                      <div className="px-3 pt-1">
+                                        <Link
+                                          href={categoryHref(
+                                            s.name,
                                           )}
-                                        </ul>
-                                      )}
-                                  </details>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
+                                          onClick={closeDrawer}
+                                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm underline underline-offset-2"
+                                          prefetch={false}
+                                        >
+                                          View all {s.name}
+                                          <svg
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 24 24"
+                                            className="opacity-70"
+                                            fill="currentColor"
+                                            aria-hidden="true"
+                                          >
+                                            <path d="M8.6 16.6L13.2 12 8.6 7.4 10 6l6 6-6 6z" />
+                                          </svg>
+                                        </Link>
+                                      </div>
+
+                                      {hasSubsubcategories(
+                                        s,
+                                      ) &&
+                                        s.subsubcategories.length >
+                                          0 && (
+                                          <ul className="mb-2 ml-3">
+                                            {s.subsubcategories.map(
+                                              (
+                                                leaf: LeafName,
+                                              ) => (
+                                                <li key={leaf}>
+                                                  <Link
+                                                    href={leafHref(
+                                                      s.name,
+                                                      leaf,
+                                                    )}
+                                                    onClick={
+                                                      closeDrawer
+                                                    }
+                                                    className="block border-l-2 border-transparent py-1.5 pl-3 pr-2 text-sm text-muted-foreground transition hover:border-brandBlue-600 hover:bg-muted"
+                                                    prefetch={
+                                                      false
+                                                    }
+                                                  >
+                                                    {leaf}
+                                                  </Link>
+                                                </li>
+                                              ),
+                                            )}
+                                          </ul>
+                                        )}
+                                    </details>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
                       </details>
                     </li>
                   );

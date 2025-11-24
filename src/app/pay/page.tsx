@@ -1,4 +1,6 @@
+// src/app/pay/page.tsx
 "use client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 
@@ -252,13 +254,19 @@ export default function PayPage() {
       </div>
 
       {/* Form */}
-      <div className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4">
+      <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80 space-y-4">
         {/* Phone */}
         <div>
-          <label className="block text-sm font-semibold mb-1">Phone (2547XXXXXXXX or 2541XXXXXXXX)</label>
+          <label
+            htmlFor="pay-phone"
+            className="block text-sm font-semibold mb-1"
+          >
+            Phone (2547XXXXXXXX or 2541XXXXXXXX)
+          </label>
           <div className="flex gap-2 items-start">
             <input
-              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+              id="pay-phone"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder="2547XXXXXXXX"
               value={msisdn}
               onChange={(e) => setMsisdn(e.target.value)}
@@ -289,13 +297,19 @@ export default function PayPage() {
 
         {/* Amount + quick chips */}
         <div>
-          <label className="block text-sm font-semibold mb-1">Amount (KES)</label>
+          <label
+            htmlFor="pay-amount"
+            className="block text-sm font-semibold mb-1"
+          >
+            Amount (KES)
+          </label>
           <div className="flex flex-wrap gap-2 items-center">
             <input
+              id="pay-amount"
               type="number"
               min={1}
               step={1}
-              className="w-36 rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+              className="w-36 rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               value={amount}
               onChange={(e) => setAmountSafe(e.target.value)}
             />
@@ -317,9 +331,15 @@ export default function PayPage() {
 
         {/* Mode */}
         <div>
-          <label className="block text-sm font-semibold mb-1">Mode</label>
+          <label
+            htmlFor="pay-mode"
+            className="block text-sm font-semibold mb-1"
+          >
+            Mode
+          </label>
           <select
-            className="w-64 rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+            id="pay-mode"
+            className="w-64 rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
             value={mode}
             onChange={(e) => setMode(e.target.value as Mode)}
           >
@@ -333,7 +353,7 @@ export default function PayPage() {
           <button
             onClick={pay}
             disabled={loading || !validPhone || amount < 1}
-            className={`rounded-xl bg-[#161748] text-white px-4 py-2 font-semibold hover:opacity-95 disabled:opacity-60`}
+            className="rounded-xl bg-[#161748] text-white px-4 py-2 font-semibold hover:opacity-95 disabled:opacity-60"
           >
             {loading ? "Processing…" : "Send STK Push"}
           </button>
@@ -437,9 +457,9 @@ export default function PayPage() {
               <summary className="cursor-pointer text-sm text-gray-600 dark:text-slate-300">
                 Raw response JSON
               </summary>
-                <pre className="text-xs bg-gray-100 dark:bg-slate-800/50 p-3 rounded mt-2 overflow-x-auto">
+              <pre className="text-xs bg-gray-100 dark:bg-slate-800/50 p-3 rounded mt-2 overflow-x-auto">
 {prettyJson(resp)}
-                </pre>
+              </pre>
             </details>
           </div>
         )}

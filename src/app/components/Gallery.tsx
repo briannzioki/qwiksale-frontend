@@ -37,7 +37,9 @@ export default function Gallery({
   const safeImages = useMemo(
     () =>
       Array.isArray(images)
-        ? images.map((u) => String(u ?? "").trim()).filter(Boolean)
+        ? images
+            .map((u) => String(u ?? "").trim())
+            .filter(Boolean)
         : [],
     [images],
   );
@@ -48,7 +50,10 @@ export default function Gallery({
   );
 
   const [idx, setIdx] = useState(
-    Math.min(Math.max(0, initialIndex), Math.max(0, imgs.length - 1)),
+    Math.min(
+      Math.max(0, initialIndex),
+      Math.max(0, imgs.length - 1),
+    ),
   );
   const [open, setOpen] = useState(false);
 
@@ -73,7 +78,8 @@ export default function Gallery({
     b.src = imgs[next]!;
   }, [idx, imgs]);
 
-  const fitCls = fit === "contain" ? "object-contain" : "object-cover";
+  const fitCls =
+    fit === "contain" ? "object-contain" : "object-cover";
 
   const goClamp = useCallback(
     (n: number) => {
@@ -111,7 +117,10 @@ export default function Gallery({
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         goNext();
-      } else if ((e.key === "Enter" || e.key === " ") && lightbox) {
+      } else if (
+        (e.key === "Enter" || e.key === " ") &&
+        lightbox
+      ) {
         e.preventDefault();
         setOpen(true);
       }
@@ -120,9 +129,13 @@ export default function Gallery({
   );
 
   const touchStartX = useRef<number | null>(null);
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartX.current = e.changedTouches[0]?.clientX ?? null;
-  }, []);
+  const onTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      touchStartX.current =
+        e.changedTouches[0]?.clientX ?? null;
+    },
+    [],
+  );
   const onTouchEnd = useCallback(
     (e: React.TouchEvent) => {
       const start = touchStartX.current;
@@ -138,7 +151,9 @@ export default function Gallery({
     [goPrev, goNext],
   );
 
-  const thumbRefs = useRef<Record<number, HTMLButtonElement | null>>({});
+  const thumbRefs = useRef<
+    Record<number, HTMLButtonElement | null>
+  >({});
   useEffect(() => {
     const node = thumbRefs.current[idx];
     node?.scrollIntoView({
@@ -164,7 +179,7 @@ export default function Gallery({
       {/* Hero */}
       <div
         className={`relative ${aspect} w-full overflow-hidden rounded-xl bg-muted min-h-[180px] sm:min-h-[220px]`}
-        style={{ position: "relative" }} // ensure non-static position for unit test + Next fill semantics
+        style={{ position: "relative" }}
         data-gallery-wrap
         data-gallery-hero
       >
@@ -197,7 +212,11 @@ export default function Gallery({
         <button
           type="button"
           className="absolute inset-0 z-[2] focus:outline-none focus:ring-2 focus:ring-[#39a0ca]/60"
-          aria-label={lightbox ? "Open image in fullscreen" : "Select image"}
+          aria-label={
+            lightbox
+              ? "Open image in fullscreen"
+              : "Select image"
+          }
           aria-describedby={`${heroId}-desc`}
           onClick={() => lightbox && setOpen(true)}
           onKeyDown={onHeroKeyDown}
@@ -210,7 +229,9 @@ export default function Gallery({
 
         <span id={`${heroId}-desc`} className="sr-only">
           Use left and right arrow keys to change image.
-          {lightbox ? " Press Enter to view fullscreen." : ""}
+          {lightbox
+            ? " Press Enter to view fullscreen."
+            : ""}
         </span>
 
         {total > 1 && (
@@ -248,14 +269,22 @@ export default function Gallery({
 
       {/* Thumbnails */}
       {total > 1 && (
-        <div className="mt-2 border-t border-border/60 pt-2" data-gallery-thumbs>
+        <div
+          className="mt-2 border-t border-border/60 pt-2"
+          data-gallery-thumbs
+        >
           <ul
             className="no-scrollbar flex gap-2 overflow-x-auto p-1"
             role="tablist"
             aria-label="Thumbnails"
-            onWheel={(e: React.WheelEvent<HTMLUListElement>) => {
+            onWheel={(
+              e: React.WheelEvent<HTMLUListElement>,
+            ) => {
               const el = e.currentTarget;
-              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+              if (
+                Math.abs(e.deltaY) >
+                Math.abs(e.deltaX)
+              ) {
                 el.scrollLeft += e.deltaY;
               }
             }}
@@ -263,7 +292,10 @@ export default function Gallery({
             {imgs.map((src, i) => {
               const selected = i === idx;
               return (
-                <li key={`${src}:${i}`} className="relative">
+                <li
+                  key={`${src}:${i}`}
+                  className="relative"
+                >
                   <button
                     ref={(el) => {
                       thumbRefs.current[i] = el;
@@ -279,7 +311,11 @@ export default function Gallery({
                         : "border-border hover:ring-1 hover:ring-[#39a0ca]/60",
                     ].join(" ")}
                     aria-label={`Show image ${i + 1} of {total}`}
-                    title={selected ? "Current image" : `Image ${i + 1}`}
+                    title={
+                      selected
+                        ? "Current image"
+                        : `Image ${i + 1}`
+                    }
                     onClick={() => setIdx(i)}
                     onKeyDown={(e) => {
                       if (e.key === "ArrowLeft") {
@@ -288,20 +324,33 @@ export default function Gallery({
                         (
                           e.currentTarget.parentElement?.querySelectorAll(
                             "button",
-                          )?.[prev] as HTMLButtonElement | undefined
+                          )?.[prev] as
+                            | HTMLButtonElement
+                            | undefined
                         )?.focus();
-                      } else if (e.key === "ArrowRight") {
+                      } else if (
+                        e.key === "ArrowRight"
+                      ) {
                         e.preventDefault();
-                        const next = Math.min(total - 1, i + 1);
+                        const next = Math.min(
+                          total - 1,
+                          i + 1,
+                        );
                         (
                           e.currentTarget.parentElement?.querySelectorAll(
                             "button",
-                          )?.[next] as HTMLButtonElement | undefined
+                          )?.[next] as
+                            | HTMLButtonElement
+                            | undefined
                         )?.focus();
-                      } else if (e.key === "Enter" || e.key === " ") {
+                      } else if (
+                        e.key === "Enter" ||
+                        e.key === " "
+                      ) {
                         e.preventDefault();
                         setIdx(i);
-                        if (lightbox) setOpen(true);
+                        if (lightbox)
+                          setOpen(true);
                       }
                     }}
                     data-gallery-thumb
@@ -327,7 +376,11 @@ export default function Gallery({
 
       {/* Shadow list for tests */}
       {total > 0 && (
-        <div className="hidden" aria-hidden="true" data-gallery-shadow>
+        <div
+          className="hidden"
+          aria-hidden="true"
+          data-gallery-shadow
+        >
           {imgs.map((src, i) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img

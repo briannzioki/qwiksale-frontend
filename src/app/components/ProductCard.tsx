@@ -251,7 +251,7 @@ function ProductCardImpl({
         aria-label={name ? `View product: ${name}` : "View product"}
         className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#161748]/50"
       >
-        <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+        <div className="relative aspect-square w-full overflow-hidden bg-muted">
           <SmartImage
             src={src}
             alt={name || "Product image"}
@@ -272,7 +272,7 @@ function ProductCardImpl({
           <div className="line-clamp-1 font-semibold text-[var(--text)]">
             {name ?? "Product"}
           </div>
-          <div className="mt-1 text-[15px] font-bold text-[#161748] dark:text-[#39a0ca]">
+          <div className="mt-1 text-[15px] font-bold text-brandBlue">
             {priceText}
           </div>
         </div>

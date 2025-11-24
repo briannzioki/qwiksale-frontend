@@ -193,7 +193,7 @@ export default function ServiceGrid({
                     <p className="line-clamp-1 text-xs text-muted-foreground">
                       {categoryText}
                     </p>
-                    <p className="mt-1 font-bold text-[#161748] dark:text-brandBlue">
+                    <p className="mt-1 font-bold text-brandBlue">
                       {fmtKES(s.price)}
                     </p>
                   </div>

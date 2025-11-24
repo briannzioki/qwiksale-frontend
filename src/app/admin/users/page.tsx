@@ -204,7 +204,6 @@ async function fetchUsersFallback(opts: {
 export default async function Page({
   searchParams,
 }: {
-  // ✅ Next 15: searchParams is a Promise
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
@@ -220,7 +219,6 @@ export default async function Page({
 
   const viewerId = viewer?.id ?? null;
 
-  // Build API query (relative URL; middleware + server handle host)
   const qs = new URLSearchParams();
   qs.set("limit", String(API_LIMIT));
   if (q) qs.set("q", q);
@@ -246,7 +244,6 @@ export default async function Page({
     hadApiError = true;
   }
 
-  // Primary source from API, then DB fallback if empty or API failed.
   let source: AdminUser[] = Array.isArray(all) ? all : [];
   let hadFallbackError = false;
 
@@ -295,7 +292,6 @@ export default async function Page({
     isSelf: boolean;
   }) => JSX.Element | null = () => null;
 
-  // Only super-admins get role editing UI.
   if (viewerIsSuper) {
     try {
       const mod = await import("@/app/admin/users/RoleActions.client");
@@ -332,7 +328,7 @@ export default async function Page({
       {softError && (
         <div
           role="status"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
         >
           {softError}
         </div>
@@ -582,14 +578,10 @@ function Badge({
 }) {
   const map: Record<string, string> = {
     slate: "bg-muted text-muted-foreground",
-    green:
-      "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200",
-    amber:
-      "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-    rose:
-      "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
-    indigo:
-      "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+    green: "bg-green-100 text-green-800",
+    amber: "bg-amber-100 text-amber-800",
+    rose: "bg-rose-100 text-rose-800",
+    indigo: "bg-indigo-100 text-indigo-800",
   };
   return (
     <span

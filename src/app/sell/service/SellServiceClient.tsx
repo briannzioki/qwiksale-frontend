@@ -169,6 +169,7 @@ export default function SellServiceClient({
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // Edit prefill
   useEffect(() => {
     if (!editId) return;
     let cancelled = false;
@@ -774,8 +775,8 @@ export default function SellServiceClient({
             >
               <p className="font-medium">Photos</p>
               <p className="text-xs">
-                Drag & drop up to {MAX_FILES} images ({MAX_MB}MB
-                each), or click to select.
+                Drag & drop up to {MAX_FILES} images ({MAX_MB}MB each), or
+                click to select.
               </p>
               <input
                 ref={inputRef}
@@ -843,6 +844,12 @@ export default function SellServiceClient({
                 </div>
               ))}
             </div>
+
+            {previews.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No new files selected
+              </p>
+            )}
 
             {uploadPct > 0 && submitting && (
               <div className="text-xs text-muted-foreground">

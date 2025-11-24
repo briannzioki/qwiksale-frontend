@@ -21,7 +21,7 @@ export default async function SellLandingPage() {
     <div className="container-page py-10">
       {/* HERO */}
       <section className="mx-auto max-w-4xl text-center">
-        <div className="rounded-2xl bg-gradient-to-br from-brandNavy via-brandGreen to-brandBlue p-8 text-white shadow-soft md:p-10 dark:shadow-none">
+        <div className="rounded-2xl bg-gradient-to-br from-brandNavy via-brandGreen to-brandBlue p-8 text-white shadow-soft md:p-10">
           <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">
             Post a listing in minutes
           </h1>

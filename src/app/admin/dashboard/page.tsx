@@ -85,7 +85,6 @@ async function fetchMetrics(timeoutMs = 2000): Promise<Metrics | null> {
 function StatCard({
   label,
   value,
-  // exactOptionalPropertyTypes-safe: explicitly allow undefined
   sublabel,
 }: {
   label: string;
@@ -215,7 +214,7 @@ export default async function Page() {
         />
 
         <div
-          className="rounded-xl border border-border bg-card p-4 text-sm text-rose-600 dark:text-rose-400"
+          className="rounded-xl border border-border bg-card p-4 text-sm text-rose-600"
           role="status"
           aria-live="polite"
         >
@@ -310,7 +309,7 @@ export default async function Page() {
             <div className="mb-1 text-xs text-muted-foreground">
               Products
             </div>
-            <div className="text-emerald-600 dark:text-emerald-400">
+            <div className="text-emerald-600">
               <Sparkline data={metrics.last7d} field="products" />
             </div>
           </div>
@@ -318,7 +317,7 @@ export default async function Page() {
             <div className="mb-1 text-xs text-muted-foreground">
               Services
             </div>
-            <div className="text-sky-600 dark:text-sky-400">
+            <div className="text-sky-600">
               <Sparkline data={metrics.last7d} field="services" />
             </div>
           </div>

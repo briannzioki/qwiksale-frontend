@@ -72,7 +72,9 @@ export default function SectionHeader({
   level,
   ...rest
 }: SectionHeaderProps) {
-  const [portalEl, setPortalEl] = React.useState<HTMLElement | null>(null);
+  const [portalEl, setPortalEl] = React.useState<HTMLElement | null>(
+    null,
+  );
 
   React.useEffect(() => {
     if (!portalActionsToLayout) return;
@@ -85,14 +87,21 @@ export default function SectionHeader({
   const ariaLevel =
     as === "div"
       ? (level ?? 1)
-      : ((Number(String(as).slice(1)) as 1 | 2 | 3 | 4 | 5 | 6) || 1);
+      : ((Number(String(as).slice(1)) as
+            | 1
+            | 2
+            | 3
+            | 4
+            | 5
+            | 6) || 1);
 
   const headingRoleProps =
     as === "div" && semanticHeading
       ? ({ role: "heading", "aria-level": ariaLevel } as const)
       : ({} as const);
 
-  const headingTitleAttr = typeof title === "string" ? title : undefined;
+  const headingTitleAttr =
+    typeof title === "string" ? title : undefined;
 
   const actionsArray = React.Children.toArray(actions);
 
@@ -103,7 +112,7 @@ export default function SectionHeader({
     title.trim().toLowerCase() === "qwiksale";
 
   // Non-strip mode now uses semantic tokens for text color
-  const baseColorClass = useStrip ? "text-white" : "text-[var(--text)]";
+  const baseColorClass = useStrip ? "text-white" : "text-foreground";
 
   const titleColorClass = isHomeHero
     ? "bg-gradient-to-r from-[#f9fafb] via-[#7dd3fc] to-[#6ee7b7] bg-clip-text text-transparent"
@@ -112,7 +121,10 @@ export default function SectionHeader({
   return (
     <header
       {...rest}
-      className={cn(useStrip && "relative isolate", className)}
+      className={cn(
+        useStrip && "relative isolate",
+        className,
+      )}
       style={
         useStrip
           ? {
@@ -126,12 +138,15 @@ export default function SectionHeader({
         className={cn(
           useStrip
             ? cn(
-                stripByGradient[gradient as Exclude<Gradient, "none">] ??
-                  stripByGradient.brand,
+                stripByGradient[
+                  gradient as Exclude<Gradient, "none">
+                ] ?? stripByGradient.brand,
                 "w-full",
               )
             : "w-full",
-          dense ? "pt-4 pb-6 md:pt-5 md:pb-7" : "pt-8 pb-12 md:pt-10 md:pb-14",
+          dense
+            ? "pt-4 pb-6 md:pt-5 md:pb-7"
+            : "pt-8 pb-12 md:pt-10 md:pb-14",
         )}
       >
         <div className="container-page">
@@ -150,12 +165,18 @@ export default function SectionHeader({
                     "flex items-center gap-2 text-xs md:text-sm",
                     useStrip
                       ? "text-white/90"
-                      : "text-[var(--text-muted)]",
-                    align === "center" ? "justify-center" : "",
+                      : "text-muted-foreground",
+                    align === "center"
+                      ? "justify-center"
+                      : "",
                   )}
                 >
-                  {icon ? <span aria-hidden>{icon}</span> : null}
-                  {kicker ? <span className="truncate">{kicker}</span> : null}
+                  {icon ? (
+                    <span aria-hidden>{icon}</span>
+                  ) : null}
+                  {kicker ? (
+                    <span className="truncate">{kicker}</span>
+                  ) : null}
                 </div>
               )}
 
@@ -164,9 +185,13 @@ export default function SectionHeader({
                 {...headingRoleProps}
                 className={cn(
                   "text-balance font-extrabold tracking-tight",
-                  dense ? "text-xl md:text-2xl" : "text-2xl md:text-3xl",
+                  dense
+                    ? "text-xl md:text-2xl"
+                    : "text-2xl md:text-3xl",
                   titleColorClass,
-                  !useStrip && !isHomeHero && "text-gradient",
+                  !useStrip &&
+                    !isHomeHero &&
+                    "text-gradient",
                 )}
                 title={headingTitleAttr}
               >
@@ -179,7 +204,7 @@ export default function SectionHeader({
                     "mt-1 max-w-2xl text-sm md:text-base",
                     useStrip
                       ? "text-white/80"
-                      : "text-[var(--text-muted)]",
+                      : "text-muted-foreground",
                     align === "center" ? "mx-auto" : "",
                   )}
                 >
