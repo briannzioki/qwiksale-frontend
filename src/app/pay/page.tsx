@@ -215,31 +215,6 @@ export default function PayPage() {
     }
   }
 
-  // derived for summary card
-  const summary = useMemo(() => {
-    if (!resp) return null;
-    return {
-      responseCode:
-        resp?.ResponseCode ??
-        resp?.responseCode ??
-        resp?.Body?.stkCallback?.ResultCode,
-      responseDesc:
-        resp?.ResponseDescription ??
-        resp?.responseDescription ??
-        resp?.CustomerMessage ??
-        resp?.customerMessage ??
-        resp?.Body?.stkCallback?.ResultDesc,
-      merchantRequestId:
-        resp?.MerchantRequestID ??
-        resp?.merchantRequestId ??
-        resp?.Body?.stkCallback?.MerchantRequestID,
-      checkoutRequestId:
-        resp?.CheckoutRequestID ??
-        resp?.checkoutRequestId ??
-        resp?.Body?.stkCallback?.CheckoutRequestID,
-    };
-  }, [resp]);
-
   const showUseProfile =
     !!profileMsisdn && isValidMsisdn(profileMsisdn) && profileMsisdn !== normalized;
 
@@ -249,7 +224,8 @@ export default function PayPage() {
       <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
         <h1 className="text-2xl font-bold">Test M-Pesa STK Push</h1>
         <p className="text-white/90">
-          Environment: <b className="underline">{PUBLIC_ENV}</b>. Use sandbox credentials unless you’ve switched to production.
+          Environment: <b className="underline">{PUBLIC_ENV}</b>. Use sandbox
+          credentials unless you’ve switched to production.
         </p>
       </div>
 
@@ -289,8 +265,13 @@ export default function PayPage() {
             Normalized: <code className="font-mono">{normalized || "—"}</code>
           </div>
           {!validPhone && msisdn && (
-            <div className="text-xs text-red-600 mt-1" role="alert" aria-live="polite">
-              Must match <code className="font-mono">2547XXXXXXXX</code> or <code className="font-mono">2541XXXXXXXX</code>
+            <div
+              className="text-xs text-red-600 mt-1"
+              role="alert"
+              aria-live="polite"
+            >
+              Must match <code className="font-mono">2547XXXXXXXX</code> or{" "}
+              <code className="font-mono">2541XXXXXXXX</code>
             </div>
           )}
         </div>
@@ -319,7 +300,11 @@ export default function PayPage() {
                   key={v}
                   type="button"
                   className={`rounded-lg border px-3 py-2 text-sm font-semibold transition
-                    ${amount === v ? "bg-brandNavy text-white border-brandNavy" : "bg-white hover:bg-gray-50 dark:bg-slate-900 dark:hover:bg-slate-800"}`}
+                    ${
+                      amount === v
+                        ? "bg-brandNavy text-white border-brandNavy"
+                        : "bg-white hover:bg-gray-50 dark:bg-slate-900 dark:hover:bg-slate-800"
+                    }`}
                   onClick={() => setAmount(v)}
                 >
                   {v.toLocaleString()}
@@ -396,39 +381,55 @@ export default function PayPage() {
             <h2 className="font-semibold">Response</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
               <div>
-                <span className="text-gray-500 dark:text-slate-400">Response Code:</span>{" "}
-                <span className="font-medium">{String(
-                  resp?.ResponseCode ??
-                  resp?.responseCode ??
-                  resp?.Body?.stkCallback?.ResultCode ??
-                  "—")}</span>
+                <span className="text-gray-500 dark:text-slate-400">
+                  Response Code:
+                </span>{" "}
+                <span className="font-medium">
+                  {String(
+                    resp?.ResponseCode ??
+                      resp?.responseCode ??
+                      resp?.Body?.stkCallback?.ResultCode ??
+                      "—",
+                  )}
+                </span>
               </div>
               <div>
-                <span className="text-gray-500 dark:text-slate-400">Response:</span>{" "}
-                <span className="font-medium">{
-                  resp?.ResponseDescription ??
-                  resp?.responseDescription ??
-                  resp?.CustomerMessage ??
-                  resp?.customerMessage ??
-                  resp?.Body?.stkCallback?.ResultDesc ??
-                  "—"}</span>
+                <span className="text-gray-500 dark:text-slate-400">
+                  Response:
+                </span>{" "}
+                <span className="font-medium">
+                  {resp?.ResponseDescription ??
+                    resp?.responseDescription ??
+                    resp?.CustomerMessage ??
+                    resp?.customerMessage ??
+                    resp?.Body?.stkCallback?.ResultDesc ??
+                    "—"}
+                </span>
               </div>
               <div>
-                <span className="text-gray-500 dark:text-slate-400">MerchantRequestID:</span>{" "}
-                <span className="font-medium">{
-                  resp?.MerchantRequestID ??
-                  resp?.merchantRequestId ??
-                  resp?.Body?.stkCallback?.MerchantRequestID ??
-                  "—"}</span>
+                <span className="text-gray-500 dark:text-slate-400">
+                  MerchantRequestID:
+                </span>{" "}
+                <span className="font-medium">
+                  {resp?.MerchantRequestID ??
+                    resp?.merchantRequestId ??
+                    resp?.Body?.stkCallback?.MerchantRequestID ??
+                    "—"}
+                </span>
               </div>
               <div>
-                <span className="text-gray-500 dark:text-slate-400">CheckoutRequestID:</span>{" "}
-                <span className="font-medium break-all">{
-                  resp?.CheckoutRequestID ??
-                  resp?.checkoutRequestId ??
-                  resp?.Body?.stkCallback?.CheckoutRequestID ??
-                  "—"}</span>
-                {(resp?.CheckoutRequestID || resp?.checkoutRequestId || resp?.Body?.stkCallback?.CheckoutRequestID) && (
+                <span className="text-gray-500 dark:text-slate-400">
+                  CheckoutRequestID:
+                </span>{" "}
+                <span className="font-medium break-all">
+                  {resp?.CheckoutRequestID ??
+                    resp?.checkoutRequestId ??
+                    resp?.Body?.stkCallback?.CheckoutRequestID ??
+                    "—"}
+                </span>
+                {(resp?.CheckoutRequestID ||
+                  resp?.checkoutRequestId ||
+                  resp?.Body?.stkCallback?.CheckoutRequestID) && (
                   <button
                     className="ml-2 rounded-md border px-2 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-800"
                     onClick={async () => {
@@ -458,7 +459,7 @@ export default function PayPage() {
                 Raw response JSON
               </summary>
               <pre className="text-xs bg-gray-100 dark:bg-slate-800/50 p-3 rounded mt-2 overflow-x-auto">
-{prettyJson(resp)}
+                {prettyJson(resp)}
               </pre>
             </details>
           </div>
@@ -466,9 +467,13 @@ export default function PayPage() {
 
         {/* Tips */}
         <div className="text-xs text-gray-600 dark:text-slate-400">
-          Ensure <code className="font-mono">MPESA_CALLBACK_URL</code> is publicly reachable (e.g., Vercel prod domain or an ngrok URL)
-          pointing to <code className="font-mono">/api/mpesa/callback</code>. In sandbox, the default shortcode is{" "}
-          <code className="font-mono">174379</code> and mode is <code className="font-mono">paybill</code>.
+          Ensure{" "}
+          <code className="font-mono">MPESA_CALLBACK_URL</code> is publicly
+          reachable (e.g., Vercel prod domain or an ngrok URL) pointing to{" "}
+          <code className="font-mono">/api/mpesa/callback</code>. In sandbox,
+          the default shortcode is{" "}
+          <code className="font-mono">174379</code> and mode is{" "}
+          <code className="font-mono">paybill</code>.
         </div>
       </div>
     </div>

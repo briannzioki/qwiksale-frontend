@@ -1,5 +1,6 @@
 ﻿// src/app/search/page.tsx
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";
 import NumberInputNoWheel from "@/app/components/ui/NumberInputNoWheel";
@@ -26,6 +27,12 @@ type Envelope<T> = {
   total: number;
   totalPages: number;
   items: T[];
+};
+
+export const metadata: Metadata = {
+  title: "Search · QwikSale",
+  description:
+    "Search products and services listed on QwikSale across Kenya.",
 };
 
 /* ------------------------ helpers ------------------------ */

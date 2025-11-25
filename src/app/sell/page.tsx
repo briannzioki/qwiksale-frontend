@@ -1,9 +1,17 @@
 // src/app/sell/page.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const runtime = "nodejs";
 
+import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/auth";
+
+export const metadata: Metadata = {
+  title: "Sell on QwikSale",
+  description:
+    "Post products or services on QwikSale and reach buyers across Kenya.",
+};
 
 export default async function SellLandingPage() {
   const session = await auth().catch(() => null);

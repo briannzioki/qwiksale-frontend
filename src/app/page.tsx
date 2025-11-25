@@ -7,6 +7,7 @@ import SectionHeader from "@/app/components/SectionHeader";
 import HomeClientNoSSR, {
   type HomeSeedProps,
 } from "@/app/_components/HomeClientNoSSR";
+import type { SearchParams15 } from "@/app/lib/next15";
 
 /* ------------------------------ Minimal shapes ----------------------------- */
 type AnyItem = {
@@ -106,14 +107,13 @@ async function getSeedIds(): Promise<{
 }
 
 /* ------------------------------ Optional tab parse ------------------------- */
-type SearchParams = Record<string, string | string[] | undefined>;
-function getParam(sp: SearchParams, k: string): string | undefined {
+function getParam(sp: SearchParams15, k: string): string | undefined {
   const v = sp[k];
   return Array.isArray(v) ? v[0] : (v as string | undefined);
 }
 
 export const metadata: Metadata = {
-  title: "Home",
+  title: "Home · QwikSale",
   description:
     "Discover the latest listings on QwikSale — Kenya’s most trusted marketplace to buy & sell anything fast.",
 };
@@ -121,9 +121,11 @@ export const metadata: Metadata = {
 export default async function Page({
   searchParams,
 }: {
-  searchParams?: Promise<SearchParams>;
+  searchParams?: Promise<SearchParams15>;
 }) {
-  const sp = (await (searchParams ?? Promise.resolve({}))) as SearchParams;
+  const sp =
+    (await (searchParams ?? Promise.resolve({} as SearchParams15))) ||
+    ({} as SearchParams15);
 
   // Accept BOTH ?t= and ?tab= (the tests sometimes use ?tab=services)
   const tabParamRaw = getParam(sp, "t") ?? getParam(sp, "tab") ?? "all";
