@@ -19,6 +19,7 @@ export type SectionHeaderProps = {
   dense?: boolean;
   className?: string;
 
+  /** When true, actions are portalled into #page-header-actions in layout */
   portalActionsToLayout?: boolean;
 
   /** Heading element to render for the title. Defaults to "h1". */
@@ -41,18 +42,19 @@ function cn(...xs: Array<string | false | null | undefined>) {
 }
 
 /**
- * Strip styles per gradient type.
+ * Gradient hero card variants.
  *
- * All of these now lean on design tokens:
- * - bg-spotlight / bg-noise (CSS vars)
- * - bg-brand-navy / bg-brand-accent (Tailwind backgroundImage from tokens)
+ * These all lean on design tokens from Tailwind:
+ * - `bg-brand-navy`   → navy → blue band
+ * - `bg-brand-accent` → blue/green band
+ * - `shadow-soft`     → soft drop shadow
  */
 const stripByGradient: Record<Exclude<Gradient, "none">, string> = {
-  // Primary brand hero – spotlight + noise overlay
-  brand: "bg-spotlight bg-noise text-white",
-  // Navy-heavy gradient from Tailwind config (brandNavy → brandBlue)
+  // Primary brand hero – same feel as dashboard hero card
+  brand: "bg-brand-navy text-white shadow-soft",
+  // Deep navy band
   navy: "bg-brand-navy text-white shadow-soft",
-  // Blue/green accent gradient from Tailwind config
+  // Blue/green accent band
   blue: "bg-brand-accent text-white shadow-soft",
 };
 
@@ -105,135 +107,132 @@ export default function SectionHeader({
 
   const actionsArray = React.Children.toArray(actions);
 
-  // Special-case: home hero “Welcome / QwikSale” → brighter brand gradient text
+  // Special-case: home hero “Welcome / QwikSale” → brighter gradient text
   const isHomeHero =
     kicker === "Welcome" &&
     typeof title === "string" &&
     title.trim().toLowerCase() === "qwiksale";
 
-  // Non-strip mode now uses semantic tokens for text color
-  const baseColorClass = useStrip ? "text-white" : "text-foreground";
+  const baseColorClass = useStrip
+    ? "text-white"
+    : "text-foreground";
 
   const titleColorClass = isHomeHero
     ? "bg-gradient-to-r from-[#f9fafb] via-[#7dd3fc] to-[#6ee7b7] bg-clip-text text-transparent"
     : baseColorClass;
 
+  const kickerColorClass = useStrip
+    ? "text-white/90"
+    : "text-muted-foreground";
+
+  const subtitleColorClass = useStrip
+    ? "text-white/80"
+    : "text-muted-foreground";
+
+  const verticalPadding = dense
+    ? "pt-4 pb-6 md:pt-5 md:pb-7"
+    : "pt-8 pb-12 md:pt-10 md:pb-14";
+
+  const cardPadding = dense
+    ? "px-4 py-5 md:px-6 md:py-6"
+    : "px-5 py-7 md:px-8 md:py-8";
+
+  const alignmentClasses =
+    align === "center"
+      ? "md:mx-auto md:items-center md:justify-center md:text-center"
+      : "";
+
+  const inner = (
+    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      {/* Left: title block */}
+      <div className={cn("min-w-0", alignmentClasses)}>
+        {(kicker || icon) && (
+          <div
+            className={cn(
+              "flex items-center gap-2 text-xs md:text-sm",
+              kickerColorClass,
+              align === "center" ? "justify-center" : "",
+            )}
+          >
+            {icon ? <span aria-hidden>{icon}</span> : null}
+            {kicker ? (
+              <span className="truncate">{kicker}</span>
+            ) : null}
+          </div>
+        )}
+
+        {/* Title (may be div or real heading) */}
+        <HeadingTag
+          {...headingRoleProps}
+          className={cn(
+            "text-balance font-extrabold tracking-tight",
+            dense ? "text-xl md:text-2xl" : "text-2xl md:text-3xl",
+            titleColorClass,
+            !useStrip && !isHomeHero && "text-gradient",
+          )}
+          title={headingTitleAttr}
+        >
+          {title}
+        </HeadingTag>
+
+        {subtitle ? (
+          <p
+            className={cn(
+              "mt-1 max-w-2xl text-sm md:text-base",
+              subtitleColorClass,
+              align === "center" ? "mx-auto" : "",
+            )}
+          >
+            {subtitle}
+          </p>
+        ) : null}
+      </div>
+
+      {/* Right: actions */}
+      <div
+        className={cn(
+          "mt-2 md:mt-0",
+          align === "center" ? "md:mx-auto" : "",
+        )}
+      >
+        {portalActionsToLayout && portalEl ? (
+          createPortal(
+            <div className="flex items-center gap-2">
+              {actionsArray}
+            </div>,
+            portalEl,
+          )
+        ) : (
+          <div className="flex items-center gap-2">
+            {actionsArray}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <header
       {...rest}
-      className={cn(
-        useStrip && "relative isolate",
-        className,
-      )}
-      style={
-        useStrip
-          ? {
-              WebkitMaskImage:
-                "linear-gradient(to bottom, black 85%, transparent)",
-            }
-          : undefined
-      }
+      className={cn(className)}
     >
-      <div
-        className={cn(
-          useStrip
-            ? cn(
+      <div className={verticalPadding}>
+        <div className="container-page">
+          {useStrip ? (
+            <div
+              className={cn(
+                "relative overflow-hidden rounded-3xl border border-border/60 shadow-soft",
                 stripByGradient[
                   gradient as Exclude<Gradient, "none">
                 ] ?? stripByGradient.brand,
-                "w-full",
-              )
-            : "w-full",
-          dense
-            ? "pt-4 pb-6 md:pt-5 md:pb-7"
-            : "pt-8 pb-12 md:pt-10 md:pb-14",
-        )}
-      >
-        <div className="container-page">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            {/* Left: title block */}
-            <div
-              className={cn(
-                "min-w-0",
-                align === "center" &&
-                  "md:mx-auto md:items-center md:justify-center md:text-center",
+                cardPadding,
               )}
             >
-              {(kicker || icon) && (
-                <div
-                  className={cn(
-                    "flex items-center gap-2 text-xs md:text-sm",
-                    useStrip
-                      ? "text-white/90"
-                      : "text-muted-foreground",
-                    align === "center"
-                      ? "justify-center"
-                      : "",
-                  )}
-                >
-                  {icon ? (
-                    <span aria-hidden>{icon}</span>
-                  ) : null}
-                  {kicker ? (
-                    <span className="truncate">{kicker}</span>
-                  ) : null}
-                </div>
-              )}
-
-              {/* Title (may be div or real heading) */}
-              <HeadingTag
-                {...headingRoleProps}
-                className={cn(
-                  "text-balance font-extrabold tracking-tight",
-                  dense
-                    ? "text-xl md:text-2xl"
-                    : "text-2xl md:text-3xl",
-                  titleColorClass,
-                  !useStrip &&
-                    !isHomeHero &&
-                    "text-gradient",
-                )}
-                title={headingTitleAttr}
-              >
-                {title}
-              </HeadingTag>
-
-              {subtitle ? (
-                <p
-                  className={cn(
-                    "mt-1 max-w-2xl text-sm md:text-base",
-                    useStrip
-                      ? "text-white/80"
-                      : "text-muted-foreground",
-                    align === "center" ? "mx-auto" : "",
-                  )}
-                >
-                  {subtitle}
-                </p>
-              ) : null}
+              {inner}
             </div>
-
-            {/* Right: actions */}
-            <div
-              className={cn(
-                "mt-2 md:mt-0",
-                align === "center" ? "md:mx-auto" : "",
-              )}
-            >
-              {portalActionsToLayout && portalEl
-                ? createPortal(
-                    <div className="flex items-center gap-2">
-                      {actionsArray}
-                    </div>,
-                    portalEl,
-                  )
-                : (
-                  <div className="flex items-center gap-2">
-                    {actionsArray}
-                  </div>
-                  )}
-            </div>
-          </div>
+          ) : (
+            inner
+          )}
         </div>
       </div>
     </header>

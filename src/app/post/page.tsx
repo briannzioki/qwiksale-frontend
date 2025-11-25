@@ -3,7 +3,14 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const runtime = "nodejs";
 
+import type { Metadata } from "next";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "Post a Listing · QwikSale",
+  description:
+    "Choose whether to post a product or a service listing on QwikSale.",
+};
 
 export default function PostLandingPage() {
   return (
@@ -15,14 +22,23 @@ export default function PostLandingPage() {
             Create a listing in minutes
           </h1>
           <p className="mt-3 text-white/90 text-pretty">
-            Products or services — beautiful posts that buyers trust. Add photos, set a price, and go.
+            Products or services — beautiful posts that buyers trust. Add photos,
+            set a price, and go.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/sell/product" className="btn-gradient-primary" aria-label="Post a product">
+            <Link
+              href="/sell/product"
+              className="btn-gradient-primary"
+              aria-label="Post a product"
+            >
               Post a product
             </Link>
-            <Link href="/sell/service" className="btn-outline" aria-label="Post a service">
+            <Link
+              href="/sell/service"
+              className="btn-outline"
+              aria-label="Post a service"
+            >
               Post a service
             </Link>
           </div>
@@ -30,8 +46,12 @@ export default function PostLandingPage() {
           {/* Trust chips */}
           <div className="mt-5 grid grid-cols-1 gap-2 text-xs text-white/90 sm:grid-cols-3">
             <div className="rounded-lg bg-white/10 px-3 py-2">Free to post</div>
-            <div className="rounded-lg bg-white/10 px-3 py-2">No commissions</div>
-            <div className="rounded-lg bg-white/10 px-3 py-2">Direct WhatsApp & Calls</div>
+            <div className="rounded-lg bg-white/10 px-3 py-2">
+              No commissions
+            </div>
+            <div className="rounded-lg bg-white/10 px-3 py-2">
+              Direct WhatsApp &amp; Calls
+            </div>
           </div>
         </div>
       </section>
@@ -57,7 +77,9 @@ export default function PostLandingPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span aria-hidden>💸</span>
-                <span>Set a price or choose <em>Contact for price</em></span>
+                <span>
+                  Set a price or choose <em>Contact for price</em>
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span aria-hidden>⚡</span>
@@ -95,11 +117,13 @@ export default function PostLandingPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span aria-hidden>📍</span>
-                <span>Service areas & availability windows</span>
+                <span>Service areas &amp; availability windows</span>
               </li>
               <li className="flex items-start gap-2">
                 <span aria-hidden>💬</span>
-                <span>Direct enquiries; keep chats on WhatsApp if you prefer</span>
+                <span>
+                  Direct enquiries; keep chats on WhatsApp if you prefer
+                </span>
               </li>
             </ul>
           </div>
@@ -182,21 +206,30 @@ export default function PostLandingPage() {
           <h3 className="text-lg font-semibold">Common questions</h3>
           <div className="mt-4 space-y-3">
             <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <summary className="cursor-pointer font-medium">Do I pay to post?</summary>
+              <summary className="cursor-pointer font-medium">
+                Do I pay to post?
+              </summary>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
-                Posting is free. We may add optional boosts later for extra visibility.
+                Posting is free. We may add optional boosts later for extra
+                visibility.
               </p>
             </details>
             <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <summary className="cursor-pointer font-medium">How do buyers contact me?</summary>
+              <summary className="cursor-pointer font-medium">
+                How do buyers contact me?
+              </summary>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
-                Through the number you provide (calls/WhatsApp). You can keep chats in-app if you prefer.
+                Through the number you provide (calls/WhatsApp). You can keep
+                chats in-app if you prefer.
               </p>
             </details>
             <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <summary className="cursor-pointer font-medium">Any safety tips?</summary>
+              <summary className="cursor-pointer font-medium">
+                Any safety tips?
+              </summary>
               <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
-                Meet in public places, verify payments (M-Pesa SMS vs app), and don’t share sensitive info.
+                Meet in public places, verify payments (M-Pesa SMS vs app), and
+                don’t share sensitive info.
               </p>
             </details>
           </div>
@@ -210,10 +243,18 @@ export default function PostLandingPage() {
             Ready? Choose what you want to post:
           </p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/sell/product" className="btn-gradient-primary" aria-label="Post a product">
+            <Link
+              href="/sell/product"
+              className="btn-gradient-primary"
+              aria-label="Post a product"
+            >
               Post a product
             </Link>
-            <Link href="/sell/service" className="btn-outline" aria-label="Post a service">
+            <Link
+              href="/sell/service"
+              className="btn-outline"
+              aria-label="Post a service"
+            >
               Post a service
             </Link>
           </div>
