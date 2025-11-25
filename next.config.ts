@@ -186,28 +186,19 @@ const baseConfig: NextConfig = {
       headers: [
         ...securityHeaders(),
         {
-          key: "Content-Security-Policy",
-          value: `
-            default-src 'self';
-            connect-src 'self'
-              https://api.cloudinary.com
-              https://api.resend.com
-              https://api.africastalking.com
-              https://api.sandbox.africastalking.com
-              https://vitals.vercel-insights.com
-              https://vitals.vercel-analytics.com
-              https://plausible.io
-              https://www.google-analytics.com
-              https://region1.google-analytics.com
-              ws: wss:;
-            img-src 'self' blob: data: https:;
-            style-src 'self' 'unsafe-inline';
-            script-src 'self' 'unsafe-inline' 'unsafe-eval';
-            media-src 'self' blob: https:;
-            frame-src 'self';
-            object-src 'none';
-          `.replace(/\s+/g, " "),
-        },
+  key: "Content-Security-Policy",
+  value: `
+    default-src 'self';
+    connect-src 'self' https://api.cloudinary.com https://api.resend.com https://api.africastalking.com https://api.sandbox.africastalking.com https://vitals.vercel-insights.com https://vitals.vercel-analytics.com https://plausible.io https://www.google-analytics.com https://region1.google-analytics.com ws: wss:;
+    img-src 'self' blob: data: https: https://res.cloudinary.com;
+    style-src 'self' 'unsafe-inline';
+    script-src 'self' 'unsafe-inline' 'unsafe-eval';
+    media-src 'self' blob: https:;
+    frame-src 'self';
+    object-src 'none';
+  `.replace(/\s+/g, " "),
+}
+,
       ],
     },
     {
