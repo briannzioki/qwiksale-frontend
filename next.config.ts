@@ -180,25 +180,48 @@ const baseConfig: NextConfig = {
   },
 
   async headers() {
-    const rules: HeaderRule[] = [
-      { source: "/:path*", headers: securityHeaders() },
-      {
-        source: "/api/auth/:path*",
-        headers: [
-          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
-          { key: "Pragma", value: "no-cache" },
-          { key: "Expires", value: "0" },
-        ],
-      },
-    ];
-    if (isPreview) {
-      rules.push({
-        source: "/:path*",
-        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noimageindex, noarchive" }],
-      });
-    }
-    return rules;
-  },
+  const rules: HeaderRule[] = [
+    {
+      source: "/:path*",
+      headers: [
+        ...securityHeaders(),
+        {
+          key: "Content-Security-Policy",
+          value: `
+            default-src 'self';
+            connect-src 'self'
+              https://api.cloudinary.com
+              https://api.resend.com
+              https://api.africastalking.com
+              https://api.sandbox.africastalking.com
+              https://vitals.vercel-insights.com
+              https://vitals.vercel-analytics.com
+              https://plausible.io
+              https://www.google-analytics.com
+              https://region1.google-analytics.com
+              ws: wss:;
+            img-src 'self' blob: data: https:;
+            style-src 'self' 'unsafe-inline';
+            script-src 'self' 'unsafe-inline' 'unsafe-eval';
+            media-src 'self' blob: https:;
+            frame-src 'self';
+            object-src 'none';
+          `.replace(/\s+/g, " "),
+        },
+      ],
+    },
+    {
+      source: "/api/auth/:path*",
+      headers: [
+        { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
+        { key: "Pragma", value: "no-cache" },
+        { key: "Expires", value: "0" },
+      ],
+    },
+  ];
+  return rules;
+}
+,
 
   async redirects() {
     if (!(isProd && isVercel) || !APEX_DOMAIN) return [];
