@@ -169,6 +169,11 @@ export default function SellServiceClient({
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // New: track whether the edit prefill succeeded. If an editId was provided
+  // and we successfully loaded the listing, we hide the generic "You're not
+  // signed in" banner even if the server-side isAuthenticated was false.
+  const [prefilled, setPrefilled] = useState<boolean>(false);
+
   // Edit prefill
   useEffect(() => {
     if (!editId) return;
@@ -218,6 +223,9 @@ export default function SellServiceClient({
             50,
           ),
         );
+
+        // mark prefill success so we don't show a misleading "You're not signed in" banner
+        setPrefilled(true);
       } catch (e: any) {
         console.error(e);
         toast.error("Failed to prefill service.");
@@ -468,7 +476,10 @@ export default function SellServiceClient({
     }
   }
 
-  const notSignedIn = !isAuthenticated;
+  // only show the generic "You're not signed in" banner when:
+  // - server told us `isAuthenticated` is false AND
+  // - we're NOT in a successful edit prefill (i.e., either not editing or prefill failed)
+  const notSignedIn = !isAuthenticated && !(editId && prefilled);
 
   return (
     <div

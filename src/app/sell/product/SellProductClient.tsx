@@ -212,6 +212,9 @@ export default function SellProductClient({
     phoneOk;
 
   /* --------------------------- EDIT PREFILL LOGIC --------------------------- */
+  // Track whether prefill succeeded so we can avoid showing misleading guest copy
+  const [prefilled, setPrefilled] = useState<boolean>(false);
+
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -255,6 +258,9 @@ export default function SellProductClient({
           50,
         );
         setExistingGallery(normalized);
+
+        // mark successful prefill so we don't show generic "You're not signed in"
+        setPrefilled(true);
       } catch (e: any) {
         console.error(e);
         toast.error("Failed to prefill product.");
@@ -479,7 +485,9 @@ export default function SellProductClient({
     }
   }
 
-  const notSignedIn = !isAuthenticated;
+  // Only show generic "You're not signed in" when server said unauthenticated
+  // AND we do not have a successful edit prefill.
+  const notSignedIn = !isAuthenticated && !(id && prefilled);
 
   return (
     <div
