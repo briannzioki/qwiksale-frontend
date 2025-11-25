@@ -1,8 +1,8 @@
-// src/app/sell/service/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import Link from "next/link";
 import SellServiceClient from "./SellServiceClient";
 import { getSessionUser } from "@/app/lib/authz";
 
@@ -33,6 +33,10 @@ export default async function Page({
     isAuthenticated = false;
   }
 
+  const targetHref = isAuthenticated
+    ? "/sell/service"
+    : `/signin?callbackUrl=${encodeURIComponent("/sell/service")}`;
+
   return (
     <main className="container-page py-6">
       <div className="mx-auto max-w-3xl space-y-4">
@@ -47,20 +51,33 @@ export default async function Page({
           </p>
         </div>
 
-        {/* Guest warning */}
-        {!isAuthenticated && (
+        {/* Guest warning — only for create flow (not while editing) */}
+        {!isAuthenticated && !isEdit && (
           <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
             <p>
-              <a
-                href={`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`}
+              <Link
+                href={targetHref}
                 className="font-semibold underline"
+                prefetch={false}
               >
                 Sign in
-              </a>{" "}
+              </Link>{" "}
               to unlock the full sell flow for your services.
             </p>
           </div>
         )}
+
+        {/* Server-side CTA anchor (clickable immediately) */}
+        <div>
+          <Link
+            href={targetHref}
+            data-testid="sell-service-mode-cta"
+            className="btn-outline inline-block"
+            prefetch={false}
+          >
+            {isEdit ? "Save changes" : "Post service"}
+          </Link>
+        </div>
 
         {/* Real implementation (create/edit) lives in SellServiceClient */}
         <section

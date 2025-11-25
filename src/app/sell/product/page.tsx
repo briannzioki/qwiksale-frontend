@@ -1,8 +1,8 @@
-// src/app/sell/product/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import Link from "next/link";
 import SellProductClient from "./SellProductClient";
 import { getSessionUser } from "@/app/lib/authz";
 
@@ -33,6 +33,11 @@ export default async function Page({
     isAuthenticated = false;
   }
 
+  // target href used for CTA (server-side stable)
+  const targetHref = isAuthenticated
+    ? "/sell/product"
+    : `/signin?callbackUrl=${encodeURIComponent("/sell/product")}`;
+
   return (
     <main className="container-page py-6">
       <div className="mx-auto max-w-3xl space-y-4">
@@ -47,31 +52,34 @@ export default async function Page({
           </p>
         </div>
 
-        {/* Guest warning */}
-        {!isAuthenticated && (
+        {/* Guest warning — only for create flow (not while editing) */}
+        {!isAuthenticated && !isEdit && (
           <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
             <p>
-              <a
-                href={`/signin?callbackUrl=${encodeURIComponent("/sell/product")}`}
+              <Link
+                href={targetHref}
                 className="font-semibold underline"
+                prefetch={false}
               >
                 Sign in
-              </a>{" "}
+              </Link>{" "}
               to unlock the full sell flow (saved drafts, faster posting, and more
               trust on your profile).
             </p>
           </div>
         )}
 
-        {/* Server-side CTA that Playwright can assert without JS. */}
+        {/* Server-side CTA that Playwright can assert without JS.
+            Rendered as an anchor so it is clickable immediately. */}
         <div>
-          <button
-            type="button"
+          <Link
+            href={targetHref}
             data-testid="sell-product-mode-cta"
-            className="btn-outline"
+            className="btn-outline inline-block"
+            prefetch={false}
           >
             {isEdit ? "Save changes" : "Post product"}
-          </button>
+          </Link>
         </div>
 
         {/* Real implementation (create/edit) lives in SellProductClient */}
