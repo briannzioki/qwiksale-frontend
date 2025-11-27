@@ -266,7 +266,7 @@ export function OPTIONS() {
   );
   res.headers.set(
     "Access-Control-Allow-Methods",
-    "GET, OPTIONS, HEAD",
+    "GET, DELETE, OPTIONS, HEAD",
   );
   res.headers.set(
     "Access-Control-Allow-Headers",
@@ -490,6 +490,72 @@ export async function GET(req: NextRequest) {
       reqId,
       message: (e as any)?.message ?? String(e),
     });
+    return noStore({ error: "Server error" }, { status: 500 });
+  }
+}
+/* ------------------ DELETE /api/services/:id ------------------ */
+export async function DELETE(req: NextRequest) {
+  const reqId =
+    (globalThis as any).crypto?.randomUUID?.() ??
+    Math.random().toString(36).slice(2);
+
+  try {
+    const idParam = getId(req);
+    if (!idParam) {
+      return noStore({ error: "Missing id" }, { status: 400 });
+    }
+
+    const Service = getServiceModel();
+    if (!Service) {
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
+
+    const session = await auth();
+    const user = session?.user as any;
+    const userId = user?.id;
+    const isAdmin = user?.role === "ADMIN" || user?.isAdmin === true;
+
+    if (!userId && !isAdmin) {
+      return noStore({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Resolve row (accept alt id fields just like products)
+    const ALT_ID_FIELDS = ["id", "serviceId", "service_id", "uid", "uuid", "slug"] as const;
+
+    let existing: any = null;
+    for (const field of ALT_ID_FIELDS) {
+      try {
+        const where = { [field]: idParam } as any;
+        existing = await Service.findUnique({
+          where,
+          select: { id: true, sellerId: true },
+        });
+        if (existing) break;
+      } catch {}
+    }
+
+    if (!existing) {
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
+
+    const isOwner = userId && existing.sellerId === userId;
+    if (!isOwner && !isAdmin) {
+      return noStore({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Delete gallery images + service
+    await prisma.$transaction([
+      prisma.serviceImage.deleteMany({
+        where: { serviceId: existing.id },
+      }),
+      Service.delete({
+        where: { id: existing.id },
+      }),
+    ]);
+
+    return noStore({ ok: true });
+  } catch (e) {
+    console.warn("[services/:id DELETE] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
