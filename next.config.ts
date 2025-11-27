@@ -237,7 +237,14 @@ const baseConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: `
               default-src 'self';
-              img-src 'self' blob: data: https:;
+              img-src 'self' data: blob:
+                https://res.cloudinary.com
+                https://images.unsplash.com
+                https://plus.unsplash.com
+                https://lh3.googleusercontent.com
+                https://avatars.githubusercontent.com
+                https://images.pexels.com
+                https://picsum.photos;
               media-src 'self' blob: https:;
               style-src 'self' 'unsafe-inline';
               script-src 'self' 'unsafe-inline' 'unsafe-eval';
