@@ -75,6 +75,8 @@ function buildSecurityHeaders(nonce: string, opts?: { allowUnsafeEval?: boolean 
 
   const connectSrc = [
     "'self'",
+    "https://api.cloudinary.com",
+    "https://res.cloudinary.com",
     "https://api.resend.com",
     "https://api.africastalking.com",
     "https://api.sandbox.africastalking.com",
