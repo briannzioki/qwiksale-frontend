@@ -69,72 +69,38 @@ async function uploadToCloudinary(
   if (!CLOUD_NAME) {
     throw new Error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
   }
+
+  if (!UPLOAD_PRESET) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET — required for unsigned uploads"
+    );
+  }
+
   const folder = opts?.folder || "qwiksale";
-  const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
+  const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`;
+
   const fd = new FormData();
   fd.append("file", file);
+  fd.append("upload_preset", UPLOAD_PRESET);
+  fd.append("folder", folder);
 
-  if (UPLOAD_PRESET) {
-    fd.append("upload_preset", UPLOAD_PRESET);
-    fd.append("folder", folder);
-    const res = await fetch(endpoint, { method: "POST", body: fd });
-    const json: any = await res.json();
-    if (!res.ok || !json.secure_url) {
-      throw new Error(json?.error?.message || "Cloudinary upload failed");
-    }
-    return { secure_url: json.secure_url, public_id: json.public_id };
+  const res = await fetch(endpoint, {
+    method: "POST",
+    body: fd,
+  });
+
+  const json: any = await res.json();
+
+  if (!res.ok || !json.secure_url) {
+    throw new Error(json?.error?.message || "Cloudinary upload failed");
   }
 
-  const sigRes = await fetch(
-    `/api/upload/sign?folder=${encodeURIComponent(folder)}`,
-    {
-      method: "GET",
-      cache: "no-store",
-    },
-  );
-  const sigJson: any = await sigRes.json();
-  if (!sigRes.ok) {
-    throw new Error(sigJson?.error || "Failed to get upload signature");
-  }
-
-  const xhr = new XMLHttpRequest();
-  return await new Promise<{ secure_url: string; public_id: string }>(
-    (resolve, reject) => {
-      xhr.upload.onprogress = (evt) => {
-        if (evt.lengthComputable && opts?.onProgress) {
-          opts.onProgress(Math.round((evt.loaded / evt.total) * 100));
-        }
-      };
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState !== 4) return;
-        try {
-          const j = JSON.parse(xhr.responseText);
-          if (xhr.status >= 200 && xhr.status < 300 && j.secure_url) {
-            resolve({
-              secure_url: j.secure_url,
-              public_id: j.public_id,
-            });
-          } else {
-            reject(
-              new Error(
-                j?.error?.message ||
-                  `Cloudinary upload failed (${xhr.status})`,
-              ),
-            );
-          }
-        } catch (e: any) {
-          reject(
-            new Error(
-              e?.message || "Cloudinary response parse error",
-            ),
-          );
-        }
-      };
-      xhr.open("POST", endpoint, true);
-      xhr.send(fd);
-    },
-  );
+  return {
+    secure_url: json.secure_url,
+    public_id: json.public_id,
+  };
 }
+
 
 export default function SellServiceClient({
   editId,

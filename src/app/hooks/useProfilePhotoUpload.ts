@@ -71,7 +71,7 @@ const DEFAULT_FOLDER = (
 ).trim();
 
 const CLOUD_ENDPOINT = CLOUD
-  ? `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUD)}/auto/upload`
+  ? `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUD)}/upload`
   : "";
 
 /* ------------------------------- Utilities -------------------------------- */

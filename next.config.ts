@@ -1,23 +1,33 @@
 // next.config.ts
 import type { NextConfig } from "next";
+import type { RemotePattern } from "next/dist/shared/lib/image-config";
 import path from "node:path";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
-const withAnalyzer = bundleAnalyzer({ enabled: process.env["ANALYZE"] === "true" });
+const withAnalyzer = bundleAnalyzer({
+  enabled: process.env["ANALYZE"] === "true",
+});
 
-const isVercel = !!process.env["VERCEL"];
-const isProd = process.env["NODE_ENV"] === "production";
+const isProd = process.env.NODE_ENV === "production";
 const isPreview = process.env["VERCEL_ENV"] === "preview";
+const isVercel = !!process.env["VERCEL"];
 
 const APEX_DOMAIN = process.env["NEXT_PUBLIC_APEX_DOMAIN"] || "qwiksale.sale";
 const cloudName = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] || "";
+
 const EXTRA_IMAGE_HOSTS = (process.env["NEXT_PUBLIC_IMAGE_HOSTS"] || "")
   .split(/[,\s]+/)
   .map((s) => s.trim())
   .filter(Boolean);
 
-type HeaderRule = { source: string; headers: { key: string; value: string }[] };
+type HeaderRule = {
+  source: string;
+  headers: { key: string; value: string }[];
+};
 
+// ----------------------------
+// SECURITY HEADERS
+// ----------------------------
 const securityHeaders = (): { key: string; value: string }[] => {
   const base = [
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -29,37 +39,67 @@ const securityHeaders = (): { key: string; value: string }[] => {
     { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
     { key: "X-XSS-Protection", value: "0" },
   ];
-  return isProd
-    ? [...base, { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
-    : base;
+
+  if (isProd) {
+    return [
+      ...base,
+      {
+        key: "Strict-Transport-Security",
+        value: "max-age=63072000; includeSubDomains; preload",
+      },
+    ];
+  }
+
+  return base;
 };
+
+// ----------------------------
+// UTILITIES
+// ----------------------------
+
+function regExpToGlob(re: RegExp): string | null {
+  const s = String(re);
+  if (/node_modules/.test(s)) return "**/node_modules/**";
+  if (/\.git/.test(s)) return "**/.git/**";
+  if (/\.next/.test(s)) return "**/.next/**";
+  const src = (re as any).source;
+  if (src && /^[\w.\-_/]+$/.test(src)) return `**/${src}/**`;
+  return null;
+}
 
 function toRemotePattern(
   input: string,
-  opts?: { pathname?: string; protocols?: Array<"http" | "https"> },
-) {
-  const pathname = opts?.pathname ?? "/**";
-  const protocols = opts?.protocols ?? ["https"];
+  opts: { pathname?: string; protocols?: Array<"http" | "https"> } = {},
+): RemotePattern[] {
+  const pathname = opts.pathname || "/**";
+  const protocols = opts.protocols || ["https"];
+
   try {
     if (input.startsWith("http://") || input.startsWith("https://")) {
       const u = new URL(input);
-      return protocols.map((p) => ({ protocol: p, hostname: u.hostname, pathname })) as Array<{
-        protocol: "http" | "https";
-        hostname: string;
-        pathname: string;
-      }>;
+      return protocols.map((p) => ({
+        protocol: p,
+        hostname: u.hostname,
+        pathname,
+      }));
     }
   } catch {}
-  return protocols.map((p) => ({ protocol: p, hostname: input, pathname })) as Array<{
-    protocol: "http" | "https";
-    hostname: string;
-    pathname: string;
-  }>;
+
+  return protocols.map((p) => ({
+    protocol: p,
+    hostname: input,
+    pathname,
+  }));
 }
 
-function buildRemotePatterns() {
-  const base: Array<{ protocol: "http" | "https"; hostname: string; pathname: string }> = [
-    { protocol: "https", hostname: "res.cloudinary.com", pathname: cloudName ? `/${cloudName}/**` : "/**" },
+function buildRemotePatterns(): RemotePattern[] {
+  const base: RemotePattern[] = [
+    {
+      protocol: "https",
+      hostname: "res.cloudinary.com",
+      pathname: cloudName ? `/${cloudName}/**` : "/**",
+    },
+    { protocol: "https", hostname: "api.cloudinary.com", pathname: "/**" },
     { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
     { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
     { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
@@ -69,39 +109,39 @@ function buildRemotePatterns() {
     { protocol: "https", hostname: APEX_DOMAIN, pathname: "/**" },
     { protocol: "https", hostname: `www.${APEX_DOMAIN}`, pathname: "/**" },
     { protocol: "https", hostname: "imagedelivery.net", pathname: "/**" },
-    { protocol: "https", hostname: "s3.amazonaws.com", pathname: "/**" },
     { protocol: "https", hostname: "storage.googleapis.com", pathname: "/**" },
+    { protocol: "https", hostname: "s3.amazonaws.com", pathname: "/**" },
     { protocol: "https", hostname: "utfs.io", pathname: "/**" },
   ];
 
-  const dev = [
+  const dev: RemotePattern[] = [
     ...toRemotePattern("localhost", { protocols: ["http", "https"] }),
     ...toRemotePattern("127.0.0.1", { protocols: ["http", "https"] }),
   ];
 
-  const extra = EXTRA_IMAGE_HOSTS.flatMap((h) =>
-    toRemotePattern(h, { protocols: isProd ? ["https"] : ["http", "https"] }),
+  const extra: RemotePattern[] = EXTRA_IMAGE_HOSTS.flatMap((h) =>
+    toRemotePattern(h, {
+      protocols: isProd ? ["https"] : ["http", "https"],
+    }),
   );
 
   const seen = new Set<string>();
-  return [...base, ...dev, ...extra].filter((p) => {
+  const out: RemotePattern[] = [];
+
+  for (const p of [...base, ...dev, ...extra]) {
     const key = `${p.protocol}://${p.hostname}${p.pathname}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(p);
+    }
+  }
+
+  return out;
 }
 
-function regExpToGlob(re: RegExp): string | null {
-  const s = String(re);
-  if (/node_modules/.test(s)) return "**/node_modules/**";
-  if (/\.git/.test(s)) return "**/.git/**";
-  if (/\.next/.test(s)) return "**/.next/**";
-  const src = (re as any).source as string | undefined;
-  if (src && /^[\w.\-_/]+$/.test(src)) return `**/${src}/**`;
-  return null;
-}
-
+// ----------------------------
+// NEXT CONFIG
+// ----------------------------
 const baseConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -126,9 +166,8 @@ const baseConfig: NextConfig = {
     config.resolve = config.resolve || {};
     config.resolve.alias = { ...(config.resolve.alias || {}) };
 
-    // Optional hard guard: set BLOCK_NEXT_DOCUMENT_IMPORT=1 to kill any 'next/document' import at build time.
     if (process.env["BLOCK_NEXT_DOCUMENT_IMPORT"] === "1") {
-      (config.resolve.alias as any)["next/document"] = false;
+      config.resolve.alias["next/document"] = false;
     }
 
     const isEdge = nextRuntime === "edge";
@@ -158,64 +197,84 @@ const baseConfig: NextConfig = {
     }
 
     if (dev) {
-      (config.resolve.alias as any)["import-in-the-middle"] = false;
-      (config.resolve.alias as any)["require-in-the-middle"] = false;
+      const extraIgnores = [
+        "**/tests/**",
+        "**/test-results/**",
+        "**/playwright-report/**",
+      ];
 
-      const extraIgnores = ["**/tests/**", "**/test-results/**", "**/playwright-report/**"];
-      const prevIgnored =
-        (config.watchOptions && (config.watchOptions as any).ignored) as
-          | undefined
-          | string
-          | RegExp
-          | Array<string | RegExp>;
-      const prevList = Array.isArray(prevIgnored) ? prevIgnored : prevIgnored ? [prevIgnored] : [];
+      const prevIgnored = config.watchOptions?.ignored;
+      const prevList = Array.isArray(prevIgnored)
+        ? prevIgnored
+        : prevIgnored
+        ? [prevIgnored]
+        : [];
+
       const stringsOnly = prevList
-        .map((v) => (typeof v === "string" ? v : v instanceof RegExp ? regExpToGlob(v) : null))
-        .filter((s): s is string => typeof s === "string" && s.trim().length > 0);
-      const ignored = Array.from(new Set([...stringsOnly, ...extraIgnores]));
-      (config as any).watchOptions = { ...(config.watchOptions || {}), ignored };
+        .map((v) => {
+          if (typeof v === "string") return v;
+          if (v instanceof RegExp) return regExpToGlob(v);
+          return null;
+        })
+        .filter(Boolean) as string[];
+
+      config.watchOptions = {
+        ...(config.watchOptions || {}),
+        ignored: Array.from(new Set([...stringsOnly, ...extraIgnores])),
+      };
     }
 
     return config;
   },
 
   async headers() {
-  const rules: HeaderRule[] = [
-    {
-      source: "/:path*",
-      headers: [
-        ...securityHeaders(),
-        {
-  key: "Content-Security-Policy",
-  value: `
-    default-src 'self';
-    connect-src 'self' https://api.cloudinary.com https://api.resend.com https://api.africastalking.com https://api.sandbox.africastalking.com https://vitals.vercel-insights.com https://vitals.vercel-analytics.com https://plausible.io https://www.google-analytics.com https://region1.google-analytics.com ws: wss:;
-    img-src 'self' blob: data: https: https://res.cloudinary.com;
-    style-src 'self' 'unsafe-inline';
-    script-src 'self' 'unsafe-inline' 'unsafe-eval';
-    media-src 'self' blob: https:;
-    frame-src 'self';
-    object-src 'none';
-  `.replace(/\s+/g, " "),
-}
-,
-      ],
-    },
-    {
-      source: "/api/auth/:path*",
-      headers: [
-        { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
-        { key: "Pragma", value: "no-cache" },
-        { key: "Expires", value: "0" },
-      ],
-    },
-  ];
-  return rules;
-}
-,
+    const rules: HeaderRule[] = [
+      {
+        source: "/:path*",
+        headers: [
+          ...securityHeaders(),
+          {
+            key: "Content-Security-Policy",
+            value: `
+              default-src 'self';
+              img-src 'self' blob: data: https:;
+              media-src 'self' blob: https:;
+              style-src 'self' 'unsafe-inline';
+              script-src 'self' 'unsafe-inline' 'unsafe-eval';
+              frame-src 'self';
+              object-src 'none';
+              connect-src 'self'
+                https://api.cloudinary.com
+                https://res.cloudinary.com
+                https://api.resend.com
+                https://api.africastalking.com
+                https://api.sandbox.africastalking.com
+                https://vitals.vercel-insights.com
+                https://vitals.vercel-analytics.com
+                https://plausible.io
+                https://www.google-analytics.com
+                https://region1.google-analytics.com
+                ws: wss:;
+            `.replace(/\s+/g, " "),
+          },
+        ],
+      },
+      {
+        source: "/api/auth/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
+        ],
+      },
+    ];
+
+    return rules;
+  },
 
   async redirects() {
     if (!(isProd && isVercel) || !APEX_DOMAIN) return [];
+
     return [
       {
         source: "/:path*",
