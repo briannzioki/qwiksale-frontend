@@ -201,8 +201,6 @@ export async function POST(req: NextRequest) {
       if (!me) {
         return withReqId(noStore({ error: "Unauthorized" }, { status: 401 }), reqId, idemKey);
       }
-      console.log("SERVICE_CREATE_BODY", await req.clone().json().catch(err => ({ error: "parse_fail", err })));
-
 
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
@@ -278,33 +276,29 @@ export async function POST(req: NextRequest) {
         return withReqId(noStore({ error: `Listing limit reached for ${tier}` }, { status: 403 }), reqId, idemKey);
       }
 
-      const payload = {
-       name,
-       description,
-       category,
-       subcategory: subcategory ?? null,
-       price: price ?? null,
-       rateType,
-       serviceArea: serviceArea ?? null,
-       availability: availability ?? null,
-       image: (image ?? null) as string | null,
-       gallery: finalGallery,
-       location: location ?? null,
-       status: "ACTIVE",
-       featured: false,
-       publishedAt: new Date(),
-       sellerId: me.id,
-       sellerName: me.name ?? null,
-       sellerLocation: me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
-       sellerMemberSince: me.createdAt ? me.createdAt.toISOString().slice(0, 10) : null,
-       sellerRating: null,
-       sellerSales: null,
-       sellerPhone: sellerPhone ?? null,
-  };
-
-        console.log("SERVICE_CREATE_PAYLOAD", payload);
-
-        const created = await createServiceSafe(payload);
+      const created = await createServiceSafe({
+        name,
+        description,
+        category,
+        subcategory: subcategory ?? null,
+        price: price ?? null,
+        rateType,
+        serviceArea: serviceArea ?? null,
+        availability: availability ?? null,
+        image: (image ?? null) as string | null,
+        gallery: finalGallery,
+        location: location ?? null,
+        status: "ACTIVE",
+        featured: false,
+        publishedAt: new Date(), // stripped if column missing
+        sellerId: me.id,
+        sellerName: me.name ?? null,
+        sellerLocation: me.city ? [me.city, me.country].filter(Boolean).join(", ") : me.country ?? null,
+        sellerMemberSince: me.createdAt ? me.createdAt.toISOString().slice(0, 10) : null,
+        sellerRating: null,
+        sellerSales: null,
+        sellerPhone: sellerPhone ?? null,
+      });
 
       try {
         revalidateTag("home:active");
