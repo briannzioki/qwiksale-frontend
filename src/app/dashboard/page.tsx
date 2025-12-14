@@ -5,6 +5,14 @@ import { cookies } from "next/headers";
 import UserAvatar from "@/app/components/UserAvatar";
 import ListingCard from "@/app/components/ListingCard";
 import { getSessionUser } from "@/app/lib/authz";
+import {
+  getSellerDashboardSummary,
+  fmtInt,
+  type DashboardListing,
+} from "@/app/lib/dashboard";
+import DashboardCharts from "./_components/DashboardCharts";
+import DashboardMetrics from "./_components/DashboardMetrics";
+import DashboardMessagesPreview from "./_components/DashboardMessagesPreview";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,64 +26,30 @@ export const metadata: Metadata = {
 };
 
 type Me = {
-  id: string;
+  id: string | null;
   name: string | null;
   email: string | null;
   image: string | null;
   subscription: string | null;
 };
 
-type DashboardListing = {
-  type: "product" | "service";
-  id: string;
-  name: string;
-  category: string | null;
-  subcategory: string | null;
-  price: number | null;
-  image: string | null;
-  location: string | null;
-  createdAt: string; // ISO
+type DashboardChartPoint = {
+  date: string; // YYYY-MM-DD
+  label: string; // e.g. "Dec 10"
+  listings: number;
+  messages: number;
 };
 
-type ProductRowDash = {
-  id: string;
-  name: string | null;
-  category: string | null;
-  subcategory: string | null;
-  price: number | null;
-  image: string | null;
-  location: string | null;
-  createdAt: Date | string | null;
-};
-
-type ServiceRowDash = {
-  id: string | number;
-  name: string | null;
-  category: string | null;
-  subcategory: string | null;
-  price: number | null;
-  image: string | null;
-  location: string | null;
-  createdAt: Date | string | null;
-};
-
-function fmtInt(n: number) {
-  const val = Number.isFinite(n) ? n : 0;
-  try {
-    return new Intl.NumberFormat("en-KE").format(val);
-  } catch {
-    return String(val);
-  }
-}
-
+const DASHBOARD_CHART_DAYS = 7;
 const FALLBACK_IMG = "/placeholder/default.jpg";
 
-function toIso(value: unknown): string {
-  if (!value) return "";
-  if (value instanceof Date) return value.toISOString();
+function toDateOrNull(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
   const s = String(value);
   const ts = Date.parse(s);
-  return Number.isFinite(ts) ? new Date(ts).toISOString() : "";
+  if (!Number.isFinite(ts)) return null;
+  return new Date(ts);
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -131,6 +105,7 @@ export default async function DashboardPage({
       // Explicit soft-error surface for guardrail tests
       return (
         <main
+          id="main"
           className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
           data-soft-error="dashboard"
           data-e2e="dashboard-soft-error"
@@ -157,9 +132,9 @@ export default async function DashboardPage({
       );
     }
 
-    // Server-side cookie hint
+    // Cookie heuristics – detect presence of any NextAuth session cookie.
     const cookieStore = await cookies();
-    const hasAuthCookie = cookieStore.getAll().some((c) => {
+    const hasAuthCookie = cookieStore.getAll().some((c: { name?: string }) => {
       const name = (c.name ?? "").toLowerCase();
       return (
         name === "next-auth.session-token" ||
@@ -169,102 +144,40 @@ export default async function DashboardPage({
       );
     });
 
+    // Canonical auth check – rely on the session.
     const viewer = await getSessionUser();
-    const userId: string | null =
-      viewer?.id != null ? String(viewer.id) : null;
+    const viewerAny = (viewer ?? {}) as any;
 
-    const isGuest = !userId && !hasAuthCookie;
-    const isAuthedOrHinted = !!userId || hasAuthCookie;
+    const sessionId =
+      viewerAny && viewerAny.id != null ? String(viewerAny.id) : null;
+    const sessionEmail =
+      typeof viewerAny?.email === "string" ? viewerAny.email : null;
 
-    // True guest / unauthenticated: soft CTA instead of redirect
-    if (isGuest) {
-      return (
-        <main className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16">
-          <div
-            className="mx-auto flex max-w-6xl flex-col gap-4"
-            data-e2e="dashboard-guest"
-          >
-            <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-            <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-              <p className="text-sm">
-                Something went wrong loading your dashboard or your session has
-                expired. Please{" "}
-                <Link
-                  href="/signin?callbackUrl=%2Fdashboard"
-                  prefetch={false}
-                  className="underline"
-                >
-                  sign in
-                </Link>{" "}
-                to view your dashboard.
-              </p>
-            </div>
-          </div>
-        </main>
-      );
-    }
+    const hasSessionIdentity = Boolean(sessionId || sessionEmail);
 
-    // Limbo state: cookies say "authed" but we have no userId.
-    if (!userId && hasAuthCookie) {
-      return (
-        <main
-          className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
-          data-soft-error="dashboard"
-          data-e2e="dashboard-soft-error"
-        >
-          <div className="mx-auto flex max-w-6xl flex-col gap-4">
-            <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-            <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-              <p className="text-sm">
-                We couldn&apos;t fully load your account details right now, but
-                your session appears to be active. Please refresh this page or
-                navigate to another section; your account menu in the header
-                should remain available.
-              </p>
-            </div>
-          </div>
-        </main>
-      );
-    }
-
-    // At this point we have a concrete userId.
-    const concreteUserId = userId as string;
-
-    const { prisma } = await import("@/app/lib/prisma");
-    const me = await withTimeout<Me | null>(
-      prisma.user
-        .findUnique({
-          where: { id: concreteUserId },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            image: true,
-            subscription: true,
-          },
-        })
-        .catch(() => null),
-      800,
-      null,
-    );
-
-    // Data soft error (no user row / timeout)
-    if (!me) {
-      if (isAuthedOrHinted) {
+    // No session identity – distinguish between *true guest* and *limbo*.
+    if (!hasSessionIdentity) {
+      // Limbo: we see an auth cookie but no session identity.
+      // For guardrail / "no auto-logout" semantics, do NOT show a Sign in CTA here.
+      if (hasAuthCookie) {
         return (
           <main
+            id="main"
             className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
             data-soft-error="dashboard"
             data-e2e="dashboard-soft-error"
           >
-            <div className="mx-auto flex max-w-6xl flex-col gap-4">
+            <div className="mx-auto max-w-6xl">
               <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-              <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-                <p className="text-sm">
-                  We couldn&apos;t load your account details. Your session
-                  appears to be active, but the dashboard data failed to load.
-                  Please refresh this page. If this keeps happening, contact
-                  support.
+              <div className="mt-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
+                <h2 className="text-lg font-semibold">
+                  We couldn&apos;t load your dashboard
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Your session appears to be active, but we couldn&apos;t load
+                  your dashboard right now. Please refresh this page or navigate
+                  to another section. Your account menu in the header should
+                  remain available.
                 </p>
               </div>
             </div>
@@ -272,25 +185,28 @@ export default async function DashboardPage({
         );
       }
 
+      // True guest / unauthenticated: soft CTA with non-ambiguous button label.
       return (
         <main
+          id="main"
           className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
-          data-soft-error="dashboard"
-          data-e2e="dashboard-soft-error"
         >
-          <div className="mx-auto flex max-w-6xl flex-col gap-4">
+          <div
+            className="mx-auto flex max-w-6xl flex-col gap-4"
+            data-e2e="dashboard-guest"
+          >
             <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
             <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
               <p className="text-sm">
-                We couldn&apos;t load your account. Please{" "}
+                You&apos;re not signed in or your session has expired.{" "}
                 <Link
-                  href="/signin?callbackUrl=%2Fdashboard"
+                  href="/signin?callbackUrl=/dashboard"
                   prefetch={false}
                   className="underline"
                 >
-                  sign in
-                </Link>{" "}
-                again.
+                  Sign in to view your dashboard
+                </Link>
+                .
               </p>
             </div>
           </div>
@@ -298,161 +214,169 @@ export default async function DashboardPage({
       );
     }
 
-    // ---- My listings metrics + recent listings (products + services) ----
-    const now = new Date();
-    const sevenDaysAgo = new Date(
-      now.getTime() - 7 * 24 * 60 * 60 * 1000,
+    const { prisma } = await import("@/app/lib/prisma");
+
+    const fallbackMe: Me = {
+      id: sessionId,
+      name: typeof viewerAny?.name === "string" ? viewerAny.name : null,
+      email: sessionEmail,
+      image: typeof viewerAny?.image === "string" ? viewerAny.image : null,
+      subscription: null,
+    };
+
+    // User row fetch with timeout + safe fallback. Try by id first, then email.
+    const me = await withTimeout<Me>(
+      (async () => {
+        if (sessionId) {
+          const byId = await prisma.user.findUnique({
+            where: { id: sessionId },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+              subscription: true,
+            },
+          });
+          if (byId) return byId as Me;
+        }
+
+        if (sessionEmail) {
+          const byEmail = await prisma.user.findUnique({
+            where: { email: sessionEmail },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+              subscription: true,
+            },
+          });
+          if (byEmail) return byEmail as Me;
+        }
+
+        return fallbackMe;
+      })().catch(() => fallbackMe),
+      800,
+      fallbackMe,
     );
 
-    const anyPrisma = prisma as any;
-    const ServiceModel = anyPrisma.service ?? anyPrisma.services ?? null;
+    const dashboardUserId = me.id ?? sessionId ?? null;
 
-    const [
-      productCount,
-      serviceCount,
-      recentProductCount,
-      recentServiceCount,
-      recentProductsRaw,
-      recentServicesRaw,
-    ] = await Promise.all([
-      withTimeout(
-        prisma.product.count({
-          where: { sellerId: concreteUserId },
-        }),
-        800,
-        0,
-      ),
-      ServiceModel
-        ? withTimeout(
-            ServiceModel.count({
-              where: { sellerId: concreteUserId },
-            }),
-            800,
-            0,
-          )
-        : Promise.resolve(0),
-      withTimeout(
-        prisma.product.count({
-          where: {
-            sellerId: concreteUserId,
-            createdAt: { gte: sevenDaysAgo },
-          },
-        }),
-        800,
-        0,
-      ),
-      ServiceModel
-        ? withTimeout(
-            ServiceModel.count({
-              where: {
-                sellerId: concreteUserId,
-                createdAt: { gte: sevenDaysAgo },
-              },
-            }),
-            800,
-            0,
-          )
-        : Promise.resolve(0),
-      withTimeout(
-        prisma.product.findMany({
-          where: { sellerId: concreteUserId },
-          select: {
-            id: true,
-            name: true,
-            category: true,
-            subcategory: true,
-            price: true,
-            image: true,
-            location: true,
-            createdAt: true,
-          },
-          orderBy: { createdAt: "desc" },
-          take: 6,
-        }),
-        800,
-        [] as ProductRowDash[],
-      ),
-      ServiceModel
-        ? withTimeout(
-            ServiceModel.findMany({
-              where: { sellerId: concreteUserId },
-              select: {
-                id: true,
-                name: true,
-                category: true,
-                subcategory: true,
-                price: true,
-                image: true,
-                location: true,
-                createdAt: true,
-              },
-              orderBy: { createdAt: "desc" },
-              take: 6,
-            }),
-            800,
-            [] as ServiceRowDash[],
-          )
-        : Promise.resolve([] as ServiceRowDash[]),
-    ]);
+    // ---- Seller dashboard summary (metrics + inbox + recent listings) ----
+    const emptySummary: Awaited<ReturnType<typeof getSellerDashboardSummary>> = {
+      metrics: {
+        myListingsCount: 0,
+        favoritesCount: 0,
+        newLast7Days: 0,
+        likesOnMyListings: 0,
+        productsCount: 0,
+        servicesCount: 0,
+        newProductsLast7Days: 0,
+        newServicesLast7Days: 0,
+      },
+      inbox: {
+        unreadThreads: 0,
+        newMessagesLast7Days: 0,
+        totalThreads: 0,
+        recentThreads: [],
+        dailyMessageCounts: [],
+      },
+      recentListings: [],
+    };
 
-    const recentListings: DashboardListing[] = [
-      ...(recentProductsRaw as ProductRowDash[]).map(
-        (p): DashboardListing => ({
-          type: "product",
-          id: String(p.id),
-          name: p.name || "Untitled",
-          category: p.category ?? null,
-          subcategory: p.subcategory ?? null,
-          price: typeof p.price === "number" ? p.price : null,
-          image: p.image ?? null,
-          location: p.location ?? null,
-          createdAt: toIso(p.createdAt),
-        }),
-      ),
-      ...(recentServicesRaw as ServiceRowDash[]).map(
-        (s): DashboardListing => ({
-          type: "service",
-          id: String(s.id),
-          name: s.name || "Untitled",
-          category: s.category ?? null,
-          subcategory: s.subcategory ?? null,
-          price: typeof s.price === "number" ? s.price : null,
-          image: s.image ?? null,
-          location: s.location ?? null,
-          createdAt: toIso(s.createdAt),
-        }),
-      ),
-    ]
-      .sort((a, b) => {
-        const da = Date.parse(a.createdAt || "");
-        const db = Date.parse(b.createdAt || "");
-        if (db !== da) return db - da;
-        // tie-break on type+id for stability
-        return `${b.type}-${b.id}`.localeCompare(`${a.type}-${a.id}`);
-      })
-      .slice(0, 6);
+    const summary = dashboardUserId
+      ? await withTimeout(
+          getSellerDashboardSummary(dashboardUserId, {
+            listingsLimit: 6,
+            windowDays: DASHBOARD_CHART_DAYS,
+          }),
+          800,
+          emptySummary,
+        )
+      : emptySummary;
 
-    const myListingsCount = productCount + serviceCount;
-    const newLast7Days = recentProductCount + recentServiceCount;
+    const metrics = summary?.metrics ?? emptySummary.metrics;
+    const inboxSummary = summary?.inbox ?? emptySummary.inbox;
+    const recentListings = summary?.recentListings ?? emptySummary.recentListings;
 
-    // Favorites metrics still default to 0 for now
-    const favoritesCount = 0;
-    const likesOnMyListings = 0;
+    const myListingsCount = metrics.myListingsCount ?? 0;
+    const favoritesCount = metrics.favoritesCount ?? 0;
+    const newLast7Days = metrics.newLast7Days ?? 0;
+    const likesOnMyListings = metrics.likesOnMyListings ?? 0;
+
+    // ---- Build 7-day chart data (listings per day + messages per day) ----
+    const now = new Date();
+    const listingCountsByDay: Record<string, number> = {};
+
+    for (const item of recentListings) {
+      const d = toDateOrNull(item.createdAt);
+      if (!d) continue;
+      const key = d.toISOString().slice(0, 10);
+      listingCountsByDay[key] = (listingCountsByDay[key] ?? 0) + 1;
+    }
+
+    const messageCountsByDay: Record<string, number> = {};
+    for (const pt of inboxSummary.dailyMessageCounts ?? []) {
+      if (!pt) continue;
+      const key = pt.date;
+      const count = pt.count;
+      if (!key || typeof count !== "number") continue;
+      messageCountsByDay[key] = count;
+    }
+
+    const chartPoints: DashboardChartPoint[] = [];
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    for (let offset = DASHBOARD_CHART_DAYS - 1; offset >= 0; offset--) {
+      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
+      const key = d.toISOString().slice(0, 10);
+      const label = d.toLocaleDateString("en-KE", {
+        month: "short",
+        day: "numeric",
+      });
+
+      chartPoints.push({
+        date: key,
+        label,
+        listings: listingCountsByDay[key] ?? 0,
+        messages: messageCountsByDay[key] ?? 0,
+      });
+    }
 
     const subLabel = (me.subscription ?? "FREE").toUpperCase();
+    const displayName = me.name || me.email || "there";
 
     return (
-      <main className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6">
+      <main
+        id="main"
+        className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
+      >
+        <section className="mx-auto flex max-w-6xl flex-col gap-6" data-e2e="dashboard-auth">
           {/* Page title + hero */}
           <header className="flex flex-col gap-4">
-            <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
+            <div className="flex items-center justify-between gap-2">
+              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+                Dashboard
+              </h1>
+              <span className="hidden text-xs font-medium uppercase tracking-[0.25em] text-muted-foreground/80 md:inline">
+                Overview
+              </span>
+            </div>
 
             <section
               aria-label="Account overview"
-              className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#161748] via-[#1b244f] to-[#39a0ca] p-6 text-primary-foreground shadow-lg ring-1 ring-border/40"
+              className="relative overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-[#161748] via-[#1b244f] to-[#39a0ca] p-6 text-primary-foreground shadow-xl shadow-black/40"
             >
-              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+              {/* soft spotlight overlay */}
+              <div
+                className="pointer-events-none absolute inset-0 opacity-60 mix-blend-soft-light"
+                aria-hidden="true"
+              >
+                <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.16),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(71,133,89,0.3),_transparent_55%)]" />
+              </div>
+
+              <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-4">
                   <UserAvatar
                     src={me.image ?? undefined}
@@ -460,25 +384,26 @@ export default async function DashboardPage({
                     size={56}
                   />
                   <div>
-                    <p className="text-sm font-medium text-primary-foreground/80">
-                      Welcome 👋
+                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-200/80">
+                      Welcome back
                     </p>
-                    <p className="text-xl font-semibold text-primary-foreground md:text-2xl">
-                      {me.name || me.email || "Your QwikSale dashboard"}
+                    <p className="mt-1 text-xl font-semibold md:text-2xl">
+                      Hey,{" "}
+                      <span className="bg-gradient-to-r from-sky-300 to-emerald-300 bg-clip-text text-transparent">
+                        {displayName}
+                      </span>
+                      .
                     </p>
-                    <p className="mt-1 text-sm text-primary-foreground/80">
-                      Manage your listings, favorites, and account.
+                    <p className="mt-1 text-sm text-slate-100/80">
+                      Quick snapshot of your listings, favorites, and messages on QwikSale.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-col items-start gap-2 md:items-end">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-background/20 px-3 py-1 text-xs font-medium text-primary-foreground">
-                    <span
-                      className="h-2 w-2 rounded-full bg-emerald-400"
-                      aria-hidden="true"
-                    />
-                    <span>Subscription:</span>
+                  <span className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-medium text-slate-50 backdrop-blur-sm">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true" />
+                    <span>Plan:</span>
                     <span className="font-semibold">{subLabel}</span>
                   </span>
                   <div className="flex flex-wrap gap-2">
@@ -503,100 +428,134 @@ export default async function DashboardPage({
                 </div>
               </div>
 
-              {/* Hero actions row */}
-              <div className="mt-5 flex flex-wrap gap-3">
+              {/* Hero primary actions */}
+              <div className="relative mt-5 flex flex-wrap gap-3 text-sm">
                 <Link
                   href="/sell"
                   prefetch={false}
-                  className="btn-outline bg-background/10 text-sm text-primary-foreground hover:bg-background/20"
+                  className="btn-outline bg-black/20 text-primary-foreground hover:bg-black/30"
                 >
                   + Post a Listing
                 </Link>
                 <Link
                   href="/saved"
                   prefetch={false}
-                  className="btn-outline bg-background/5 text-sm text-primary-foreground hover:bg-background/15"
+                  className="btn-outline bg-black/10 text-primary-foreground hover:bg-black/20"
                 >
                   View Saved
                 </Link>
                 <Link
                   href="/settings/billing"
                   prefetch={false}
-                  className="btn-outline bg-background/5 text-sm text-primary-foreground hover:bg-background/15"
+                  className="btn-outline bg-black/10 text-primary-foreground hover:bg-black/20"
                 >
                   Billing &amp; Subscription
                 </Link>
                 <a
                   href="/api/auth/signout"
-                  className="btn-outline ml-auto bg-background/20 text-sm text-primary-foreground hover:bg-background/30"
+                  className="btn-outline ml-auto bg-black/25 text-primary-foreground hover:bg-black/35"
                   rel="nofollow"
                 >
                   Sign out
                 </a>
               </div>
+
+              {/* High-level snapshot chips */}
+              <div className="relative mt-4 flex flex-wrap gap-3 text-xs text-slate-100/85">
+                <div className="inline-flex items-center gap-2 rounded-full bg-black/25 px-3 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+                  <span>{fmtInt(myListingsCount)} active listing(s)</span>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                  <span>{fmtInt(favoritesCount)} item(s) in favorites</span>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+                  <span>{fmtInt(newLast7Days)} new in the last 7 days</span>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-pink-300" />
+                  <span>{fmtInt(likesOnMyListings)} like(s) on your listings</span>
+                </div>
+              </div>
             </section>
           </header>
 
-          {/* Metrics row */}
-          <section
-            aria-label="Dashboard summary"
-            className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
-          >
-            <Metric title="My Listings" value={myListingsCount} />
-            <Metric title="My Favorites" value={favoritesCount} />
-            <Metric title="New in last 7 days" value={newLast7Days} />
-            <Metric title="Likes on my listings" value={likesOnMyListings} />
-          </section>
+          {/* Main dashboard content */}
+          <div className="flex flex-col gap-5">
+            {/* Dashboard summary / metrics */}
+            <section className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6">
+              {/* The only ARIA region named "Dashboard summary" is inside DashboardMetrics */}
+              <DashboardMetrics metrics={metrics} />
+            </section>
 
-          {/* Recent listings */}
-          <section className="space-y-3" aria-label="Your recent listings">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold">Your Recent Listings</h2>
-              <Link
-                href="/sell"
-                prefetch={false}
-                className="text-sm text-[#39a0ca] underline"
+            {/* Messages + charts split */}
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,2.6fr)]">
+              <section
+                aria-label="Messages snapshot"
+                role="region"
+                className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6"
               >
-                Post another →
-              </Link>
+                <DashboardMessagesPreview inbox={inboxSummary} />
+              </section>
+
+              <section
+                aria-label="Activity charts"
+                role="region"
+                className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6"
+              >
+                <DashboardCharts data={chartPoints} />
+              </section>
             </div>
 
-            {recentListings.length === 0 ? (
-              <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/illustrations/empty-box.svg"
-                  alt=""
-                  className="mx-auto h-24 w-24 opacity-90"
-                />
-                <p className="mt-3 text-lg font-semibold text-foreground">
-                  No listings yet
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Post your first item to get started.
-                </p>
-                <div className="mt-4">
-                  <Link
-                    href="/sell"
-                    prefetch={false}
-                    className="btn-gradient-primary"
-                  >
-                    Post a Listing
-                  </Link>
+            {/* Recent listings */}
+            <section
+              className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6"
+              aria-label="Your recent listings"
+              role="region"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-semibold">Your Recent Listings</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Quick access to what you&apos;ve posted most recently.
+                  </p>
                 </div>
+                <Link
+                  href="/sell"
+                  prefetch={false}
+                  className="text-sm font-medium text-[#39a0ca] underline underline-offset-4"
+                >
+                  Post another →
+                </Link>
               </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {recentListings.map((item) => (
-                  <RecentListingCard
-                    key={`${item.type}-${item.id}`}
-                    item={item}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
+
+              {recentListings.length === 0 ? (
+                <div className="mt-6 rounded-2xl border border-dashed border-border/60 bg-muted/40 p-8 text-center">
+                  <EmptyBoxIllustration className="mx-auto h-24 w-24 opacity-90" />
+                  <p className="mt-3 text-lg font-semibold text-foreground">
+                    No listings yet
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Post your first item to get started.
+                  </p>
+                  <div className="mt-4">
+                    <Link href="/sell" prefetch={false} className="btn-gradient-primary">
+                      Post a Listing
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {recentListings.map((item) => (
+                    <RecentListingCard key={`${item.type}-${item.id}`} item={item} />
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        </section>
       </main>
     );
   } catch (err: unknown) {
@@ -605,6 +564,7 @@ export default async function DashboardPage({
     console.error("[dashboard SSR fatal]", err);
     return (
       <main
+        id="main"
         className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
         data-soft-error="dashboard"
         data-e2e="dashboard-soft-error"
@@ -624,17 +584,6 @@ export default async function DashboardPage({
       </main>
     );
   }
-}
-
-function Metric({ title, value }: { title: string; value: number }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-      <div className="text-sm text-muted-foreground">{title}</div>
-      <div className="text-2xl font-bold text-foreground">
-        {fmtInt(value)}
-      </div>
-    </div>
-  );
 }
 
 function RecentListingCard({ item }: { item: DashboardListing }) {
@@ -660,5 +609,88 @@ function RecentListingCard({ item }: { item: DashboardListing }) {
       kind={item.type}
       editHref={editHref}
     />
+  );
+}
+
+function EmptyBoxIllustration({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 128 128"
+      className={className}
+      role="img"
+      aria-label="Empty"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+    >
+      <defs>
+        <linearGradient id="qsEmptyBoxTop" x1="20" y1="28" x2="108" y2="28">
+          <stop offset="0" stopColor="currentColor" stopOpacity="0.28" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.16" />
+        </linearGradient>
+        <linearGradient id="qsEmptyBoxSide" x1="20" y1="64" x2="108" y2="64">
+          <stop offset="0" stopColor="currentColor" stopOpacity="0.14" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.08" />
+        </linearGradient>
+      </defs>
+
+      {/* subtle sparkle */}
+      <path
+        d="M92 18l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6Z"
+        fill="currentColor"
+        fillOpacity="0.22"
+      />
+      <path
+        d="M32 22l1.6 4.6L38 28l-4.4 1.4L32 34l-1.6-4.6L26 28l4.4-1.4L32 22Z"
+        fill="currentColor"
+        fillOpacity="0.18"
+      />
+
+      {/* box */}
+      <path
+        d="M24 46l40-16 40 16-40 16-40-16Z"
+        fill="url(#qsEmptyBoxTop)"
+      />
+      <path
+        d="M24 46v46c0 4 2.4 7.6 6.1 9.1L64 116V62L24 46Z"
+        fill="url(#qsEmptyBoxSide)"
+      />
+      <path
+        d="M104 46v46c0 4-2.4 7.6-6.1 9.1L64 116V62l40-16Z"
+        fill="url(#qsEmptyBoxSide)"
+      />
+
+      {/* outlines */}
+      <path
+        d="M24 46l40-16 40 16-40 16-40-16Z"
+        stroke="currentColor"
+        strokeOpacity="0.35"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M24 46v46c0 4 2.4 7.6 6.1 9.1L64 116l33.9-14.9c3.7-1.5 6.1-5.1 6.1-9.1V46"
+        stroke="currentColor"
+        strokeOpacity="0.35"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M64 62v54"
+        stroke="currentColor"
+        strokeOpacity="0.28"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+
+      {/* lid seam */}
+      <path
+        d="M44 38l20 8 20-8"
+        stroke="currentColor"
+        strokeOpacity="0.28"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

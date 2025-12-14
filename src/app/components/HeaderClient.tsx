@@ -4,6 +4,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 import Navbar from "@/app/components/Navbar";
 import { Icon } from "@/app/components/Icon";
@@ -11,29 +12,295 @@ import HeaderInlineSearch from "@/app/components/HeaderInlineSearch";
 import AuthButtons from "@/app/components/AuthButtons";
 
 type Props = {
-  initialAuth: { isAuthed: boolean; isAdmin: boolean };
+  initialAuth: {
+    isAuthed: boolean;
+    isAdmin: boolean;
+    isVerified?: boolean;
+  };
 };
+
+type FeedItem = {
+  id: string;
+  kind: "product" | "service";
+  title: string;
+  location?: string | null;
+  createdAt?: string | null;
+  expiresAt?: string | null;
+  boostUntil?: string | null;
+  category?: string | null;
+};
+
+const FEED_TIMEOUT_MS = 12_000;
+
+function RequestsIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
+      <path d="M7 3h10a2 2 0 0 1 2 2v14.5a1.5 1.5 0 0 1-2.4 1.2l-3.7-2.78a1.5 1.5 0 0 0-1.8 0l-3.7 2.78A1.5 1.5 0 0 1 5 19.5V5a2 2 0 0 1 2-2Zm0 2v14.1l3.1-2.33a3.5 3.5 0 0 1 4.2 0L17 19.1V5H7Zm2.5 3.5h5a1 1 0 1 1 0 2h-5a1 1 0 1 1 0-2Zm0 4h6a1 1 0 1 1 0 2h-6a1 1 0 1 1 0-2Z" />
+    </svg>
+  );
+}
+
+function fmtRelativeIso(iso?: string | null) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return null;
+
+  const diff = Date.now() - d.getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ago`;
+  const days = Math.floor(h / 24);
+  return `${days}d ago`;
+}
+
+function RequestsDrawer({
+  open,
+  onClose,
+  isAuthedHint,
+}: {
+  open: boolean;
+  onClose: () => void;
+  isAuthedHint: boolean;
+}) {
+  const [loading, setLoading] = React.useState(false);
+  const [items, setItems] = React.useState<FeedItem[]>([]);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    let alive = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const r = await fetch("/api/requests/feed", {
+          cache: "no-store",
+          credentials: "include",
+          signal: controller.signal,
+          headers: { Accept: "application/json" },
+        });
+
+        let j: any = null;
+        try {
+          j = await r.json();
+        } catch {
+          j = null;
+        }
+
+        if (!alive) return;
+
+        if (!r.ok) {
+          const msg =
+            (j && typeof j?.error === "string" && j.error) || `Failed to load (${r.status})`;
+          throw new Error(msg);
+        }
+
+        const raw = Array.isArray(j?.items) ? j.items : Array.isArray(j) ? j : [];
+        const next: FeedItem[] = raw
+          .map((x: any) => {
+            const id = String(x?.id ?? "");
+            const title = String(x?.title ?? x?.name ?? "");
+            const kindRaw = String(x?.kind ?? "").toLowerCase();
+            const kind: "product" | "service" = kindRaw === "service" ? "service" : "product";
+            if (!id || !title) return null;
+            return {
+              id,
+              title,
+              kind,
+              location: typeof x?.location === "string" ? x.location : null,
+              createdAt: typeof x?.createdAt === "string" ? x.createdAt : null,
+              expiresAt: typeof x?.expiresAt === "string" ? x.expiresAt : null,
+              boostUntil: typeof x?.boostUntil === "string" ? x.boostUntil : null,
+              category: typeof x?.category === "string" ? x.category : null,
+            } as FeedItem;
+          })
+          .filter(Boolean) as FeedItem[];
+
+        setItems(next);
+      } catch (e: any) {
+        if (e?.name === "AbortError") return;
+        setError(e?.message || "Could not load requests");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60]">
+      <button
+        type="button"
+        aria-label="Close requests drawer"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+      />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="Requests"
+        className={[
+          "absolute left-0 top-0 h-full w-[min(380px,86vw)]",
+          "bg-[var(--bg-elevated)] text-[var(--text)]",
+          "border-r border-[var(--border-subtle)] shadow-soft",
+          "flex flex-col",
+        ].join(" ")}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-sm font-extrabold tracking-tight">Requests</div>
+            <div className="text-xs text-[var(--text-muted)]">Latest gigs &amp; buyer needs</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-subtle)] text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+            aria-label="Close"
+            title="Close"
+          >
+            <span aria-hidden>×</span>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-3">
+          {loading ? (
+            <div className="space-y-2">
+              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-subtle/40" />
+              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-subtle/40" />
+              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-subtle/40" />
+            </div>
+          ) : error ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+              {error}
+            </div>
+          ) : items.length === 0 ? (
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-subtle/40 px-4 py-6 text-sm text-[var(--text-muted)]">
+              No requests yet.
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {items.map((it) => {
+                const detail = `/requests/${encodeURIComponent(it.id)}`;
+                const href = isAuthedHint ? detail : `/signin?callbackUrl=${encodeURIComponent(detail)}`;
+
+                const when = fmtRelativeIso(it.createdAt) || fmtRelativeIso(it.boostUntil) || null;
+
+                return (
+                  <li key={it.id}>
+                    <Link
+                      href={href}
+                      prefetch={false}
+                      onClick={onClose}
+                      className={[
+                        "block rounded-2xl border border-[var(--border-subtle)]",
+                        "bg-[var(--bg-elevated)] hover:bg-subtle transition",
+                        "px-3 py-3",
+                        "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                            {it.kind === "service" ? "Service" : "Product"}
+                            {it.category ? ` • ${it.category}` : ""}
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-sm font-semibold text-[var(--text)]">
+                            {it.title}
+                          </div>
+                          {it.location ? (
+                            <div className="mt-1 line-clamp-1 text-xs text-[var(--text-muted)]">
+                              {it.location}
+                            </div>
+                          ) : null}
+                        </div>
+                        {when ? (
+                          <div className="shrink-0 rounded-full bg-subtle px-2 py-1 text-[11px] text-[var(--text-muted)]">
+                            {when}
+                          </div>
+                        ) : null}
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="border-t border-[var(--border-subtle)] p-3">
+          <Link
+            href="/requests"
+            prefetch={false}
+            onClick={onClose}
+            className="block rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-center text-sm font-semibold text-[var(--text)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+          >
+            View all requests
+          </Link>
+        </div>
+      </aside>
+    </div>
+  );
+}
 
 export default function HeaderClient({ initialAuth }: Props) {
   const pathname = usePathname() || "/";
   const inAdmin = pathname.startsWith("/admin");
 
-  const isAuthedHint = initialAuth.isAuthed;
+  // Live session (no /api/me), but still honor server hint to avoid flicker.
+  const { status, data: session } = useSession();
+
+  const liveAuthed = status === "authenticated" && !!session;
+  const isAuthedHint = liveAuthed || initialAuth.isAuthed;
+
+  const liveVerified = Boolean((session as any)?.user?.verified || (session as any)?.user?.isVerified);
+  const isVerified = liveVerified || initialAuth.isVerified === true;
+
+  const [requestsOpen, setRequestsOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    setRequestsOpen(false);
+  }, [pathname]);
 
   function getInlineSearch() {
     const root = document.getElementById("header-inline-search");
     if (!root) return null;
     const input = root.querySelector<HTMLInputElement>('input[name="q"]');
-    const toggle = root.querySelector<HTMLButtonElement>(
-      '[data-testid="header-inline-search-toggle"]',
-    );
-    const isOpen = root.dataset["open"] === "true";
-    return { root, input, toggle, isOpen };
+    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="header-inline-search-toggle"]');
+    return {
+      root,
+      input,
+      toggle,
+      isOpen: root.dataset["open"] === "true",
+    };
   }
 
-  // Slash / Cmd+K → open/focus inline search (user-initiated only).
-  // If another handler (e.g. SearchHotkey overlay) already consumed the event,
-  // we bail when e.defaultPrevented is true to avoid double-toggling.
+  /* -------------------------- Hotkey: Slash & Cmd+K -------------------------- */
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const isSlash = e.key === "/";
@@ -42,78 +309,71 @@ export default function HeaderClient({ initialAuth }: Props) {
       if (e.defaultPrevented) return;
 
       const t = e.target as HTMLElement | null;
-      const tag = t?.tagName?.toLowerCase() ?? "";
-      const typing =
-        tag === "input" || tag === "textarea" || t?.isContentEditable;
-      if (typing) return;
+      const tag = t?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || t?.isContentEditable) {
+        return;
+      }
 
       const found = getInlineSearch();
       if (!found) return;
-      const { input, toggle, isOpen } = found;
 
       e.preventDefault();
 
-      if (!isOpen && toggle) {
-        toggle.click();
-      }
-
-      if (input) {
-        input.focus();
-        input.select?.();
-      }
+      const { input, toggle, isOpen } = found;
+      if (!isOpen && toggle) toggle.click();
+      input?.focus();
+      input?.select?.();
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /* ------------------------------ Header right slot ------------------------------ */
   const rightSlot = (
     <div className="flex items-center gap-2.5">
-      {/* Saved & Messages icons only when we have a server-side auth hint
-         and we're not on admin shell. The actual account button is always
-         handled by AuthButtons. */}
-      {isAuthedHint && !inAdmin && (
+      {!inAdmin && (
         <>
-          <Link
-            href="/saved"
-            prefetch={false}
-            aria-label="Favorites"
-            title="Favorites"
-            className={[
-              "relative inline-flex h-8 w-8 items-center justify-center rounded-xl",
-              "text-[var(--text-muted)]",
-              "hover:bg-subtle",
-              "focus:outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 ring-focus",
-              "transition",
-            ].join(" ")}
+          <button
+            type="button"
+            onClick={() => setRequestsOpen(true)}
+            aria-label="Requests"
+            title="Requests"
+            className="inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
           >
-            <Icon name="heart" />
-            <span className="sr-only">Favorites</span>
-          </Link>
-          <Link
-            href="/messages"
-            prefetch={false}
-            aria-label="Messages"
-            title="Messages"
-            className={[
-              "relative inline-flex h-8 w-8 items-center justify-center rounded-xl",
-              "text-[var(--text-muted)]",
-              "hover:bg-subtle",
-              "focus:outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 ring-focus",
-              "transition",
-            ].join(" ")}
-          >
-            <Icon name="message" />
-            <span className="sr-only">Messages</span>
-          </Link>
+            <RequestsIcon className="h-5 w-5" />
+            <span className="text-sm font-semibold text-[var(--text)]">Requests</span>
+          </button>
+
+          {isAuthedHint && (
+            <>
+              <Link
+                href="/saved"
+                prefetch={false}
+                aria-label="Favorites"
+                title="Favorites"
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-xl text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+              >
+                <Icon name="heart" />
+              </Link>
+
+              <Link
+                href="/messages"
+                prefetch={false}
+                aria-label="Messages"
+                title="Messages"
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-xl text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+              >
+                <Icon name="message" />
+              </Link>
+            </>
+          )}
         </>
       )}
 
-      {/* This is the shared account menu / sign-in surface.
-         - When unauthenticated → shows “Sign in” link.
-         - When authenticated → shows account button with avatar + single session chip.
-         Tests 11/12/30/31/23 all target this trigger. */}
-      <AuthButtons initialIsAuthedHint={isAuthedHint} />
+      <AuthButtons initialIsAuthedHint={isAuthedHint} isVerified={isVerified} />
+
+      <RequestsDrawer open={requestsOpen} onClose={() => setRequestsOpen(false)} isAuthedHint={isAuthedHint} />
     </div>
   );
 

@@ -1,5 +1,6 @@
 // src/app/components/Button.tsx
 "use client";
+// src/app/components/Button.tsx
 
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
@@ -24,7 +25,7 @@ function cn(...xs: Array<string | false | null | undefined>) {
 
 const base =
   "inline-flex items-center justify-center select-none whitespace-nowrap font-semibold transition " +
-  "focus:outline-none ring-offset-2 ring-offset-background focus-visible:ring-2 ring-focus " +
+  "focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900 focus-visible:ring-2 ring-focus " +
   "disabled:opacity-60 disabled:cursor-not-allowed relative";
 
 const sizeMap: Record<Size, string> = {
@@ -45,8 +46,7 @@ const variantMap: Record<Variant, string> = {
     "hover:bg-subtle shadow-sm",
 
   // Ghost button – text uses tokens, hover uses subtle surface token
-  ghost:
-    "bg-transparent text-[var(--text)] hover:bg-subtle",
+  ghost: "bg-transparent text-[var(--text)] hover:bg-subtle",
 
   // Slightly filled, still token-based surface
   subtle:
@@ -164,10 +164,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
         {/* Content (dim when loading so spinner reads) */}
         <span
-          className={cn(
-            "inline-flex items-center gap-2",
-            loading && "opacity-0",
-          )}
+          className={cn("inline-flex items-center gap-2", loading && "opacity-0")}
         >
           {iconLeft ? <span aria-hidden>{iconLeft}</span> : null}
           <span>{children}</span>

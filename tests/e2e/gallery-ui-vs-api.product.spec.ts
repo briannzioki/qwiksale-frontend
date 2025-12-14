@@ -54,8 +54,10 @@ test.describe("Product page – gallery vs API", () => {
       .catch(() => {});
     const openClickTarget = page.locator('[data-gallery-wrap] button[aria-label*="Open image"]').first();
     await openClickTarget.click().catch(() => {});
-    const badge = page.locator('text=/\\d+\\s*\\/\\s*\\d+/');
+
+    const badge = page.locator('[data-e2e="product-lightbox-index"]').first();
     await expect(badge, "Lightbox index badge visible").toBeVisible();
+
     await page.keyboard.press("Escape");
 
     // 5) <Image fill> parent sanity — positioned parent

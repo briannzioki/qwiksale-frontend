@@ -1,0 +1,55 @@
+<!-- public/illustrations/empty-box.svg -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Empty box illustration">
+  <defs>
+    <linearGradient id="qs_g" x1="96" y1="96" x2="416" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#161748"/>
+      <stop offset="0.55" stop-color="#478559"/>
+      <stop offset="1" stop-color="#39a0ca"/>
+    </linearGradient>
+    <filter id="qs_s" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" fill="none"/>
+
+  <!-- Soft base shadow -->
+  <ellipse cx="256" cy="408" rx="150" ry="38" fill="#000" opacity="0.10"/>
+
+  <!-- Box body -->
+  <g filter="url(#qs_s)">
+    <path d="M140 206 L256 148 L372 206 L372 352 L256 414 L140 352 Z"
+          fill="url(#qs_g)" opacity="0.18"/>
+    <path d="M140 206 L256 270 L256 414 L140 352 Z"
+          fill="#161748" opacity="0.18"/>
+    <path d="M372 206 L256 270 L256 414 L372 352 Z"
+          fill="#39a0ca" opacity="0.14"/>
+
+    <!-- Lid -->
+    <path d="M140 206 L256 148 L372 206 L256 264 Z"
+          fill="url(#qs_g)" opacity="0.25"/>
+    <path d="M256 148 L286 168 L170 226 L140 206 Z"
+          fill="#ffffff" opacity="0.16"/>
+    <path d="M256 148 L226 168 L342 226 L372 206 Z"
+          fill="#ffffff" opacity="0.10"/>
+
+    <!-- Edges -->
+    <path d="M140 206 L256 270 L372 206" fill="none" stroke="#0b1026" stroke-opacity="0.25" stroke-width="3"/>
+    <path d="M140 206 L140 352 L256 414 L372 352 L372 206"
+          fill="none" stroke="#0b1026" stroke-opacity="0.18" stroke-width="3"/>
+  </g>
+
+  <!-- Q badge -->
+  <g>
+    <circle cx="256" cy="316" r="42" fill="#ffffff" opacity="0.92"/>
+    <circle cx="256" cy="316" r="41" fill="none" stroke="#161748" stroke-opacity="0.18" stroke-width="2"/>
+    <path d="M256 290c-14 0-24 10-24 26s10 26 24 26c6 0 11-2 15-6l10 10c2 2 6 2 8 0s2-6 0-8l-10-10c3-4 5-8 5-12 0-16-10-26-28-26zm0 10c10 0 16 7 16 16s-6 16-16 16-16-7-16-16 6-16 16-16z"
+          fill="#161748" opacity="0.85"/>
+  </g>
+
+  <!-- Small sparkles -->
+  <g opacity="0.35">
+    <path d="M392 128 l8 18 18 8-18 8-8 18-8-18-18-8 18-8z" fill="#39a0ca"/>
+    <path d="M120 138 l6 12 12 6-12 6-6 12-6-12-12-6 12-6z" fill="#478559"/>
+  </g>
+</svg>

@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { useSession } from "next-auth/react";
@@ -12,11 +11,14 @@ import { buildServiceSeo } from "@/app/lib/seo";
 import Gallery from "@/app/components/Gallery";
 import ContactModalService from "@/app/components/ContactModalService";
 import { useServices } from "@/app/lib/servicesStore";
-import {
-  extractGalleryUrls,
-  stripPlaceholderIfOthers,
-} from "@/app/lib/media";
+import { extractGalleryUrls, stripPlaceholderIfOthers } from "@/app/lib/media";
 import type { UrlObject as MediaUrlObject } from "@/app/lib/media";
+
+import ReviewSummary from "@/app/components/ReviewSummary";
+import { ReviewList } from "@/app/components/ReviewList";
+import { AddReviewForm } from "@/app/components/AddReviewForm";
+import { useListingReviews } from "@/app/hooks/useListingReviews";
+import SellerInfo from "@/app/components/SellerInfo";
 
 export type ServiceWire = {
   id: string;
@@ -59,21 +61,32 @@ export type ServiceWire = {
     memberSince?: string | null;
     rating?: number | null;
     sales?: number | null;
+    verified?: boolean | null;
+    storeLocationUrl?: string | null;
   } | null;
+
+  /** Optional store-location URL from API */
+  sellerStoreLocationUrl?: string | null;
+  sellerVerified?: boolean | null;
 };
 
-type StoreRow =
-  ReturnType<typeof useServices> extends { services: infer U }
-    ? U extends (infer V)[]
-      ? V
-      : never
-    : never;
+type StoreRow = ReturnType<typeof useServices> extends { services: infer U }
+  ? U extends (infer V)[]
+    ? V
+    : never
+  : never;
 
 type Detail = Partial<StoreRow> & ServiceWire;
 
+type ReviewSummaryPayload = {
+  average: number | null;
+  count: number;
+  viewerRating?: number | null;
+};
+
 const PLACEHOLDER = "/placeholder/default.jpg";
-const GALLERY_SIZES =
-  "(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px";
+const GALLERY_SIZES = "(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px";
+const DETAIL_FETCH_TIMEOUT_MS = 10_000;
 
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || n <= 0) return "Contact for quote";
@@ -97,31 +110,37 @@ function isPlaceholder(u?: string | null) {
   return s === PLACEHOLDER || s.endsWith("/placeholder/default.jpg");
 }
 
-export default function ServicePageClient({
-  id,
-  initialData,
-}: {
-  id: string;
-  initialData: ServiceWire | null;
-}) {
-  const router = useRouter();
+export default function ServicePageClient({ id, initialData }: { id: string; initialData: ServiceWire | null }) {
   const { data: session } = useSession();
   const viewerId = (session?.user as any)?.id as string | undefined;
 
   const { services } = useServices();
+  const listingType = "service" as const;
 
-  const [fetched, setFetched] = useState<Detail | null>(
-    (initialData as unknown as Detail) ?? null,
-  );
+  const {
+    reviews,
+    summary,
+    average: avgRating,
+    count: reviewCount,
+    loading: reviewsLoading,
+    error: reviewsError,
+    reload: reloadReviews,
+    onReviewCreated,
+    onReviewUpdated,
+    onReviewDeleted,
+  } = useListingReviews({
+    listingId: id,
+    listingType,
+  });
+
+  const [fetched, setFetched] = useState<Detail | null>((initialData as unknown as Detail) ?? null);
   const [fetching, setFetching] = useState(false);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
 
   const service = useMemo(() => {
     if (!id) return undefined;
-    const s = services.find(
-      (x: any) => String(x.id) === String(id),
-    ) as StoreRow | undefined;
+    const s = services.find((x: any) => String(x.id) === String(id)) as StoreRow | undefined;
     return (s as Detail) || undefined;
   }, [services, id]);
 
@@ -132,12 +151,31 @@ export default function ServicePageClient({
 
   const fetchAbortRef = useRef<AbortController | null>(null);
 
+  // If we already have a strong cached row (e.g. after visiting once), avoid a redundant detail fetch.
+  useEffect(() => {
+    if (!id || gone || fetched) return;
+    if (!service) return;
+
+    const s: any = service;
+    const descOk = typeof s?.description === "string" && s.description.trim().length > 0;
+    const mediaOk = hasRealGallery(s);
+    const notPartial = s?._partial !== true;
+
+    if (descOk && mediaOk && notPartial) {
+      setFetched(service as Detail);
+    }
+  }, [id, gone, fetched, service, hasRealGallery]);
+
   useEffect(() => {
     if (!id || gone || fetching || fetched) return;
 
+    // If we have a store row but it still looks incomplete, fetch detail.
+    // (We only skip if the prior effect already promoted it into `fetched`.)
     const ctrl = new AbortController();
     fetchAbortRef.current?.abort();
     fetchAbortRef.current = ctrl;
+
+    const t = setTimeout(() => ctrl.abort(), DETAIL_FETCH_TIMEOUT_MS);
 
     (async () => {
       try {
@@ -163,8 +201,7 @@ export default function ServicePageClient({
         if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
 
         const maybe: Detail | null =
-          (j && (("service" in j ? (j as any).service : j) as Detail)) ||
-          null;
+          (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
 
         const status = (maybe as any)?.status;
         if (status && String(status).toUpperCase() !== "ACTIVE") {
@@ -178,20 +215,19 @@ export default function ServicePageClient({
           setFetchErr(e?.message || "Failed to load service");
         }
       } finally {
+        clearTimeout(t);
         if (!ctrl.signal.aborted) setFetching(false);
       }
     })();
 
     return () => {
+      clearTimeout(t);
       ctrl.abort();
     };
   }, [id, gone, fetching, fetched]);
 
   const didRefetchEmpty = useRef(false);
-  const hasRealFromCurrent = useMemo(
-    () => hasRealGallery(fetched ?? service ?? {}),
-    [fetched, service, hasRealGallery],
-  );
+  const hasRealFromCurrent = useMemo(() => hasRealGallery(fetched ?? service ?? {}), [fetched, service, hasRealGallery]);
 
   useEffect(() => {
     if (!id || gone || fetching) return;
@@ -204,6 +240,8 @@ export default function ServicePageClient({
     const ctrl = new AbortController();
     fetchAbortRef.current?.abort();
     fetchAbortRef.current = ctrl;
+
+    const t = setTimeout(() => ctrl.abort(), DETAIL_FETCH_TIMEOUT_MS);
 
     let backoffTimer: ReturnType<typeof setTimeout> | null = null;
     const sleep = (ms: number) =>
@@ -238,8 +276,7 @@ export default function ServicePageClient({
         if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
 
         const maybe: Detail | null =
-          (j && (("service" in j ? (j as any).service : j) as Detail)) ||
-          null;
+          (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
 
         const status = (maybe as any)?.status;
         if (status && String(status).toUpperCase() !== "ACTIVE") {
@@ -252,6 +289,7 @@ export default function ServicePageClient({
 
         if (!ctrl.signal.aborted) setFetched(maybe);
 
+        // ✅ one backoff retry only when fallback timed out OR payload still placeholder-only
         if ((timedFallback || stillEmpty) && !ctrl.signal.aborted) {
           await sleep(1200);
           if (ctrl.signal.aborted) return;
@@ -266,9 +304,7 @@ export default function ServicePageClient({
           const j2 = await r2.json().catch(() => ({}));
           if (r2.ok) {
             const maybe2: Detail | null =
-              (j2 &&
-                (("service" in j2 ? (j2 as any).service : j2) as Detail)) ||
-              null;
+              (j2 && (("service" in j2 ? (j2 as any).service : j2) as Detail)) || null;
 
             const status2 = (maybe2 as any)?.status;
             if (status2 && String(status2).toUpperCase() !== "ACTIVE") {
@@ -286,12 +322,14 @@ export default function ServicePageClient({
           setFetchErr(e?.message || "Failed to load service");
         }
       } finally {
+        clearTimeout(t);
         if (backoffTimer) clearTimeout(backoffTimer);
         if (!ctrl.signal.aborted) setFetching(false);
       }
     })();
 
     return () => {
+      clearTimeout(t);
       if (backoffTimer) clearTimeout(backoffTimer);
       ctrl.abort();
     };
@@ -311,21 +349,13 @@ export default function ServicePageClient({
           <div className="mx-auto mb-3 grid h-10 w-10 place-content-center rounded-lg bg-[#161748] text-white">
             404
           </div>
-          <h1 className="text-lg font-semibold text-foreground">
-            Service unavailable
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            This service was removed or isn’t available anymore.
-          </p>
+          <h1 className="text-lg font-semibold text-foreground">Service unavailable</h1>
+          <p className="mt-1 text-sm text-muted-foreground">This service was removed or isn’t available anymore.</p>
           <div className="mt-4 flex items-center justify-center gap-2">
             <Link href="/" prefetch={false} className="btn-gradient-primary">
               Home
             </Link>
-            <Link
-              href="/search?type=service"
-              prefetch={false}
-              className="btn-gradient-primary"
-            >
+            <Link href="/search?type=service" prefetch={false} className="btn-gradient-primary">
               Browse services
             </Link>
           </div>
@@ -343,13 +373,9 @@ export default function ServicePageClient({
     category: displayMaybe?.category ?? "General",
     subcategory: displayMaybe?.subcategory ?? null,
     price: typeof displayMaybe?.price === "number" ? displayMaybe.price : null,
-    ...(displayMaybe?.rateType
-      ? { rateType: normRateType(displayMaybe.rateType) }
-      : {}),
+    ...(displayMaybe?.rateType ? { rateType: normRateType(displayMaybe.rateType) } : {}),
     image: displayMaybe?.image ?? null,
-    gallery: Array.isArray(displayMaybe?.gallery)
-      ? (displayMaybe.gallery as string[])
-      : [],
+    gallery: Array.isArray(displayMaybe?.gallery) ? (displayMaybe.gallery as string[]) : [],
     serviceArea: displayMaybe?.serviceArea ?? null,
     availability: displayMaybe?.availability ?? null,
     location: displayMaybe?.location ?? null,
@@ -359,20 +385,15 @@ export default function ServicePageClient({
     sellerPhone: displayMaybe?.sellerPhone ?? null,
     sellerLocation: displayMaybe?.sellerLocation ?? null,
     sellerMemberSince: displayMaybe?.sellerMemberSince ?? null,
-    sellerRating:
-      typeof displayMaybe?.sellerRating === "number"
-        ? displayMaybe.sellerRating
-        : null,
-    sellerSales:
-      typeof displayMaybe?.sellerSales === "number"
-        ? displayMaybe.sellerSales
-        : null,
+    sellerRating: typeof displayMaybe?.sellerRating === "number" ? displayMaybe.sellerRating : null,
+    sellerSales: typeof displayMaybe?.sellerSales === "number" ? displayMaybe.sellerSales : null,
     seller: displayMaybe?.seller ?? null,
-    ...(displayMaybe &&
-    "status" in displayMaybe &&
-    displayMaybe.status != null
-      ? { status: displayMaybe.status as any }
-      : {}),
+    ...(displayMaybe && "status" in displayMaybe && displayMaybe.status != null ? { status: displayMaybe.status as any } : {}),
+    sellerStoreLocationUrl: displayMaybe?.sellerStoreLocationUrl ?? (displayMaybe as any)?.storeLocationUrl ?? undefined,
+    sellerVerified:
+      typeof displayMaybe?.sellerVerified === "boolean"
+        ? displayMaybe.sellerVerified
+        : (displayMaybe as any)?.verified ?? undefined,
   };
 
   const galleryToRender = useMemo(() => {
@@ -388,14 +409,25 @@ export default function ServicePageClient({
     return pruned;
   }, [displayMaybe]);
 
-  const enableLightbox = useMemo(
-    () => galleryToRender.some((u) => u && u !== PLACEHOLDER),
-    [galleryToRender],
-  );
+  const enableLightbox = useMemo(() => galleryToRender.some((u) => u && u !== PLACEHOLDER), [galleryToRender]);
 
   const seller = useMemo(() => {
     const nested: any = (display as any)?.seller || {};
     const username = (nested?.username || "").trim() || null;
+
+    const storeLocationUrl =
+      typeof nested?.storeLocationUrl === "string"
+        ? nested.storeLocationUrl
+        : typeof (display as any)?.sellerStoreLocationUrl === "string"
+        ? (display as any).sellerStoreLocationUrl
+        : typeof (display as any)?.storeLocationUrl === "string"
+        ? (display as any).storeLocationUrl
+        : null;
+
+    const verified =
+      (nested && typeof nested.verified === "boolean" && nested.verified) ||
+      Boolean((display as any)?.sellerVerified ?? (display as any)?.verified ?? false);
+
     return {
       id: nested?.id ?? display?.sellerId ?? null,
       username,
@@ -404,18 +436,10 @@ export default function ServicePageClient({
       phone: nested?.phone ?? display?.sellerPhone ?? null,
       location: nested?.location ?? display?.sellerLocation ?? null,
       memberSince: nested?.memberSince ?? display?.sellerMemberSince ?? null,
-      rating:
-        typeof nested?.rating === "number"
-          ? nested.rating
-          : typeof display?.sellerRating === "number"
-          ? display?.sellerRating
-          : null,
-      sales:
-        typeof nested?.sales === "number"
-          ? nested.sales
-          : typeof display?.sellerSales === "number"
-          ? display?.sellerSales
-          : null,
+      rating: typeof nested?.rating === "number" ? nested.rating : typeof display?.sellerRating === "number" ? display?.sellerRating : null,
+      sales: typeof nested?.sales === "number" ? nested.sales : typeof display?.sellerSales === "number" ? display?.sellerSales : null,
+      storeLocationUrl,
+      verified,
     };
   }, [display]);
 
@@ -429,16 +453,14 @@ export default function ServicePageClient({
     return `/store`;
   }, [seller.username, seller.id]);
 
+  const sellerIdForDonate: string | null = seller.id != null ? String(seller.id) : null;
+
   const seo = useMemo(() => {
-    const nonPlaceholder = galleryToRender.filter(
-      (u) => u && u !== PLACEHOLDER,
-    );
+    const nonPlaceholder = galleryToRender.filter((u) => u && u !== PLACEHOLDER);
     return buildServiceSeo({
       id: display.id!,
       name: display.name!,
-      ...(display.description != null
-        ? { description: display.description }
-        : {}),
+      ...(display.description != null ? { description: display.description } : {}),
       ...(typeof display.price === "number" ? { price: display.price } : {}),
       ...(nonPlaceholder.length ? { image: nonPlaceholder } : {}),
       ...(display.category ? { category: display.category } : {}),
@@ -466,6 +488,45 @@ export default function ServicePageClient({
     }
   }, [display?.id]);
 
+  /* ------------------------------ Reviews ------------------------------- */
+
+  const listingId = display.id!;
+
+  const viewerReview = useMemo(
+    () =>
+      (reviews as any[]).find(
+        (r: any) =>
+          (viewerId && r.userId && String(r.userId) === String(viewerId)) ||
+          (viewerId && r.user?.id && String(r.user.id) === String(viewerId))
+      ) || null,
+    [reviews, viewerId]
+  );
+
+  const reviewSummary: ReviewSummaryPayload | null = useMemo(
+    () =>
+      summary
+        ? {
+            average: typeof summary.average === "number" ? summary.average : avgRating ?? null,
+            count: typeof summary.count === "number" ? summary.count : reviewCount ?? (reviews as any[]).length,
+            viewerRating:
+              viewerReview && typeof (viewerReview as any).rating === "number" ? (viewerReview as any).rating : null,
+          }
+        : (reviews as any[]).length
+        ? {
+            average:
+              typeof avgRating === "number"
+                ? avgRating
+                : (reviews as any[]).reduce((acc, r: any) => acc + (r.rating || 0), 0) / (reviews as any[]).length,
+            count: (reviews as any[]).length,
+            viewerRating:
+              viewerReview && typeof (viewerReview as any).rating === "number" ? (viewerReview as any).rating : null,
+          }
+        : null,
+    [summary, avgRating, reviewCount, reviews, viewerReview]
+  );
+
+  /* -------------------------------- UI --------------------------------- */
+
   return (
     <>
       {seo?.jsonLd && (
@@ -485,45 +546,14 @@ export default function ServicePageClient({
             className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm"
             data-gallery-wrap
           >
-            <div className="relative aspect-[4/3] sm:aspect-[16/10]">
+            <div className="relative" style={{ aspectRatio: "16 / 10" }}>
               {display.featured && (
                 <span className="absolute left-3 top-3 z-20 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
                   Featured
                 </span>
               )}
 
-              <Gallery
-                images={galleryToRender}
-                sizes={GALLERY_SIZES}
-                lightbox={enableLightbox}
-              />
-
-              {/* Hidden mirror for tests if needed */}
-              <ul hidden data-gallery-shadow="true">
-                {galleryToRender.map((src, i) => (
-                  <li key={`shadow:${i}`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={src} alt="" data-gallery-image />
-                  </li>
-                ))}
-              </ul>
-
-              {/* Overlay opener target (for tests) */}
-              <button
-                type="button"
-                data-gallery-overlay="true"
-                aria-label="Open image in fullscreen"
-                className="absolute inset-0 z-[70] h-full w-full bg-transparent"
-                onClick={() => {
-                  const wrap =
-                    document.querySelector<HTMLElement>("[data-gallery-wrap]");
-                  const opener =
-                    wrap?.querySelector<HTMLElement>(
-                      '[data-gallery-opener], button[aria-label="Open image in fullscreen"]',
-                    );
-                  opener?.click();
-                }}
-              />
+              <Gallery images={galleryToRender} sizes={GALLERY_SIZES} lightbox={enableLightbox} />
 
               <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-black/5 dark:ring-white/10" />
             </div>
@@ -557,12 +587,10 @@ export default function ServicePageClient({
                   <DeleteListingButton
                     serviceId={display.id!}
                     label="Delete"
-                    className="btn-gradient-primary px-2 py-1 text-xs"
-                    onDeletedAction={() => {
-                      toast.success("Service deleted");
-                      // ✅ Only after explicit user action
-                      router.push("/dashboard");
-                    }}
+                    buttonSize="sm"
+                    buttonVariant="solid"
+                    buttonTone="danger"
+                    redirectHref="/dashboard?deleted=1"
                   />
                 </>
               )}
@@ -578,84 +606,101 @@ export default function ServicePageClient({
 
         {/* Details */}
         <div className="space-y-4 lg:col-span-2">
+          {/* Header / title */}
           <div className="flex items-start justify-between gap-3">
-            <h1 className="text-2xl font-bold text-foreground">
-              {display.name || "Service"}
-            </h1>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brandBlue/80 dark:text-brandBlue">
+                Service
+              </p>
+              <h1 className="mt-1 text-2xl font-bold text-foreground">{display.name || "Service"}</h1>
+              {/* Hidden ID for tests */}
+              <span className="sr-only" data-testid="service-id">
+                {display.id}
+              </span>
+            </div>
           </div>
 
+          {/* Rate / meta */}
           <div className="space-y-1 rounded-xl border border-border bg-card p-4">
             <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">
               {fmtKES(display.price)} {rateSuffix(display.rateType ?? null)}
             </p>
-            {display.serviceArea && (
-              <p className="text-sm text-muted-foreground">
-                Service Area: {display.serviceArea}
-              </p>
-            )}
-            {display.location && (
-              <p className="text-sm text-muted-foreground">
-                Base Location: {display.location}
-              </p>
-            )}
+            {display.serviceArea && <p className="text-sm text-muted-foreground">Service Area: {display.serviceArea}</p>}
+            {display.location && <p className="text-sm text-muted-foreground">Base Location: {display.location}</p>}
           </div>
 
+          {/* Description */}
           <div className="rounded-xl border border-border bg-card p-4">
             <h2 className="mb-2 font-semibold text-foreground">Description</h2>
-            <p className="whitespace-pre-line text-foreground">
-              {display.description || "No description provided."}
-            </p>
+            <p className="whitespace-pre-line text-foreground">{display.description || "No description provided."}</p>
           </div>
 
-          {/* Provider / Contact */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="mb-3 font-semibold text-foreground">Provider</h3>
-
-            <div className="space-y-1 text-foreground">
-              <p className="flex items-center gap-2">
-                <span className="font-medium">Name:</span>
-                <span>
-                  {display.sellerName ||
-                    (display.seller as any)?.name ||
-                    "Provider"}
-                </span>
-              </p>
-              {display.sellerLocation && (
-                <p>
-                  <span className="font-medium">Location:</span>{" "}
-                  {display.sellerLocation}
-                </p>
-              )}
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3">
+          {/* Provider / Contact / Store / Donate */}
+          <SellerInfo
+            label="Provider"
+            sellerId={sellerIdForDonate}
+            username={seller.username ?? null}
+            name={seller.name ?? null}
+            avatarUrl={seller.image ?? null}
+            locationLabel={seller.location ?? display.sellerLocation ?? display.location ?? null}
+            storeLocationUrl={seller.storeLocationUrl ?? display.sellerStoreLocationUrl ?? null}
+            memberSince={seller.memberSince ?? null}
+            rating={typeof seller.rating === "number" ? seller.rating : null}
+            salesCount={typeof seller.sales === "number" ? seller.sales : null}
+            verified={seller.verified === true}
+            storeHref={storeHref}
+            donateSellerId={sellerIdForDonate}
+            contactSlot={
               <ContactModalService
                 className="btn-gradient-primary"
                 serviceId={display.id!}
                 serviceName={display.name ?? "Service"}
-                fallbackName={
-                  display.sellerName ?? (display.seller as any)?.name ?? null
-                }
-                fallbackLocation={
-                  display.sellerLocation ??
-                  (display.seller as any)?.location ??
-                  null
-                }
+                fallbackName={display.sellerName ?? (display.seller as any)?.name ?? null}
+                fallbackLocation={display.sellerLocation ?? (display.seller as any)?.location ?? null}
                 buttonLabel="Message provider"
               />
-              <Link
-                href={storeHref}
-                prefetch={false}
-                className="btn-outline"
-                aria-label="Visit provider store"
-              >
-                Visit Store
-              </Link>
+            }
+          />
+
+          {/* Reviews */}
+          <div
+            className="rounded-xl border border-border bg-card p-4"
+            data-section="reviews"
+            {...(reviewSummary
+              ? {
+                  "data-review-avg": reviewSummary.average ?? undefined,
+                  "data-review-count": reviewSummary.count,
+                }
+              : {})}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-semibold text-foreground">Reviews</h3>
+              <ReviewSummary
+                reviews={reviews as any[]}
+                average={reviewSummary?.average ?? null}
+                count={reviewSummary?.count ?? (reviews as any[]).length}
+                loading={reviewsLoading}
+              />
             </div>
 
-            <div className="mt-4 text-xs text-muted-foreground">
-              Safety: meet in public places, verify identity where possible, and
-              avoid prepayments.
+            {reviewsError && <p className="mt-2 text-xs text-destructive">{reviewsError}</p>}
+
+            <div className="mt-3 space-y-4">
+              <AddReviewForm
+                listingId={listingId}
+                listingType={listingType}
+                existingReview={viewerReview ?? undefined}
+                onSubmittedAction={async (...args) => {
+                  await onReviewCreated(...args);
+                  await reloadReviews();
+                }}
+              />
+
+              <ReviewList
+                reviews={reviews as any[]}
+                onReviewEditAction={onReviewUpdated}
+                onReviewDeleteAction={onReviewDeleted}
+              />
             </div>
           </div>
         </div>

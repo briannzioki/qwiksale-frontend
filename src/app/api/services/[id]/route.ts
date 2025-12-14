@@ -296,8 +296,14 @@ export async function GET(req: NextRequest) {
   try {
     const serviceId = getId(req);
     if (!serviceId) {
-      track("service_read_not_found", { reqId, reason: "missing_id" });
-      return noStore({ error: "Missing id" }, { status: 400 });
+      track("service_read_not_found", {
+        reqId,
+        reason: "missing_id",
+      });
+      return noStore(
+        { error: "Missing id" },
+        { status: 400 },
+      );
     }
 
     if (isClearlyInvalidId(serviceId)) {
@@ -306,7 +312,10 @@ export async function GET(req: NextRequest) {
         serviceId,
         reason: "invalid_id",
       });
-      const res = noStore({ error: "Not found" }, { status: 404 });
+      const res = noStore(
+        { error: "Not found" },
+        { status: 404 },
+      );
       res.headers.set("x-api-shortcircuit", "invalid-id");
       return res;
     }
@@ -318,171 +327,193 @@ export async function GET(req: NextRequest) {
         serviceId,
         reason: "no_model",
       });
-      return noStore({ error: "Not found" }, { status: 404 });
+      return noStore(
+        { error: "Not found" },
+        { status: 404 },
+      );
     }
 
     track("service_read_attempt", { reqId, serviceId });
 
     const selectPublic: any = { ...serviceBaseSelect };
 
-    // Attempt A: fast public ACTIVE row
-    const activeItemRaw = await race(
-      Service.findFirst({
-        where: { id: serviceId, status: "ACTIVE" },
+    const baseRaw = await race(
+      Service.findUnique({
+        where: { id: serviceId },
         select: selectPublic,
       }),
       TIMEOUT_MS,
     );
-    const activeItem =
-      activeItemRaw && activeItemRaw !== "timeout"
-        ? (activeItemRaw as any)
+
+    const base =
+      baseRaw && baseRaw !== "timeout"
+        ? (baseRaw as any)
         : null;
 
-    // Attempt B (dev/preview): allow any status if not found
-    let devLooseItem: any = null;
-    if (!activeItem && !IS_PROD) {
-      const foundLoose = await race(
-        Service.findUnique({
-          where: { id: serviceId },
-          select: selectPublic,
-        }),
-        900,
-      );
-      devLooseItem =
-        foundLoose && foundLoose !== "timeout"
-          ? (foundLoose as any)
-          : null;
-    }
-
-    const publicItem = activeItem ?? devLooseItem;
-
-    if (publicItem) {
-      const [fullRowRaw, relUrlsRaw] = await Promise.all([
-        race(
-          Service.findUnique({ where: { id: serviceId } }).catch(
-            () => null,
-          ),
-          600,
-        ),
-        race(fetchServiceRelationUrls(serviceId), 600),
-      ]);
-
-      const fullRow =
-        fullRowRaw !== "timeout" ? (fullRowRaw as any) : null;
-      const relUrls = Array.isArray(relUrlsRaw) ? relUrlsRaw : [];
-
-      const shaped = shapeService(publicItem);
-      const norm = normalizeCoverAndGallery(shaped, fullRow, relUrls);
-
-      const gallery = norm.gallery;
-      const payload = {
-        ...shaped,
-        image: norm.cover,
-        // API gallery is "real media only" – no placeholders/dev seeds
-        gallery,
-        imageUrls: gallery,
-        images: gallery,
-        photos: gallery,
-      };
-
-      const res = publicCache(payload);
-      if (fullRowRaw === "timeout" || relUrlsRaw === "timeout") {
-        res.headers.set("x-api-fallback", "timed-out");
-      }
-
-      track("service_read_public_hit", {
-        reqId,
-        serviceId,
-        devLoose: !!devLooseItem && !activeItem,
-      });
-      return res;
-    }
-
-    // Owner-gated fallback (any status)
-    const sessionRaw = await race(auth(), 500);
-    const session = sessionRaw === "timeout" ? null : (sessionRaw as any);
-    const sessionUserId = (session?.user as any)?.id as string | undefined;
-
-    let userId: string | null = sessionUserId ?? null;
-    if (!userId && (session?.user as any)?.email) {
-      const uRaw = await race(
-        prisma.user.findUnique({
-          where: { email: (session?.user as any).email },
-          select: { id: true },
-        }),
-        600,
-      );
-      const u = uRaw !== "timeout" ? (uRaw as any) : null;
-      userId = u?.id ?? null;
-    }
-
-    if (!userId) {
-      track("service_read_unauthorized_owner_check", {
-        reqId,
-        serviceId,
-      });
-      return noStore({ error: "Not found" }, { status: 404 });
-    }
-
-    const selectOwner: any = { ...serviceBaseSelect };
-
-    const ownerItemRaw = await race(
-      Service.findFirst({
-        where: { id: serviceId, sellerId: userId },
-        select: selectOwner,
-      }),
-      TIMEOUT_MS,
-    );
-    const ownerItem =
-      ownerItemRaw && ownerItemRaw !== "timeout"
-        ? (ownerItemRaw as any)
-        : null;
-
-    if (!ownerItem) {
+    if (!base) {
       track("service_read_not_found", {
         reqId,
         serviceId,
-        reason: "no_owner_item_or_timeout",
+        reason:
+          baseRaw === "timeout"
+            ? "base_timeout_or_missing"
+            : "not_found",
       });
-      return noStore({ error: "Not found" }, { status: 404 });
+      const res = noStore(
+        { error: "Not found" },
+        { status: 404 },
+      );
+      if (baseRaw === "timeout") {
+        res.headers.set("x-api-fallback", "timed-out");
+      }
+      return res;
     }
 
+    const shaped = shapeService(base);
+    const rawStatus = (base as any)?.status;
+    const normalizedStatus =
+      typeof rawStatus === "string" &&
+      rawStatus.trim()
+        ? rawStatus.trim().toUpperCase()
+        : "ACTIVE";
+    const isDeleted = Boolean((base as any)?.deletedAt);
+    const isDevLike = !IS_PROD;
+
+    // Access mode
+    let allowedAsPublic = false;
+    let requiresOwnerCheck = false;
+
+    if (isDevLike) {
+      // In dev/preview, allow any existing, non-deleted row
+      // to be readable to avoid flaky 404s in tests.
+      allowedAsPublic = !isDeleted;
+      requiresOwnerCheck = false;
+    } else {
+      const nonPublicStatuses = new Set(["DRAFT", "HIDDEN"]);
+      if (!isDeleted && !nonPublicStatuses.has(normalizedStatus)) {
+        // ACTIVE, SOLD, etc. are treated as public.
+        allowedAsPublic = true;
+      } else {
+        requiresOwnerCheck = true;
+      }
+    }
+
+    let viewerIsOwner = false;
+    let viewerIsAdmin = false;
+
+    if (requiresOwnerCheck) {
+      const sessionRaw = await race(auth(), 500);
+      const session =
+        sessionRaw === "timeout"
+          ? null
+          : (sessionRaw as any);
+      const user = session?.user as any;
+      const userId = user?.id as string | undefined;
+      const isAdmin =
+        user?.role === "ADMIN" || user?.isAdmin === true;
+
+      let resolvedUserId: string | null = userId ?? null;
+
+      if (!resolvedUserId && user?.email) {
+        const uRaw = await race(
+          prisma.user.findUnique({
+            where: { email: user.email as string },
+            select: { id: true },
+          }),
+          600,
+        );
+        const u =
+          uRaw && uRaw !== "timeout"
+            ? (uRaw as any)
+            : null;
+        resolvedUserId = u?.id ?? null;
+      }
+
+      viewerIsAdmin = !!isAdmin;
+      viewerIsOwner =
+        !!resolvedUserId &&
+        !!base?.sellerId &&
+        String(base.sellerId) ===
+          String(resolvedUserId);
+
+      if (!viewerIsOwner && !viewerIsAdmin) {
+        track(
+          "service_read_unauthorized_owner_check",
+          {
+            reqId,
+            serviceId,
+          },
+        );
+        return noStore(
+          { error: "Not found" },
+          { status: 404 },
+        );
+      }
+    }
+
+    // Media normalization (full row + related images)
     const [fullRowRaw, relUrlsRaw] = await Promise.all([
       race(
-        Service.findUnique({ where: { id: serviceId } }).catch(
-          () => null,
-        ),
+        Service.findUnique({
+          where: { id: serviceId },
+        }).catch(() => null),
         600,
       ),
       race(fetchServiceRelationUrls(serviceId), 600),
     ]);
-    const fullRow =
-      fullRowRaw !== "timeout" ? (fullRowRaw as any) : null;
-    const relUrls = Array.isArray(relUrlsRaw) ? relUrlsRaw : [];
 
-    const shapedOwner = shapeService(ownerItem);
-    const normOwner = normalizeCoverAndGallery(
-      shapedOwner,
+    const fullRow =
+      fullRowRaw !== "timeout"
+        ? (fullRowRaw as any)
+        : null;
+    const relUrls = Array.isArray(relUrlsRaw)
+      ? (relUrlsRaw as string[])
+      : [];
+
+    const norm = normalizeCoverAndGallery(
+      shaped,
       fullRow,
       relUrls,
     );
+    const gallery = norm.gallery;
 
-    const ownerGallery = normOwner.gallery;
-    const ownerPayload = {
-      ...shapedOwner,
-      image: normOwner.cover,
-      gallery: ownerGallery,
-      imageUrls: ownerGallery,
-      images: ownerGallery,
-      photos: ownerGallery,
+    const payload = {
+      ...shaped,
+      image: norm.cover,
+      gallery,
+      imageUrls: gallery,
+      images: gallery,
+      photos: gallery,
     };
 
-    const res = noStore(ownerPayload);
-    if (fullRowRaw === "timeout" || relUrlsRaw === "timeout") {
+    const isPublicResponse =
+      allowedAsPublic && !isDevLike;
+
+    const res = isPublicResponse
+      ? publicCache(payload)
+      : noStore(payload);
+
+    if (
+      fullRowRaw === "timeout" ||
+      relUrlsRaw === "timeout"
+    ) {
       res.headers.set("x-api-fallback", "timed-out");
     }
 
-    track("service_read_owner_hit", { reqId, serviceId });
+    track(
+      isPublicResponse
+        ? "service_read_public_hit"
+        : "service_read_owner_hit",
+      {
+        reqId,
+        serviceId,
+        env: IS_PROD ? "prod" : "dev",
+        status: normalizedStatus,
+        deleted: isDeleted,
+        ownerView: !isPublicResponse,
+      },
+    );
+
     return res;
   } catch (e) {
     console.warn("[services/:id GET] error:", e);
@@ -490,9 +521,13 @@ export async function GET(req: NextRequest) {
       reqId,
       message: (e as any)?.message ?? String(e),
     });
-    return noStore({ error: "Server error" }, { status: 500 });
+    return noStore(
+      { error: "Server error" },
+      { status: 500 },
+    );
   }
 }
+
 /* ------------------ DELETE /api/services/:id ------------------ */
 export async function DELETE(req: NextRequest) {
   const reqId =
@@ -502,25 +537,42 @@ export async function DELETE(req: NextRequest) {
   try {
     const idParam = getId(req);
     if (!idParam) {
-      return noStore({ error: "Missing id" }, { status: 400 });
+      return noStore(
+        { error: "Missing id" },
+        { status: 400 },
+      );
     }
 
     const Service = getServiceModel();
     if (!Service) {
-      return noStore({ error: "Not found" }, { status: 404 });
+      return noStore(
+        { error: "Not found" },
+        { status: 404 },
+      );
     }
 
     const session = await auth();
     const user = session?.user as any;
     const userId = user?.id;
-    const isAdmin = user?.role === "ADMIN" || user?.isAdmin === true;
+    const isAdmin =
+      user?.role === "ADMIN" || user?.isAdmin === true;
 
     if (!userId && !isAdmin) {
-      return noStore({ error: "Unauthorized" }, { status: 401 });
+      return noStore(
+        { error: "Unauthorized" },
+        { status: 401 },
+      );
     }
 
     // Resolve row (accept alt id fields just like products)
-    const ALT_ID_FIELDS = ["id", "serviceId", "service_id", "uid", "uuid", "slug"] as const;
+    const ALT_ID_FIELDS = [
+      "id",
+      "serviceId",
+      "service_id",
+      "uid",
+      "uuid",
+      "slug",
+    ] as const;
 
     let existing: any = null;
     for (const field of ALT_ID_FIELDS) {
@@ -535,12 +587,19 @@ export async function DELETE(req: NextRequest) {
     }
 
     if (!existing) {
-      return noStore({ error: "Not found" }, { status: 404 });
+      return noStore(
+        { error: "Not found" },
+        { status: 404 },
+      );
     }
 
-    const isOwner = userId && existing.sellerId === userId;
+    const isOwner =
+      userId && existing.sellerId === userId;
     if (!isOwner && !isAdmin) {
-      return noStore({ error: "Forbidden" }, { status: 403 });
+      return noStore(
+        { error: "Forbidden" },
+        { status: 403 },
+      );
     }
 
     // Delete gallery images + service
@@ -556,6 +615,9 @@ export async function DELETE(req: NextRequest) {
     return noStore({ ok: true });
   } catch (e) {
     console.warn("[services/:id DELETE] error:", e);
-    return noStore({ error: "Server error" }, { status: 500 });
+    return noStore(
+      { error: "Server error" },
+      { status: 500 },
+    );
   }
 }

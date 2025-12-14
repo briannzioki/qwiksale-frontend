@@ -27,6 +27,9 @@ type AdminUser = {
   username: string | null;
   role: string | null;
   createdAt: string | null;
+  verified: boolean | null;
+  suspended: boolean | null;
+  banned: boolean | null;
 };
 
 type RoleFilter = "any" | "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN";
@@ -179,10 +182,14 @@ async function fetchUsersFallback(opts: {
       username: true,
       role: true,
       createdAt: true,
-    },
+      // assuming these exist on your User model; if not, adjust or remove
+      verified: true as any,
+      suspended: true as any,
+      banned: true as any,
+    } as any,
   });
 
-  return rows.map((u) => ({
+  return rows.map((u: any) => ({
     id: String(u.id),
     email: u.email ?? null,
     name: u.name ?? null,
@@ -191,7 +198,13 @@ async function fetchUsersFallback(opts: {
     createdAt:
       u.createdAt instanceof Date
         ? u.createdAt.toISOString()
-        : ((u as any).createdAt as string | null) ?? null,
+        : (u.createdAt as string | null) ?? null,
+    verified:
+      typeof u.verified === "boolean" ? u.verified : null,
+    suspended:
+      typeof u.suspended === "boolean" ? u.suspended : null,
+    banned:
+      typeof u.banned === "boolean" ? u.banned : null,
   }));
 }
 
@@ -280,6 +293,10 @@ export default async function Page({
   });
 
   const total = users.length;
+  const verifiedCount = users.filter((u) => !!u.verified).length;
+  const suspendedCount = users.filter((u) => !!u.suspended).length;
+  const bannedCount = users.filter((u) => !!u.banned).length;
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const start = (safePage - 1) * PAGE_SIZE;
@@ -290,6 +307,9 @@ export default async function Page({
     userId: string;
     currentRole: "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN";
     isSelf: boolean;
+    verified: boolean;
+    suspended: boolean;
+    banned: boolean;
   }) => JSX.Element | null = () => null;
 
   if (viewerIsSuper) {
@@ -306,7 +326,7 @@ export default async function Page({
       <SectionHeader
         as="h2"
         title="Admin · Users"
-        subtitle={`Managing accounts and roles. Showing ${total.toLocaleString()}.`}
+        subtitle={`Manage roles, verification and enforcement. Showing ${total.toLocaleString()} users.`}
         actions={
           <div className="flex gap-2">
             <Link href="/admin" className="btn-outline text-sm" prefetch={false}>
@@ -319,11 +339,26 @@ export default async function Page({
             >
               Listings
             </Link>
+            <Link
+              href="/admin/moderation"
+              className="btn-outline text-sm"
+              prefetch={false}
+            >
+              Moderation
+            </Link>
           </div>
         }
       />
 
       <h1 className="text-2xl font-bold">All Users</h1>
+
+      {/* Quick stats */}
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <StatPill label="Total" value={total} tone="slate" />
+        <StatPill label="Verified" value={verifiedCount} tone="green" />
+        <StatPill label="Suspended" value={suspendedCount} tone="amber" />
+        <StatPill label="Banned" value={bannedCount} tone="rose" />
+      </section>
 
       {softError && (
         <div
@@ -388,7 +423,7 @@ export default async function Page({
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <caption className="sr-only">
-                  Admin user list with roles, created date, and actions
+                  Admin user list with roles, verification, status and actions
                 </caption>
                 <thead className="bg-muted text-muted-foreground">
                   <tr>
@@ -397,6 +432,8 @@ export default async function Page({
                     <Th>Name</Th>
                     <Th>Username</Th>
                     <Th>Role</Th>
+                    <Th>Verification</Th>
+                    <Th>Status</Th>
                     <Th>Created</Th>
                     {viewerIsSuper && <Th>Actions</Th>}
                   </tr>
@@ -409,14 +446,45 @@ export default async function Page({
                       | "ADMIN"
                       | "SUPERADMIN";
 
+                    const isVerified = !!u.verified;
+                    const isSuspended = !!u.suspended;
+                    const isBanned = !!u.banned;
+
+                    const statusTone = isBanned
+                      ? "rose"
+                      : isSuspended
+                        ? "amber"
+                        : "green";
+
+                    const statusLabel = isBanned
+                      ? "Banned"
+                      : isSuspended
+                        ? "Suspended"
+                        : "Active";
+
+                    const rowHighlight = isBanned
+                      ? "bg-rose-50/70 dark:bg-rose-950/30"
+                      : isSuspended
+                        ? "bg-amber-50/60 dark:bg-amber-950/20"
+                        : "";
+
+                    const isSelf = viewerId === u.id;
+
                     return (
                       <tr
                         key={u.id}
-                        className="hover:bg-muted"
+                        className={`hover:bg-muted ${rowHighlight}`}
                       >
                         <Td className="font-mono text-xs">{u.id}</Td>
                         <Td>{u.email ?? "—"}</Td>
-                        <Td>{u.name ?? "—"}</Td>
+                        <Td>
+                          {u.name ?? "—"}
+                          {isSelf && (
+                            <span className="ml-1 text-[11px] text-muted-foreground">
+                              (you)
+                            </span>
+                          )}
+                        </Td>
                         <Td>
                           {u.username ? (
                             <Link
@@ -445,13 +513,24 @@ export default async function Page({
                             {r}
                           </Badge>
                         </Td>
+                        <Td>
+                          <Badge tone={isVerified ? "green" : "slate"}>
+                            {isVerified ? "Verified" : "Unverified"}
+                          </Badge>
+                        </Td>
+                        <Td>
+                          <Badge tone={statusTone}>{statusLabel}</Badge>
+                        </Td>
                         <Td>{fmtDateKE(u.createdAt)}</Td>
                         {viewerIsSuper ? (
                           <Td>
                             <RoleActions
                               userId={u.id}
                               currentRole={r}
-                              isSelf={viewerId === u.id}
+                              isSelf={isSelf}
+                              verified={isVerified}
+                              suspended={isSuspended}
+                              banned={isBanned}
                             />
                           </Td>
                         ) : null}
@@ -589,5 +668,33 @@ function Badge({
     >
       {children}
     </span>
+  );
+}
+
+function StatPill({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: number;
+  tone?: "slate" | "green" | "amber" | "rose";
+}) {
+  const colors: Record<typeof tone, string> = {
+    slate: "bg-muted text-muted-foreground",
+    green: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+    amber:
+      "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+    rose: "bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300",
+  } as const;
+  return (
+    <div
+      className={`flex items-center justify-between rounded-full px-3 py-1.5 text-xs ${colors[tone]}`}
+    >
+      <span className="font-medium">{label}</span>
+      <span className="font-semibold">
+        {Number(value || 0).toLocaleString("en-KE")}
+      </span>
+    </div>
   );
 }

@@ -1,3 +1,4 @@
+// src/app/components/Card.tsx
 "use client";
 // src/app/components/Card.tsx
 
@@ -30,17 +31,14 @@ function cn(...xs: Array<string | false | null | undefined>) {
 const surface: Record<Variant, string> = {
   solid:
     "bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-card",
-  subtle:
-    "bg-subtle border border-[var(--border-subtle)] shadow-sm",
-  ghost:
-    "bg-transparent border border-[var(--border-subtle)] shadow-none",
+  subtle: "bg-subtle border border-[var(--border-subtle)] shadow-sm",
+  ghost: "bg-transparent border border-[var(--border-subtle)] shadow-none",
   glass:
     // uses globals: .glass gives blur + light border; keep our rounding/shadow too
     "glass shadow-sm",
 };
 
-const base =
-  "rounded-2xl transition will-change-transform text-[var(--text)]";
+const base = "rounded-2xl transition will-change-transform text-[var(--text)]";
 
 /** Outer wrapper */
 const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
@@ -124,11 +122,7 @@ CardHeader.displayName = "Card.Header";
 
 const CardBody = React.forwardRef<HTMLDivElement, SectionProps>(
   ({ className, padding = "md", ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(bodyPadding[padding], className)}
-      {...props}
-    />
+    <div ref={ref} className={cn(bodyPadding[padding], className)} {...props} />
   ),
 );
 CardBody.displayName = "Card.Body";
@@ -152,22 +146,38 @@ CardFooter.displayName = "Card.Footer";
 type MediaProps = React.ImgHTMLAttributes<HTMLImageElement> & {
   aspect?: string;
 };
+
+function normalizeAspect(aspect?: string) {
+  const a = (aspect ?? "").trim();
+  if (!a) return undefined;
+  if (a === "video") return "16 / 9";
+  if (a === "square") return "1 / 1";
+  if (a.includes("/")) return a.replace(/\s*\/\s*/g, " / ");
+  return a;
+}
+
 const CardMedia = React.forwardRef<HTMLImageElement, MediaProps>(
-  ({ className, aspect, ...props }, ref) => (
-    <div
-      className={cn(
-        "overflow-hidden rounded-2xl",
-        aspect && `aspect-${aspect}`,
-      )}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        ref={ref}
-        className={cn("w-full h-auto object-cover", className)}
-        {...props}
-      />
-    </div>
-  ),
+  ({ className, aspect, ...props }, ref) => {
+    const ar = normalizeAspect(aspect);
+
+    return (
+      <div
+        className={cn("overflow-hidden rounded-2xl")}
+        {...(ar ? { style: { aspectRatio: ar } as React.CSSProperties } : {})}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          ref={ref}
+          className={cn(
+            "w-full object-cover",
+            ar ? "h-full" : "h-auto",
+            className,
+          )}
+          {...props}
+        />
+      </div>
+    );
+  },
 );
 CardMedia.displayName = "Card.Media";
 

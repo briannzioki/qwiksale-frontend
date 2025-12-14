@@ -37,7 +37,8 @@ export default function Footer() {
   };
 
   const linkClass =
-    "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-focus rounded-sm";
+    "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 " +
+    "focus-visible:ring-offset-2 ring-offset-white dark:ring-offset-slate-900 ring-focus rounded-sm";
 
   // --- Newsletter state/handlers (client-only) ---
   const [email, setEmail] = React.useState("");
@@ -429,7 +430,12 @@ function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
         strokeWidth="1.8"
         fill="none"
       />
-      <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" fill="none" />
+      <path
+        d="M9 12l2 2 4-4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        fill="none"
+      />
     </svg>
   );
 }
@@ -457,7 +463,7 @@ function PlayIcon(props: React.SVGProps<SVGSVGElement>) {
 function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="M16 13c-.03 3.2 2.8 4.27 2.83 4.28-.02.06-.44 1.5-1.47 2.96-0.89 1.3-1.83 2.6-3.3 2.63-1.44.03-1.9-.85-3.54-.85-1.64 0-2.16.82-3.52.88-1.41.05-2.5-1.4-3.4-2.7-1.85-2.7-3.26-7.7-1.37-11.07 0.95-1.67 2.65-2.73 4.51-2.77 1.4-.03 2.73.93 3.54.93.8 0 2.42-1.15 4.08-.98.69.03 2.62.28 3.86 2.12-0.1.06-2.29 1.34-2.18 3.85zM13.8 3.2c.7-.85 1.2-2.04 1.06-3.2-1.03.04-2.26.68-2.98 1.53-.65.77-1.24 1.98-1.08 3.14 1.14.09 2.31-.58 3-1.47z" />
+      <path d="M16 13c-.03 3.2 2.8 4.27 2.83 4.28-.02.06-.44 1.5-1.47 2.96-0.89 1.3-1.83 2.6-3.3 2.63-1.44.03-1.9-.85-3.54-.85-1.64 0-2.16.82-3.52.88-1.41.05-2.5-1.4-3.4-2.7-1.85-2.7-3.26-7.7-1.37-11.07.95-1.67 2.65-2.73 4.51-2.77 1.4-.03 2.73.93 3.54.93.8 0 2.42-1.15 4.08-.98.69.03 2.62.28 3.86 2.12-.1.06-2.29 1.34-2.18 3.85zM13.8 3.2c.7-.85 1.2-2.04 1.06-3.2-1.03.04-2.26.68-2.98 1.53-.65.77-1.24 1.98-1.08 3.14 1.14.09 2.31-.58 3-1.47z" />
     </svg>
   );
 }

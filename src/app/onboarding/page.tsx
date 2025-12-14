@@ -23,6 +23,7 @@ type Profile = {
   postalCode: string;
   address: string;
 };
+
 type UsernameCheck = { valid?: boolean; available?: boolean };
 
 function isSafePath(p?: string | null): p is string {
@@ -66,10 +67,31 @@ function OnboardingPageInner() {
   const unameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unameAbort = useRef<AbortController | null>(null);
 
-  // Initial profile load (no redirect on 401)
+  // Initial profile load (skip entirely unless authenticated)
   useEffect(() => {
     let alive = true;
     const ctrl = new AbortController();
+
+    const cleanup = () => {
+      alive = false;
+      ctrl.abort();
+      if (unameTimer.current) clearTimeout(unameTimer.current);
+      unameAbort.current?.abort();
+    };
+
+    if (status === "unauthenticated") {
+      setUnauthorized(true);
+      setLoading(false);
+      return cleanup;
+    }
+
+    if (status !== "authenticated") {
+      // still loading session; don't hit /api/me/profile yet
+      return cleanup;
+    }
+
+    setUnauthorized(false);
+
     (async () => {
       try {
         const r = await fetch("/api/me/profile", {
@@ -78,11 +100,16 @@ function OnboardingPageInner() {
           headers: { Accept: "application/json" },
           credentials: "same-origin",
         });
+
         if (r.status === 401) {
-          if (alive) setUnauthorized(true);
+          if (alive) {
+            setUnauthorized(true);
+          }
           return;
         }
+
         if (!r.ok) throw new Error("load failed");
+
         const j = await r.json();
         if (alive && j?.user) {
           setForm({
@@ -95,21 +122,20 @@ function OnboardingPageInner() {
           });
         }
       } catch {
-        /* ignore soft errors */
+        // soft-fail
       } finally {
         if (alive) setLoading(false);
       }
     })();
-    return () => {
-      alive = false;
-      ctrl.abort();
-    };
-  }, []);
+
+    return cleanup;
+  }, [status]);
 
   // Debounced username check (no router, no effect-based nav)
   const onUsernameChange = (next: string) => {
     setForm((f) => ({ ...f, username: next }));
     const raw = next;
+
     if (unameTimer.current) clearTimeout(unameTimer.current);
 
     if (!raw) {
@@ -117,6 +143,7 @@ function OnboardingPageInner() {
       setUnameMsg("");
       return;
     }
+
     const u = canonicalUsername(raw);
     if (!USERNAME_RE.test(u)) {
       setUnameStatus("invalid");
@@ -140,11 +167,13 @@ function OnboardingPageInner() {
           cache: "no-store",
         });
         const j = (await r.json().catch(() => ({}))) as UsernameCheck;
+
         if (!r.ok) {
           setUnameStatus("idle");
           setUnameMsg("");
           return;
         }
+
         if (j?.valid === false) {
           setUnameStatus("invalid");
           setUnameMsg("Invalid username.");
@@ -181,7 +210,8 @@ function OnboardingPageInner() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (saving) return;
+    // Guests (unauthorized) see the form but can't actually submit
+    if (saving || unauthorized) return;
 
     const username = canonicalUsername(form.username);
     if (!USERNAME_RE.test(username)) {
@@ -196,7 +226,9 @@ function OnboardingPageInner() {
     const waRaw = form.whatsapp.trim();
     const wa = waRaw ? normalizeKenyanPhone(waRaw) : null;
     if (waRaw && !wa) {
-      toast.error("Enter a valid Kenyan WhatsApp number (07XXXXXXXX or +2547XXXXXXX).");
+      toast.error(
+        "Enter a valid Kenyan WhatsApp number (07XXXXXXXX or +2547XXXXXXX).",
+      );
       return;
     }
 
@@ -223,7 +255,7 @@ function OnboardingPageInner() {
         return;
       }
       toast.success("Profile saved!");
-      setSaved(true); // no auto-redirect
+      setSaved(true); // no auto-redirect – allow explicit continue
     } catch {
       toast.error("Network error. Please try again.");
     } finally {
@@ -235,8 +267,10 @@ function OnboardingPageInner() {
     return (
       <div className="container-page py-8">
         <div className="mx-auto max-w-xl">
-          <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
-            <h1 className="text-2xl md:text-3xl font-extrabold">Finish your profile</h1>
+          <div className="rounded-2xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-6 text-white shadow-soft dark:shadow-none">
+            <h1 className="text-2xl font-extrabold md:text-3xl">
+              Finish your profile
+            </h1>
             <p className="mt-1 text-white/85">Loading…</p>
           </div>
         </div>
@@ -254,8 +288,10 @@ function OnboardingPageInner() {
   return (
     <div className="container-page py-8">
       <div className="mx-auto max-w-xl">
-        <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
-          <h1 className="text-2xl md:text-3xl font-extrabold">Finish your profile</h1>
+        <div className="rounded-2xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-6 text-white shadow-soft dark:shadow-none">
+          <h1 className="text-2xl font-extrabold md:text-3xl">
+            Finish your profile
+          </h1>
           <p className="mt-1 text-white/90">
             Only <b>username</b> is required now. You can add the rest later in{" "}
             <Link href="/account/profile" className="underline">
@@ -287,6 +323,7 @@ function OnboardingPageInner() {
           </div>
         ) : null}
 
+        {/* Form is always visible so guests see the username field */}
         <form
           onSubmit={onSubmit}
           className="mt-6 space-y-4 rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
@@ -368,9 +405,7 @@ function OnboardingPageInner() {
                 className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                 placeholder="Nairobi"
                 value={form.city}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, city: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
               />
             </div>
             <div>
@@ -427,6 +462,7 @@ function OnboardingPageInner() {
             <button
               type="submit"
               disabled={
+                unauthorized ||
                 saving ||
                 unameStatus === "checking" ||
                 unameStatus === "invalid" ||

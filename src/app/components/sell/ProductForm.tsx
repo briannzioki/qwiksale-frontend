@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { categories, type CategoryNode } from "@/app/data/categories";
+import { categories, type CategoryNode } from "@/app/lib/categories";
 import { useProducts } from "@/app/lib/productsStore";
 import GalleryUploader from "@/app/components/media/GalleryUploader";
 import {
@@ -71,14 +71,15 @@ export default function ProductForm(props: Props) {
       ? (props as EditProps).initialValues
       : (props as CreateProps).initialValues) ?? undefined;
 
-  // Categories (same helper as edit page)
+  // Categories (same helper as edit page), now from central lib
   const cats: readonly CategoryNode[] = categories;
 
   const defaultCategory = cats[0]?.name ?? "";
   const startCategory = s(initial?.category, defaultCategory);
   const startSubcategory = s(
     initial?.subcategory,
-    (cats.find((c) => c.name === startCategory)?.subcategories ?? [])[0]?.name ?? "",
+    (cats.find((c) => c.name === startCategory)?.subcategories ?? [])[0]?.name ??
+      "",
   );
 
   // fields (consistent defaults/order with edit page)
@@ -86,29 +87,48 @@ export default function ProductForm(props: Props) {
   const [price, setPrice] = useState<number | "">(
     typeof initial?.price === "number" ? initial.price : "",
   );
-  const [negotiable, setNegotiable] = useState<boolean>(Boolean(initial?.negotiable));
+  const [negotiable, setNegotiable] = useState<boolean>(
+    Boolean(initial?.negotiable),
+  );
   const normalizedCondition =
-    initial?.condition === "brand new" || initial?.condition === "pre-owned"
+    initial?.condition === "brand new" ||
+    initial?.condition === "pre-owned"
       ? (initial.condition as "brand new" | "pre-owned")
       : ("brand new" as const);
-  const [condition, setCondition] = useState<"brand new" | "pre-owned">(normalizedCondition);
+  const [condition, setCondition] = useState<
+    "brand new" | "pre-owned"
+  >(normalizedCondition);
 
-  const [category, setCategory] = useState<string>(startCategory);
-  const [subcategory, setSubcategory] = useState<string>(startSubcategory);
+  const [category, setCategory] =
+    useState<string>(startCategory);
+  const [subcategory, setSubcategory] =
+    useState<string>(startSubcategory);
 
-  const [brand, setBrand] = useState<string>(s((initial as any)?.brand));
-  const [location, setLocation] = useState<string>(s(initial?.location) || "Nairobi");
+  const [brand, setBrand] = useState<string>(
+    s((initial as any)?.brand),
+  );
+  const [location, setLocation] = useState<string>(
+    s(initial?.location) || "Nairobi",
+  );
   const [phone, setPhone] = useState<string>("");
-  const [description, setDescription] = useState<string>(s(initial?.description));
+  const [description, setDescription] = useState<string>(
+    s(initial?.description),
+  );
 
   // gallery state + pending local files (to be uploaded on submit)
   const initialGallery: string[] =
-    Array.isArray(initial?.gallery) && initial?.gallery?.length
-      ? (initial!.gallery as string[]).filter(Boolean).map(String)
+    Array.isArray(initial?.gallery) &&
+    initial?.gallery?.length
+      ? (initial!.gallery as string[])
+          .filter(Boolean)
+          .map(String)
       : Array.isArray((initial as any)?.images)
-      ? ((initial as any).images as string[]).filter(Boolean).map(String)
+      ? ((initial as any).images as string[])
+          .filter(Boolean)
+          .map(String)
       : [];
-  const [gallery, setGallery] = useState<string[]>(initialGallery);
+  const [gallery, setGallery] =
+    useState<string[]>(initialGallery);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
   const [busy, setBusy] = useState(false);
@@ -119,24 +139,34 @@ export default function ProductForm(props: Props) {
   // Keep subcategory valid when category changes
   useEffect(() => {
     if (!category) return;
-    const subs = (cats.find((c) => c.name === category)?.subcategories ?? []).map(
-      (s) => s.name,
-    );
+    const subs = (
+      cats.find((c) => c.name === category)
+        ?.subcategories ?? []
+    ).map((s) => s.name);
     const has = subs.includes(subcategory);
     if (!has) setSubcategory(subs[0] ?? "");
   }, [category, subcategory, cats]);
 
   const subcats = useMemo(
-    () => (cats.find((c) => c.name === category)?.subcategories ?? []).map((s) => s.name),
+    () =>
+      (
+        cats.find((c) => c.name === category)
+          ?.subcategories ?? []
+      ).map((s) => s.name),
     [category, cats],
   );
 
   // Phone helpers (same as edit page)
-  const phoneValidation = phone ? validateKenyanPhone(phone) : { ok: true as const };
-  const normalizedPhone = phone ? (normalizeKenyanPhone(phone) ?? "") : "";
+  const phoneValidation = phone
+    ? validateKenyanPhone(phone)
+    : { ok: true as const };
+  const normalizedPhone = phone
+    ? normalizeKenyanPhone(phone) ?? ""
+    : "";
   const phoneOk = !phone || phoneValidation.ok;
 
-  const priceNum = typeof price === "number" ? price : 0;
+  const priceNum =
+    typeof price === "number" ? price : 0;
 
   const canSubmit =
     name.trim().length >= 3 &&
@@ -148,14 +178,27 @@ export default function ProductForm(props: Props) {
 
   async function uploadPending(): Promise<string[]> {
     if (pendingFiles.length === 0) return [];
-    const uploads = pendingFiles.slice(0, 6).map(async (f) => {
-      const fd = new FormData();
-      fd.append("file", f);
-      const up = await fetch("/api/upload", { method: "POST", body: fd });
-      const uj = (await up.json().catch(() => ({}))) as any;
-      if (!up.ok || !(uj?.url || uj?.secure_url)) throw new Error(uj?.error || "Upload failed");
-      return String(uj?.url || uj?.secure_url);
-    });
+    const uploads = pendingFiles
+      .slice(0, 6)
+      .map(async (f) => {
+        const fd = new FormData();
+        fd.append("file", f);
+        const up = await fetch("/api/upload", {
+          method: "POST",
+          body: fd,
+        });
+        const uj = (await up.json().catch(
+          () => ({}),
+        )) as any;
+        if (
+          !up.ok ||
+          !(uj?.url || uj?.secure_url)
+        )
+          throw new Error(
+            uj?.error || "Upload failed",
+          );
+        return String(uj?.url || uj?.secure_url);
+      });
     return Promise.all(uploads);
   }
 
@@ -164,19 +207,26 @@ export default function ProductForm(props: Props) {
       const nextCat = s(value);
       setCategory(nextCat);
       const first =
-        (cats.find((c) => c.name === nextCat)?.subcategories ?? [])[0]?.name ?? "";
+        (
+          cats.find((c) => c.name === nextCat)
+            ?.subcategories ?? []
+        )[0]?.name ?? "";
       setSubcategory(first);
     },
     [cats],
   );
 
   const submit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
+    async (
+      e: React.FormEvent<HTMLFormElement>,
+    ) => {
       e.preventDefault();
       if (busy) return;
 
       if (phone && !phoneOk) {
-        toast.error("Please enter a valid Kenyan mobile.");
+        toast.error(
+          "Please enter a valid Kenyan mobile.",
+        );
         return;
       }
 
@@ -191,7 +241,12 @@ export default function ProductForm(props: Props) {
       setBusy(true);
       try {
         const uploaded = await uploadPending();
-        const mergedGallery = [...gallery, ...uploaded].slice(0, 6).map(String);
+        const mergedGallery = [
+          ...gallery,
+          ...uploaded,
+        ]
+          .slice(0, 6)
+          .map(String);
         const cover = mergedGallery[0] || null;
 
         const msisdn = normalizedPhone || null;
@@ -202,7 +257,10 @@ export default function ProductForm(props: Props) {
           subcategory,
           brand: brand || null,
           condition,
-          price: price === "" ? null : Number(price),
+          price:
+            price === ""
+              ? null
+              : Number(price),
           location: location.trim(),
           description: description.trim(),
           negotiable,
@@ -215,34 +273,59 @@ export default function ProductForm(props: Props) {
         };
 
         if (!isEdit) {
-          const created = await addProduct(payload);
+          const created = await addProduct(
+            payload,
+          );
           const newId =
             typeof created === "string"
               ? created
-              : created && typeof created === "object" && "id" in created
-              ? String((created as any).id)
+              : created &&
+                typeof created === "object" &&
+                "id" in created
+              ? String(
+                  (created as any).id,
+                )
               : undefined;
-          if (!newId) throw new Error("Create failed: no id returned");
+          if (!newId)
+            throw new Error(
+              "Create failed: no id returned",
+            );
 
           toast.success("Listing created");
-          (window as any).plausible?.("Listing Created", {
-            props: { category, subcategory },
-          });
-          await props.onCreatedAction?.(newId);
+          (window as any).plausible?.(
+            "Listing Created",
+            {
+              props: {
+                category,
+                subcategory,
+              },
+            },
+          );
+          await props.onCreatedAction?.(
+            newId,
+          );
           setPendingFiles([]);
           return;
         }
 
         // EDIT: use cache-aware update
-        const productId = (props as EditProps).productId;
-        await updateProduct(productId, payload);
+        const productId = (props as EditProps)
+          .productId;
+        await updateProduct(
+          productId,
+          payload,
+        );
         toast.success("Changes saved");
-        await props.onUpdatedAction?.(productId);
+        await props.onUpdatedAction?.(
+          productId,
+        );
         setPendingFiles([]);
       } catch (err: any) {
         toast.error(
           err?.message ||
-            (isEdit ? "Failed to save changes" : "Failed to create listing"),
+            (isEdit
+              ? "Failed to save changes"
+              : "Failed to create listing"),
         );
       } finally {
         setBusy(false);
@@ -280,8 +363,13 @@ export default function ProductForm(props: Props) {
       aria-labelledby="sell-form-title"
       noValidate
     >
-      <h2 id="sell-form-title" className="text-lg font-bold text-gray-900 dark:text-slate-100">
-        {isEdit ? "Edit Product" : "Post a Product"}
+      <h2
+        id="sell-form-title"
+        className="text-lg font-bold text-gray-900 dark:text-slate-100"
+      >
+        {isEdit
+          ? "Edit Product"
+          : "Post a Product"}
       </h2>
 
       <div className="mt-4 grid grid-cols-1 gap-4">
@@ -297,7 +385,11 @@ export default function ProductForm(props: Props) {
             <input
               id="pf-title"
               value={name}
-              onChange={(e) => setName(e.currentTarget.value)}
+              onChange={(e) =>
+                setName(
+                  e.currentTarget.value,
+                )
+              }
               className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               required
               minLength={3}
@@ -317,12 +409,29 @@ export default function ProductForm(props: Props) {
               type="number"
               min={0}
               inputMode="numeric"
-              value={price === "" ? "" : price}
+              value={
+                price === "" ? "" : price
+              }
               onChange={(e) => {
-                const v = e.currentTarget.value;
-                setPrice(v === "" ? "" : Math.max(0, Math.floor(Number(v) || 0)));
+                const v =
+                  e.currentTarget.value;
+                setPrice(
+                  v === ""
+                    ? ""
+                    : Math.max(
+                        0,
+                        Math.floor(
+                          Number(v) ||
+                            0,
+                        ),
+                      ),
+                );
               }}
-              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+              onWheel={(e) =>
+                (
+                  e.currentTarget as HTMLInputElement
+                ).blur()
+              }
               className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder='Leave empty for "Contact for price"'
               aria-describedby="pf-price-help"
@@ -331,7 +440,8 @@ export default function ProductForm(props: Props) {
               id="pf-price-help"
               className="mt-1 text-xs text-gray-600 dark:text-slate-400"
             >
-              Leave empty to show <em>Contact for price</em>.
+              Leave empty to show{" "}
+              <em>Contact for price</em>.
             </p>
 
             <div className="mt-3 flex items-center gap-2">
@@ -340,7 +450,11 @@ export default function ProductForm(props: Props) {
                 type="checkbox"
                 className="rounded border-gray-300 dark:border-slate-600"
                 checked={negotiable}
-                onChange={(e) => setNegotiable(e.currentTarget.checked)}
+                onChange={(e) =>
+                  setNegotiable(
+                    e.currentTarget.checked,
+                  )
+                }
               />
               <label
                 htmlFor="pf-negotiable"
@@ -350,11 +464,13 @@ export default function ProductForm(props: Props) {
               </label>
             </div>
 
-            {typeof price === "number" && price > 0 && (
-              <div className="mt-1 text-xs text-gray-600 dark:text-slate-400">
-                You entered: KES {fmtKES(priceNum)}
-              </div>
-            )}
+            {typeof price === "number" &&
+              price > 0 && (
+                <div className="mt-1 text-xs text-gray-600 dark:text-slate-400">
+                  You entered: KES{" "}
+                  {fmtKES(priceNum)}
+                </div>
+              )}
           </div>
         </div>
 
@@ -371,12 +487,21 @@ export default function ProductForm(props: Props) {
               id="pf-condition"
               value={condition}
               onChange={(e) =>
-                setCondition(e.currentTarget.value as "brand new" | "pre-owned")
+                setCondition(
+                  e.currentTarget
+                    .value as
+                    | "brand new"
+                    | "pre-owned",
+                )
               }
               className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
             >
-              <option value="brand new">Brand new</option>
-              <option value="pre-owned">Pre-owned</option>
+              <option value="brand new">
+                Brand new
+              </option>
+              <option value="pre-owned">
+                Pre-owned
+              </option>
             </select>
           </div>
 
@@ -390,11 +515,18 @@ export default function ProductForm(props: Props) {
             <select
               id="pf-category"
               value={category}
-              onChange={(e) => onChangeCategory(e.currentTarget.value)}
+              onChange={(e) =>
+                onChangeCategory(
+                  e.currentTarget.value,
+                )
+              }
               className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
             >
               {cats.map((c) => (
-                <option key={c.name} value={c.name}>
+                <option
+                  key={c.name}
+                  value={c.name}
+                >
                   {c.name}
                 </option>
               ))}
@@ -411,11 +543,18 @@ export default function ProductForm(props: Props) {
             <select
               id="pf-subcategory"
               value={subcategory}
-              onChange={(e) => setSubcategory(e.currentTarget.value)}
+              onChange={(e) =>
+                setSubcategory(
+                  e.currentTarget.value,
+                )
+              }
               className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
             >
               {subcats.map((name) => (
-                <option key={name} value={name}>
+                <option
+                  key={name}
+                  value={name}
+                >
                   {name}
                 </option>
               ))}
@@ -435,7 +574,11 @@ export default function ProductForm(props: Props) {
             <input
               id="pf-brand"
               value={brand}
-              onChange={(e) => setBrand(e.currentTarget.value)}
+              onChange={(e) =>
+                setBrand(
+                  e.currentTarget.value,
+                )
+              }
               className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder="e.g. Samsung"
             />
@@ -451,7 +594,11 @@ export default function ProductForm(props: Props) {
             <input
               id="pf-location"
               value={location}
-              onChange={(e) => setLocation(e.currentTarget.value)}
+              onChange={(e) =>
+                setLocation(
+                  e.currentTarget.value,
+                )
+              }
               className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder="e.g. Nairobi"
             />
@@ -467,11 +614,17 @@ export default function ProductForm(props: Props) {
             <input
               id="pf-phone"
               value={phone}
-              onChange={(e) => setPhone(e.currentTarget.value)}
+              onChange={(e) =>
+                setPhone(
+                  e.currentTarget.value,
+                )
+              }
               className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
               placeholder="07XXXXXXXX or +2547XXXXXXXX"
               inputMode="tel"
-              aria-invalid={!!phone && !phoneOk}
+              aria-invalid={
+                !!phone && !phoneOk
+              }
               aria-describedby="pf-phone-help"
             />
             <div
@@ -482,7 +635,9 @@ export default function ProductForm(props: Props) {
                 phoneOk ? (
                   <>
                     Normalized:{" "}
-                    <code className="font-mono">{normalizedPhone}</code>
+                    <code className="font-mono">
+                      {normalizedPhone}
+                    </code>
                   </>
                 ) : (
                   "Please enter a valid Kenyan mobile."
@@ -505,7 +660,11 @@ export default function ProductForm(props: Props) {
           <textarea
             id="pf-description"
             value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
+            onChange={(e) =>
+              setDescription(
+                e.currentTarget.value,
+              )
+            }
             rows={5}
             className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
             placeholder="Describe the item, condition, accessories, warranty, etc."
@@ -518,9 +677,16 @@ export default function ProductForm(props: Props) {
         <div className="md:col-span-2">
           <GalleryUploader
             value={gallery}
-            onChangeAction={(next) => setGallery(next)}
-            onFilesSelectedAction={(files) =>
-              setPendingFiles((cur) => [...cur, ...files].slice(0, 6))
+            onChangeAction={(next) =>
+              setGallery(next)
+            }
+            onFilesSelectedAction={(
+              files,
+            ) =>
+              setPendingFiles((cur) => [
+                ...cur,
+                ...files,
+              ].slice(0, 6))
             }
             max={6}
             accept="image/*,.jpg,.jpeg,.png,.webp"
@@ -543,7 +709,9 @@ export default function ProductForm(props: Props) {
           type="submit"
           disabled={!canSubmit || busy}
           className={`rounded-xl px-4 py-2 text-sm font-medium text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brandBlue focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-950 ${
-            !canSubmit || busy ? "bg-gray-400 cursor-not-allowed" : 'bg-[#161748] hover:opacity-90'
+            !canSubmit || busy
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-[#161748] hover:opacity-90"
           }`}
           aria-busy={busy ? "true" : "false"}
           data-testid="product-form-submit"

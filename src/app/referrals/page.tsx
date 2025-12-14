@@ -1,3 +1,4 @@
+// src/app/referrals/page.tsx
 "use client";
 // src/app/referrals/page.tsx
 
@@ -84,7 +85,8 @@ export default function ReferralsPage() {
     load();
 
     const onFocus = () => {
-      if (!loading) load();
+      // Re-fetch on focus; abort controller prevents piling up requests.
+      load();
     };
     window.addEventListener("focus", onFocus);
 
@@ -121,7 +123,13 @@ export default function ReferralsPage() {
   async function share() {
     if (!shareUrl) return;
     const text = `Join me on QwikSale: ${shareUrl}`;
-    const nav = navigator as unknown as { share?: (data: { title?: string; text?: string; url?: string }) => Promise<void> };
+    const nav = navigator as unknown as {
+      share?: (data: {
+        title?: string;
+        text?: string;
+        url?: string;
+      }) => Promise<void>;
+    };
 
     if (typeof nav?.share === "function") {
       try {
@@ -143,7 +151,10 @@ export default function ReferralsPage() {
       setClaiming(true);
       const r = await fetch("/api/referrals/claim", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
         body: JSON.stringify({ code: codeToClaim }),
       });
 
@@ -171,38 +182,57 @@ export default function ReferralsPage() {
     <div className="container-page py-8">
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="hero-surface">
-          <h1 className="text-2xl md:text-3xl font-extrabold">Refer &amp; Earn</h1>
+          <h1 className="text-2xl md:text-3xl font-extrabold">
+            Refer &amp; Earn
+          </h1>
           <p className="text-sm text-white/80">
-            Invite friends to QwikSale. Get <b>30 days of GOLD</b> for every 10 qualified referrals.
+            Invite friends to QwikSale. Get <b>30 days of GOLD</b> for every 10
+            qualified referrals.
           </p>
         </div>
 
         <div className="card-surface p-4 space-y-4">
           {loading ? (
-            <div className="text-sm text-gray-600 dark:text-slate-300">Loading…</div>
+            <div className="text-sm text-gray-600 dark:text-slate-300">
+              Loading…
+            </div>
           ) : (
             <>
               <div>
-                <div className="text-sm text-gray-600 mb-1">Your referral code</div>
+                <div className="text-sm text-gray-600 mb-1">
+                  Your referral code
+                </div>
                 <div className="inline-flex items-center gap-3 rounded-xl border px-3 py-2 bg-white dark:bg-slate-900">
                   <code className="font-mono text-sm">{code || "—"}</code>
                   <span className="opacity-60" aria-hidden>
                     •
                   </span>
-                  <button className="text-sm underline" onClick={copy} disabled={!shareUrl}>
+                  <button
+                    className="text-sm underline"
+                    onClick={copy}
+                    disabled={!shareUrl}
+                  >
                     Copy signup link
                   </button>
                   <span className="opacity-60" aria-hidden>
                     •
                   </span>
-                  <button className="text-sm underline" onClick={share} disabled={!shareUrl}>
+                  <button
+                    className="text-sm underline"
+                    onClick={share}
+                    disabled={!shareUrl}
+                  >
                     Share
                   </button>
                 </div>
-                <div className="mt-2 text-xs text-gray-500 break-all">{shareUrl || "—"}</div>
+                <div className="mt-2 text-xs text-gray-500 break-all">
+                  {shareUrl || "—"}
+                </div>
                 <div className="mt-3">
                   <a
-                    href={`https://wa.me/?text=${encodeURIComponent(`Join me on QwikSale: ${shareUrl}`)}`}
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Join me on QwikSale: ${shareUrl}`,
+                    )}`}
                     target="_blank"
                     rel="noreferrer"
                     className="rounded-lg border px-4 py-2 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
@@ -225,8 +255,9 @@ export default function ReferralsPage() {
               </div>
 
               <div className="pt-2 text-xs text-gray-500">
-                A referral qualifies when your friend creates an account (you can later tighten this to phone
-                verification or first listing posted).
+                A referral qualifies when your friend creates an account (you
+                can later tighten this to phone verification or first listing
+                posted).
               </div>
             </>
           )}
@@ -250,13 +281,17 @@ export default function ReferralsPage() {
               autoComplete="off"
               inputMode="text"
             />
-            <button type="submit" disabled={claiming || !refInput.trim()} className="btn-gradient-primary">
+            <button
+              type="submit"
+              disabled={claiming || !refInput.trim()}
+              className="btn-gradient-primary"
+            >
               {claiming ? "Claiming…" : "Claim"}
             </button>
           </form>
           <div className="text-xs text-gray-500">
-            Tip: If you arrived via <code className="font-mono">?ref=CODE</code>, we’ll remember it—just sign up, then
-            claim.
+            Tip: If you arrived via <code className="font-mono">?ref=CODE</code>
+            , we’ll remember it—just sign up, then claim.
           </div>
         </div>
 

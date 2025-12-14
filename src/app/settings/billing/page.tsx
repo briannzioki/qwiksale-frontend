@@ -89,13 +89,16 @@ export default function BillingPage() {
       setError("Please enter a valid Kenyan number like 2547XXXXXXXX.");
       return;
     }
-    if (!session?.user?.email) {
+
+    const signedIn = sessionStatus === "authenticated" && !!session?.user;
+    if (!signedIn || !session?.user?.email) {
       setError("Please sign in to upgrade your subscription.");
       return;
     }
 
     if (submitting) return; // double-submit guard
     setSubmitting(true);
+
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
@@ -105,6 +108,7 @@ export default function BillingPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortRef.current.signal,
+        credentials: "same-origin",
         body: JSON.stringify({ tier, phone: msisdn, amount: price }),
       });
 
@@ -124,19 +128,33 @@ export default function BillingPage() {
       setStatus(msg);
       toast.success("STK push sent");
 
-      // Poll /api/me for subscription change → exponential-ish backoff (max ~50s)
+      // Poll /api/me for subscription change (only after user action; abortable)
       const targetTier: TierKey = tier;
       let updated = false;
+
       for (let i = 0; i < 8; i++) {
+        if (abortRef.current.signal.aborted) break;
+
         await sleep(i === 0 ? 3000 : Math.min(5000 + i * 3000, 10000));
-        const r = await fetch("/api/me", { cache: "no-store" }).catch(() => null);
+
+        if (abortRef.current.signal.aborted) break;
+
+        const r = await fetch("/api/me", {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: abortRef.current.signal,
+          headers: { accept: "application/json" },
+        }).catch(() => null);
+
         const j = (await r?.json().catch(() => ({}))) as any;
         const sub = j?.user?.subscription as TierKey | undefined;
+
         if (sub === targetTier) {
           updated = true;
           break;
         }
       }
+
       if (updated) {
         toast.success(`You're now on ${targetTier} 🎉`);
         setStatus(`Subscription upgraded to ${targetTier}. Enjoy your perks!`);
@@ -155,7 +173,7 @@ export default function BillingPage() {
     }
   }
 
-  const signedIn = !!session?.user;
+  const signedIn = sessionStatus === "authenticated" && !!session?.user;
   const currentTier = (session?.user as any)?.subscription as
     | "FREE"
     | "GOLD"
@@ -202,9 +220,7 @@ export default function BillingPage() {
 
           {!signedIn && (
             <button
-              onClick={() =>
-                signIn(undefined, { callbackUrl: "/settings/billing" })
-              }
+              onClick={() => signIn(undefined, { callbackUrl: "/settings/billing" })}
               className="btn-gradient-primary"
             >
               Sign in
@@ -252,9 +268,7 @@ export default function BillingPage() {
                 autoComplete="tel"
                 className="input"
                 required
-                aria-invalid={
-                  phone ? !validMsisdn(normalizeMsisdn(phone)) : undefined
-                }
+                aria-invalid={phone ? !validMsisdn(normalizeMsisdn(phone)) : undefined}
               />
               <div className="text-xs text-gray-500 dark:text-slate-400">
                 We’ll send an STK push to this number. Use{" "}

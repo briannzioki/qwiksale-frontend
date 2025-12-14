@@ -111,6 +111,27 @@ enum ReportReason {
 }
 
 /**
+ * Requests / gigs
+ */
+enum RequestKind {
+  product
+  service
+}
+
+enum RequestStatus {
+  ACTIVE
+  HIDDEN
+  CLOSED
+  EXPIRED
+}
+
+enum RequestContactMode {
+  chat
+  phone
+  whatsapp
+}
+
+/**
  * ---------- Models ----------
  */
 
@@ -134,13 +155,24 @@ model User {
   country    String?
 
   // Common “location” string used in listing snapshots (optional, denormalized)
-  location String?
+  location         String?
+  // Google Maps / store location URL (for SellerInfo + profile)
+  storeLocationUrl String? @db.Text
 
   // Marketplace reputation snapshot fields used by creation endpoints
   rating Float?
   sales  Int?
 
-  verified Boolean @default(false)
+  // Trust / status flags
+  verified  Boolean @default(false)
+  suspended Boolean @default(false)
+  banned    Boolean @default(false)
+
+  // Requests / gigs controls (ban + optional quota overrides)
+  requestBannedUntil         DateTime?
+  requestBanReason           String?   @db.Text
+  requestDailyLimitOverride  Int?
+  requestActiveLimitOverride Int?
 
   // Plans / roles
   subscription      Subscription @default(BASIC)
@@ -158,6 +190,7 @@ model User {
   referralsSent     Referral[] @relation("ReferralInviter")
   referralsReceived Referral[] @relation("ReferralInvitee")
 
+  // Reviews
   reviewsGiven    Review[] @relation("UserReviewsGiven")
   reviewsReceived Review[] @relation("UserReviewsReceived")
 
@@ -168,6 +201,7 @@ model User {
   // Relations
   products  Product[]       @relation("UserProducts")
   services  Service[]       @relation("UserServices")
+  requests  Request[]       @relation("UserRequests")
   favorites Favorite[]
   payments  Payment[]       @relation("UserPayments")
   tickets   SupportTicket[] @relation("ReporterTickets")
@@ -184,11 +218,15 @@ model User {
   // - logs where this user was the target of an action
   auditAsTarget AuditLog[] @relation("AuditTarget")
 
+  // Auth (NextAuth)
   sessions Session[]
   accounts Account[]
 
   // Helpful indexes
   @@index([role])
+  @@index([verified])
+  @@index([city, country])
+  @@index([createdAt])
 }
 
 model Referral {
@@ -204,6 +242,37 @@ model Referral {
 
   @@unique([inviterId, inviteeId])
   @@index([code])
+}
+
+model Request {
+  id          String        @id @default(cuid())
+  kind        RequestKind
+  title       String
+  description String?       @db.Text
+  location    String?
+  category    String?
+  tags        String[]      @default([])
+  status      RequestStatus @default(ACTIVE)
+
+  contactEnabled Boolean            @default(true)
+  contactMode    RequestContactMode @default(chat)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expiresAt  DateTime?
+  boostUntil DateTime?
+
+  ownerId String
+  owner   User   @relation("UserRequests", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([boostUntil])
+  @@index([createdAt(sort: Desc)])
+  @@index([kind])
+  @@index([category])
+  @@index([status])
+  @@index([ownerId, createdAt(sort: Desc)])
 }
 
 model Product {
@@ -281,6 +350,10 @@ model Service {
   status       ListingStatus @default(ACTIVE)
   featured     Boolean       @default(false)
 
+  /// Optional normalized taxonomy FK (DB-backed categories)
+  serviceCategoryId    String?
+  serviceSubcategoryId String?
+
   /// Visible-from timestamp (set on create)
   publishedAt DateTime? @default(now())
 
@@ -298,10 +371,17 @@ model Service {
   sellerRating      Float?
   sellerSales       Int?
 
+  // Taxonomy relations
+  serviceCategory    ServiceCategory?    @relation("CategoryServices", fields: [serviceCategoryId], references: [id], onDelete: SetNull)
+  serviceSubcategory ServiceSubcategory? @relation("SubcategoryServices", fields: [serviceSubcategoryId], references: [id], onDelete: SetNull)
+
   // Optional relation if you choose to persist media in a join table
   images ServiceImage[]
 
-  SupportTicket     SupportTicket[]
+  SupportTicket SupportTicket[]
+
+  // ✅ Added: opposite relation field required by ServiceContactReveal.service
+  contactReveals ServiceContactReveal[]
 
   /// ---------- Indexes ----------
   @@index([status, featured, createdAt(sort: Desc)])
@@ -316,6 +396,40 @@ model Service {
   @@index([sellerId, status, publishedAt(sort: Desc)])
   /// FK-only fast path when you need a naïve seller filter
   @@index([sellerId])
+  /// Taxonomy FKs
+  @@index([serviceCategoryId])
+  @@index([serviceSubcategoryId])
+}
+
+/**
+ * DB-backed taxonomy for services
+ */
+model ServiceCategory {
+  id   String @id @default(cuid())
+  name String @unique
+
+  subs     ServiceSubcategory[]
+  services Service[]            @relation("CategoryServices")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+model ServiceSubcategory {
+  id         String @id @default(cuid())
+  name       String
+  categoryId String
+
+  category ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  services Service[]       @relation("SubcategoryServices")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([categoryId, name])
+  @@index([categoryId, name])
 }
 
 /**
@@ -324,9 +438,9 @@ model Service {
  * already tolerates its absence. Defining it now gives you indexed lookups when used.
  */
 model ServiceImage {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   serviceId String
-  url       String  @db.Text
+  url       String   @db.Text
   createdAt DateTime @default(now())
 
   service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -397,6 +511,21 @@ model ContactReveal {
   @@index([ip, createdAt])
 }
 
+model ServiceContactReveal {
+  id           String   @id @default(cuid())
+  serviceId    String
+  service      Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  viewerUserId String?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  @@unique([serviceId, viewerUserId])
+  @@index([serviceId, createdAt])
+  @@index([viewerUserId, createdAt])
+  @@index([ip, createdAt])
+}
+
 model SupportTicket {
   id     String       @id @default(cuid())
   type   TicketType   @default(CONTACT)
@@ -461,16 +590,16 @@ model Report {
  * Records privileged actions (e.g., role changes).
  */
 model AuditLog {
-  id           String   @id @default(cuid())
-  createdAt    DateTime @default(now())
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
 
   actorId      String?
   targetUserId String?
-  action       String            // e.g. "role_change"
+  action       String // e.g. "role_change"
   meta         Json?
 
-  actor       User? @relation("AuditActor",  fields: [actorId],      references: [id], onDelete: SetNull)
-  targetUser  User? @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  actor      User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  targetUser User? @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([targetUserId, createdAt(sort: Desc)])
@@ -565,6 +694,18 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@unique([token])
+}
+
+/**
+ * Email OTPs for verification flows
+ * Matches prisma.emailOtp.* usage in lib/email-verify.ts
+ */
+model EmailOtp {
+  email     String   @id @db.Citext
+  code      String
+  expires   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Review {

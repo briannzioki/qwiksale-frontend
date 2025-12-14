@@ -1,12 +1,20 @@
+// src/app/service/[id]/edit/ServiceMediaManager.tsx
 "use client";
 // src/app/service/[id]/edit/ServiceMediaManager.tsx
 
-import { useMemo, useCallback, memo, useRef, useState, useEffect } from "react";
-import EditMediaClient, { type EditMediaClientHandle } from "@/app/components/EditMediaClient";
+import { useCallback, memo, useRef, useState, useEffect } from "react";
+import EditMediaClient, {
+  type EditMediaClientHandle,
+} from "@/app/components/EditMediaClient";
 import type { MediaManagerItemIn } from "@/app/components/MediaManager";
 import { toast } from "@/app/components/ToasterClient";
 
-export type Img = { id: string; url: string; isCover?: boolean; sort?: number };
+export type Img = {
+  id: string;
+  url: string;
+  isCover?: boolean;
+  sort?: number;
+};
 
 type Props = {
   serviceId: string;
@@ -63,11 +71,11 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
 
   // canonical at page load (normalized)
   const [initialCanon, setInitialCanon] = useState<MediaManagerItemIn[]>(
-    () => normalize(initial || [], hardMax)
+    () => normalize(initial || [], hardMax),
   );
 
   // live draft while editing
-  const [draft, setDraft] = useState<MediaManagerItemIn[]>(initialCanon);
+  const [, setDraft] = useState<MediaManagerItemIn[]>(initialCanon);
 
   // change signatures to detect no-op commits
   const [sigInitial, setSigInitial] = useState(() => urlsSignature(initialCanon));
@@ -80,7 +88,7 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
     setDraft(norm);
     setSigInitial(urlsSignature(norm));
     setSigDraft(urlsSignature(norm));
-  }, [initial, hardMax]);
+  }, [initial, hardMax, setDraft]);
 
   // child ref to call commit()
   const childRef = useRef<EditMediaClientHandle | null>(null);
@@ -90,7 +98,7 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
   const onDraftChange = useCallback(
     (items: MediaManagerItemIn[]) => {
       const sorted = [...items].sort(
-        (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id)
+        (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id),
       );
 
       setDraft(sorted);
@@ -110,13 +118,13 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
               orderUrls: sorted.map((i) => i.url),
               items: sorted,
             },
-          })
+          }),
         );
       } catch {
         /* no-op */
       }
     },
-    [serviceId]
+    [serviceId, setDraft],
   );
 
   /* ----------------------------- Commit logic ---------------------------- */
@@ -124,7 +132,10 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
   const commitDraft = useCallback(async () => {
     if (sigDraft === sigInitial) {
       toast.success("Photos are already up to date.");
-      return { image: initialCanon[0]?.url ?? null, gallery: initialCanon.map((x) => x.url) };
+      return {
+        image: initialCanon[0]?.url ?? null,
+        gallery: initialCanon.map((x) => x.url),
+      };
     }
 
     try {
@@ -155,7 +166,7 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
               image: res.image ?? null,
               gallery: Array.isArray(res.gallery) ? res.gallery : [],
             },
-          })
+          }),
         );
       } catch {
         /* ignore */
@@ -167,12 +178,14 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
       toast.error(e?.message || "Couldn’t save photos.");
       throw e;
     }
-  }, [sigDraft, sigInitial, initialCanon, serviceId]);
+  }, [sigDraft, sigInitial, initialCanon, serviceId, setDraft]);
 
   // Register global committer and event trigger
   useEffect(() => {
     const key = `service:${serviceId}:media`;
-    const w = window as unknown as { qsCommitters?: Record<string, () => Promise<unknown>> };
+    const w = window as unknown as {
+      qsCommitters?: Record<string, () => Promise<unknown>>;
+    };
     if (!w.qsCommitters) w.qsCommitters = {};
     w.qsCommitters[key] = commitDraft;
 
@@ -211,7 +224,7 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
                   image: p.image ?? null,
                   gallery: Array.isArray(p.gallery) ? p.gallery : [],
                 },
-              })
+              }),
             );
           } catch {
             /* ignore */
@@ -222,7 +235,7 @@ function ServiceMediaManagerBase({ serviceId, initial, max = 6 }: Props) {
         /* ignore */
       }
     },
-    [serviceId]
+    [serviceId],
   );
 
   /* --------------------------------- Render -------------------------------- */

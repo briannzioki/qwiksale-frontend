@@ -6,6 +6,9 @@ export const revalidate = 0;
 import type { Metadata } from "next";
 import Link from "next/link";
 import SectionHeader from "@/app/components/SectionHeader";
+import { LineChart } from "@/app/components/charts/LineChart";
+import { BarChart } from "@/app/components/charts/BarChart";
+import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Dashboard · QwikSale Admin",
@@ -31,6 +34,8 @@ type Metrics = {
     services: number;
     reveals?: number | null;
     featured?: number | null;
+    visits?: number | null;
+    reviews?: number | null;
   };
   last7d: DayPoint[];
 };
@@ -60,18 +65,34 @@ async function fetchMetrics(timeoutMs = 2000): Promise<Metrics | null> {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    // Prefer configured public URL; fall back to relative.
-    const base = (process.env["NEXT_PUBLIC_APP_URL"] || "").replace(/\/+$/, "");
-    const url = (base || "") + "/api/admin/metrics";
+    const base = (process.env["NEXT_PUBLIC_APP_URL"] || "").replace(
+      /\/+$/,
+      "",
+    );
+    const paths = [
+      "/api/admin/metrics/overview",
+      "/api/admin/metrics",
+    ];
 
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
+    for (const path of paths) {
+      try {
+        const url = (base || "") + path;
+        const res = await fetch(url, {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
+        if (!res.ok) continue;
+        const json = (await res.json().catch(() => null)) as
+          | Metrics
+          | null;
+        if (json) return json;
+      } catch {
+        // try next path
+      }
+    }
 
-    if (!res.ok) return null;
-    return (await res.json().catch(() => null)) as Metrics | null;
+    return null;
   } catch {
     return null;
   } finally {
@@ -109,9 +130,19 @@ function StatCard({
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold">
+    <th
+      className={`whitespace-nowrap px-3 py-2 text-left text-xs font-semibold ${
+        className ?? ""
+      }`}
+    >
       {children}
     </th>
   );
@@ -121,7 +152,7 @@ function Td({
   children,
   className,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }) {
   return (
@@ -132,46 +163,6 @@ function Td({
     >
       {children}
     </td>
-  );
-}
-
-/* Simple, dependency-free sparkline */
-function Sparkline({
-  data,
-  field,
-  width = 320,
-  height = 64,
-}: {
-  data: DayPoint[];
-  field: keyof DayPoint;
-  width?: number;
-  height?: number;
-}) {
-  const vals = data.map((d) => Number((d as any)[field] ?? 0));
-  const max = Math.max(1, ...vals);
-  const stepX = data.length > 1 ? width / (data.length - 1) : width;
-  const pts = vals
-    .map((v, i) => {
-      const x = Math.round(i * stepX);
-      const y = Math.round(height - (v / max) * height);
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      role="img"
-      aria-label="7 day trend"
-    >
-      <polyline
-        points={pts}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-      />
-    </svg>
   );
 }
 
@@ -194,7 +185,7 @@ export default async function Page() {
 
         <SectionHeader
           title="Admin · Dashboard"
-          subtitle="Live stats for users, products, and services (last 7 days)."
+          subtitle="Live stats for users, listings, and services."
           actions={
             <div className="flex gap-2">
               <Link
@@ -225,10 +216,47 @@ export default async function Page() {
   }
 
   const last = metrics.last7d.at(-1);
-  const sub = (n?: number) =>
+  const subToday = (n?: number) =>
     typeof n === "number"
       ? `${n.toLocaleString("en-KE")} today`
       : undefined;
+
+  const listingsTotal =
+    (metrics.totals.products ?? 0) +
+    (metrics.totals.services ?? 0);
+
+  const visits =
+    typeof metrics.totals.visits === "number"
+      ? metrics.totals.visits
+      : null;
+  const reveals =
+    typeof metrics.totals.reveals === "number"
+      ? metrics.totals.reveals
+      : null;
+  const reviews =
+    typeof metrics.totals.reviews === "number"
+      ? metrics.totals.reviews
+      : null;
+  const featured =
+    typeof metrics.totals.featured === "number"
+      ? metrics.totals.featured
+      : null;
+
+  const compositionData: { label: string; value: number }[] = [
+    { label: "Users", value: metrics.totals.users },
+    { label: "Products", value: metrics.totals.products },
+    { label: "Services", value: metrics.totals.services },
+  ];
+
+  if (visits != null) {
+    compositionData.push({ label: "Visits", value: visits });
+  }
+  if (reveals != null) {
+    compositionData.push({ label: "Reveals", value: reveals });
+  }
+  if (reviews != null) {
+    compositionData.push({ label: "Reviews", value: reviews });
+  }
 
   return (
     <div className="space-y-6">
@@ -236,7 +264,7 @@ export default async function Page() {
 
       <SectionHeader
         title="Admin · Dashboard"
-        subtitle="Live stats for users, products, and services (last 7 days)."
+        subtitle="Overview of marketplace health: users, listings, and engagement over the last 7 days."
         actions={
           <div className="flex gap-2">
             <Link
@@ -256,31 +284,51 @@ export default async function Page() {
       />
 
       {/* KPI cards */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Users"
           value={metrics.totals.users}
-          sublabel={sub(last?.users)}
+          sublabel={subToday(last?.users)}
         />
         <StatCard
-          label="Listings"
+          label="Listings (all)"
+          value={listingsTotal}
+          sublabel={subToday(
+            (last?.products ?? 0) + (last?.services ?? 0),
+          )}
+        />
+        <StatCard
+          label="Products"
           value={metrics.totals.products}
-          sublabel={sub(last?.products)}
+          sublabel={subToday(last?.products)}
         />
         <StatCard
-          label="Active Services"
+          label="Services"
           value={metrics.totals.services}
-          sublabel={sub(last?.services)}
+          sublabel={subToday(last?.services)}
         />
-        <StatCard
-          label="Featured"
-          value={Number(metrics.totals.featured ?? 0)}
-        />
-        {"reveals" in metrics.totals &&
-        metrics.totals.reveals != null ? (
+
+        {featured != null && (
           <StatCard
-            label="Contact Reveals"
-            value={metrics.totals.reveals ?? 0}
+            label="Featured listings"
+            value={featured}
+          />
+        )}
+
+        {visits != null ? (
+          <StatCard label="Visits" value={visits} />
+        ) : (
+          <div
+            className={`${card} flex items-center justify-center text-sm text-muted-foreground`}
+          >
+            Visits not tracked
+          </div>
+        )}
+
+        {reveals != null ? (
+          <StatCard
+            label="Contact reveals"
+            value={reveals}
           />
         ) : (
           <div
@@ -289,39 +337,36 @@ export default async function Page() {
             No reveals tracked
           </div>
         )}
+
+        {reviews != null ? (
+          <StatCard label="Reviews" value={reviews} />
+        ) : (
+          <div
+            className={`${card} flex items-center justify-center text-sm text-muted-foreground`}
+          >
+            Reviews not tracked
+          </div>
+        )}
       </section>
 
-      {/* Trends */}
+      {/* Time-series trends */}
       <section className={card}>
         <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
-          Last 7 days
+          Last 7 days – users & listings
         </h2>
-        <div className="grid gap-4 md:grid-cols-3">
-          <div>
-            <div className="mb-1 text-xs text-muted-foreground">
-              Users
-            </div>
-            <div className="text-[#161748]">
-              <Sparkline data={metrics.last7d} field="users" />
-            </div>
-          </div>
-          <div>
-            <div className="mb-1 text-xs text-muted-foreground">
-              Products
-            </div>
-            <div className="text-emerald-600">
-              <Sparkline data={metrics.last7d} field="products" />
-            </div>
-          </div>
-          <div>
-            <div className="mb-1 text-xs text-muted-foreground">
-              Services
-            </div>
-            <div className="text-sky-600">
-              <Sparkline data={metrics.last7d} field="services" />
-            </div>
-          </div>
-        </div>
+
+        <LineChart
+          data={metrics.last7d}
+          xKey="date"
+          series={[
+            { dataKey: "users", label: "Users" },
+            { dataKey: "products", label: "Products" },
+            { dataKey: "services", label: "Services" },
+          ]}
+          height={260}
+          showLegend
+          showGrid
+        />
 
         {/* Detail table */}
         <div className="mt-4 overflow-auto">
@@ -349,6 +394,27 @@ export default async function Page() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* Composition / breakdown */}
+      <section className={card}>
+        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+          Totals breakdown
+        </h2>
+
+        <BarChart
+          data={compositionData}
+          xKey="label"
+          series={[
+            {
+              dataKey: "value",
+              label: "Total",
+            },
+          ]}
+          height={260}
+          showLegend={false}
+          showGrid
+        />
       </section>
     </div>
   );

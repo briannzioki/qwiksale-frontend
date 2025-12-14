@@ -1,3 +1,5 @@
+// src/app/components/servicecard.tsx
+
 "use client";
 
 import React, {
@@ -12,6 +14,7 @@ import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
+import ReviewStars from "@/app/components/ReviewStars";
 
 type Props = {
   id: string;
@@ -25,6 +28,10 @@ type Props = {
   position?: number;
   prefetch?: boolean;
   className?: string;
+
+  /** Optional rating summary (for grids / feeds). */
+  ratingAverage?: number | null;
+  ratingCount?: number | null;
 
   /** Dashboard mode: show Edit/Delete controls */
   ownerControls?: boolean;
@@ -93,6 +100,8 @@ function ServiceCardImpl({
   position,
   prefetch = true,
   className = "",
+  ratingAverage,
+  ratingCount,
   ownerControls = false,
   editHref,
   onDeletedAction,
@@ -130,6 +139,12 @@ function ServiceCardImpl({
         .join(" • "),
     [serviceArea, availability],
   );
+
+  const hasRating =
+    typeof ratingAverage === "number" &&
+    ratingAverage > 0 &&
+    typeof ratingCount === "number" &&
+    ratingCount > 0;
 
   // Impression tracking
   useEffect(() => {
@@ -232,6 +247,14 @@ function ServiceCardImpl({
       aria-label={name || "Service"}
       data-service-id={id}
       data-card="service"
+      data-listing-id={id}
+      data-listing-kind="service"
+      {...(hasRating
+        ? {
+            "data-rating-avg": ratingAverage,
+            "data-rating-count": ratingCount,
+          }
+        : {})}
     >
       {/* Owner controls overlay, outside main link */}
       {ownerControls && (
@@ -310,6 +333,21 @@ function ServiceCardImpl({
           <div className="mt-1 text-[15px] font-bold text-brandBlue">
             {priceText}
           </div>
+
+          {hasRating && (
+            <div
+              className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]"
+              aria-label={`${ratingAverage?.toFixed(1)} out of 5 stars from ${ratingCount} reviews`}
+            >
+              <ReviewStars rating={ratingAverage || 0} />
+              <span className="font-medium">
+                {ratingAverage?.toFixed(1)}
+              </span>
+              <span className="text-[0.7rem] text-muted-foreground">
+                ({ratingCount})
+              </span>
+            </div>
+          )}
         </div>
       </Link>
     </div>

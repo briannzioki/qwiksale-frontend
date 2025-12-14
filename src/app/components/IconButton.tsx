@@ -1,3 +1,4 @@
+// src/app/components/IconButton.tsx
 "use client";
 // src/app/components/IconButton.tsx
 
@@ -43,7 +44,7 @@ const iconGap: Record<Size, string> = {
 function classes(variant: Variant, tone: Tone) {
   const common =
     "inline-flex items-center justify-center font-semibold transition " +
-    "focus:outline-none focus:ring-2 ring-offset-2 ring-offset-background " +
+    "focus:outline-none focus:ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 ring-focus " +
     "disabled:opacity-60 disabled:cursor-not-allowed";
 
   if (variant === "ghost") {
@@ -51,8 +52,7 @@ function classes(variant: Variant, tone: Tone) {
   }
 
   if (variant === "outline") {
-    const base =
-      "border bg-card text-foreground hover:bg-muted";
+    const base = "border bg-card text-foreground hover:bg-muted";
     const toneMap: Record<Tone, string> = {
       default: base,
       primary:
@@ -67,10 +67,8 @@ function classes(variant: Variant, tone: Tone) {
   const base =
     "shadow-sm hover:opacity-95 active:opacity-90 border border-border/60";
   const toneMap: Record<Tone, string> = {
-    default:
-      "bg-muted text-foreground hover:bg-muted/80",
-    primary:
-      "bg-brandNavy text-primary-foreground hover:brightness-[.98]",
+    default: "bg-muted text-foreground hover:bg-muted/80",
+    primary: "bg-brandNavy text-primary-foreground hover:brightness-[.98]",
     danger: "bg-red-600 text-primary-foreground hover:bg-red-700",
   };
   return `${common} ${base} ${toneMap[tone]}`;
@@ -92,14 +90,14 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       type = "button",
       ...btn
     },
-    ref
+    ref,
   ) {
     // A11y: require a label of some kind if there’s no visible text
     const needsSr = !labelText && !srLabel && !btn["aria-label"];
     if (process.env["NODE_ENV"] !== "production" && needsSr) {
       // eslint-disable-next-line no-console
       console.warn(
-        "[IconButton] Provide `srLabel` or `aria-label` when rendering an icon-only button."
+        "[IconButton] Provide `srLabel` or `aria-label` when rendering an icon-only button.",
       );
     }
 
@@ -133,7 +131,9 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
           <Icon name={icon} aria-hidden size={iconSize} />
         )}
 
-        {labelText ? <span className="whitespace-nowrap">{labelText}</span> : null}
+        {labelText ? (
+          <span className="whitespace-nowrap">{labelText}</span>
+        ) : null}
 
         {/* Optional badge dot / count */}
         {typeof badgeCount === "number" && badgeCount > 0 && (
@@ -146,7 +146,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         )}
       </button>
     );
-  }
+  },
 );
 
 export default IconButton;

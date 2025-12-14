@@ -29,6 +29,8 @@ type BaseProps = {
   buttonSize?: "xs" | "sm" | "md" | "lg";
   buttonVariant?: "ghost" | "outline" | "solid";
   buttonTone?: "default" | "primary" | "danger";
+  /** Optional redirect destination after successful delete. If omitted, we just refresh the current page. */
+  redirectHref?: string;
 };
 
 type Props =
@@ -49,6 +51,7 @@ export default function DeleteListingButton(props: Props) {
     buttonSize = "xs",
     buttonVariant = "outline",
     buttonTone = "danger",
+    redirectHref,
   } = props;
 
   const explicitKind: Kind | undefined = props.kind ?? props.type;
@@ -154,18 +157,31 @@ export default function DeleteListingButton(props: Props) {
         throw new Error(j?.error || `Failed (${r.status})`);
       }
 
-      await onDeletedAction?.();
-      toast.success("Deleted.");
+      // Allow caller to run extra side-effects (ideally not navigation).
+      if (onDeletedAction) {
+        await onDeletedAction();
+      }
 
+      toast.success(
+        inferredKind === "service" ? "Service deleted." : "Listing deleted."
+      );
+
+      // Analytics is best-effort.
       try {
         const evt: EventName =
           inferredKind === "service" ? "service_deleted" : "product_deleted";
         track(evt, { id: targetId, name: productName ?? undefined, kind: inferredKind });
       } catch {
-        /* ignore analytics failures */
+        // ignore
       }
 
-      startTransition(() => router.refresh());
+      startTransition(() => {
+        if (redirectHref) {
+          router.push(redirectHref);
+        } else {
+          router.refresh();
+        }
+      });
     } catch (e: any) {
       toast.error(e?.message || "Failed to delete");
     } finally {
@@ -214,7 +230,6 @@ export default function DeleteListingButton(props: Props) {
       size={buttonSize}
       loading={busy || pending}
       labelText={showText ? (isDisabled ? "Deleting…" : label) : undefined}
-      className=""
       {...buttonProps}
     />
   );

@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import crypto from "node:crypto";
@@ -28,6 +29,9 @@ type TicketType = (typeof TYPES)[number];
 const SOFT_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const SOFT_RATE_LIMIT_MAX = 8;
 
+const ALLOW_ORIGIN =
+  process.env["NEXT_PUBLIC_BASE_URL"] || process.env["NEXT_PUBLIC_APP_URL"] || "*";
+
 /* --------------------------------- utils --------------------------------- */
 
 function noStore(json: unknown, init?: ResponseInit) {
@@ -36,6 +40,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
   res.headers.set("Vary", "Origin");
+  res.headers.set("Access-Control-Allow-Origin", ALLOW_ORIGIN);
   return res;
 }
 
@@ -164,10 +169,7 @@ async function verifyCaptcha(params: {
 
 export function OPTIONS() {
   const res = new NextResponse(null, { status: 204 });
-  res.headers.set(
-    "Access-Control-Allow-Origin",
-    process.env["NEXT_PUBLIC_BASE_URL"] || process.env["NEXT_PUBLIC_APP_URL"] || "*"
-  );
+  res.headers.set("Access-Control-Allow-Origin", ALLOW_ORIGIN);
   res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
@@ -249,7 +251,7 @@ export async function POST(req: NextRequest) {
 
     // Soft abuse guard
     const since = new Date(Date.now() - SOFT_RATE_LIMIT_WINDOW_MS);
-    const orIdentities: Array<Record<string, unknown>> = [];
+    const orIdentities: Prisma.SupportTicketWhereInput[] = [];
     if (reporterId) orIdentities.push({ reporterId });
     if (email) orIdentities.push({ email });
     // NOTE: don't include { clientIp } unless the column exists; we avoid it here.

@@ -11,12 +11,20 @@ import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
 
 /* ------------------------- tiny helpers ------------------------- */
-function noStore(json: unknown, init?: ResponseInit) {
-  const res = NextResponse.json(json, init);
+function setNoStoreHeaders(res: NextResponse) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
   return res;
+}
+
+function noStore(json: unknown, init?: ResponseInit) {
+  return setNoStoreHeaders(NextResponse.json(json, init));
+}
+
+function shouldLog() {
+  return process.env.NODE_ENV !== "production";
 }
 
 function getId(req: NextRequest): string {
@@ -41,54 +49,73 @@ function getClientIp(req: NextRequest): string | null {
   return null;
 }
 
-function validUrl(u?: string | null): string | null {
-  const s = (u || "").trim();
-  if (!s) return null;
+function hasAuthSessionCookie(req: NextRequest) {
+  // Auth.js / NextAuth common cookie names (http/https)
+  const c = req.cookies;
+  return Boolean(
+    c.get("__Secure-authjs.session-token") ||
+      c.get("authjs.session-token") ||
+      c.get("__Secure-next-auth.session-token") ||
+      c.get("next-auth.session-token")
+  );
+}
+
+async function safeCount(p: Promise<number>, label: string): Promise<number> {
   try {
-    const uu = new URL(s);
-    if (uu.protocol === "http:" || uu.protocol === "https:") {
-      return uu.toString().slice(0, 500);
+    return await p;
+  } catch (e) {
+    if (shouldLog()) {
+      // eslint-disable-next-line no-console
+      console.warn(`[services/:id/contact] ${label} failed:`, e);
     }
-  } catch {}
-  return null;
+    return -1;
+  }
 }
 
 /* ------------------------------- GET ------------------------------- */
 export async function GET(req: NextRequest) {
   try {
-    const listingId = getId(req);
-    if (!listingId) return noStore({ error: "Missing id" }, { status: 400 });
+    const serviceId = getId(req);
+    if (!serviceId) return noStore({ error: "Missing id" }, { status: 400 });
 
-    // viewer is optional (guests allowed)
-    const session = await auth().catch(() => null);
-    const viewerUserId = (session as any)?.user?.id as string | undefined;
+    const ip = getClientIp(req);
+    const uaRaw = req.headers.get("user-agent") || "";
+    const ua = uaRaw ? uaRaw.slice(0, 240) : null;
 
-    // Global best-effort rate limit (bucket per viewer + service)
+    // viewer is optional (guests allowed) — avoid auth() work unless a session is plausible
+    let viewerUserId: string | undefined;
+    const hasAuthHeader = Boolean(req.headers.get("authorization"));
+    if (hasAuthHeader || hasAuthSessionCookie(req)) {
+      const session = await auth().catch(() => null);
+      viewerUserId = (session as any)?.user?.id as string | undefined;
+    }
+
+    // Global best-effort rate limit (bucket per viewer/ip + service)
+    const viewerKey = viewerUserId ?? ip ?? "anon";
     const rl =
       (await checkRateLimit(req.headers, {
         name: "services_contact_reveal",
         limit: 5,
         windowMs: 60_000,
-        extraKey: `${viewerUserId ?? "anon"}:${listingId}`,
+        extraKey: `${viewerKey}:${serviceId}`,
       }).catch((e: unknown) => {
-        // eslint-disable-next-line no-console
-        console.warn("[services/:id/contact] rate-limit error:", e);
+        if (shouldLog()) {
+          // eslint-disable-next-line no-console
+          console.warn("[services/:id/contact] rate-limit error:", e);
+        }
         return { ok: true, retryAfterSec: 0 };
       })) as { ok: boolean; retryAfterSec?: number };
 
     if (!rl.ok) {
-      const retryAfterSec =
-        typeof rl.retryAfterSec === "number" ? rl.retryAfterSec : 60;
-
-      return tooMany(
-        "Please wait a moment before revealing more contacts.",
-        retryAfterSec,
-      );
+      const retryAfterSec = typeof rl.retryAfterSec === "number" ? rl.retryAfterSec : 60;
+      const res = tooMany("Please wait a moment before revealing more contacts.", retryAfterSec);
+      res.headers.set("Retry-After", String(retryAfterSec));
+      return setNoStoreHeaders(res);
     }
 
-    // Minimal public fields
+    // Minimal public fields (single query)
     const svc = await prisma.service.findUnique({
-      where: { id: listingId },
+      where: { id: serviceId },
       select: {
         id: true,
         name: true,
@@ -100,108 +127,83 @@ export async function GET(req: NextRequest) {
     if (!svc) return noStore({ error: "Not found" }, { status: 404 });
 
     // ---- Soft throttle windows (DB-backed) ----
-    const ip = getClientIp(req);
-    const ua = req.headers.get("user-agent") || null;
-    const now = Date.now();
-    const WIN_IP_HR = new Date(now - 60 * 60 * 1000); // 1 hour
-    const WIN_DEVICE_15 = new Date(now - 15 * 60 * 1000); // 15 minutes
+    // Keep this heavy path primarily for guests (scrape control).
+    const applyDbThrottle = Boolean(ip) && !viewerUserId;
 
-    const MAX_PER_IP_PER_HOUR = 12;
-    const MAX_PER_DEVICE_15MIN = 6;
+    if (applyDbThrottle) {
+      const now = Date.now();
+      const WIN_IP_HR = new Date(now - 60 * 60 * 1000); // 1 hour
+      const WIN_DEVICE_15 = new Date(now - 15 * 60 * 1000); // 15 minutes
 
-    const db: any = prisma;
+      const MAX_PER_IP_PER_HOUR = 12;
+      const MAX_PER_DEVICE_15MIN = 6;
 
-    // Count recent reveals per IP for this listing
-    if (ip) {
-      let ipCount = 0;
-      try {
-        if (db.serviceContactReveal?.count) {
-          ipCount = await db.serviceContactReveal.count({
-            where: { serviceId: listingId, ip, createdAt: { gte: WIN_IP_HR } },
-          });
-        } else if (db.contactReveal?.count) {
-          ipCount = await db.contactReveal.count({
-            where: { serviceId: listingId, ip, createdAt: { gte: WIN_IP_HR } },
-          });
-        }
-      } catch {
-        // ignore
-      }
+      const [ipCountRaw, devCountRaw] = await Promise.all([
+        safeCount(
+          prisma.serviceContactReveal.count({
+            where: {
+              serviceId,
+              ip: ip!,
+              createdAt: { gte: WIN_IP_HR },
+            },
+          }),
+          "serviceContactReveal.count(ip)"
+        ),
+        ua
+          ? safeCount(
+              prisma.serviceContactReveal.count({
+                where: {
+                  serviceId,
+                  ip: ip!,
+                  userAgent: ua,
+                  createdAt: { gte: WIN_DEVICE_15 },
+                },
+              }),
+              "serviceContactReveal.count(device)"
+            )
+          : Promise.resolve(0),
+      ]);
+
+      const ipCount = ipCountRaw < 0 ? 0 : ipCountRaw;
+      const devCount = devCountRaw < 0 ? 0 : devCountRaw;
+
       if (ipCount >= MAX_PER_IP_PER_HOUR) {
-        const res = noStore(
-          { error: "Too many requests. Please try again later." },
-          { status: 429 },
-        );
+        const res = noStore({ error: "Too many requests. Please try again later." }, { status: 429 });
         res.headers.set("Retry-After", "1800"); // 30 min
         return res;
       }
-    }
 
-    // Count recent reveals per (IP + UA) for this listing
-    if (ip && ua) {
-      let devCount = 0;
-      try {
-        if (db.serviceContactReveal?.count) {
-          devCount = await db.serviceContactReveal.count({
-            where: {
-              serviceId: listingId,
-              ip,
-              userAgent: ua,
-              createdAt: { gte: WIN_DEVICE_15 },
-            },
-          });
-        } else if (db.contactReveal?.count) {
-          devCount = await db.contactReveal.count({
-            where: {
-              serviceId: listingId,
-              ip,
-              userAgent: ua,
-              createdAt: { gte: WIN_DEVICE_15 },
-            },
-          });
-        }
-      } catch {
-        // ignore
-      }
-      if (devCount >= MAX_PER_DEVICE_15MIN) {
-        const res = noStore(
-          { error: "Please wait a few minutes before trying again." },
-          { status: 429 },
-        );
+      if (ua && devCount >= MAX_PER_DEVICE_15MIN) {
+        const res = noStore({ error: "Please wait a few minutes before trying again." }, { status: 429 });
         res.headers.set("Retry-After", "300"); // 5 min
         return res;
       }
     }
 
-    // Light telemetry — never block user on errors
-    const referer = validUrl(req.headers.get("referer"));
-    void referer;
-
-    (async () => {
-      try {
-        if (db.serviceContactReveal?.create) {
-          await db.serviceContactReveal.create({
-            data: {
-              serviceId: listingId,
-              viewerUserId: viewerUserId ?? null,
-              ip: ip ?? null,
-              userAgent: ua,
-            },
+    // Light telemetry — never block user on errors (fire-and-forget)
+    if (ip || viewerUserId) {
+      void (async () => {
+        try {
+          await prisma.serviceContactReveal.createMany({
+            data: [
+              {
+                serviceId,
+                viewerUserId: viewerUserId ?? null,
+                ip: ip ?? null,
+                userAgent: ua,
+              },
+            ],
+            // If you have a unique constraint (e.g. serviceId+viewerUserId), this avoids noisy errors.
+            skipDuplicates: true,
           });
-        } else if (db.contactReveal?.create) {
-          await db.contactReveal.create({
-            data: {
-              serviceId: listingId,
-              viewerUserId: viewerUserId ?? null,
-              ip: ip ?? null,
-              userAgent: ua,
-            },
-          });
+        } catch (e) {
+          if (shouldLog()) {
+            // eslint-disable-next-line no-console
+            console.warn("[services/:id/contact] serviceContactReveal.createMany failed:", e);
+          }
         }
-      } catch {
-        // swallow
-      }
-    })();
+      })();
+    }
 
     // Shape contact payload
     const contact = {
@@ -216,18 +218,17 @@ export async function GET(req: NextRequest) {
       suggestLogin: !viewerUserId,
     });
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn("[services/:id/contact GET] error:", e);
+    if (shouldLog()) {
+      // eslint-disable-next-line no-console
+      console.warn("[services/:id/contact GET] error:", e);
+    }
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
 
 /* ----------------------------- CORS (optional) ----------------------------- */
 export function OPTIONS() {
-  const origin =
-    process.env["NEXT_PUBLIC_APP_ORIGIN"] ??
-    process.env["NEXT_PUBLIC_APP_URL"] ??
-    "*";
+  const origin = process.env["NEXT_PUBLIC_APP_ORIGIN"] ?? process.env["NEXT_PUBLIC_APP_URL"] ?? "*";
 
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);

@@ -78,3 +78,6 @@ auth-migrate/
 src/app/_debug/
 suspects/
 tests/e2e/_all-specs.txt
+/cookies.txt
+/full-backup.patch
+/tests/e2e/.artifacts/

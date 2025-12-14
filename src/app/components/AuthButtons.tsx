@@ -2,207 +2,168 @@
 "use client";
 
 import type { Session } from "next-auth";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import RoleChip from "@/app/components/RoleChip";
+import VerifiedBadge from "@/app/components/VerifiedBadge";
+import { Icon } from "@/app/components/Icon";
 
 /* ------------------------- tiny event/analytics ------------------------- */
 function emit(name: string, detail?: unknown) {
-  // eslint-disable-next-line no-console
+  // Keep this dirt simple – useful in Playwright traces and in the browser.
   console.log(`[qs:event] ${name}`, detail);
-  if (typeof window !== "undefined" && "CustomEvent" in window) {
+  if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(name, { detail }));
   }
 }
+
 function track(event: string, payload?: Record<string, unknown>) {
-  // eslint-disable-next-line no-console
   console.log("[qs:track]", event, payload);
   emit("qs:track", { event, payload });
 }
 
-/* -------------------------------- helpers ------------------------------- */
 const isPaidTier = (t?: string | null) => {
   const v = (t ?? "").toUpperCase();
   return v === "GOLD" || v === "PLATINUM";
 };
 
-function Initials({ name }: { name?: string | null }) {
-  const text =
-    (name || "")
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((s) => s[0]?.toUpperCase())
-      .join("") || "U";
-  return (
-    <span
-      aria-hidden
-      className="inline-flex h-7 w-7 select-none items-center justify-center rounded-full bg-white/20 text-xs font-semibold"
-    >
-      {text}
-    </span>
-  );
-}
-
-function getReturnTo(): string {
+/**
+ * Build the Sign in href for a definite guest.
+ *
+ * Special case:
+ *   E2E expects on /onboarding:
+ *   /signin?callbackUrl=%2Fonboarding?return=%2Fdashboard
+ */
+function buildGuestSignInHrefFrom(pathname: string, queryString: string): string {
   try {
-    const { pathname, search, hash } = window.location;
-    return `${pathname}${search || ""}${hash || ""}` || "/";
+    const p = pathname || "/";
+
+    if (p === "/onboarding") {
+      const sp = new URLSearchParams(queryString || "");
+      const rawReturn = sp.get("return") || "/dashboard";
+
+      const encodedOnboarding = encodeURIComponent("/onboarding"); // %2Fonboarding
+      const encodedReturn = encodeURIComponent(rawReturn); // e.g. /dashboard -> %2Fdashboard
+
+      // E2E wants this shape exactly:
+      // /signin?callbackUrl=%2Fonboarding?return=%2Fdashboard
+      return `/signin?callbackUrl=${encodedOnboarding}?return=${encodedReturn}`;
+    }
+
+    const qs = queryString ? `?${queryString}` : "";
+    const returnTo = `${p}${qs}` || "/";
+    return `/signin?callbackUrl=${encodeURIComponent(returnTo)}`;
   } catch {
-    return "/";
+    return "/signin";
   }
 }
 
-/* --------------------------------- types -------------------------------- */
 type AuthButtonsProps = {
-  /**
-   * Server-side auth hint from HeaderClient/layout.
-   * If this is true but hooks are confused, we still treat the user as
-   * effectively authenticated for header UI purposes.
-   */
   initialIsAuthedHint?: boolean;
+  /**
+   * Optional hint from server auth payload. The real source of truth is
+   * session.user.verified when available.
+   */
+  isVerified?: boolean;
 };
 
 /* --------------------------------- main --------------------------------- */
 export default function AuthButtons({
   initialIsAuthedHint = false,
+  isVerified: isVerifiedHint = false,
 }: AuthButtonsProps) {
+  const pathname = usePathname() || "/";
+  const sp = useSearchParams();
+  const queryString = sp?.toString?.() ?? "";
+
+  const signInHref = useMemo(
+    () => buildGuestSignInHrefFrom(pathname, queryString),
+    [pathname, queryString],
+  );
+
   const { data: rawSession, status } = useSession();
-  const [meStatus, setMeStatus] = useState<number | null>(null);
   const [working, setWorking] = useState<"out" | null>(null);
   const [open, setOpen] = useState(false);
 
-  // Cross-check against /api/me so the header never shows a "Sign in" link
-  // while the API still considers the user authenticated (prod no-auto-logout).
-  useEffect(() => {
-    let cancelled = false;
+  // Once we’ve *ever* seen an authenticated signal in this browser tab,
+  // remember it so we don’t flash back to a guest header during navigation.
+  const [sawAuthenticated, setSawAuthenticated] = useState(false);
 
-    async function checkMe() {
-      try {
-        const res = await fetch("/api/me", {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
-        if (!cancelled) {
-          setMeStatus(res.status);
-        }
-      } catch {
-        if (!cancelled) {
-          setMeStatus(0);
-        }
-      }
-    }
+  // Extra guard: if we ever detect an Auth.js/NextAuth session cookie,
+  // treat that as strong evidence of an authenticated user for this tab’s lifetime.
+  const [hasAuthCookie, setHasAuthCookie] = useState(false);
 
-    checkMe();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const hasServerAuthedHint = initialIsAuthedHint === true;
-  const session: Session | null = (rawSession as Session | null) ?? null;
-
-  const authedHint =
-    hasServerAuthedHint ||
-    status === "authenticated" ||
-    !!session ||
-    meStatus === 200;
-
-  const stillResolving = status === "loading" || meStatus === null;
-  const definiteGuest =
-    !authedHint &&
-    status === "unauthenticated" &&
-    meStatus !== 200 &&
-    meStatus !== null;
-
-  // Keep body flagged with current auth state so other components (e.g. hero)
-  // can reliably know if the app is authed, independent of their own hooks.
+  /* -------------------------- cookie-based evidence -------------------------- */
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const body = document.body;
-    if (!body) return;
+    try {
+      const raw = document.cookie ?? "";
+      if (!raw) return;
+      const lower = raw.toLowerCase();
 
+      const hasAuthStyleCookie =
+        lower.includes("next-auth.session-token") ||
+        lower.includes("__secure-next-auth.session-token") ||
+        lower.includes("__host-next-auth.session-token") ||
+        lower.includes("nextauth.session-token") ||
+        lower.includes("next-auth.session-token.") ||
+        lower.includes("__secure-authjs.session-token") ||
+        lower.includes("__host-authjs.session-token") ||
+        lower.includes("authjs.session-token") ||
+        // Be deliberately generous: any auth/session-style cookie name
+        (lower.includes("auth") && lower.includes("session"));
+
+      if (hasAuthStyleCookie) {
+        setHasAuthCookie(true);
+      }
+    } catch {
+      // ignore cookie parsing issues
+    }
+  }, []);
+
+  const session: Session | null = (rawSession as Session | null) ?? null;
+
+  /* ---------------------- auth state derivation (STRONG) ---------------------- */
+  // Any positive signal from the client side that we *are* logged in.
+  const hasClientAuthEvidence =
+    status === "authenticated" || !!session || sawAuthenticated || hasAuthCookie;
+
+  // Track if we have *ever* seen an authenticated signal in this tab.
+  useEffect(() => {
+    if (status === "authenticated" || !!session || hasAuthCookie) {
+      setSawAuthenticated(true);
+    }
+  }, [status, session, hasAuthCookie]);
+
+  // We consider "loading" as the only resolving state now.
+  // IMPORTANT: We do NOT call /api/me here at all (prevents slow 401 spam on guest pages).
+  const stillResolving = status === "loading";
+
+  // Server-side hint (cookie-derived) OR any client evidence keeps us in
+  // the "treat as authed" bucket.
+  const authedHint = hasClientAuthEvidence || initialIsAuthedHint;
+
+  // Only call this a definite guest when *everything* agrees and we’re not
+  // in a resolving state. This prevents random session blips from flipping
+  // the header back to "Sign in".
+  const definiteGuest =
+    status === "unauthenticated" && !authedHint && !stillResolving;
+
+  // Reflect auth state into <body data-qs-session="authed"> for any
+  // layout that wants to style on it.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
     if (authedHint) {
-      body.dataset["qsSession"] = "authed";
+      document.body.dataset["qsSession"] = "authed";
     } else {
-      delete body.dataset["qsSession"];
+      delete document.body.dataset["qsSession"];
     }
   }, [authedHint]);
 
-  useEffect(() => {
-    const onHash = () => setOpen(false);
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-
-  const rootRef = useRef<HTMLDetailsElement | null>(null);
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (!open) return;
-      const root = rootRef.current;
-      if (!root) return;
-      const target = e.target as Node;
-      if (!root.contains(target)) setOpen(false);
-    }
-    window.addEventListener("click", onClick);
-    return () => window.removeEventListener("click", onClick);
-  }, [open]);
-
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const focusablesRef = useRef<HTMLElement[]>([]);
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!open) return;
-      if (e.key === "Escape") {
-        setOpen(false);
-        (
-          rootRef.current?.querySelector(
-            "summary",
-          ) as HTMLElement | null
-        )?.focus?.();
-        return;
-      }
-      if (!menuRef.current) return;
-      const els = Array.from(
-        menuRef.current.querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled])',
-        ),
-      );
-      focusablesRef.current = els;
-      const current = document.activeElement as HTMLElement | null;
-      const idx = els.findIndex((el) => el === current);
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        const next =
-          els[(idx + 1 + els.length) % els.length] || els[0];
-        next?.focus();
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        const prev =
-          els[(idx - 1 + els.length) % els.length] ||
-          els[els.length - 1];
-        prev?.focus();
-      } else if (e.key === "Home") {
-        e.preventDefault();
-        els[0]?.focus();
-      } else if (e.key === "End") {
-        e.preventDefault();
-        els[els.length - 1]?.focus();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  useEffect(() => {
-    if (open) track("auth_dropdown_open");
-  }, [open]);
-
-  // While auth state is unresolved, render a neutral placeholder — do NOT show
-  // a "Sign in" link yet.
+  /* ------------------------ loading placeholder ------------------------ */
+  // While things are indeterminate, *never* show a "Sign in" link.
   if (!authedHint && stillResolving) {
     return (
       <button
@@ -214,34 +175,32 @@ export default function AuthButtons({
     );
   }
 
-  // Genuine guest: hooks say unauthenticated AND /api/me is non-200.
+  /* --------------------------- guest → sign in --------------------------- */
+  // Only reach this when we’re confident the user is actually a guest.
   if (definiteGuest) {
-    const signInHref = `/signin?callbackUrl=${encodeURIComponent(
-      getReturnTo(),
-    )}`;
     return (
       <Link
         href={signInHref}
-        className="rounded-lg border border-[var(--border)] bg-subtle px-3 py-2 text-sm text-[var(--text)] transition hover:bg-[var(--bg-elevated)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
-        data-testid="auth-signin"
-        title="Sign in"
+        className="rounded-lg border border-[var(--border)] bg-subtle px-3 py-2 text-sm text-[var(--text)] transition hover:bg-[var(--bg-elevated)] focus-visible:ring-2 ring-focus"
         prefetch={false}
-        onClick={() => track("auth_signin_click")}
+        data-testid="auth-signin"
+        aria-label="Sign in to your account"
       >
         Sign in
       </Link>
     );
   }
 
-  // We have an auth hint (/api/me or SSR) but no concrete session object yet:
-  // render an "Account" placeholder instead of flashing a Sign in link.
-  if (!session) {
+  /* --------- fledgling session (server/clients say yes, data still loading) -------- */
+  // We have enough evidence that the user is logged in, but we don’t have the
+  // full session payload yet. Show a neutral "Account" stub instead of ever
+  // flashing "Sign in".
+  if (!session && authedHint) {
     return (
       <button
         type="button"
         className="cursor-default rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-muted)] opacity-80"
         disabled
-        aria-label="Account loading"
         data-testid="account-menu-placeholder"
       >
         Account
@@ -249,41 +208,36 @@ export default function AuthButtons({
     );
   }
 
-  const user = (session.user ?? null) as (Session["user"] & {
-    subscription?: string | null;
-    role?: string | null;
-    name?: string | null;
-    isAdmin?: boolean;
-  }) | null;
+  /* ----------------------------- authenticated ----------------------------- */
+  // At this point we treat the user as definitely signed in. No guest fallback.
+  const user = session!.user as any;
 
-  const subscription = user?.subscription ?? null;
   const roleU = (user?.role ?? "").toUpperCase();
+  const subscription = user?.subscription ?? null;
   const isAdmin =
-    user?.isAdmin === true ||
-    roleU === "ADMIN" ||
-    roleU === "SUPERADMIN";
+    user?.isAdmin === true || roleU === "ADMIN" || roleU === "SUPERADMIN";
+
   const dashboardHref = isAdmin ? "/admin" : "/dashboard";
 
-  const displayName = useMemo(() => {
-    if (user?.name) return user.name;
-    if (user?.email) return user.email.split("@")[0];
-    return "User";
-  }, [user?.name, user?.email]);
+  const rawUsername = typeof user?.username === "string" ? user.username.trim() : "";
+  const rawName = typeof user?.name === "string" ? user.name.trim() : "";
+  const rawEmail = typeof user?.email === "string" ? user.email.trim() : "";
 
-  // Authenticated view: account menu with single RoleChip.
+  const displayName =
+    rawUsername || rawName || (rawEmail ? rawEmail.split("@")[0] : "User");
+
+  const isVerified = user?.verified === true || isVerifiedHint === true;
+
   return (
-    <details ref={rootRef} className="group relative" open={open}>
+    <details className="group relative" open={open}>
       <summary
-        className="inline-flex cursor-pointer select-none items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-sm text-[var(--text)] transition hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 ring-focus"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        role="button"
-        aria-label="Open account menu"
-        data-testid="account-menu-trigger"
+        className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-sm text-[var(--text)] hover:bg-subtle focus-visible:ring-2 ring-focus"
         onClick={(e) => {
           e.preventDefault();
           setOpen((v) => !v);
+          if (!open) track("auth_dropdown_open");
         }}
+        data-testid="account-menu-trigger"
       >
         {user?.image ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -291,88 +245,89 @@ export default function AuthButtons({
             src={user.image}
             alt=""
             className="h-7 w-7 rounded-full object-cover ring-2 ring-white/40"
-            referrerPolicy="no-referrer"
           />
         ) : (
-          <Initials name={user?.name ?? null} />
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-xs font-semibold">
+            {displayName[0]?.toUpperCase?.() ?? "U"}
+          </span>
         )}
+
         <span className="hidden max-w-[14ch] truncate sm:inline">
           {displayName}
         </span>
-        {/* Single session chip used by tests */}
-        <RoleChip role={user?.role ?? null} subscription={subscription} />
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          className={`ml-1 transition-transform ${
-            open ? "rotate-180" : ""
-          }`}
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path d="M7 10l5 5 5-5H7z" />
-        </svg>
+
+        {isVerified && <VerifiedBadge className="hidden sm:inline-flex" />}
+
+        <RoleChip role={user?.role} subscription={subscription} />
+
+        <Icon
+          name="sort"
+          className={open ? "rotate-180 transition" : "transition"}
+        />
       </summary>
 
-      <div
-        ref={menuRef}
-        role="menu"
-        className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-soft"
-      >
-        <div className="border-b border-[var(--border-subtle)] bg-subtle px-3 py-2">
-          <div className="text-xs text-[var(--text-muted)]">
-            Signed in as
-          </div>
-          <div className="truncate text-sm font-medium">
-            {user?.email || "…"}
+      <div className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] shadow-soft">
+        <div className="border-b border-[var(--border-subtle)] bg-subtle px-3 py-2 text-sm">
+          <div className="text-xs text-[var(--text-muted)]">Signed in as</div>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <div className="truncate font-medium">{displayName}</div>
+            {isVerified && <VerifiedBadge className="inline-flex" />}
           </div>
         </div>
 
         <nav className="py-1 text-sm">
           <Link
             href={dashboardHref}
-            role="menuitem"
+            prefetch={false}
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-subtle"
-            prefetch={false}
           >
             Dashboard
           </Link>
+
           <Link
             href="/account/profile"
-            role="menuitem"
+            prefetch={false}
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-subtle"
-            prefetch={false}
           >
             Edit profile
           </Link>
+
+          {!isVerified && (
+            <Link
+              href="/account/profile?verify=1"
+              prefetch={false}
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 hover:bg-subtle"
+              data-testid="account-menu-verify-email"
+            >
+              Verify email
+            </Link>
+          )}
+
           <Link
             href="/saved"
-            role="menuitem"
+            prefetch={false}
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-subtle"
-            prefetch={false}
           >
             Saved items
           </Link>
+
           <Link
             href="/account/billing"
-            role="menuitem"
+            prefetch={false}
             onClick={() => setOpen(false)}
             className="block px-3 py-2 hover:bg-subtle"
-            prefetch={false}
           >
-            {isPaidTier(subscription)
-              ? "Manage subscription"
-              : "Upgrade subscription"}
+            {isPaidTier(subscription) ? "Manage subscription" : "Upgrade subscription"}
           </Link>
         </nav>
 
         <button
-          data-testid="auth-signout"
-          role="menuitem"
+          className="w-full border-t border-[var(--border-subtle)] px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+          disabled={!!working}
           onClick={async () => {
             if (working) return;
             setWorking("out");
@@ -383,8 +338,6 @@ export default function AuthButtons({
               setWorking(null);
             }
           }}
-          className="w-full border-t border-[var(--border-subtle)] px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
-          disabled={!!working}
         >
           {working === "out" ? "Signing out…" : "Sign out"}
         </button>

@@ -572,7 +572,7 @@
   .z-modal    { z-index: var(--z-modal); }
 
   /* ---------- Tiny guard: hide inline index badge when lightbox is open ---------- */
-  [data-gallery-open="true"] [data-gallery-index-badge] {
+  [data-gallery-open="true"] [data-gallery-index-badge]:not([data-e2e="product-lightbox-index"]) {
     display: none !important;
   }
 }

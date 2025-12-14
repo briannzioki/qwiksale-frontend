@@ -105,7 +105,11 @@ function buildRemotePatterns(): RemotePattern[] {
     { protocol: "https", hostname: "plus.unsplash.com", pathname: "/**" },
     { protocol: "https", hostname: "images.pexels.com", pathname: "/**" },
     { protocol: "https", hostname: "picsum.photos", pathname: "/**" },
-    { protocol: "https", hostname: "avatars.githubusercontent.com", pathname: "/**" },
+    {
+      protocol: "https",
+      hostname: "avatars.githubusercontent.com",
+      pathname: "/**",
+    },
     { protocol: "https", hostname: APEX_DOMAIN, pathname: "/**" },
     { protocol: "https", hostname: `www.${APEX_DOMAIN}`, pathname: "/**" },
     { protocol: "https", hostname: "imagedelivery.net", pathname: "/**" },
@@ -194,6 +198,20 @@ const baseConfig: NextConfig = {
         perf_hooks: false,
         path: false,
       };
+    }
+
+    // Ignore noisy dynamic-require / telemetry warnings mostly coming from
+    // @opentelemetry, require-in-the-middle, etc. on the server build.
+    if (isServer) {
+      const telemetryWarningPatterns = [
+        /Critical dependency: the request of a dependency is an expression/,
+        /require function is used in a way in which dependencies cannot be statically extracted/,
+      ];
+
+      const prevIgnore = config.ignoreWarnings ?? [];
+      const prevArray = Array.isArray(prevIgnore) ? prevIgnore : [prevIgnore];
+
+      config.ignoreWarnings = [...prevArray, ...telemetryWarningPatterns];
     }
 
     if (dev) {

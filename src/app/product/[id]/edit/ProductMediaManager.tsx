@@ -1,12 +1,20 @@
+// src/app/product/[id]/edit/ProductMediaManager.tsx
 "use client";
 // src/app/product/[id]/edit/ProductMediaManager.tsx
 
-import { useMemo, useCallback, memo, useRef, useState, useEffect } from "react";
-import EditMediaClient, { type EditMediaClientHandle } from "@/app/components/EditMediaClient";
+import { useCallback, memo, useRef, useState, useEffect } from "react";
+import EditMediaClient, {
+  type EditMediaClientHandle,
+} from "@/app/components/EditMediaClient";
 import type { MediaManagerItemIn } from "@/app/components/MediaManager";
 import { toast } from "@/app/components/ToasterClient";
 
-export type Img = { id: string; url: string; isCover?: boolean; sort?: number };
+export type Img = {
+  id: string;
+  url: string;
+  isCover?: boolean;
+  sort?: number;
+};
 
 type Props = {
   productId: string;
@@ -64,11 +72,11 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
 
   // canonical "initial" at page load (normalized)
   const [initialCanon, setInitialCanon] = useState<MediaManagerItemIn[]>(
-    () => normalize(initial || [], hardMax)
+    () => normalize(initial || [], hardMax),
   );
 
   // live draft while user edits (starts from canonical)
-  const [draft, setDraft] = useState<MediaManagerItemIn[]>(initialCanon);
+  const [, setDraft] = useState<MediaManagerItemIn[]>(initialCanon);
 
   // for equality checks (avoid no-op commits)
   const [sigInitial, setSigInitial] = useState(() => urlsSignature(initialCanon));
@@ -81,7 +89,7 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
     setDraft(norm);
     setSigInitial(urlsSignature(norm));
     setSigDraft(urlsSignature(norm));
-  }, [initial, hardMax]);
+  }, [initial, hardMax, setDraft]);
 
   // hook into the child imperative API
   const childRef = useRef<EditMediaClientHandle | null>(null);
@@ -92,7 +100,7 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
     (items: MediaManagerItemIn[]) => {
       // keep a sorted/stable copy locally
       const sorted = [...items].sort(
-        (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id)
+        (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id),
       );
 
       setDraft(sorted);
@@ -112,13 +120,13 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
               orderUrls: sorted.map((i) => i.url),
               items: sorted,
             },
-          })
+          }),
         );
       } catch {
         /* no-op */
       }
     },
-    [productId]
+    [productId, setDraft],
   );
 
   /* ----------------------------- Commit logic ---------------------------- */
@@ -127,7 +135,10 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
     // no staged changes → nothing to do
     if (sigDraft === sigInitial) {
       toast.success("Photos are already up to date.");
-      return { image: initialCanon[0]?.url ?? null, gallery: initialCanon.map((x) => x.url) };
+      return {
+        image: initialCanon[0]?.url ?? null,
+        gallery: initialCanon.map((x) => x.url),
+      };
     }
 
     try {
@@ -159,7 +170,7 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
               image: res.image ?? null,
               gallery: Array.isArray(res.gallery) ? res.gallery : [],
             },
-          })
+          }),
         );
       } catch {
         /* ignore */
@@ -171,7 +182,7 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
       toast.error(e?.message || "Couldn’t save photos.");
       throw e;
     }
-  }, [sigDraft, sigInitial, initialCanon, productId]);
+  }, [sigDraft, sigInitial, initialCanon, productId, setDraft]);
 
   // Expose commitDraft globally so the “Update Product” button can trigger it
   useEffect(() => {
@@ -219,7 +230,7 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
                   image: p.image ?? null,
                   gallery: Array.isArray(p.gallery) ? p.gallery : [],
                 },
-              })
+              }),
             );
           } catch {
             /* ignore */
@@ -230,7 +241,7 @@ function ProductMediaManagerBase({ productId, initial, max = 6 }: Props) {
         /* ignore */
       }
     },
-    [productId]
+    [productId],
   );
 
   /* --------------------------------- Render -------------------------------- */

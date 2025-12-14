@@ -22,9 +22,74 @@ export const metadata: Metadata = {
   },
 };
 
+type RequestMetrics = {
+  active: number;
+  expired: number;
+  boosted: number;
+  today: number;
+};
+
+function makeApiUrl(path: string) {
+  const envBase =
+    process.env["NEXT_PUBLIC_APP_URL"] ||
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["APP_URL"] ||
+    process.env["VERCEL_URL"];
+
+  let base = envBase || "http://localhost:3000";
+  if (!base.startsWith("http")) base = `https://${base}`;
+  return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
+}
+
+async function fetchRequestMetrics(): Promise<RequestMetrics | null> {
+  try {
+    const r = await fetch(makeApiUrl("/api/admin/requests/metrics"), {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    if (!r.ok) return null;
+
+    const j: any = await r.json().catch(() => null);
+    if (!j || typeof j !== "object") return null;
+
+    const m = (j.metrics && typeof j.metrics === "object" ? j.metrics : j) as any;
+
+    const active = Number(m.active);
+    const expired = Number(m.expired);
+    const boosted = Number(m.boosted);
+    const today = Number(m.today);
+
+    return {
+      active: Number.isFinite(active) ? active : 0,
+      expired: Number.isFinite(expired) ? expired : 0,
+      boosted: Number.isFinite(boosted) ? boosted : 0,
+      today: Number.isFinite(today) ? today : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function MetricCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-extrabold">{value}</div>
+    </div>
+  );
+}
+
 export default async function AdminHome() {
   // Root admin entrypoint – keep strict SSR guard here.
   await requireAdmin();
+
+  const metrics = await fetchRequestMetrics();
 
   return (
     <div className="space-y-6">
@@ -44,16 +109,39 @@ export default async function AdminHome() {
             >
               Metrics
             </Link>
-            <Link
-              href="/"
-              prefetch={false}
-              className="btn-outline text-sm"
-            >
+            <Link href="/" prefetch={false} className="btn-outline text-sm">
               Home
             </Link>
           </div>
         }
       />
+
+      <div className="space-y-3">
+        <h2 className="text-base font-semibold">Requests</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            label="Active"
+            value={metrics ? String(metrics.active) : "—"}
+          />
+          <MetricCard
+            label="Expired"
+            value={metrics ? String(metrics.expired) : "—"}
+          />
+          <MetricCard
+            label="Boosted"
+            value={metrics ? String(metrics.boosted) : "—"}
+          />
+          <MetricCard
+            label="Today"
+            value={metrics ? String(metrics.today) : "—"}
+          />
+        </div>
+        <div className="text-sm">
+          <Link href="/admin/requests" prefetch={false} className="underline">
+            Manage requests
+          </Link>
+        </div>
+      </div>
 
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <li>

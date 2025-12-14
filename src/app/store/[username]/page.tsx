@@ -8,6 +8,8 @@ import { prisma } from "@/app/lib/prisma";
 import UserAvatar from "@/app/components/UserAvatar";
 import SmartImage from "@/app/components/SmartImage";
 import { makeApiUrl } from "@/app/lib/url";
+import ReviewSummary from "@/app/components/ReviewSummary";
+import ReviewStars from "@/app/components/ReviewStars";
 
 /* ----------------------------- utils ----------------------------- */
 
@@ -20,6 +22,12 @@ function fmtKES(n?: number | null) {
   } catch {
     return `KES ${n}`;
   }
+}
+
+/** Service-facing copy: Contact for quote */
+function fmtServiceKES(n?: number | null) {
+  if (typeof n !== "number" || n <= 0) return "Contact for quote";
+  return fmtKES(n);
 }
 
 function cleanUsername(raw?: string) {
@@ -47,6 +55,65 @@ async function withTimeout<T>(
   const result = await Promise.race([p.catch(() => fallback), timeout]);
   if (tid) clearTimeout(tid);
   return result;
+}
+
+type NextFetchInit = RequestInit & { next?: any };
+
+/**
+ * Next.js server fetch can hang under load (or when an upstream is slow).
+ * For store navigation reliability, enforce a hard timeout and return null on failure.
+ */
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: NextFetchInit,
+  ms: number,
+): Promise<Response | null> {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), ms);
+
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
+type RatingSummary = {
+  average: number | null;
+  count: number;
+};
+
+function aggregateListingRatings(
+  products: Array<{ ratingAverage?: number | null; ratingCount?: number | null }>,
+  services: Array<{ ratingAverage?: number | null; ratingCount?: number | null }>,
+): RatingSummary {
+  let totalStars = 0;
+  let totalCount = 0;
+
+  const all = [...products, ...services];
+  for (const item of all) {
+    const avg =
+      typeof item.ratingAverage === "number" && item.ratingAverage > 0
+        ? item.ratingAverage
+        : null;
+    const count =
+      typeof item.ratingCount === "number" && item.ratingCount > 0
+        ? item.ratingCount
+        : 0;
+
+    if (avg != null && count > 0) {
+      totalStars += avg * count;
+      totalCount += count;
+    }
+  }
+
+  if (!totalCount) {
+    return { average: null, count: 0 };
+  }
+
+  return { average: totalStars / totalCount, count: totalCount };
 }
 
 /* ----------------------------- Metadata ----------------------------- */
@@ -142,6 +209,10 @@ type StoreProduct = {
   category: string | null;
   subcategory: string | null;
   createdAt?: string | null;
+
+  /** Optional precomputed rating summary (from API if available). */
+  ratingAverage?: number | null;
+  ratingCount?: number | null;
 };
 
 type StoreService = StoreProduct;
@@ -246,13 +317,26 @@ export default async function StorePage({
     const tagUser = `user:${userId}:listings`;
     const tagStore = `store:${displayHandle}`;
 
-    prodRes = await fetch(makeApiUrl(`/api/products?${qs}`), {
-      next: { tags: ["products:latest", tagUser, tagStore] },
-    }).catch(() => null as any);
+    const prodUrl = makeApiUrl(`/api/products?${qs}`);
+    const svcUrl = makeApiUrl(`/api/services?${qs}`);
 
-    svcRes = await fetch(makeApiUrl(`/api/services?${qs}`), {
-      next: { tags: ["services:latest", tagUser, tagStore] },
-    }).catch(() => null as any);
+    // IMPORTANT: fetch both in parallel and enforce a hard timeout
+    // so that Store navigation never "hangs" waiting for upstreams.
+    const [pRes, sRes] = await Promise.all([
+      fetchWithTimeout(
+        prodUrl,
+        { next: { tags: ["products:latest", tagUser, tagStore] } },
+        3000,
+      ),
+      fetchWithTimeout(
+        svcUrl,
+        { next: { tags: ["services:latest", tagUser, tagStore] } },
+        3000,
+      ),
+    ]);
+
+    prodRes = pRes;
+    svcRes = sRes;
   }
 
   const prodOk = !!prodRes?.ok;
@@ -317,6 +401,10 @@ export default async function StorePage({
   const totalListings = totalProducts + totalServices;
   const hasAny = totalListings > 0;
 
+  const storeRating: RatingSummary = shouldFetchListings
+    ? aggregateListingRatings(products, services)
+    : { average: null, count: 0 };
+
   const memberSinceYear =
     user.createdAt instanceof Date
       ? user.createdAt.getFullYear()
@@ -324,13 +412,16 @@ export default async function StorePage({
       ? new Date(user.createdAt).getFullYear()
       : null;
 
+  const hasStoreRating =
+    typeof storeRating.average === "number" && storeRating.count > 0;
+
   return (
     <main id="main" className="min-h-[60svh]">
       <section className="container mx-auto space-y-6 px-4 py-6">
         {/* Store header */}
         <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-primary-foreground shadow-xl ring-1 ring-border/40">
           <div className="flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-1 items-center gap-4">
               <UserAvatar
                 src={user.image}
                 alt={`${displayHandle} avatar`}
@@ -357,10 +448,23 @@ export default async function StorePage({
                         .join(", ")}`
                     : ""}
                 </p>
+
+                {/* Seller-level rating summary */}
+                {userId && (
+                  <div className="mt-2 flex items-center gap-3 text-xs">
+                    <ReviewSummary
+                      listingId={userId}
+                      listingType="seller"
+                      average={storeRating.average}
+                      count={storeRating.count}
+                      size="sm"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="mt-2 flex w-full items-center justify-end gap-3 md:mt-0 md:w-auto">
+            <div className="mt-2 flex w-full flex-col items-end gap-2 md:mt-0 md:w-auto">
               {totalListings > 0 && (
                 <div className="inline-flex items-center gap-3 rounded-full bg-background/20 px-4 py-2 text-xs font-medium text-primary-foreground/90">
                   <span>
@@ -432,44 +536,74 @@ export default async function StorePage({
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {products.map((p) => (
-                <Link
-                  key={p.id}
-                  href={`/product/${p.id}`}
-                  className="group"
-                  aria-label={p.name || "Product"}
-                >
-                  <div className="card-surface relative overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
-                    {p.featured && (
-                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
-                        Featured
-                      </span>
-                    )}
-                    <div className="relative h-40 w-full bg-muted">
-                      <SmartImage
-                        src={p.image || undefined}
-                        alt={p.name || "Product image"}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      />
+              {products.map((p) => {
+                const hasRating =
+                  typeof p.ratingAverage === "number" &&
+                  p.ratingAverage > 0 &&
+                  typeof p.ratingCount === "number" &&
+                  p.ratingCount > 0;
+
+                return (
+                  <Link
+                    key={p.id}
+                    href={`/product/${p.id}`}
+                    className="group"
+                    aria-label={p.name || "Product"}
+                  >
+                    <div
+                      className="card-surface relative overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                      data-listing-id={p.id}
+                      data-listing-kind="product"
+                      {...(hasRating
+                        ? {
+                            "data-rating-avg": p.ratingAverage ?? undefined,
+                            "data-rating-count": p.ratingCount ?? undefined,
+                          }
+                        : {})}
+                    >
+                      {p.featured && (
+                        <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
+                          Featured
+                        </span>
+                      )}
+                      <div className="relative h-40 w-full bg-muted">
+                        <SmartImage
+                          src={p.image || undefined}
+                          alt={p.name || "Product image"}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                        />
+                      </div>
+                      <div className="p-4">
+                        <h3 className="line-clamp-1 font-semibold text-foreground">
+                          {p.name || "Unnamed item"}
+                        </h3>
+                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                          {[p.category, p.subcategory]
+                            .filter(Boolean)
+                            .join(" • ") || "—"}
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-[#7dd3fc]">
+                          {fmtKES(p.price)}
+                        </p>
+
+                        {hasRating && (
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <ReviewStars rating={p.ratingAverage || 0} />
+                            <span className="font-medium">
+                              {p.ratingAverage?.toFixed(1)}
+                            </span>
+                            <span className="text-[0.7rem] text-muted-foreground">
+                              ({p.ratingCount})
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="p-4">
-                      <h3 className="line-clamp-1 font-semibold text-foreground">
-                        {p.name || "Unnamed item"}
-                      </h3>
-                      <p className="line-clamp-1 text-xs text-muted-foreground">
-                        {[p.category, p.subcategory]
-                          .filter(Boolean)
-                          .join(" • ") || "—"}
-                      </p>
-                      <p className="mt-1 text-sm font-bold text-[#7dd3fc]">
-                        {fmtKES(p.price)}
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           </section>
         )}
@@ -487,44 +621,74 @@ export default async function StorePage({
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {services.map((s) => (
-                <Link
-                  key={s.id}
-                  href={`/service/${s.id}`}
-                  className="group"
-                  aria-label={s.name || "Service"}
-                >
-                  <div className="card-surface relative overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
-                    {s.featured && (
-                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
-                        Featured
-                      </span>
-                    )}
-                    <div className="relative h-40 w-full bg-muted">
-                      <SmartImage
-                        src={s.image || undefined}
-                        alt={s.name || "Service image"}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      />
+              {services.map((s) => {
+                const hasRating =
+                  typeof s.ratingAverage === "number" &&
+                  s.ratingAverage > 0 &&
+                  typeof s.ratingCount === "number" &&
+                  s.ratingCount > 0;
+
+                return (
+                  <Link
+                    key={s.id}
+                    href={`/service/${s.id}`}
+                    className="group"
+                    aria-label={s.name || "Service"}
+                  >
+                    <div
+                      className="card-surface relative overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                      data-listing-id={s.id}
+                      data-listing-kind="service"
+                      {...(hasRating
+                        ? {
+                            "data-rating-avg": s.ratingAverage ?? undefined,
+                            "data-rating-count": s.ratingCount ?? undefined,
+                          }
+                        : {})}
+                    >
+                      {s.featured && (
+                        <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
+                          Featured
+                        </span>
+                      )}
+                      <div className="relative h-40 w-full bg-muted">
+                        <SmartImage
+                          src={s.image || undefined}
+                          alt={s.name || "Service image"}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                        />
+                      </div>
+                      <div className="p-4">
+                        <h3 className="line-clamp-1 font-semibold text-foreground">
+                          {s.name || "Unnamed service"}
+                        </h3>
+                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                          {[s.category, s.subcategory]
+                            .filter(Boolean)
+                            .join(" • ") || "—"}
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-[#7dd3fc]">
+                          {fmtServiceKES(s.price)}
+                        </p>
+
+                        {hasRating && (
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <ReviewStars rating={s.ratingAverage || 0} />
+                            <span className="font-medium">
+                              {s.ratingAverage?.toFixed(1)}
+                            </span>
+                            <span className="text-[0.7rem] text-muted-foreground">
+                              ({s.ratingCount})
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="p-4">
-                      <h3 className="line-clamp-1 font-semibold text-foreground">
-                        {s.name || "Unnamed service"}
-                      </h3>
-                      <p className="line-clamp-1 text-xs text-muted-foreground">
-                        {[s.category, s.subcategory]
-                          .filter(Boolean)
-                          .join(" • ") || "—"}
-                      </p>
-                      <p className="mt-1 text-sm font-bold text-[#7dd3fc]">
-                        {fmtKES(s.price)}
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           </section>
         )}
