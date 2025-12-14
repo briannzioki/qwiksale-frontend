@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
+import { useSession } from "next-auth/react";
 import ProfilePhotoUploader from "@/app/components/account/ProfilePhotoUploader";
 import { Button } from "@/app/components/Button";
 
@@ -22,6 +23,7 @@ type Me = {
   city: string | null;
   country: string | null;
   image?: string | null;
+  verified?: boolean | null;
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -58,6 +60,7 @@ type NameStatus =
 
 export default function CompleteProfileClient() {
   const sp = useSearchParams();
+  const { data: session, status: sessionStatus } = useSession();
 
   const ret = (() => {
     const raw = sp.get("next") || sp.get("return");
@@ -82,15 +85,59 @@ export default function CompleteProfileClient() {
   const [nameStatus, setNameStatus] = useState<NameStatus>("idle");
   const usernameAbort = useRef<AbortController | null>(null);
 
+  const didLoadMe = useRef(false);
+  const loadAbort = useRef<AbortController | null>(null);
+
   const whatsappNormalized = useMemo(
     () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
     [whatsapp],
   );
 
-  /* -------------------------------- Load /api/me ------------------------------- */
+  const sessionUser: any = (session as any)?.user ?? null;
+  const sessionVerified = Boolean(
+    sessionUser?.verified === true || sessionUser?.isVerified === true,
+  );
+  const effectiveVerified = Boolean(me?.verified === true || sessionVerified);
+
+  const signinHref = `/signin?callbackUrl=${encodeURIComponent(
+    `/account/complete-profile?next=${encodeURIComponent(ret)}`,
+  )}`;
+
+  /* -------------------- Load profile only when authed -------------------- */
   useEffect(() => {
+    // Wait for next-auth to resolve
+    if (sessionStatus === "loading") return;
+
+    // If not authed, do NOT hit /api/me at all (prevents 401 noise)
+    if (sessionStatus !== "authenticated") {
+      setUnauth(true);
+      setLoading(false);
+      return;
+    }
+
+    setUnauth(false);
+
+    // Quick prefill from session while we fetch full profile
+    try {
+      const se = typeof sessionUser?.email === "string" ? sessionUser.email : "";
+      const su =
+        typeof sessionUser?.username === "string" ? sessionUser.username : "";
+      if (se && !email) setEmail(se.trim());
+      if (su && !username) setUsername(su.trim());
+    } catch {
+      /* ignore */
+    }
+
+    if (didLoadMe.current) {
+      setLoading(false);
+      return;
+    }
+    didLoadMe.current = true;
+
     let alive = true;
+    loadAbort.current?.abort();
     const ctrl = new AbortController();
+    loadAbort.current = ctrl;
 
     (async () => {
       try {
@@ -112,7 +159,7 @@ export default function CompleteProfileClient() {
         const j = await r.json().catch(() => null);
         const u: Me | null =
           j?.user && typeof j.user === "object"
-            ? j.user
+            ? (j.user as Me)
             : j && typeof j === "object" && "email" in j
             ? (j as Me)
             : null;
@@ -144,7 +191,8 @@ export default function CompleteProfileClient() {
       alive = false;
       ctrl.abort();
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStatus]);
 
   /* ------------------- Debounced username availability check ------------------- */
   useEffect(() => {
@@ -200,6 +248,11 @@ export default function CompleteProfileClient() {
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
 
+    if (unauth || sessionStatus !== "authenticated") {
+      toast.error("Please sign in to complete your profile.");
+      return;
+    }
+
     const u = username.trim();
     const eMail = email.trim().toLowerCase();
 
@@ -211,11 +264,7 @@ export default function CompleteProfileClient() {
       toast.error("Username must be 3–24 chars (letters, numbers, dot, underscore).");
       return;
     }
-    if (
-      nameStatus === "taken" ||
-      nameStatus === "invalid" ||
-      nameStatus === "checking"
-    ) {
+    if (nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "checking") {
       toast.error(
         nameStatus === "checking"
           ? "Please wait for the username check…"
@@ -226,9 +275,7 @@ export default function CompleteProfileClient() {
       return;
     }
     if (whatsapp && !looksLikeValidKePhone(whatsapp)) {
-      toast.error(
-        "WhatsApp must be a valid KE number (e.g. 07XXXXXXXX or 2547XXXXXXXX).",
-      );
+      toast.error("WhatsApp must be a valid KE number (e.g. 07XXXXXXXX or 2547XXXXXXXX).");
       return;
     }
 
@@ -282,16 +329,13 @@ export default function CompleteProfileClient() {
   const nameHintClass =
     nameStatus === "available"
       ? "text-emerald-700"
-      : nameStatus === "taken" ||
-        nameStatus === "invalid" ||
-        nameStatus === "error"
+      : nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "error"
       ? "text-red-600"
       : "text-[var(--text-muted)]";
 
-  const emailInvalid =
-    email.trim().length > 0 && !looksLikeEmail(email.trim());
+  const emailInvalid = email.trim().length > 0 && !looksLikeEmail(email.trim());
 
-  if (loading) {
+  if (sessionStatus === "loading" || loading) {
     return (
       <div className="container-page py-8 md:py-10">
         <div className="mx-auto max-w-3xl">
@@ -308,28 +352,49 @@ export default function CompleteProfileClient() {
     );
   }
 
-  return (
-    <div className="container-page py-8 md:py-10">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        {/* Alerts */}
-        {unauth && (
+  // If guest, show sign-in prompt and STOP (no background /api/me calls).
+  if (unauth) {
+    return (
+      <div className="container-page py-8 md:py-10">
+        <div className="mx-auto max-w-3xl space-y-4">
           <div
             role="alert"
             className="card-surface border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50"
           >
             Please{" "}
-            <Link
-              className="underline"
-              href={`/signin?callbackUrl=${encodeURIComponent(ret)}`}
-            >
+            <Link className="underline" href={signinHref}>
               sign in
             </Link>{" "}
             to complete your profile.
           </div>
-        )}
 
-        {saved && !unauth && (
-          <div className="card-surface border border-emerald-300/70 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-50">
+          <div className="card-surface p-4 sm:p-6">
+            <h1 className="text-xl font-semibold text-[var(--text-strong)]">
+              Finish setting up your account
+            </h1>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              Sign in to add your username, contact details, and verify your email.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button asChild size="sm" variant="primary">
+                <Link href={signinHref}>Sign in</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href={ret}>Go back</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container-page py-8 md:py-10">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        {/* Alerts */}
+        {saved && (
+          <div className="card-surface border border-emerald-300/70 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-amber-50">
             Profile saved.{" "}
             <Link href={ret} className="underline">
               Continue
@@ -350,8 +415,7 @@ export default function CompleteProfileClient() {
               Finish setting up your account
             </h1>
             <p className="text-sm text-[var(--text-muted)]">
-              A clear username and contact details help buyers and sellers
-              recognise you and get in touch quickly.
+              A clear username and contact details help buyers and sellers recognise you and get in touch quickly.
             </p>
           </header>
 
@@ -360,6 +424,32 @@ export default function CompleteProfileClient() {
             <h2 className="text-sm font-semibold text-[var(--text-strong)]">
               Account
             </h2>
+
+            {!effectiveVerified && (
+              <div className="rounded-xl border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50">
+                <div className="font-semibold">Verify your email</div>
+                <div className="mt-0.5 text-xs text-amber-950/80 dark:text-amber-50/80">
+                  Verified accounts get better trust and unlock the verified badge where applicable.
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="primary">
+                    <Link
+                      href="/account/profile?verify=1"
+                      prefetch={false}
+                      data-testid="complete-profile-verify-email"
+                    >
+                      Verify email
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={ret} prefetch={false}>
+                      Continue without verifying
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label htmlFor="email" className="label">
@@ -399,9 +489,7 @@ export default function CompleteProfileClient() {
                   minLength={3}
                   maxLength={24}
                   aria-invalid={
-                    nameStatus === "taken" || nameStatus === "invalid"
-                      ? true
-                      : undefined
+                    nameStatus === "taken" || nameStatus === "invalid" ? true : undefined
                   }
                   aria-describedby="username-help username-status"
                   disabled={saving}
@@ -411,12 +499,8 @@ export default function CompleteProfileClient() {
                   autoCorrect="off"
                   spellCheck={false}
                 />
-                <p
-                  id="username-help"
-                  className="mt-1 text-xs text-[var(--text-muted)]"
-                >
-                  Shown on your listings. 3–24 chars, letters/numbers/dot/
-                  underscore.
+                <p id="username-help" className="mt-1 text-xs text-[var(--text-muted)]">
+                  Shown on your listings. 3–24 chars, letters/numbers/dot/underscore.
                 </p>
                 {nameHint && (
                   <p
@@ -437,8 +521,7 @@ export default function CompleteProfileClient() {
               Profile photo
             </h2>
             <p className="text-sm text-[var(--text-muted)]">
-              A clear photo helps people recognise you. You can change this any
-              time.
+              A clear photo helps people recognise you. You can change this any time.
             </p>
             <ProfilePhotoUploader initialImage={me?.image ?? null} />
           </section>
@@ -455,9 +538,7 @@ export default function CompleteProfileClient() {
                 placeholder="07XXXXXXXX or 2547XXXXXXXX"
                 value={whatsapp}
                 onChange={(e) => setWhatsapp(e.target.value)}
-                aria-invalid={
-                  !!whatsapp && !looksLikeValidKePhone(whatsapp)
-                }
+                aria-invalid={!!whatsapp && !looksLikeValidKePhone(whatsapp)}
                 disabled={saving}
                 inputMode="tel"
                 autoCorrect="off"
@@ -465,10 +546,7 @@ export default function CompleteProfileClient() {
               />
               <p className="mt-1 text-xs text-[var(--text-muted)]">
                 Will be stored as{" "}
-                <code className="font-mono">
-                  {whatsappNormalized || "—"}
-                </code>
-                .
+                <code className="font-mono">{whatsappNormalized || "—"}</code>.
               </p>
             </div>
           </section>
@@ -541,13 +619,7 @@ export default function CompleteProfileClient() {
               >
                 {saving ? "Saving…" : "Save profile"}
               </Button>
-              <Button
-                asChild
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={saving}
-              >
+              <Button asChild type="button" size="sm" variant="outline" disabled={saving}>
                 <Link href={ret} aria-disabled={saving}>
                   Skip for now
                 </Link>

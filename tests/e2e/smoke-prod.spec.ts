@@ -155,10 +155,7 @@ test.describe("Prod smoke: core public journeys", () => {
     if ((await storeLink.count()) > 0) {
       const hostBefore = new URL(page.url()).host;
 
-      await Promise.all([
-        page.waitForURL(/\/store\//),
-        storeLink.click(),
-      ]);
+      await Promise.all([page.waitForURL(/\/store\//), storeLink.click()]);
 
       const storeUrl = new URL(page.url());
       expect(storeUrl.host).toBe(hostBefore);
@@ -237,10 +234,9 @@ test.describe("Prod smoke: core public journeys", () => {
     const providersRes = await page.request.get("/api/auth/providers", {
       timeout: 15_000,
     });
-    expect(
-      providersRes.ok(),
-      "GET /api/auth/providers should succeed",
-    ).toBe(true);
+    expect(providersRes.ok(), "GET /api/auth/providers should succeed").toBe(
+      true,
+    );
 
     const providersJson = (await providersRes.json().catch(() => null)) as any;
     expect(
@@ -253,19 +249,53 @@ test.describe("Prod smoke: core public journeys", () => {
       "Expected 'google' provider in /api/auth/providers when GOOGLE_CLIENT_ID/SECRET are set.",
     ).toBeTruthy();
 
-    // 2) sign-in endpoint itself should not throw a Configuration error / 500
-    const signInRes = await page.request.get(
-      "/api/auth/signin/google?callbackUrl=%2Fdashboard",
-      { timeout: 15_000, maxRedirects: 0 },
-    );
-    const status = signInRes.status();
-    expect(
-      status,
-      `GET /api/auth/signin/google status should be < 500 (got ${status})`,
-    ).toBeLessThan(500);
+    // 2) Health check the google sign-in flow using the correct CSRF + POST.
+    //    (In Auth.js v5, provider-specific sign-in is POST; GET can yield UnknownAction/Configuration.)
+    const csrfRes = await page.request.get("/api/auth/csrf", {
+      timeout: 15_000,
+    });
+    expect(csrfRes.ok(), "GET /api/auth/csrf should succeed").toBe(true);
 
-    const body = await signInRes.text();
-    expect(body).not.toMatch(/Configuration/i);
+    const csrfJson = (await csrfRes.json().catch(() => null)) as any;
+
+    const csrfTokenRaw =
+      (csrfJson?.csrfToken as unknown) ?? (csrfJson?.csrf?.token as unknown);
+
+    if (typeof csrfTokenRaw !== "string" || !csrfTokenRaw) {
+      throw new Error("Missing csrfToken from GET /api/auth/csrf");
+    }
+    const csrfToken: string = csrfTokenRaw;
+
+    const callbackUrl = "/dashboard";
+
+    const signInPostRes = await page.request.post("/api/auth/signin/google", {
+      timeout: 15_000,
+      maxRedirects: 0,
+      form: { csrfToken, callbackUrl },
+    });
+
+    const postStatus = signInPostRes.status();
+    expect(
+      postStatus,
+      `POST /api/auth/signin/google should redirect (got ${postStatus})`,
+    ).toBeGreaterThanOrEqual(300);
+    expect(postStatus).toBeLessThan(400);
+
+    const postHeaders = signInPostRes.headers();
+    const location =
+      (postHeaders["location"] as string | undefined) ??
+      (postHeaders["Location"] as string | undefined) ??
+      "";
+
+    expect(
+      location,
+      "Expected a Location header from POST /api/auth/signin/google",
+    ).toBeTruthy();
+
+    expect(
+      location,
+      `Expected redirect to Google OAuth (got Location: ${location})`,
+    ).toMatch(/^https:\/\/accounts\.google\.com\//);
 
     // 3) The /signin page actually shows the Google button when provider exists
     const resp = await page.goto("/signin", {

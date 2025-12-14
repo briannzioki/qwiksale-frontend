@@ -58,7 +58,9 @@ type AnalyticsEvent =
 
 type AnalyticsPayload = Record<string, unknown>;
 
-type AnalyticsContextValue = { track: (event: AnalyticsEvent, payload?: AnalyticsPayload) => void };
+type AnalyticsContextValue = {
+  track: (event: AnalyticsEvent, payload?: AnalyticsPayload) => void;
+};
 
 const AnalyticsContext = createContext<AnalyticsContextValue | null>(null);
 
@@ -103,8 +105,8 @@ function applyHtmlClass(theme: ResolvedTheme) {
   style.setAttribute("data-disable-transitions", "true");
   style.appendChild(
     document.createTextNode(
-      `*{transition:none!important}*::before{transition:none!important}*::after{transition:none!important}`
-    )
+      `*{transition:none!important}*::before{transition:none!important}*::after{transition:none!important}`,
+    ),
   );
   document.head.appendChild(style);
 
@@ -202,7 +204,7 @@ function useThemeInternal({
 
   return useMemo(
     () => ({ theme, resolvedTheme, setTheme, toggleTheme }),
-    [theme, resolvedTheme, setTheme, toggleTheme]
+    [theme, resolvedTheme, setTheme, toggleTheme],
   );
 }
 
@@ -266,6 +268,7 @@ export default function Providers({
       session={(session ?? null) as Session | null}
       refetchInterval={safeInterval}
       refetchOnWindowFocus={!!refetchOnWindowFocus}
+      basePath="/api/auth"
     >
       <ThemeProviderInline
         defaultTheme={defaultTheme}

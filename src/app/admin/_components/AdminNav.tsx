@@ -75,6 +75,11 @@ const REQUIRED_ITEMS: NavItem[] = [
     label: "Listings",
     icon: "grid",
   },
+  {
+    href: "/admin/requests",
+    label: "Requests",
+    icon: "eye",
+  },
 ];
 
 export const ADMIN_NAV_REQUIRED_ITEMS: readonly NavItem[] = REQUIRED_ITEMS;

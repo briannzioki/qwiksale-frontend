@@ -1,8 +1,9 @@
+// src/app/components/MediaManager.tsx
 "use client";
 // src/app/components/MediaManager.tsx
 
 import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "@/app/components/ToasterClient";
 import { Icon } from "@/app/components/Icon";
 
@@ -55,10 +56,7 @@ const uid = () =>
 
 function coerceInitial(list: MediaManagerItemIn[]): InternalItem[] {
   const arr = Array.isArray(list) ? [...list] : [];
-  arr.sort(
-    (a, b) =>
-      (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id),
-  );
+  arr.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id));
   const hasCover = arr.some((x) => x.isCover);
   if (!hasCover && arr.length > 0) arr[0]!.isCover = true;
   return arr.map((x, i): InternalItem => ({
@@ -96,9 +94,7 @@ export default function MediaManager({
   maxSizeMB = 10,
   className = "",
 }: Props) {
-  const [items, setItems] = useState<InternalItem[]>(
-    () => coerceInitial(initial),
-  );
+  const [items, setItems] = useState<InternalItem[]>(() => coerceInitial(initial));
   const [selectedIdx, setSelectedIdx] = useState<number>(0); // active preview
   const [, setFocusedIdx] = useState<number>(-1); // kept for keyboard flow; value not read
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -112,9 +108,7 @@ export default function MediaManager({
   const [dzOver, setDzOver] = useState(false);
 
   // Thumbnail refs for scrollIntoView
-  const thumbRefs = useRef<
-    Record<string, HTMLButtonElement | null>
-  >({});
+  const thumbRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const replaceItems = useCallback((next: InternalItem[]) => {
     setItems((prev) => {
@@ -134,18 +128,14 @@ export default function MediaManager({
 
   const emitChange = useCallback(
     (next: InternalItem[], announce?: string) => {
-      const norm: InternalItem[] = next.map(
-        (x, i): InternalItem => ({
-          ...x,
-          sort: i,
-          isCover: i === 0,
-        }),
-      );
+      const norm: InternalItem[] = next.map((x, i): InternalItem => ({
+        ...x,
+        sort: i,
+        isCover: i === 0,
+      }));
       replaceItems(norm);
       onChange?.(stripInternal(norm));
-      setSelectedIdx((i) =>
-        Math.max(0, Math.min(i, Math.max(0, norm.length - 1))),
-      );
+      setSelectedIdx((i) => Math.max(0, Math.min(i, Math.max(0, norm.length - 1))));
       if (announce) toast.success(announce);
     },
     [onChange, replaceItems],
@@ -160,23 +150,17 @@ export default function MediaManager({
   const validateFiles = useCallback(
     (files: File[]): { ok: File[]; err: string } => {
       if (!files.length) return { ok: [], err: "" };
-      const mb = (n: number) =>
-        (n / (1024 * 1024)).toFixed(1);
+      const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
       const maxBytes = maxSizeMB * 1024 * 1024;
       const problems: string[] = [];
       const ok: File[] = [];
       for (const f of files) {
-        if (
-          accept.includes("image/") &&
-          !f.type.startsWith("image/")
-        ) {
+        if (accept.includes("image/") && !f.type.startsWith("image/")) {
           problems.push(`"${f.name}" is not an image.`);
           continue;
         }
         if (f.size > maxBytes) {
-          problems.push(
-            `"${f.name}" is ${mb(f.size)}MB (max ${maxSizeMB}MB).`,
-          );
+          problems.push(`"${f.name}" is ${mb(f.size)}MB (max ${maxSizeMB}MB).`);
           continue;
         }
         ok.push(f);
@@ -208,28 +192,21 @@ export default function MediaManager({
       }
       if (ok.length === 0) return;
 
-      const newItems: InternalItem[] = ok.map(
-        (file, i): InternalItem => {
-          const objUrl: string = URL.createObjectURL(file);
-          return {
-            _localId: uid(),
-            url: objUrl,
-            _objectUrl: objUrl,
-            file,
-            _isNew: true,
-            isCover: false,
-            sort: items.length + i,
-            id: undefined,
-          };
-        },
-      );
+      const newItems: InternalItem[] = ok.map((file, i): InternalItem => {
+        const objUrl: string = URL.createObjectURL(file);
+        return {
+          _localId: uid(),
+          url: objUrl,
+          _objectUrl: objUrl,
+          file,
+          _isNew: true,
+          isCover: false,
+          sort: items.length + i,
+          id: undefined,
+        };
+      });
       const next: InternalItem[] = [...items, ...newItems];
-      emitChange(
-        next,
-        `Added ${ok.length} photo${
-          ok.length > 1 ? "s" : ""
-        }.`,
-      );
+      emitChange(next, `Added ${ok.length} photo${ok.length > 1 ? "s" : ""}.`);
       setSelectedIdx(items.length);
       setFocusedIdx(items.length);
     },
@@ -243,18 +220,12 @@ export default function MediaManager({
       const target = items[i]!;
       if (!confirm("Remove this photo?")) return;
 
-      if (target._objectUrl)
-        URL.revokeObjectURL(target._objectUrl);
+      if (target._objectUrl) URL.revokeObjectURL(target._objectUrl);
 
-      const next: InternalItem[] = items.filter(
-        (_, idx) => idx !== i,
-      );
+      const next: InternalItem[] = items.filter((_, idx) => idx !== i);
       emitChange(next, "Photo removed.");
       setSelectedIdx((sel) =>
-        Math.max(
-          0,
-          Math.min(sel - (sel > i ? 1 : 0), next.length - 1),
-        ),
+        Math.max(0, Math.min(sel - (sel > i ? 1 : 0), next.length - 1)),
       );
       if (target.id) onRemove?.(target.id);
     },
@@ -269,8 +240,7 @@ export default function MediaManager({
       const picked: InternalItem = next[i]!;
       next.splice(i, 1);
       next.unshift({ ...picked, isCover: true });
-      for (let k = 1; k < next.length; k++)
-        next[k] = { ...next[k]!, isCover: false };
+      for (let k = 1; k < next.length; k++) next[k] = { ...next[k]!, isCover: false };
       emitChange(next, "Cover updated.");
       if (picked.id) onMakeCover?.(picked.id);
       setSelectedIdx(0);
@@ -295,10 +265,7 @@ export default function MediaManager({
       if (onReorder) {
         const ids = next
           .map((x) => x.id)
-          .filter(
-            (s): s is string =>
-              typeof s === "string" && s.length > 0,
-          );
+          .filter((s): s is string => typeof s === "string" && s.length > 0);
         if (ids.length) onReorder(ids);
       }
     },
@@ -306,10 +273,7 @@ export default function MediaManager({
   );
 
   // ----- DnD on thumbnails -----
-  const onDragStart = useCallback(
-    (i: number) => () => setDragIdx(i),
-    [],
-  );
+  const onDragStart = useCallback((i: number) => () => setDragIdx(i), []);
   const onDragOver = useCallback(
     (i: number) => (e: React.DragEvent) => {
       e.preventDefault();
@@ -336,10 +300,7 @@ export default function MediaManager({
       if (onReorder) {
         const ids = next
           .map((x) => x.id)
-          .filter(
-            (s): s is string =>
-              typeof s === "string" && s.length > 0,
-          );
+          .filter((s): s is string => typeof s === "string" && s.length > 0);
         if (ids.length) onReorder(ids);
       }
       setSelectedIdx(i);
@@ -360,9 +321,7 @@ export default function MediaManager({
       }
       if (e.key === "ArrowRight") {
         e.preventDefault();
-        setSelectedIdx((i) =>
-          Math.min(items.length - 1, i + 1),
-        );
+        setSelectedIdx((i) => Math.min(items.length - 1, i + 1));
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -383,31 +342,22 @@ export default function MediaManager({
   useEffect(() => {
     return () => {
       for (const it of items) {
-        if (it._objectUrl)
-          URL.revokeObjectURL(it._objectUrl);
+        if (it._objectUrl) URL.revokeObjectURL(it._objectUrl);
       }
     };
   }, [items]);
 
   // External dropzone
-  const onDzDragOver = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDzOver(true);
-    },
-    [],
-  );
-  const onDzDragLeave = useCallback(
-    () => setDzOver(false),
-    [],
-  );
+  const onDzDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDzOver(true);
+  }, []);
+  const onDzDragLeave = useCallback(() => setDzOver(false), []);
   const onDzDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDzOver(false);
-      const files = Array.from(
-        e.dataTransfer.files || [],
-      );
+      const files = Array.from(e.dataTransfer.files || []);
       if (!files.length) return;
 
       const allowed = Math.max(0, max - items.length);
@@ -425,28 +375,21 @@ export default function MediaManager({
       }
       if (ok.length === 0) return;
 
-      const newItems: InternalItem[] = ok.map(
-        (file, i): InternalItem => {
-          const objUrl: string = URL.createObjectURL(file);
-          return {
-            _localId: uid(),
-            url: objUrl,
-            _objectUrl: objUrl,
-            file,
-            _isNew: true,
-            isCover: false,
-            sort: items.length + i,
-            id: undefined,
-          };
-        },
-      );
+      const newItems: InternalItem[] = ok.map((file, i): InternalItem => {
+        const objUrl: string = URL.createObjectURL(file);
+        return {
+          _localId: uid(),
+          url: objUrl,
+          _objectUrl: objUrl,
+          file,
+          _isNew: true,
+          isCover: false,
+          sort: items.length + i,
+          id: undefined,
+        };
+      });
       const next: InternalItem[] = [...items, ...newItems];
-      emitChange(
-        next,
-        `Added ${ok.length} photo${
-          ok.length > 1 ? "s" : ""
-        }.`,
-      );
+      emitChange(next, `Added ${ok.length} photo${ok.length > 1 ? "s" : ""}.`);
       setSelectedIdx(items.length);
       setFocusedIdx(items.length);
     },
@@ -476,9 +419,7 @@ export default function MediaManager({
     >
       {/* Header row */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-foreground">
-          Media
-        </h3>
+        <h3 className="text-lg font-semibold text-foreground">Media</h3>
         <div className="text-xs text-muted-foreground">
           {items.length}/{max}
         </div>
@@ -497,17 +438,11 @@ export default function MediaManager({
           aria-label="Drop photos here or use the Add photos button"
         >
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/15 via-emerald-500/15 to-sky-500/15">
-            <Icon
-              name="upload"
-              className="text-muted-foreground"
-            />
+            <Icon name="upload" className="text-muted-foreground" />
           </div>
-          <p className="font-medium text-foreground">
-            Drag & drop photos here
-          </p>
+          <p className="font-medium text-foreground">Drag & drop photos here</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            PNG/JPG up to {maxSizeMB}MB each. First photo
-            becomes the cover.
+            PNG/JPG up to {maxSizeMB}MB each. First photo becomes the cover.
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
             <button
@@ -521,11 +456,7 @@ export default function MediaManager({
             <button
               type="button"
               className="rounded-xl border border-border px-3 py-2 text-sm text-foreground hover:bg-muted"
-              onClick={() =>
-                toast(
-                  "Tip: You can also paste images from clipboard",
-                )
-              }
+              onClick={() => toast("Tip: You can also paste images from clipboard")}
             >
               Tips
             </button>
@@ -541,7 +472,7 @@ export default function MediaManager({
             ].join(" ")}
           >
             <div
-              className="relative aspect-[4/3] sm:aspect:[16/10] outline-none"
+              className="mm-preview relative outline-none"
               tabIndex={0}
               onKeyDown={onPreviewKeyDown}
               aria-label="Selected photo preview"
@@ -569,9 +500,7 @@ export default function MediaManager({
               {/* Prev / Next controls */}
               <button
                 type="button"
-                onClick={() =>
-                  setSelectedIdx((i) => Math.max(0, i - 1))
-                }
+                onClick={() => setSelectedIdx((i) => Math.max(0, i - 1))}
                 disabled={selectedIdx === 0}
                 className="btn-outline absolute left-3 top-1/2 -translate-y-1/2 px-2 py-1 text-xs"
                 aria-label="Previous photo"
@@ -582,9 +511,7 @@ export default function MediaManager({
               <button
                 type="button"
                 onClick={() =>
-                  setSelectedIdx((i) =>
-                    Math.min(items.length - 1, i + 1),
-                  )
+                  setSelectedIdx((i) => Math.min(items.length - 1, i + 1))
                 }
                 disabled={selectedIdx === items.length - 1}
                 className="btn-outline absolute right-3 top-1/2 -translate-y-1/2 px-2 py-1 text-xs"
@@ -636,14 +563,9 @@ export default function MediaManager({
               <ul
                 className="no-scrollbar flex gap-2 overflow-x-auto p-2"
                 aria-label="Photo thumbnails"
-                onWheel={(
-                  e: React.WheelEvent<HTMLUListElement>,
-                ) => {
+                onWheel={(e: React.WheelEvent<HTMLUListElement>) => {
                   const el = e.currentTarget;
-                  if (
-                    Math.abs(e.deltaY) >
-                    Math.abs(e.deltaX)
-                  ) {
+                  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
                     el.scrollLeft += e.deltaY;
                   }
                 }}
@@ -676,22 +598,12 @@ export default function MediaManager({
                           isActive
                             ? "border-transparent ring-2 ring-[#39a0ca]"
                             : "border-border hover:ring-1 hover:ring-[#39a0ca]/60",
-                          isOver
-                            ? "outline outline-2 outline-[#39a0ca]"
-                            : "",
+                          isOver ? "outline outline-2 outline-[#39a0ca]" : "",
                         ].join(" ")}
-                        title={
-                          i === 0
-                            ? "Cover"
-                            : `Photo #${i + 1}`
-                        }
+                        title={i === 0 ? "Cover" : `Photo #${i + 1}`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={it.url}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
+                        <img src={it.url} alt="" className="h-full w-full object-cover" />
                       </button>
 
                       {/* tiny badge for cover */}
@@ -710,8 +622,8 @@ export default function MediaManager({
           {/* Tips row */}
           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <Icon name="info" aria-hidden />
-            ← / → to switch • Enter/Home = make cover • ⌫ = remove
-            • Drag thumbnails to reorder
+            ← / → to switch • Enter/Home = make cover • ⌫ = remove • Drag thumbnails
+            to reorder
           </div>
         </>
       )}
@@ -736,11 +648,7 @@ export default function MediaManager({
           onChange={onFiles}
         />
 
-        {errorMsg && (
-          <span className="text-xs text-red-600">
-            {errorMsg}
-          </span>
-        )}
+        {errorMsg && <span className="text-xs text-red-600">{errorMsg}</span>}
 
         <span className="ml-auto text-xs text-muted-foreground">
           PNG/JPG • up to {maxSizeMB}MB • max {max} photos
@@ -755,6 +663,14 @@ export default function MediaManager({
           }
           100% {
             transform: translateX(200%);
+          }
+        }
+        .mm-preview {
+          aspect-ratio: 4 / 3;
+        }
+        @media (min-width: 640px) {
+          .mm-preview {
+            aspect-ratio: 16 / 10;
           }
         }
         .no-scrollbar::-webkit-scrollbar {

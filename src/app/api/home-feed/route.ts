@@ -17,8 +17,8 @@ import { jsonPublic } from "@/app/api/_lib/responses";
  * - Stable tie-breaks: featured desc → createdAt desc → id desc.
  */
 
-const VER = "vHOME-FEED-004";
-const SOFT_TIMEOUT_MS = 1000;
+const VER = "vHOME-FEED-005";
+const SOFT_TIMEOUT_MS = 2200;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 48;
 
@@ -89,7 +89,12 @@ function attach(h: Headers) {
   h.set("Vary", "Authorization, Cookie, Accept-Encoding");
 }
 
-function toInt(v: string | null | undefined, d: number, min: number, max: number) {
+function toInt(
+  v: string | null | undefined,
+  d: number,
+  min: number,
+  max: number,
+) {
   if (v == null || v.trim() === "") return d;
   const n = Number(v);
   if (!Number.isFinite(n)) return d;
@@ -130,12 +135,12 @@ function rejectingTimeout<T = never>(ms: number): Promise<T> {
   return new Promise((_, r) => setTimeout(() => r(new Error("timeout")), ms));
 }
 
-function iso(x: unknown): string {
+function toIso(x: unknown): string {
   if (!x) return "";
   if (x instanceof Date) return x.toISOString();
   const s = String(x);
-  const d = Date.parse(s);
-  return Number.isFinite(d) ? new Date(d).toISOString() : "";
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? new Date(t).toISOString() : "";
 }
 
 /* --------------------------------- Query --------------------------------- */
@@ -144,12 +149,23 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
 
   // mode
-  const tRaw = (url.searchParams.get("t") || url.searchParams.get("tab") || "all").toLowerCase();
-  const mode: Mode = tRaw === "products" || tRaw === "services" ? (tRaw as Mode) : "all";
+  const tRaw = (
+    url.searchParams.get("t") ||
+    url.searchParams.get("tab") ||
+    "all"
+  ).toLowerCase();
+  const mode: Mode =
+    tRaw === "products" || tRaw === "services" ? (tRaw as Mode) : "all";
 
   // search & filters
   const q = (url.searchParams.get("q") || "").trim().slice(0, 64);
-  const tokens = q ? q.split(/\s+/).map((s) => s.trim()).filter((s) => s.length > 1).slice(0, 5) : [];
+  const tokens = q
+    ? q
+        .split(/\s+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 1)
+        .slice(0, 5)
+    : [];
 
   const category = optStr(url.searchParams.get("category"));
   const subcategory = optStr(url.searchParams.get("subcategory"));
@@ -166,8 +182,18 @@ export async function GET(req: NextRequest) {
 
   // paging / sizing — prefer `limit` if present
   const page = toInt(url.searchParams.get("page"), 1, 1, 100_000);
-  const fallbackPageSize = toInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
-  const limit = toInt(url.searchParams.get("limit"), fallbackPageSize, 1, MAX_PAGE_SIZE);
+  const fallbackPageSize = toInt(
+    url.searchParams.get("pageSize"),
+    DEFAULT_PAGE_SIZE,
+    1,
+    MAX_PAGE_SIZE,
+  );
+  const limit = toInt(
+    url.searchParams.get("limit"),
+    fallbackPageSize,
+    1,
+    MAX_PAGE_SIZE,
+  );
 
   // sort
   const sort = toSort(url.searchParams.get("sort"));
@@ -178,12 +204,24 @@ export async function GET(req: NextRequest) {
 
   const priceClause = () => {
     if (minPriceStr === null && maxPriceStr === null) return undefined;
-    const min = minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
-    const max = maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
+
+    const min =
+      minPriceStr !== null
+        ? toInt(minPriceStr, 0, 0, 9_999_999)
+        : undefined;
+    const max =
+      maxPriceStr !== null
+        ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999)
+        : undefined;
+
     const clause: { gte?: number; lte?: number } = {};
     if (typeof min === "number") clause.gte = min;
     if (typeof max === "number") clause.lte = max;
-    return { clause, includeNulls: !min || min === 0 };
+
+    // If caller didn’t set a meaningful floor, we keep “price: null” items.
+    const includeNulls = minPriceStr === null || min === 0;
+
+    return { clause, includeNulls };
   };
 
   const statusWhere = (tableKey = "status") => {
@@ -211,8 +249,7 @@ export async function GET(req: NextRequest) {
 
     const p = priceClause();
     if (p) {
-      if (p.includeNulls) AND.push({ OR: [{ price: null }, { price: p.clause }] });
-      else AND.push({ price: p.clause });
+      AND.push(p.includeNulls ? { OR: [{ price: null }, { price: p.clause }] } : { price: p.clause });
     }
 
     if (sort === "price_asc" || sort === "price_desc") AND.push({ price: { not: null } });
@@ -237,8 +274,7 @@ export async function GET(req: NextRequest) {
 
     const p = priceClause();
     if (p) {
-      if (p.includeNulls) AND.push({ OR: [{ price: null }, { price: p.clause }] });
-      else AND.push({ price: p.clause });
+      AND.push(p.includeNulls ? { OR: [{ price: null }, { price: p.clause }] } : { price: p.clause });
     }
 
     if (sort === "price_asc" || sort === "price_desc") AND.push({ price: { not: null } });
@@ -250,14 +286,16 @@ export async function GET(req: NextRequest) {
     if (sort === "price_asc") return [{ price: "asc" }, { createdAt: "desc" }, { id: "desc" }];
     if (sort === "price_desc") return [{ price: "desc" }, { createdAt: "desc" }, { id: "desc" }];
     if (sort === "featured") return [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }];
+
     const isSearchLike = !!q || !!category || !!subcategory || (kind === "product" && !!brand);
     return isSearchLike
       ? [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }]
       : [{ createdAt: "desc" }, { id: "desc" }];
   };
 
-  const doProducts = async (take: number, skip: number): Promise<ProductRow[]> => {
+  const doProducts = async (take: number, skip: number): Promise<any[]> => {
     const where = makeProductWhere();
+
     const rows = (await prisma.product.findMany({
       where,
       select: productSelect,
@@ -272,6 +310,7 @@ export async function GET(req: NextRequest) {
       const gallery = Array.isArray(p.gallery) ? p.gallery.filter(Boolean) : [];
       const image = (p.image as string | null) ?? (gallery[0] ?? null);
       const id = String(p.id);
+
       return {
         type: "product" as const,
         id,
@@ -285,22 +324,20 @@ export async function GET(req: NextRequest) {
         image,
         featured: !!p.featured,
         location: p.location ?? null,
-        createdAt: iso(p.createdAt),
+        createdAt: toIso(p.createdAt),
       };
-    }) as any;
+    });
   };
 
-  const ServiceModel = (prisma as any).service ?? (prisma as any).services ?? null;
-
-  const doServices = async (take: number, skip: number): Promise<ServiceRow[]> => {
-    if (!ServiceModel?.findMany) return [] as ServiceRow[];
+  const doServices = async (take: number, skip: number): Promise<any[]> => {
     const where = makeServiceWhere();
-    const rows = (await ServiceModel.findMany({
+
+    const rows = (await prisma.service.findMany({
       where,
       select: serviceSelect,
       orderBy: orderFor("service"),
       skip,
-      take: take + 1,
+      take: take + 1, // probe
     })) as unknown as ServiceRow[];
 
     const data = rows.length > take ? rows.slice(0, take) : rows;
@@ -309,6 +346,7 @@ export async function GET(req: NextRequest) {
       const gallery = Array.isArray(s.gallery) ? s.gallery.filter(Boolean) : [];
       const image = (s.image as string | null) ?? (gallery[0] ?? null);
       const id = String(s.id);
+
       return {
         type: "service" as const,
         id,
@@ -320,28 +358,29 @@ export async function GET(req: NextRequest) {
         image,
         featured: !!s.featured,
         location: s.location ?? null,
-        createdAt: iso(s.createdAt),
+        createdAt: toIso(s.createdAt),
       };
-    }) as any;
+    });
   };
 
   try {
-    let items: Array<Record<string, unknown>> = [];
-    let productsArr: ProductRow[] = [];
-    let servicesArr: ServiceRow[] = [];
+    let items: any[] = [];
+    let productsArr: any[] = [];
+    let servicesArr: any[] = [];
 
-    // Skip is classic page math (still honored if someone passes page>1)
     const skip = (page - 1) * limit;
 
     if (mode === "products") {
-      productsArr = await Promise.race([doProducts(limit, skip), rejectingTimeout(SOFT_TIMEOUT_MS)]).catch(
-        () => [] as ProductRow[]
-      );
+      productsArr = await Promise.race([
+        doProducts(limit, skip),
+        rejectingTimeout(SOFT_TIMEOUT_MS),
+      ]).catch(() => []);
       items = productsArr;
     } else if (mode === "services") {
-      servicesArr = await Promise.race([doServices(limit, skip), rejectingTimeout(SOFT_TIMEOUT_MS)]).catch(
-        () => [] as ServiceRow[]
-      );
+      servicesArr = await Promise.race([
+        doServices(limit, skip),
+        rejectingTimeout(SOFT_TIMEOUT_MS),
+      ]).catch(() => []);
       items = servicesArr;
     } else {
       // t=all → ensure BOTH kinds show up:
@@ -350,12 +389,15 @@ export async function GET(req: NextRequest) {
       const takeProducts = half + over; // slight bias to products if odd
       const takeServices = half;
 
-      const p = Promise.race([doProducts(takeProducts + 2, skip), rejectingTimeout(SOFT_TIMEOUT_MS)]).catch(
-        () => [] as ProductRow[]
-      );
-      const s = Promise.race([doServices(takeServices + 2, skip), rejectingTimeout(SOFT_TIMEOUT_MS)]).catch(
-        () => [] as ServiceRow[]
-      );
+      const p = Promise.race([
+        doProducts(takeProducts + 2, skip),
+        rejectingTimeout(SOFT_TIMEOUT_MS),
+      ]).catch(() => []);
+      const s = Promise.race([
+        doServices(takeServices + 2, skip),
+        rejectingTimeout(SOFT_TIMEOUT_MS),
+      ]).catch(() => []);
+
       const [a, b] = await Promise.all([p, s]);
 
       productsArr = a;
@@ -365,9 +407,11 @@ export async function GET(req: NextRequest) {
       items = [...a, ...b].sort((x: any, y: any) => {
         const f = Number(!!y.featured) - Number(!!x.featured);
         if (f !== 0) return f;
+
         const dx = Date.parse(String(x.createdAt ?? "")) || 0;
         const dy = Date.parse(String(y.createdAt ?? "")) || 0;
         if (dy !== dx) return dy - dx;
+
         return String(y.id).localeCompare(String(x.id));
       });
 
@@ -396,14 +440,23 @@ export async function GET(req: NextRequest) {
       },
     };
 
-    // ✅ no-store
     const res = jsonPublic(payload, 0);
     attach(res.headers);
     return res;
   } catch {
     const res = jsonPublic(
-      { mode, page, pageSize: limit, total: 0, totalPages: 1, items: [], products: [], services: [], debug: { error: "timeout" } },
-      0
+      {
+        mode,
+        page,
+        pageSize: limit,
+        total: 0,
+        totalPages: 1,
+        items: [],
+        products: [],
+        services: [],
+        debug: { error: "timeout" },
+      },
+      0,
     );
     attach(res.headers);
     res.headers.set("X-Timeout", "1");

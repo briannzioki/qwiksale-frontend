@@ -1,4 +1,6 @@
+// src/app/components/ListingCard.tsx
 "use client";
+
 // src/app/components/ListingCard.tsx
 
 import * as React from "react";
@@ -8,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/app/components/Icon";
 import { Badge } from "@/app/components/Badge";
 import { Button } from "@/app/components/Button";
+import ReviewStars from "@/app/components/ReviewStars";
 
 type Kind = "product" | "service";
 
@@ -26,6 +29,10 @@ export type ListingCardProps = {
   featured?: boolean;
   className?: string;
 
+  /** Optional rating summary for this listing. */
+  ratingAverage?: number | null;
+  ratingCount?: number | null;
+
   /** Optional edit destination (enables Edit button in footer when present). */
   editHref?: string;
   /** Optional custom label for Edit button (defaults to "Edit"). */
@@ -35,14 +42,36 @@ export type ListingCardProps = {
   onToggleSaveAction?: (next: boolean) => void | Promise<void>;
   onViewAction?: () => void | Promise<void>;
   onEditAction?: () => void | Promise<void>;
+
+  /**
+   * Optional donate / tip CTA hook.
+   * If provided, a "Support" button will appear in the footer and call this
+   * without navigating away from the card.
+   */
+  onDonateAction?: () => void | Promise<void>;
 };
 
 function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
-function formatPrice(value: number | string, currency = "KES") {
+/**
+ * Unified price formatter for listings.
+ * - Products: "Contact for price" for non-positive/invalid numbers.
+ * - Services: "Contact for quote" for non-positive/invalid numbers.
+ * - If a string is passed, it is returned as-is (caller override).
+ */
+function formatPrice(
+  value: number | string,
+  currency: string = "KES",
+  kind: Kind = "product",
+) {
   if (typeof value === "string") return value;
+
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return kind === "service" ? "Contact for quote" : "Contact for price";
+  }
+
   try {
     return new Intl.NumberFormat("en-KE", {
       style: "currency",
@@ -68,15 +97,29 @@ export default function ListingCard({
   conditionLabel,
   featured = false,
   className,
+  ratingAverage,
+  ratingCount,
   editHref,
   editLabel,
   onToggleSaveAction,
   onViewAction,
   onEditAction,
+  onDonateAction,
 }: ListingCardProps) {
   const router = useRouter();
   const [isSaved, setIsSaved] = React.useState(!!saved);
   const [busy, setBusy] = React.useState(false);
+  const [donating, setDonating] = React.useState(false);
+
+  const priceText = formatPrice(price, currency, kind);
+  const showEdit = !!editHref;
+  const showDonate = typeof onDonateAction === "function";
+
+  const hasRating =
+    typeof ratingAverage === "number" &&
+    ratingAverage > 0 &&
+    typeof ratingCount === "number" &&
+    ratingCount > 0;
 
   async function handleSaveToggle(e: React.MouseEvent) {
     e.preventDefault();
@@ -118,30 +161,43 @@ export default function ListingCard({
     router.push(dest);
   }
 
-  const priceText = formatPrice(price, currency);
-  const showEdit = !!editHref;
+  async function handleDonateClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!onDonateAction || donating) return;
+    try {
+      setDonating(true);
+      await onDonateAction();
+    } catch {
+      // ignore failures; parent can handle errors/toasts
+    } finally {
+      setDonating(false);
+    }
+  }
 
   return (
     <article
       className={cn(
         "group relative overflow-hidden rounded-2xl border bg-[var(--bg-elevated)] text-[var(--text)]",
         "border-[var(--border-subtle)] transition hover:border-[var(--border)]",
-        featured && "ring-1 ring-brandBlue/30",
+        featured && "ring-1 ring-focus",
         className,
       )}
       data-listing-id={id}
       data-listing-kind={kind}
+      {...(hasRating
+        ? {
+            "data-rating-avg": ratingAverage,
+            "data-rating-count": ratingCount,
+          }
+        : {})}
       role="article"
     >
       {/* Single canonical Link for the main click surface */}
-      <Link
-        href={href}
-        prefetch={false}
-        aria-labelledby={`listing-${id}-title`}
-      >
+      <Link href={href} prefetch={false} aria-labelledby={`listing-${id}-title`}>
         {/* Cover */}
         <div className="relative overflow-hidden">
-          <div className="aspect-[4/3] w-full">
+          <div className="w-full" style={{ aspectRatio: "4 / 3" }}>
             {imageUrl ? (
               <Image
                 src={imageUrl}
@@ -156,10 +212,7 @@ export default function ListingCard({
               />
             ) : (
               <div className="grid h-full w-full place-items-center bg-muted">
-                <Icon
-                  name="image"
-                  className="opacity-40 text-muted-foreground"
-                />
+                <Icon name="image" className="opacity-40 text-muted-foreground" />
               </div>
             )}
           </div>
@@ -174,8 +227,9 @@ export default function ListingCard({
               "absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full",
               "border border-border/60 bg-card/80 text-[var(--text)] shadow-sm backdrop-blur-md",
               "transition hover:bg-card",
-              isSaved && "ring-2 ring-brandPink/40",
+              isSaved && "ring-2 ring-focus",
             )}
+            disabled={busy}
           >
             <Icon
               name="heart"
@@ -203,11 +257,7 @@ export default function ListingCard({
             <div className="flex items-center gap-1.5 text-xs opacity-90">
               {verified ? (
                 <>
-                  <Icon
-                    name="verified"
-                    className="text-emerald-300"
-                    aria-hidden
-                  />
+                  <Icon name="verified" className="text-emerald-300" aria-hidden />
                   <span className="sr-only">Verified</span>
                 </>
               ) : null}
@@ -233,21 +283,49 @@ export default function ListingCard({
           </div>
         </div>
 
-        {/* Footer row: badges + View/Edit actions */}
+        {/* Footer row: rating + badges + View/Edit/Support actions */}
         <div className="flex items-center justify-between gap-2 px-3 py-3">
-          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-            {verified ? (
-              <Badge tone="green" variant="soft">
-                <Icon name="secure" aria-hidden /> Verified
-              </Badge>
-            ) : (
-              <Badge tone="slate" variant="soft">
-                <Icon name="info" aria-hidden /> Community
-              </Badge>
+          <div className="flex flex-col gap-1 text-xs text-[var(--text-muted)]">
+            {hasRating && (
+              <div
+                className="flex items-center gap-1.5"
+                aria-label={`${ratingAverage?.toFixed(1)} out of 5 stars from ${ratingCount} reviews`}
+              >
+                <ReviewStars rating={ratingAverage || 0} />
+                <span className="font-medium">{ratingAverage?.toFixed(1)}</span>
+                <span className="text-[0.7rem] text-muted-foreground">
+                  ({ratingCount})
+                </span>
+              </div>
             )}
+
+            <div className="flex items-center gap-2">
+              {verified ? (
+                <Badge tone="green" variant="soft">
+                  <Icon name="secure" aria-hidden /> Verified
+                </Badge>
+              ) : (
+                <Badge tone="slate" variant="soft">
+                  <Icon name="info" aria-hidden /> Community
+                </Badge>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-1.5">
+            {showDonate && (
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                className="px-2 py-1"
+                onClick={handleDonateClick}
+                disabled={donating}
+              >
+                {donating ? "Working…" : "Support"}
+              </Button>
+            )}
+
             <Button
               type="button"
               size="xs"
@@ -266,8 +344,7 @@ export default function ListingCard({
                 className="px-2 py-1"
                 onClick={handleEditClick}
               >
-                {editLabel || "Edit"}{" "}
-                <span className="sr-only">{title}</span>
+                {editLabel || "Edit"} <span className="sr-only">{title}</span>
               </Button>
             )}
           </div>

@@ -68,16 +68,16 @@ export type UseServicesReturn = {
 export type UseServicesOptions = {
   initial?: Service[];
   cacheTtlMs?: number; // default 60s
-  /** Optional page size to mirror products hook (24..120). Default 60. */
+  /** Page size (24..48). Default 48 to match server caps. */
   pageSize?: number;
 };
 
 /* ------------------------------ Constants ------------------------------ */
 
 const LIST_KEY = "qs_services_list_v1";
-const DEFAULT_PAGE_SIZE = 60;
+const DEFAULT_PAGE_SIZE = 48; // ✅ align with API caps
 const MIN_PAGE_SIZE = 24;
-const MAX_PAGE_SIZE = 120;
+const MAX_PAGE_SIZE = 48; // ✅ align with API caps
 const FETCH_TIMEOUT_MS = 12_000;
 
 /* ------------------------------ Memory cache ------------------------------ */
@@ -253,10 +253,7 @@ async function tryFetchListWithBackoff(args: FetchListArgs) {
 
 export function useServices(options: UseServicesOptions = {}): UseServicesReturn {
   const cacheTtl = Math.max(5_000, options.cacheTtlMs ?? 60_000);
-  const pageSize = Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(MIN_PAGE_SIZE, options.pageSize ?? DEFAULT_PAGE_SIZE)
-  );
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, options.pageSize ?? DEFAULT_PAGE_SIZE));
 
   // seed once
   if (options.initial && memory.list.length === 0) {
@@ -440,9 +437,7 @@ export function useServices(options: UseServicesOptions = {}): UseServicesReturn
         if (v !== "ACTIVE" && v !== "SOLD" && v !== "HIDDEN" && v !== "DRAFT") delete safePatch["status"];
       }
 
-      const optimistic: Service | null = prev
-        ? withMediaMeta({ ...prev, ...safePatch, id: prev.id } as Service, "optimistic")
-        : null;
+      const optimistic: Service | null = prev ? withMediaMeta({ ...prev, ...safePatch, id: prev.id } as Service, "optimistic") : null;
 
       if (optimistic) {
         updateOneInMemory(optimistic);

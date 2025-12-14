@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
   useEffect,
+  useRef,
   type FormEvent,
   type ReactNode,
   type SVGProps,
@@ -14,6 +15,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import toast from "react-hot-toast";
+import { setReferralCookie } from "@/app/lib/referral-cookie";
 
 /* ----------------------------- helpers ----------------------------- */
 function isSafePath(p?: string | null): p is string {
@@ -38,10 +40,14 @@ const ERR_COPY: Record<string, string> = {
     "This email is already linked to another login method. Use your original sign-in method.",
 };
 
+const REF_CODE_RE = /^[A-Za-z0-9._-]{3,64}$/;
+
 /* ----------------------------- component --------------------------- */
 function SignUpPageInner() {
   const sp = useSearchParams();
-  const returnToRaw = sp.get("callbackUrl");
+
+  // Prefer explicit `return` param (e.g. ?return=/dashboard), then fall back to callbackUrl.
+  const returnToRaw = sp.get("return") || sp.get("callbackUrl");
   const returnTo = isSafePath(returnToRaw) ? returnToRaw : "/account/profile";
 
   const urlError = sp.get("error");
@@ -59,9 +65,32 @@ function SignUpPageInner() {
   const [showPassword, setShowPassword] = useState(false);
   const [working, setWorking] = useState<"creds" | "google" | null>(null);
 
+  const didStoreRef = useRef(false);
+
   useEffect(() => {
     if (friendlyError) toast.error(friendlyError);
   }, [friendlyError]);
+
+  useEffect(() => {
+    if (didStoreRef.current) return;
+
+    const raw = sp.get("ref");
+    if (!raw) return;
+
+    const code = raw.trim();
+    if (!REF_CODE_RE.test(code)) return;
+
+    didStoreRef.current = true;
+
+    try {
+      const maybe: any = (setReferralCookie as any)(code);
+      if (maybe && typeof maybe?.then === "function") {
+        (maybe as Promise<unknown>).catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  }, [sp]);
 
   function validate(): string | null {
     if (!email) return "Enter your email.";
@@ -76,8 +105,12 @@ function SignUpPageInner() {
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     if (working) return;
+
     const v = validate();
-    if (v) return toast.error(v);
+    if (v) {
+      toast.error(v);
+      return;
+    }
 
     // Delegate navigation to NextAuth (no client router)
     setWorking("creds");
@@ -102,21 +135,21 @@ function SignUpPageInner() {
     pwStrength === "Too short"
       ? 10
       : pwStrength === "Weak"
-      ? 25
-      : pwStrength === "Okay"
-      ? 45
-      : pwStrength === "Good"
-      ? 65
-      : pwStrength === "Strong"
-      ? 85
-      : 100;
+        ? 25
+        : pwStrength === "Okay"
+          ? 45
+          : pwStrength === "Good"
+            ? 65
+            : pwStrength === "Strong"
+              ? 85
+              : 100;
 
   return (
     <div className="container-page py-10">
       <div className="mx-auto max-w-2xl">
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-8 text-white shadow-soft dark:shadow-none">
           <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
+          <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">
             Create your QwikSale account
           </h1>
           <p className="mt-2 max-w-prose text-white/90">
@@ -222,8 +255,8 @@ function SignUpPageInner() {
                         pwBarPct < 35
                           ? "bg-red-400"
                           : pwBarPct < 65
-                          ? "bg-yellow-400"
-                          : "bg-green-500"
+                            ? "bg-yellow-400"
+                            : "bg-green-500"
                       }`}
                       style={{ width: `${pwBarPct}%` }}
                     />
@@ -290,7 +323,7 @@ function SignUpPageInner() {
                   href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}
                   prefetch={false}
                 >
-                  Sign in
+                  Log in
                 </Link>
               </p>
             </div>

@@ -1,7 +1,6 @@
-// src/app/lib/authz.ts
 import "server-only";
 import { redirect } from "next/navigation";
-import { auth as _auth } from "@/auth";
+import { safeAuth } from "@/app/lib/auth";
 
 export type AnyUser = {
   id?: string | number | null;
@@ -14,29 +13,31 @@ export type AnyUser = {
 
 export type RequireAdminResult =
   | { authorized: true; user: AnyUser }
-  | { authorized: false; status: 401 | 403; reason: string };
+  | {
+      authorized: false;
+      status: 401 | 403;
+      reason: string;
+    };
 
 export type RequireSuperAdminResult =
   | { authorized: true; user: AnyUser }
-  | { authorized: false; status: 401 | 403; reason: string };
-
-/** Safe wrapper: never throws; returns null on failure. */
-async function safeAuth(): Promise<any | null> {
-  try {
-    return await _auth();
-  } catch {
-    return null;
-  }
-}
+  | {
+      authorized: false;
+      status: 401 | 403;
+      reason: string;
+    };
 
 /**
  * Get the current session user, normalized to a consistent shape.
  * - Ensures id is a string when present.
  * - Never throws (treats failures as unauthenticated).
  */
-export async function getSessionUser(): Promise<AnyUser | null> {
+export async function getSessionUser(): Promise<
+  AnyUser | null
+> {
   const session = await safeAuth();
-  const raw = (session?.user ?? null) as AnyUser | null;
+  const raw = (session?.user ??
+    null) as AnyUser | null;
   if (!raw) return null;
 
   const normalized: AnyUser = { ...raw };
@@ -47,17 +48,27 @@ export async function getSessionUser(): Promise<AnyUser | null> {
 }
 
 /** True if user is an admin. */
-export function isAdminUser(u: AnyUser | null | undefined): boolean {
+export function isAdminUser(
+  u: AnyUser | null | undefined,
+): boolean {
   if (!u) return false;
   if (u.isAdmin) return true;
 
-  const primary = (u.role || "").toString().toLowerCase();
-  if (primary === "admin" || primary === "superadmin") return true;
+  const primary = (u.role || "")
+    .toString()
+    .toLowerCase();
+  if (
+    primary === "admin" ||
+    primary === "superadmin"
+  )
+    return true;
 
   if (Array.isArray(u.roles)) {
     if (
       u.roles.some((r) =>
-        ["admin", "superadmin"].includes(String(r).toLowerCase()),
+        ["admin", "superadmin"].includes(
+          String(r).toLowerCase(),
+        ),
       )
     ) {
       return true;
@@ -73,13 +84,17 @@ export function isSuperAdminUserLocal(
   if (!u) return false;
   if (u.isSuperAdmin) return true;
 
-  const primary = (u.role || "").toString().toLowerCase();
+  const primary = (u.role || "")
+    .toString()
+    .toLowerCase();
   if (primary === "superadmin") return true;
 
   if (Array.isArray(u.roles)) {
     if (
       u.roles.some(
-        (r) => String(r).toLowerCase() === "superadmin",
+        (r) =>
+          String(r).toLowerCase() ===
+          "superadmin",
       )
     ) {
       return true;
@@ -113,29 +128,44 @@ export async function requireAdmin(opts?: {
   adminFallbackHref?: string;
 }): Promise<void | RequireAdminResult> {
   const mode = opts?.mode ?? "redirect";
-  const callbackUrl = opts?.callbackUrl ?? "/admin";
-  const adminFallbackHref = opts?.adminFallbackHref ?? "/dashboard";
+  const callbackUrl =
+    opts?.callbackUrl ?? "/admin";
+  const adminFallbackHref =
+    opts?.adminFallbackHref ?? "/dashboard";
 
   const u = await getSessionUser();
 
   // Unauthenticated
   if (!u?.id) {
     if (mode === "result") {
-      return { authorized: false, status: 401, reason: "Unauthenticated" };
+      return {
+        authorized: false,
+        status: 401,
+        reason: "Unauthenticated",
+      };
     }
-    redirect(`/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+    redirect(
+      `/signin?callbackUrl=${encodeURIComponent(
+        callbackUrl,
+      )}`,
+    );
   }
 
   // Not an admin
   if (!isAdminUser(u)) {
     if (mode === "result") {
-      return { authorized: false, status: 403, reason: "Forbidden" };
+      return {
+        authorized: false,
+        status: 403,
+        reason: "Forbidden",
+      };
     }
     redirect(adminFallbackHref);
   }
 
   // Authorized
-  if (mode === "result") return { authorized: true, user: u };
+  if (mode === "result")
+    return { authorized: true, user: u };
   // redirect mode & authorized: fall through
 }
 
@@ -158,27 +188,42 @@ export async function requireSuperAdmin(opts?: {
   fallbackHref?: string;
 }): Promise<void | RequireSuperAdminResult> {
   const mode = opts?.mode ?? "redirect";
-  const callbackUrl = opts?.callbackUrl ?? "/admin";
-  const fallbackHref = opts?.fallbackHref ?? "/dashboard";
+  const callbackUrl =
+    opts?.callbackUrl ?? "/admin";
+  const fallbackHref =
+    opts?.fallbackHref ?? "/dashboard";
 
   const u = await getSessionUser();
 
   // Unauthenticated
   if (!u?.id) {
     if (mode === "result") {
-      return { authorized: false, status: 401, reason: "Unauthenticated" };
+      return {
+        authorized: false,
+        status: 401,
+        reason: "Unauthenticated",
+      };
     }
-    redirect(`/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+    redirect(
+      `/signin?callbackUrl=${encodeURIComponent(
+        callbackUrl,
+      )}`,
+    );
   }
 
   // Not a super-admin
   if (!isSuperAdminUserLocal(u)) {
     if (mode === "result") {
-      return { authorized: false, status: 403, reason: "Forbidden" };
+      return {
+        authorized: false,
+        status: 403,
+        reason: "Forbidden",
+      };
     }
     redirect(fallbackHref);
   }
 
-  if (mode === "result") return { authorized: true, user: u };
+  if (mode === "result")
+    return { authorized: true, user: u };
   // redirect mode & authorized: fall through
 }

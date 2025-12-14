@@ -356,6 +356,7 @@ export default async function EditServicePage({
                 serviceId={service.id}
                 label="Delete"
                 className="btn-danger"
+                redirectHref="/?deleted=1"
               />
             )}
           </div>

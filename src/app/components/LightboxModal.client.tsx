@@ -5,7 +5,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   useCallback,
 } from "react";
 
@@ -33,14 +32,6 @@ export default function LightboxModal({
   const liveRef = useRef<HTMLSpanElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
-
-  const [mounted, setMounted] = useState(false);
-
-  // Mount animation
-  useEffect(() => {
-    const t = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(t);
-  }, []);
 
   // Remember opener focus & restore on unmount
   useEffect(() => {
@@ -234,7 +225,7 @@ export default function LightboxModal({
         "fixed inset-0 z-[100] flex items-center justify-center",
         "bg-black/70 backdrop-blur-sm",
         "transition-opacity duration-200",
-        mounted ? "opacity-100" : "opacity-0",
+        "opacity-100",
       ].join(" ")}
       role="dialog"
       aria-modal="true"
@@ -264,7 +255,11 @@ export default function LightboxModal({
 
       {/* Header: index + Close */}
       <div className="absolute left-0 right-0 top-0 z-[101] flex items-center justify-between px-4 py-3">
-        <div className="rounded bg-black/30 px-2 py-1 text-xs font-medium text-white/90">
+        <div
+          className="rounded bg-black/30 px-2 py-1 text-xs font-medium text-white/90"
+          data-gallery-index-badge
+          data-e2e="product-lightbox-index"
+        >
           {len ? `${safeIndex + 1} / ${len}` : "0 / 0"}
         </div>
         <button
@@ -287,7 +282,7 @@ export default function LightboxModal({
           "rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10",
           "bg-black/40 p-2 md:p-3",
           "transition-transform duration-200",
-          mounted ? "scale-100" : "scale-95",
+          "scale-100",
         ].join(" ")}
       >
         {src ? (

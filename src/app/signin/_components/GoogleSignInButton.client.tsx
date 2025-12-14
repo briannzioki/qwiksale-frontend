@@ -2,7 +2,6 @@
 "use client";
 
 import * as React from "react";
-import { signIn } from "next-auth/react";
 
 type GoogleSignInButtonProps = {
   callbackUrl: string;
@@ -11,33 +10,26 @@ type GoogleSignInButtonProps = {
 /**
  * Google sign-in entry:
  * - Renders a real <a> so Playwright and screen readers see a link.
- * - Intercepts click to use next-auth's signIn("google") helper.
- * - Falls back to the href if JS is dead.
+ * - Does NOT call next-auth signIn() here to avoid extra bootstrap fetches.
+ * - Falls back to the href if JS is dead (and is the primary path).
  */
 export function GoogleSignInButton({ callbackUrl }: GoogleSignInButtonProps) {
   const [loading, setLoading] = React.useState(false);
 
-  const safeCallback = callbackUrl && callbackUrl.startsWith("/")
-    ? callbackUrl
-    : "/dashboard";
+  const safeCallback =
+    callbackUrl && callbackUrl.startsWith("/") ? callbackUrl : "/dashboard";
 
   const href = `/api/auth/signin/google?callbackUrl=${encodeURIComponent(
     safeCallback,
   )}`;
 
-  const handleClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    if (loading) return;
-    setLoading(true);
-    try {
-      await signIn("google", {
-        redirect: true,
-        callbackUrl: safeCallback,
-      });
-      // With redirect: true, we almost never resume here.
-    } finally {
-      setLoading(false);
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (loading) {
+      e.preventDefault();
+      return;
     }
+    // Allow normal navigation to href (real document transition).
+    setLoading(true);
   };
 
   return (

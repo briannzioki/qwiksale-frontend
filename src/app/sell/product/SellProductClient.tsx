@@ -58,7 +58,7 @@ async function uploadToCloudinary(
 
   if (!UPLOAD_PRESET) {
     throw new Error(
-      "Missing NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET — required for unsigned uploads"
+      "Missing NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET — required for unsigned uploads",
     );
   }
 
@@ -492,24 +492,6 @@ export default function SellProductClient({
             ? "Update your listing details."
             : "List your item — it takes less than 2 minutes."}
         </p>
-      </div>
-
-      {/* Deterministic CTAs for tests: always expose both links */}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <a
-          href="/sell/product"
-          className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium shadow-sm hover:bg-accent"
-        >
-          Create New
-        </a>
-        <a
-          href={`/signin?callbackUrl=${encodeURIComponent(
-            "/sell/product",
-          )}`}
-          className="inline-flex items-center text-sm font-medium text-brandNavy underline-offset-2 hover:underline"
-        >
-          Sign in
-        </a>
       </div>
 
       {/* Form */}

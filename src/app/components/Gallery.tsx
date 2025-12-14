@@ -1,3 +1,4 @@
+// src/app/components/Gallery.tsx
 "use client";
 
 import type React from "react";
@@ -10,8 +11,6 @@ import {
   useId,
 } from "react";
 import LightboxModal from "@/app/components/LightboxModal.client";
-
-const PLACEHOLDER = "/placeholder/default.jpg";
 
 type Props = {
   images?: string[] | null;
@@ -44,39 +43,54 @@ export default function Gallery({
     [images],
   );
 
-  const imgs = useMemo(
-    () => (safeImages.length ? safeImages : [PLACEHOLDER]),
-    [safeImages],
-  );
+  // No internal placeholder: callers must decide what to pass.
+  const imgs = safeImages;
+  const total = imgs.length;
 
-  const [idx, setIdx] = useState(
-    Math.min(
-      Math.max(0, initialIndex),
-      Math.max(0, imgs.length - 1),
-    ),
-  );
+  const [idx, setIdx] = useState(0);
   const [open, setOpen] = useState(false);
 
+  // Normalize index whenever images / initialIndex change
   useEffect(() => {
     const len = imgs.length;
-    if (!len) return;
-    setIdx((cur) => Math.min(Math.max(0, cur), len - 1));
-  }, [imgs]);
+    if (!len) {
+      setIdx(0);
+      return;
+    }
+
+    const clampedInitial = Math.min(
+      Math.max(0, initialIndex),
+      len - 1,
+    );
+
+    setIdx((cur) => {
+      if (
+        !Number.isFinite(cur) ||
+        cur < 0 ||
+        cur >= len
+      ) {
+        return clampedInitial;
+      }
+      return cur;
+    });
+  }, [imgs, initialIndex]);
 
   useEffect(() => {
+    if (!total) return;
     onIndexChangeAction?.(idx);
-  }, [idx, onIndexChangeAction]);
+  }, [idx, total, onIndexChangeAction]);
 
+  // Prefetch neighbors for smoother transitions
   useEffect(() => {
-    const len = imgs.length;
-    if (len < 2) return;
-    const prev = (idx - 1 + len) % len;
-    const next = (idx + 1) % len;
+    if (total < 2) return;
+    const prev = (idx - 1 + total) % total;
+    const next = (idx + 1) % total;
+
     const a = new Image();
     const b = new Image();
     a.src = imgs[prev]!;
     b.src = imgs[next]!;
-  }, [idx, imgs]);
+  }, [idx, imgs, total]);
 
   const fitCls =
     fit === "contain" ? "object-contain" : "object-cover";
@@ -164,7 +178,35 @@ export default function Gallery({
   }, [idx]);
 
   const heroId = useId();
-  const total = imgs.length;
+
+  // If no images, still render the shell but no <img> / thumbs / shadow list.
+  if (!total) {
+    return (
+      <div
+        className={["w-full", className].join(" ")}
+        role="group"
+        aria-roledescription="carousel"
+        aria-label="Image gallery"
+        aria-describedby={`${heroId}-desc`}
+        data-gallery="true"
+        data-gallery-open="false"
+      >
+        <div
+          className={`relative ${aspect} w-full overflow-hidden rounded-xl bg-muted min-h-[180px] sm:min-h-[220px]`}
+          style={{ position: "relative" }}
+          data-gallery-wrap
+          data-gallery-hero
+        >
+          <span
+            id={`${heroId}-desc`}
+            className="sr-only"
+          >
+            No images available.
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -194,6 +236,7 @@ export default function Gallery({
           ⤢
         </button>
 
+        {/* Hero image */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imgs[idx]}
@@ -209,6 +252,7 @@ export default function Gallery({
           data-sizes={sizes}
         />
 
+        {/* Keyboard + touch overlay */}
         <button
           type="button"
           className="absolute inset-0 z-[2] focus:outline-none focus:ring-2 focus:ring-[#39a0ca]/60"
@@ -310,7 +354,7 @@ export default function Gallery({
                         ? "border-transparent ring-2 ring-[#39a0ca]"
                         : "border-border hover:ring-1 hover:ring-[#39a0ca]/60",
                     ].join(" ")}
-                    aria-label={`Show image ${i + 1} of {total}`}
+                    aria-label={`Show image ${i + 1} of ${total}`}
                     title={
                       selected
                         ? "Current image"
@@ -374,7 +418,7 @@ export default function Gallery({
         </div>
       )}
 
-      {/* Shadow list for tests */}
+      {/* Shadow list for tests (one source of truth) */}
       {total > 0 && (
         <div
           className="hidden"
@@ -396,7 +440,7 @@ export default function Gallery({
 
       {lightbox && open && (
         <div
-          data-gallery-overlay="true"
+          data-gallery-lightbox="true"
           role="dialog"
           aria-modal="true"
           className="fixed inset-0 z-[60]"

@@ -32,6 +32,55 @@ function MessageButtonBase({
   const [open, setOpen] = React.useState(false);
   const [body, setBody] = React.useState<React.ReactNode>(null);
 
+  // Effective auth state:
+  // - If parent passes isAuthed, that is a hint.
+  // - We also consult the global body flag from AuthButtons (data-qs-session="authed")
+  //   so that a confirmed authed header wins over a stale isAuthed={false}.
+  const [authed, setAuthed] = React.useState<boolean | null>(
+    typeof isAuthed === "boolean" ? isAuthed : null,
+  );
+
+  // Keep in sync with explicit prop if provided, but never downgrade from
+  // a previously observed "true" to "false" solely because of the prop.
+  React.useEffect(() => {
+    if (typeof isAuthed === "boolean") {
+      setAuthed((prev) => {
+        if (prev === true && isAuthed === false) {
+          return true;
+        }
+        return isAuthed;
+      });
+    }
+  }, [isAuthed]);
+
+  // Fallback / enhancer: observe the body data flag from AuthButtons.
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const bodyEl = document.body;
+    if (!bodyEl) return;
+
+    const update = () => {
+      const flag = bodyEl.dataset["qsSession"] === "authed";
+      setAuthed((prev) => {
+        if (flag) return true;
+        // if no flag, respect explicit prop or previous state
+        if (typeof isAuthed === "boolean") return isAuthed;
+        return prev;
+      });
+    };
+
+    update();
+
+    const observer = new MutationObserver(update);
+    observer.observe(bodyEl, {
+      attributes: true,
+      attributeFilter: ["data-qs-session"],
+    });
+
+    return () => observer.disconnect();
+  }, [isAuthed]);
+
   // a11y/dialog infra
   const uid = React.useId();
   const dialogId = `msg-action-${uid}`;
@@ -63,7 +112,7 @@ function MessageButtonBase({
       }
       if (e.key !== "Tab" || !panelRef.current) return;
       const focusable = panelRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
       if (!focusable.length) return;
       const first = focusable.item(0);
@@ -91,13 +140,18 @@ function MessageButtonBase({
   }, [open]);
 
   async function handleClick() {
-    if (isAuthed === true && typeof onStartMessageAction === "function") {
+    const isAuthedFromBody =
+      typeof document !== "undefined" &&
+      document.body?.dataset["qsSession"] === "authed";
+    const isAuthedEffective = authed === true || isAuthedFromBody;
+
+    if (isAuthedEffective && typeof onStartMessageAction === "function") {
       try {
         await onStartMessageAction(targetId);
         setBody(
           <p className="text-sm">
             Your conversation has been started for <code>{targetId}</code>.
-          </p>
+          </p>,
         );
         setOpen(true);
         return;
@@ -106,12 +160,12 @@ function MessageButtonBase({
       }
     }
 
-    if (isAuthed === true) {
+    if (isAuthedEffective) {
       setBody(
         <div className="space-y-3 text-sm">
           <p>
-            (Placeholder) You’re signed in — this is where we’d open a chat with the {label} for{" "}
-            <code>{targetId}</code>.
+            (Placeholder) You’re signed in — this is where we’d open a chat
+            with the {label} for <code>{targetId}</code>.
           </p>
           <div>
             <button
@@ -122,14 +176,16 @@ function MessageButtonBase({
               Close
             </button>
           </div>
-        </div>
+        </div>,
       );
       setOpen(true);
       return;
     }
 
-    // Guest: prompt to sign in
-    const signInHref = `/signin?callbackUrl=${encodeURIComponent(getReturnTo())}`;
+    // Guest: prompt to sign in (this is where the prod.no-auto-logout spec cares).
+    const signInHref = `/signin?callbackUrl=${encodeURIComponent(
+      getReturnTo(),
+    )}`;
     setBody(
       <div className="space-y-3 text-sm" aria-live="polite">
         <p>Please sign in to message the {label}.</p>
@@ -137,10 +193,10 @@ function MessageButtonBase({
           <a
             className="rounded-md border px-3 py-1.5 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900"
             href={signInHref}
-            aria-label="Sign in"
-            title="Sign in"
+            aria-label="Sign in to message"
+            title="Sign in to message"
           >
-            Sign in
+            Sign in to message
           </a>
           <button
             type="button"
@@ -150,12 +206,13 @@ function MessageButtonBase({
             Cancel
           </button>
         </div>
-      </div>
+      </div>,
     );
     setOpen(true);
   }
 
-  const btnText = label === "seller" ? "Message seller" : "Message provider";
+  const btnText =
+    label === "seller" ? "Message seller" : "Message provider";
 
   return (
     <>
@@ -199,7 +256,10 @@ function MessageButtonBase({
               className="w-full max-w-md rounded-2xl border bg-white p-4 shadow-xl dark:border-slate-800 dark:bg-slate-950"
             >
               <div className="mb-2 flex items-center justify-between">
-                <h2 id="msg-action-title" className="text-sm font-semibold">
+                <h2
+                  id="msg-action-title"
+                  className="text-sm font-semibold"
+                >
                   {btnText}
                 </h2>
                 <button
@@ -232,8 +292,12 @@ export function MessageSellerButton(props: {
     <MessageButtonBase
       targetId={props.productId}
       label="seller"
-      {...(props.isAuthed !== undefined ? { isAuthed: props.isAuthed } : {})}
-      {...(props.onStartMessageAction ? { onStartMessageAction: props.onStartMessageAction } : {})}
+      {...(props.isAuthed !== undefined
+        ? { isAuthed: props.isAuthed }
+        : {})}
+      {...(props.onStartMessageAction
+        ? { onStartMessageAction: props.onStartMessageAction }
+        : {})}
       {...(props.className ? { className: props.className } : {})}
     />
   );
@@ -250,8 +314,12 @@ export function MessageProviderButton(props: {
     <MessageButtonBase
       targetId={props.serviceId}
       label="provider"
-      {...(props.isAuthed !== undefined ? { isAuthed: props.isAuthed } : {})}
-      {...(props.onStartMessageAction ? { onStartMessageAction: props.onStartMessageAction } : {})}
+      {...(props.isAuthed !== undefined
+        ? { isAuthed: props.isAuthed }
+        : {})}
+      {...(props.onStartMessageAction
+        ? { onStartMessageAction: props.onStartMessageAction }
+        : {})}
       {...(props.className ? { className: props.className } : {})}
     />
   );

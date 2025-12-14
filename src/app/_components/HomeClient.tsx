@@ -65,9 +65,7 @@ const HOME_FEED_TIMEOUT_MS = 4000;
 /* --------------------------- helpers --------------------------- */
 
 const fmtKES = (n?: number | null) =>
-  typeof n === "number" &&
-  Number.isFinite(n) &&
-  n > 0
+  typeof n === "number" && Number.isFinite(n) && n > 0
     ? `KES ${n.toLocaleString("en-KE", {
         maximumFractionDigits: 0,
       })}`
@@ -109,25 +107,17 @@ const makeOnImgError =
     }
   };
 
-function useDebounced<T>(
-  value: T,
-  delay = DEBOUNCE_MS,
-): T {
-  const [debounced, setDebounced] =
-    React.useState<T>(value);
+function useDebounced<T>(value: T, delay = DEBOUNCE_MS): T {
+  const [debounced, setDebounced] = React.useState<T>(value);
   React.useEffect(() => {
-    const id = setTimeout(
-      () => setDebounced(value),
-      delay,
-    );
+    const id = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(id);
   }, [value, delay]);
   return debounced;
 }
 
 function coerceItems(json: any): PageResponse<AnyItem> {
-  const base =
-    json?.page || json?.page === 0 ? json : json?.data || json;
+  const base = json?.page || json?.page === 0 ? json : json?.data || json;
 
   const rawItems: any[] =
     (Array.isArray(base?.items) && base.items) ||
@@ -140,9 +130,7 @@ function coerceItems(json: any): PageResponse<AnyItem> {
       if (!x || !x.id) return null;
 
       const type: string =
-        x.type ||
-        x.kind ||
-        (x.serviceArea ? "service" : "product");
+        x.type || x.kind || (x.serviceArea ? "service" : "product");
 
       const common = {
         id: String(x.id),
@@ -158,9 +146,7 @@ function coerceItems(json: any): PageResponse<AnyItem> {
         image:
           x.image ||
           x.thumbnail ||
-          (Array.isArray(x.images)
-            ? x.images[0]
-            : null) ||
+          (Array.isArray(x.images) ? x.images[0] : null) ||
           null,
         featured:
           typeof x.featured === "boolean"
@@ -196,23 +182,15 @@ function coerceItems(json: any): PageResponse<AnyItem> {
       : items.length;
 
   const pageSize =
-    typeof base?.pageSize === "number"
-      ? base.pageSize
-      : PAGE_SIZE;
+    typeof base?.pageSize === "number" ? base.pageSize : PAGE_SIZE;
 
   const page =
-    typeof base?.page === "number" && base.page > 0
-      ? base.page
-      : 1;
+    typeof base?.page === "number" && base.page > 0 ? base.page : 1;
 
   const totalPages =
-    typeof base?.totalPages === "number" &&
-    base.totalPages > 0
+    typeof base?.totalPages === "number" && base.totalPages > 0
       ? base.totalPages
-      : Math.max(
-          1,
-          Math.ceil(total / pageSize),
-        );
+      : Math.max(1, Math.ceil(total / pageSize));
 
   return {
     page,
@@ -225,45 +203,35 @@ function coerceItems(json: any): PageResponse<AnyItem> {
 
 /* --------------------------- component --------------------------- */
 
-export default function HomeClient(_seed?: HomeSeedProps) {
+export default function HomeClient(seed?: HomeSeedProps) {
   const sp = useSearchParams();
 
   // Mode from URL (?t= / ?tab=); strictly read-only.
   const mode: Mode = React.useMemo(() => {
-    const raw = (
-      sp.get("t") ?? sp.get("tab") ?? ""
-    ).toLowerCase();
-    return raw === "products" || raw === "services"
-      ? (raw as Mode)
-      : "all";
+    const raw = (sp.get("t") ?? sp.get("tab") ?? "").toLowerCase();
+    return raw === "products" || raw === "services" ? (raw as Mode) : "all";
   }, [sp]);
+
+  const initialServices = seed?.initialServices;
+  const hasSeedServices =
+    mode === "services" &&
+    Array.isArray(initialServices) &&
+    initialServices.length > 0;
 
   // Local filters from URL (no client-driven URL mutations)
   const [q, setQ] = React.useState(sp.get("q") || "");
-  const [category, setCategory] =
-    React.useState(sp.get("category") || "");
-  const [subcategory, setSubcategory] =
-    React.useState(sp.get("subcategory") || "");
-  const [brand, setBrand] = React.useState(
-    sp.get("brand") || "",
+  const [category, setCategory] = React.useState(sp.get("category") || "");
+  const [subcategory, setSubcategory] = React.useState(
+    sp.get("subcategory") || "",
   );
-  const [condition, setCondition] = React.useState(
-    sp.get("condition") || "",
+  const [brand, setBrand] = React.useState(sp.get("brand") || "");
+  const [condition, setCondition] = React.useState(sp.get("condition") || "");
+  const [minPrice, setMinPrice] = React.useState(sp.get("minPrice") || "");
+  const [maxPrice, setMaxPrice] = React.useState(sp.get("maxPrice") || "");
+  const [featuredOnly, setFeaturedOnly] = React.useState(
+    (sp.get("featured") || "").toLowerCase() === "true",
   );
-  const [minPrice, setMinPrice] = React.useState(
-    sp.get("minPrice") || "",
-  );
-  const [maxPrice, setMaxPrice] = React.useState(
-    sp.get("maxPrice") || "",
-  );
-  const [featuredOnly, setFeaturedOnly] =
-    React.useState(
-      (sp.get("featured") || "").toLowerCase() ===
-        "true",
-    );
-  const [sort, setSort] = React.useState(
-    sp.get("sort") || "newest",
-  );
+  const [sort, setSort] = React.useState(sp.get("sort") || "newest");
   const [page, setPage] = React.useState(() => {
     const n = Number(sp.get("page") || 1);
     return Number.isFinite(n) && n > 0 ? n : 1;
@@ -289,33 +257,78 @@ export default function HomeClient(_seed?: HomeSeedProps) {
   const dsort = useDebounced(sort);
   const dpage = useDebounced(page);
 
-  const [res, setRes] =
-    React.useState<PageResponse<AnyItem> | null>(
-      null,
-    );
-  const [loading, setLoading] = React.useState(false);
-  const [err, setErr] = React.useState<string | null>(
-    null,
-  );
+  const [res, setRes] = React.useState<PageResponse<AnyItem> | null>(() => {
+    if (!hasSeedServices || !initialServices) return null;
+
+    const mapped: AnyItem[] = initialServices.map((svc) => {
+      const anySvc = svc as any;
+      return {
+        type: "service",
+        id: String(svc.id),
+        name:
+          typeof svc.name === "string"
+            ? svc.name
+            : typeof anySvc.title === "string"
+            ? anySvc.title
+            : "Service",
+        category:
+          typeof svc.category === "string" ? svc.category : null,
+        subcategory:
+          typeof svc.subcategory === "string" ? svc.subcategory : null,
+        price:
+          typeof svc.price === "number"
+            ? svc.price
+            : typeof anySvc.amount === "number"
+            ? anySvc.amount
+            : null,
+        image:
+          typeof svc.image === "string"
+            ? svc.image
+            : Array.isArray(anySvc.images) && anySvc.images.length > 0
+            ? anySvc.images[0]
+            : null,
+        featured:
+          typeof anySvc.featured === "boolean"
+            ? anySvc.featured
+            : anySvc.isFeatured === true
+            ? true
+            : null,
+        location:
+          typeof svc.location === "string"
+            ? svc.location
+            : typeof anySvc.city === "string"
+            ? anySvc.city
+            : null,
+        createdAt: null,
+      } as ServiceItem;
+    });
+
+    return {
+      page: 1,
+      pageSize: mapped.length,
+      total: mapped.length,
+      totalPages: 1,
+      items: mapped,
+    };
+  });
+
+  const [loading, setLoading] = React.useState<boolean>(() => !hasSeedServices);
+  const [err, setErr] = React.useState<string | null>(null);
 
   // Build query for /api/home-feed
   const queryString = React.useMemo(() => {
     const params = new URLSearchParams();
     if (dq) params.set("q", dq);
     if (dcategory) params.set("category", dcategory);
-    if (dsubcategory)
-      params.set("subcategory", dsubcategory);
-    if (dbrand && dmode === "products")
-      params.set("brand", dbrand);
+    if (dsubcategory) params.set("subcategory", dsubcategory);
+    if (dbrand && dmode === "products") params.set("brand", dbrand);
     if (dcondition && dmode === "products")
       params.set("condition", dcondition);
     if (dminPrice) params.set("minPrice", dminPrice);
     if (dmaxPrice) params.set("maxPrice", dmaxPrice);
     if (dfeaturedOnly) params.set("featured", "true");
-    if (dsort && dsort !== "newest")
-      params.set("sort", dsort);
-    if (dpage && dpage !== 1)
-      params.set("page", String(dpage));
+    if (dsort && dsort !== "newest") params.set("sort", dsort);
+    if (dpage && dpage !== 1) params.set("page", String(dpage));
     params.set("pageSize", String(PAGE_SIZE));
     return params.toString();
   }, [
@@ -338,10 +351,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
     let timeoutId: number | undefined;
     let active = true;
 
-    async function load(
-      attempt = 1,
-      fallbackMode?: Mode,
-    ): Promise<void> {
+    async function load(attempt = 1, fallbackMode?: Mode): Promise<void> {
       if (!active) return;
 
       if (attempt === 1 && !fallbackMode) {
@@ -351,9 +361,8 @@ export default function HomeClient(_seed?: HomeSeedProps) {
 
       const tParam = fallbackMode ?? dmode;
       const url =
-        `/api/home-feed?t=${encodeURIComponent(
-          tParam,
-        )}` + (queryString ? `&${queryString}` : "");
+        `/api/home-feed?t=${encodeURIComponent(tParam)}` +
+        (queryString ? `&${queryString}` : "");
 
       try {
         const r = await fetch(url, {
@@ -363,25 +372,18 @@ export default function HomeClient(_seed?: HomeSeedProps) {
         });
 
         const jsonRaw: any =
-          (await r
-            .json()
-            .catch(() => ({} as ErrorResponse))) ||
-          {};
+          (await r.json().catch(() => ({} as ErrorResponse))) || {};
 
         const hasError =
           !r.ok ||
           (typeof (jsonRaw as any).error === "string" &&
             (jsonRaw as any).error) ||
-          (typeof (jsonRaw as any).message ===
-            "string" &&
-            !Array.isArray(
-              (jsonRaw as any).items,
-            ));
+          (typeof (jsonRaw as any).message === "string" &&
+            !Array.isArray((jsonRaw as any).items));
 
         if (hasError) {
           if (
-            (dmode === "products" ||
-              dmode === "services") &&
+            (dmode === "products" || dmode === "services") &&
             !fallbackMode &&
             active &&
             !ac.signal.aborted
@@ -389,11 +391,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
             return load(1, "all");
           }
 
-          if (
-            attempt < 2 &&
-            active &&
-            !ac.signal.aborted
-          ) {
+          if (attempt < 2 && active && !ac.signal.aborted) {
             return load(attempt + 1, fallbackMode);
           }
 
@@ -413,14 +411,10 @@ export default function HomeClient(_seed?: HomeSeedProps) {
 
         // If we fetched "all" as fallback, filter locally for tab visuals.
         if (
-          (dmode === "products" ||
-            dmode === "services") &&
+          (dmode === "products" || dmode === "services") &&
           fallbackMode === "all"
         ) {
-          const want =
-            dmode === "products"
-              ? "product"
-              : "service";
+          const want = dmode === "products" ? "product" : "service";
           const filtered = (pageJson.items || []).filter(
             (x) => x.type === want,
           );
@@ -442,11 +436,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
           // Hard timeout or unmount: silent
           return;
         }
-        if (
-          attempt < 2 &&
-          active &&
-          !ac.signal.aborted
-        ) {
+        if (attempt < 2 && active && !ac.signal.aborted) {
           return load(attempt + 1, fallbackMode);
         }
         if (active) {
@@ -485,6 +475,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
   const items: AnyItem[] = Array.isArray(res?.items)
     ? (res!.items as AnyItem[])
     : [];
+  const hasItems = items.length > 0;
 
   const clearAll = () => {
     setQ("");
@@ -501,12 +492,9 @@ export default function HomeClient(_seed?: HomeSeedProps) {
 
   const activeChips: string[] = [];
   if (q) activeChips.push(`“${q}”`);
-  if (category)
-    activeChips.push(`Category: ${category}`);
-  if (subcategory)
-    activeChips.push(`Subcategory: ${subcategory}`);
-  if (brand && mode === "products")
-    activeChips.push(`Brand: ${brand}`);
+  if (category) activeChips.push(`Category: ${category}`);
+  if (subcategory) activeChips.push(`Subcategory: ${subcategory}`);
+  if (brand && mode === "products") activeChips.push(`Brand: ${brand}`);
   if (condition && mode === "products")
     activeChips.push(`Condition: ${condition}`);
   if (minPrice) activeChips.push(`Min: ${minPrice}`);
@@ -717,19 +705,19 @@ export default function HomeClient(_seed?: HomeSeedProps) {
       </section>
 
       {/* Results */}
-      {loading ? (
-        <SkeletonGrid />
-      ) : err ? (
+      {err ? (
         <div
           className="card-surface border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"
           role="status"
         >
           {err}
         </div>
-      ) : items.length === 0 ? (
+      ) : loading && !hasItems ? (
+        <SkeletonGrid />
+      ) : !hasItems ? (
         <div className="card-surface p-6 text-sm text-muted-foreground">
-          No {mode === "all" ? "items" : mode} found. Try
-          adjusting your filters.
+          No {mode === "all" ? "items" : mode} found. Try adjusting your
+          filters.
         </div>
       ) : (
         <section
@@ -740,9 +728,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
         >
           {items.map((it, index) => {
             const isProduct = it.type === "product";
-            const title =
-              it.name ||
-              (isProduct ? "Product" : "Service");
+            const title = it.name || (isProduct ? "Product" : "Service");
             const imageUrl = it.image || FALLBACK_IMG;
             const price = it.price ?? null;
             const featured = it.featured ?? false;
@@ -750,25 +736,18 @@ export default function HomeClient(_seed?: HomeSeedProps) {
             const c1 = it.category || "";
             const c2 = it.subcategory || "";
             const categoryText =
-              c1 && c2
-                ? `${c1} • ${c2}`
-                : c1 || c2 || "General";
+              c1 && c2 ? `${c1} • ${c2}` : c1 || c2 || "General";
 
             const href = isProduct
               ? `/product/${encodeURIComponent(it.id)}`
               : `/service/${encodeURIComponent(it.id)}`;
 
-            const ariaLabelBase = `${
-              isProduct ? "Product" : "Service"
-            }: ${title}`;
+            const ariaLabelBase = `${isProduct ? "Product" : "Service"}: ${title}`;
             const pricePart =
               typeof price === "number" && price > 0
-                ? `, priced at KES ${price.toLocaleString(
-                    "en-KE",
-                  )}`
+                ? `, priced at KES ${price.toLocaleString("en-KE")}`
                 : "";
-            const ariaLabel =
-              ariaLabelBase + pricePart;
+            const ariaLabel = ariaLabelBase + pricePart;
 
             const blur = shimmer(800, 440);
 
@@ -778,12 +757,8 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                 href={href}
                 className="group relative block"
                 aria-label={ariaLabel}
-                data-product-id={
-                  isProduct ? it.id : undefined
-                }
-                data-service-id={
-                  !isProduct ? it.id : undefined
-                }
+                data-product-id={isProduct ? it.id : undefined}
+                data-service-id={!isProduct ? it.id : undefined}
               >
                 <div className="card-surface relative overflow-hidden rounded-xl border border-border shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                   <div className="relative">
@@ -801,15 +776,11 @@ export default function HomeClient(_seed?: HomeSeedProps) {
                       placeholder="blur"
                       blurDataURL={blur}
                       loading="lazy"
-                      onError={makeOnImgError(
-                        FALLBACK_IMG,
-                      )}
+                      onError={makeOnImgError(FALLBACK_IMG)}
                     />
                     {isProduct && (
                       <div className="absolute right-2 top-2 z-10">
-                        <FavoriteButton
-                          productId={it.id}
-                        />
+                        <FavoriteButton productId={it.id} />
                       </div>
                     )}
                   </div>
@@ -847,9 +818,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
           <button
             type="button"
             disabled={loading || pageNum <= 1}
-            onClick={() =>
-              setPage((p) => Math.max(1, p - 1))
-            }
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
             className={`rounded-lg border px-3 py-1.5 text-xs transition ${
               !loading && pageNum > 1
                 ? "border-border bg-card hover:bg-muted"
@@ -861,9 +830,7 @@ export default function HomeClient(_seed?: HomeSeedProps) {
           </button>
           <button
             type="button"
-            disabled={
-              loading || pageNum >= totalPages
-            }
+            disabled={loading || pageNum >= totalPages}
             onClick={() => setPage((p) => p + 1)}
             className={`rounded-lg border px-3 py-1.5 text-xs transition ${
               !loading && pageNum < totalPages

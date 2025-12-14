@@ -2,13 +2,7 @@
 // src/app/auth-test/page.tsx
 
 import type { Session } from "next-auth";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useCallback,
-} from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import toast from "react-hot-toast";
@@ -76,7 +70,10 @@ export default function AuthTest() {
     try {
       setLoadingMe(true);
       track("auth_debug_ping_me");
-      const r = await fetch("/api/me", { cache: "no-store" });
+      const r = await fetch("/api/me", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
       const j: MeResponse = await r.json();
       setMe(j);
       if (!r.ok) {
@@ -158,9 +155,7 @@ export default function AuthTest() {
           <div className="text-sm">
             <div>
               <span className="font-semibold">Status:</span>{" "}
-              <span
-                className={isAuthed ? "text-emerald-700" : "text-rose-700"}
-              >
+              <span className={isAuthed ? "text-emerald-700" : "text-rose-700"}>
                 {status}
               </span>
             </div>

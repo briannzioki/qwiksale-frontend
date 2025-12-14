@@ -1,5 +1,7 @@
 "use client";
 
+// src/app/components/productcard.tsx
+
 import React, {
   memo,
   useCallback,
@@ -12,6 +14,7 @@ import { useRouter } from "next/navigation";
 import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
+import ReviewStars from "@/app/components/ReviewStars";
 
 type Props = {
   id: string;
@@ -22,6 +25,10 @@ type Props = {
   position?: number;
   prefetch?: boolean;
   className?: string;
+
+  /** Optional rating summary (for grids / feeds). */
+  ratingAverage?: number | null;
+  ratingCount?: number | null;
 
   /** Dashboard mode: show Edit/Delete controls */
   ownerControls?: boolean;
@@ -82,6 +89,8 @@ function ProductCardImpl({
   position,
   prefetch = true,
   className = "",
+  ratingAverage,
+  ratingCount,
   ownerControls = false,
   editHref,
   onDeletedAction,
@@ -111,6 +120,12 @@ function ProductCardImpl({
       : ({ placeholder: "empty" as const } as const);
 
   const priceText = fmtKES(price);
+
+  const hasRating =
+    typeof ratingAverage === "number" &&
+    ratingAverage > 0 &&
+    typeof ratingCount === "number" &&
+    ratingCount > 0;
 
   // Impression tracking
   useEffect(() => {
@@ -202,6 +217,14 @@ function ProductCardImpl({
       aria-label={name ?? "Product"}
       data-product-id={id}
       data-card="product"
+      data-listing-id={id}
+      data-listing-kind="product"
+      {...(hasRating
+        ? {
+            "data-rating-avg": ratingAverage,
+            "data-rating-count": ratingCount,
+          }
+        : {})}
     >
       {/* Owner controls: separate from main link */}
       {ownerControls && (
@@ -272,9 +295,25 @@ function ProductCardImpl({
           <div className="line-clamp-1 font-semibold text-[var(--text)]">
             {name ?? "Product"}
           </div>
+
           <div className="mt-1 text-[15px] font-bold text-brandBlue">
             {priceText}
           </div>
+
+          {hasRating && (
+            <div
+              className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]"
+              aria-label={`${ratingAverage?.toFixed(1)} out of 5 stars from ${ratingCount} reviews`}
+            >
+              <ReviewStars rating={ratingAverage || 0} />
+              <span className="font-medium">
+                {ratingAverage?.toFixed(1)}
+              </span>
+              <span className="text-[0.7rem] text-muted-foreground">
+                ({ratingCount})
+              </span>
+            </div>
+          )}
         </div>
       </Link>
     </div>

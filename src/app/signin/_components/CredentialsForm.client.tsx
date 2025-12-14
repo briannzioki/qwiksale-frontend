@@ -6,16 +6,13 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 
 /**
- * Credentials sign-in form (client-only) that uses next-auth's signIn()
- * for CSRF-safe credential login with a real redirect.
+ * Credentials sign-in form (client-only).
  *
- * IMPORTANT:
- * - We still render a real <form action=... method="post"> as a hard fallback
- *   in case JS/React dies. NextAuth's /callback/credentials will then issue
- *   its own redirect.
- * - In the normal JS-enabled path, we intercept submit and call signIn(),
- *   which performs a full document navigation (redirect: true) so Playwright
- *   sees a proper navigation event and does not hang on the current URL.
+ * Key behavior:
+ * - We ALWAYS use next-auth's signIn() helper in JS-enabled browsers so the
+ *   CSRF cookie+token are created in the real browser session (prevents MissingCSRF).
+ * - We still render a real <form action=... method="post"> as a hard fallback.
+ *   (If JS is disabled, the browser will POST normally to the action.)
  */
 export function CredsFormClient({
   action,
@@ -27,7 +24,7 @@ export function CredsFormClient({
   csrfFromServer?: string;
 }) {
   const [loading, setLoading] = React.useState(false);
-  const [error] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
   const emailRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -37,10 +34,16 @@ export function CredsFormClient({
 
   const onSubmit = React.useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      if (loading) return;
+      if (loading) {
+        e.preventDefault();
+        return;
+      }
 
       const form = e.currentTarget;
+
+      // JS-enabled path: intercept and use next-auth helper (it will fetch CSRF and set cookies).
+      e.preventDefault();
+
       const fd = new FormData(form);
       const email = String(fd.get("email") ?? "").trim();
       const password = String(fd.get("password") ?? "");
@@ -50,24 +53,45 @@ export function CredsFormClient({
         return;
       }
 
+      const safeCb =
+        typeof callbackUrl === "string" && callbackUrl.startsWith("/")
+          ? callbackUrl
+          : "/dashboard";
+
+      setError(null);
       setLoading(true);
       try {
         /**
          * Auth.js v5 / next-auth v5:
-         * signIn(provider, { redirect: true, callbackUrl }) still causes a
-         * real document.location change. We do NOT try to handle the response;
-         * we let the browser navigate, which satisfies Playwright's
-         * "waitForNavigation" expectations.
+         * signIn(provider, { redirect: true, callbackUrl }) triggers a real
+         * document navigation. Playwright "waitForNavigation" expectations are satisfied.
          */
-        await signIn("credentials", {
+        const res = await signIn("credentials", {
           redirect: true,
-          callbackUrl: callbackUrl || "/dashboard",
+          callbackUrl: safeCb,
           email,
           password,
         });
-        // With redirect: true, we usually never resume execution here.
+
+        // Safety: if redirect didn't happen, but next-auth returned a URL, navigate.
+        const nextUrl = (res as any)?.url;
+        if (typeof nextUrl === "string" && nextUrl) {
+          window.location.href = nextUrl;
+          return;
+        }
+
+        // If it returned an error without redirect, show a friendly message.
+        const err = (res as any)?.error;
+        if (typeof err === "string" && err) {
+          setError(
+            err === "CredentialsSignin"
+              ? "Email or password is incorrect."
+              : "Sign-in failed. Please try again.",
+          );
+        }
+      } catch {
+        setError("Sign-in failed. Please try again.");
       } finally {
-        // Harmless safety for edge-cases where redirect doesn't fire.
         setLoading(false);
       }
     },
@@ -82,7 +106,7 @@ export function CredsFormClient({
       className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
       noValidate
     >
-      {/* Keep server CSRF and callback as hard POST fallback */}
+      {/* Hard fallback fields for native POST if JS is disabled */}
       {csrfFromServer ? (
         <input type="hidden" name="csrfToken" value={csrfFromServer} readOnly />
       ) : null}
@@ -104,6 +128,7 @@ export function CredsFormClient({
             inputMode="email"
             required
             aria-required="true"
+            disabled={loading}
           />
         </div>
 
@@ -121,6 +146,7 @@ export function CredsFormClient({
             minLength={6}
             required
             aria-required="true"
+            disabled={loading}
           />
           <p className="mt-1 text-xs text-gray-600 dark:text-slate-400">
             Minimum 6 characters.

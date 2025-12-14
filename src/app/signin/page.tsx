@@ -23,80 +23,20 @@ function isSafePath(p?: string | null): p is string {
   return !!p && /^\/(?!\/)/.test(p);
 }
 
-function resolveBaseUrl(): string {
-  const env =
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["APP_URL"] ||
-    process.env["NEXTAUTH_URL"] ||
-    process.env["VERCEL_URL"] ||
-    "";
-  if (env) {
-    try {
-      const u = env.startsWith("http") ? new URL(env) : new URL(`https://${env}`);
-      return u.origin;
-    } catch {
-      // ignore
-    }
+function hasGoogleConfigured(): boolean {
+  // Keep this conservative: in production only show if env suggests Google is set.
+  // (Exact names vary by setup, so we check common ones.)
+  const keys = [
+    "GOOGLE_CLIENT_ID",
+    "AUTH_GOOGLE_ID",
+    "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
+  ] as const;
+
+  for (const k of keys) {
+    const v = process.env[k];
+    if (typeof v === "string" && v.trim()) return true;
   }
-  return "http://localhost:3000";
-}
-
-/** Timeboxed CSRF fetch; falls back to null on slow/cold starts. */
-async function getCsrfTokenServer(timeoutMs = 3200): Promise<string | null> {
-  const base = resolveBaseUrl();
-  const ctrl = new AbortController();
-  const tid = setTimeout(() => {
-    try {
-      ctrl.abort();
-    } catch {
-      // ignore
-    }
-  }, Math.max(200, timeoutMs));
-
-  try {
-    const res = await fetch(new URL("/api/auth/csrf", base).toString(), {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return null;
-    const j = (await res.json().catch(() => null)) as any;
-    return j?.csrfToken ?? j?.csrf?.token ?? null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(tid);
-  }
-}
-
-/** Timeboxed providers fetch; used to decide whether to show Google button. */
-async function getAuthProvidersServer(
-  timeoutMs = 3200,
-): Promise<Record<string, unknown> | null> {
-  const base = resolveBaseUrl();
-  const ctrl = new AbortController();
-  const tid = setTimeout(() => {
-    try {
-      ctrl.abort();
-    } catch {
-      // ignore
-    }
-  }, Math.max(200, timeoutMs));
-
-  try {
-    const res = await fetch(new URL("/api/auth/providers", base).toString(), {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return null;
-    const j = (await res.json().catch(() => null)) as any;
-    return j && typeof j === "object" ? j : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(tid);
-  }
+  return false;
 }
 
 export default async function Page({
@@ -138,13 +78,14 @@ export default async function Page({
     callbackUrl,
   )}`;
 
-  const [csrfToken, providers] = await Promise.all([
-    getCsrfTokenServer(),
-    getAuthProvidersServer(),
-  ]);
-
-  // Use indexer access to satisfy TS4111
-  const hasGoogle = !!(providers && providers["google"]);
+  // ✅ No server-side /api/auth/csrf fetch.
+  // CSRF cookies/tokens must be created in the browser session; the client submit
+  // flow handles that (prevents MissingCSRF redirects in Playwright).
+  //
+  // ✅ Don’t server-fetch /providers (it causes duplication with client auth flows).
+  // In dev/test, always show Google to avoid brittle setups.
+  const hasGoogle =
+    process.env.NODE_ENV !== "production" || hasGoogleConfigured();
 
   return (
     <div className="container-page py-10">
@@ -173,7 +114,7 @@ export default async function Page({
           <CredsFormClient
             action={credsAction}
             callbackUrl={callbackUrl}
-            csrfFromServer={csrfToken ?? ""}
+            csrfFromServer=""
           />
 
           {hasGoogle && (

@@ -1,3 +1,4 @@
+// src/app/account/profile/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,8 +14,25 @@ export const metadata: Metadata = {
 
 export default function Page() {
   return (
-    <Suspense fallback={<div />}>
-      <ProfileClient />
-    </Suspense>
+    <main className="container-page space-y-4 py-6">
+      <header>
+        <h1 className="text-2xl font-bold text-foreground">
+          Your profile
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Update your account details, contact info, and store location used on your listings.
+        </p>
+      </header>
+
+      <Suspense
+        fallback={
+          <div className="card p-5 text-sm text-muted-foreground">
+            Loading profile…
+          </div>
+        }
+      >
+        <ProfileClient />
+      </Suspense>
+    </main>
   );
 }

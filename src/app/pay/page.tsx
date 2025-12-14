@@ -79,7 +79,7 @@ type Mode = "paybill" | "till";
 
 export default function PayPage() {
   const [msisdn, setMsisdn] = useState<string>("");
-  const [profileMsisdn, setProfileMsisdn] = useState<string>(""); // normalized from /api/me/profile
+  const [profileMsisdn, setProfileMsisdn] = useState<string>(""); // normalized from /api/me/profile (only when requested)
   const normalized = useMemo(() => normalizeMsisdn(msisdn), [msisdn]);
   const validPhone = isValidMsisdn(normalized);
 
@@ -87,42 +87,17 @@ export default function PayPage() {
   const [mode, setMode] = useState<Mode>("paybill");
 
   const [loading, setLoading] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const [resp, setResp] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
-  // Prefill order: profile.whatsapp -> last used (ls) -> env default
+  // Prefill order: last used (ls) -> env default
   useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      try {
-        const r = await fetch("/api/me/profile", { cache: "no-store" });
-        if (r.ok) {
-          const j = await r.json().catch(() => ({}));
-          const wa = (j?.user?.whatsapp || "").trim();
-          const norm = wa ? normalizeMsisdn(wa) : "";
-          if (alive && norm && isValidMsisdn(norm)) {
-            setProfileMsisdn(norm);
-            setMsisdn(norm);
-            return;
-          }
-        }
-      } catch {
-        /* ignore, fall back to ls/env */
-      }
-      // fallback to last used then env default
-      const last = lsGet("qs_last_msisdn", DEFAULT_MSISDN);
-      const normLast = normalizeMsisdn(last);
-      if (alive && normLast) {
-        setMsisdn(normLast);
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
+    const last = lsGet("qs_last_msisdn", DEFAULT_MSISDN);
+    const normLast = normalizeMsisdn(last);
+    if (normLast) setMsisdn(normLast);
   }, []);
 
   // Persist when valid
@@ -140,6 +115,44 @@ export default function PayPage() {
   function snapNormalize() {
     const n = normalizeMsisdn(msisdn);
     if (n !== msisdn) setMsisdn(n);
+  }
+
+  async function loadPhoneFromProfile() {
+    if (loadingProfile) return;
+    setLoadingProfile(true);
+    try {
+      const r = await fetch("/api/me/profile", {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { accept: "application/json" },
+      });
+
+      if (r.status === 401) {
+        toast.error("Sign in to load your profile phone.");
+        return;
+      }
+      if (!r.ok) {
+        toast.error("Could not load profile.");
+        return;
+      }
+
+      const j = await r.json().catch(() => ({}));
+      const wa = String(j?.user?.whatsapp || "").trim();
+      const norm = wa ? normalizeMsisdn(wa) : "";
+
+      if (!norm || !isValidMsisdn(norm)) {
+        toast.error("No valid WhatsApp number found in your profile.");
+        return;
+      }
+
+      setProfileMsisdn(norm);
+      setMsisdn(norm);
+      toast.success("Loaded phone from profile");
+    } catch {
+      toast.error("Network error loading profile");
+    } finally {
+      setLoadingProfile(false);
+    }
   }
 
   async function pay() {
@@ -233,10 +246,7 @@ export default function PayPage() {
       <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80 space-y-4">
         {/* Phone */}
         <div>
-          <label
-            htmlFor="pay-phone"
-            className="block text-sm font-semibold mb-1"
-          >
+          <label htmlFor="pay-phone" className="block text-sm font-semibold mb-1">
             Phone (2547XXXXXXXX or 2541XXXXXXXX)
           </label>
           <div className="flex gap-2 items-start">
@@ -250,17 +260,30 @@ export default function PayPage() {
               inputMode="numeric"
               aria-invalid={!validPhone}
             />
-            {showUseProfile && (
+
+            {showUseProfile ? (
               <button
                 type="button"
                 onClick={() => setMsisdn(profileMsisdn)}
                 className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800"
                 title="Use my profile phone"
+                disabled={loading || loadingProfile}
               >
                 Use profile
               </button>
+            ) : (
+              <button
+                type="button"
+                onClick={loadPhoneFromProfile}
+                className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
+                title="Load phone from my profile"
+                disabled={loading || loadingProfile}
+              >
+                {loadingProfile ? "Loading…" : "Load profile"}
+              </button>
             )}
           </div>
+
           <div className="text-xs text-gray-600 dark:text-slate-400 mt-1">
             Normalized: <code className="font-mono">{normalized || "—"}</code>
           </div>
@@ -278,10 +301,7 @@ export default function PayPage() {
 
         {/* Amount + quick chips */}
         <div>
-          <label
-            htmlFor="pay-amount"
-            className="block text-sm font-semibold mb-1"
-          >
+          <label htmlFor="pay-amount" className="block text-sm font-semibold mb-1">
             Amount (KES)
           </label>
           <div className="flex flex-wrap gap-2 items-center">
@@ -316,10 +336,7 @@ export default function PayPage() {
 
         {/* Mode */}
         <div>
-          <label
-            htmlFor="pay-mode"
-            className="block text-sm font-semibold mb-1"
-          >
+          <label htmlFor="pay-mode" className="block text-sm font-semibold mb-1">
             Mode
           </label>
           <select
@@ -471,9 +488,8 @@ export default function PayPage() {
           <code className="font-mono">MPESA_CALLBACK_URL</code> is publicly
           reachable (e.g., Vercel prod domain or an ngrok URL) pointing to{" "}
           <code className="font-mono">/api/mpesa/callback</code>. In sandbox,
-          the default shortcode is{" "}
-          <code className="font-mono">174379</code> and mode is{" "}
-          <code className="font-mono">paybill</code>.
+          the default shortcode is <code className="font-mono">174379</code> and
+          mode is <code className="font-mono">paybill</code>.
         </div>
       </div>
     </div>

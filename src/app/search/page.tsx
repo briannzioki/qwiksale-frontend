@@ -31,8 +31,7 @@ type Envelope<T> = {
 
 export const metadata: Metadata = {
   title: "Search · QwikSale",
-  description:
-    "Search products and services listed on QwikSale across Kenya.",
+  description: "Search products and services listed on QwikSale across Kenya.",
 };
 
 /* ------------------------ helpers ------------------------ */
@@ -178,12 +177,9 @@ async function fetchEnvelope<T>(
 
     return {
       page: typeof json?.page === "number" ? json.page : 1,
-      pageSize:
-        typeof json?.pageSize === "number" ? json.pageSize : pageSize,
-      total:
-        typeof json?.total === "number" ? json.total : rawItems.length,
-      totalPages:
-        typeof json?.totalPages === "number" ? json.totalPages : 1,
+      pageSize: typeof json?.pageSize === "number" ? json.pageSize : pageSize,
+      total: typeof json?.total === "number" ? json.total : rawItems.length,
+      totalPages: typeof json?.totalPages === "number" ? json.totalPages : 1,
       items: rawItems as T[],
     };
   } catch (err) {
@@ -212,13 +208,15 @@ function getPrimaryImage(raw: any): string | null {
   if (Array.isArray(raw.images) && raw.images.length > 0) {
     const first = raw.images[0];
     if (typeof first === "string" && first.trim()) return first;
-    if (first && typeof first.url === "string" && first.url.trim()) return first.url;
+    if (first && typeof first.url === "string" && first.url.trim())
+      return first.url;
   }
 
   if (Array.isArray(raw.gallery) && raw.gallery.length > 0) {
     const first = raw.gallery[0];
     if (typeof first === "string" && first.trim()) return first;
-    if (first && typeof first.url === "string" && first.url.trim()) return first.url;
+    if (first && typeof first.url === "string" && first.url.trim())
+      return first.url;
   }
 
   return null;
@@ -278,7 +276,10 @@ function getPriceLabel(raw: any, kind: "product" | "service"): string | null {
   return null;
 }
 
-function buildResultItem(raw: any, kind: "product" | "service"): SearchResultItem {
+function buildResultItem(
+  raw: any,
+  kind: "product" | "service",
+): SearchResultItem {
   const id = raw?.id ?? raw?.productId ?? raw?.serviceId;
   const name = raw?.name ?? raw?.title ?? "Untitled";
 
@@ -368,10 +369,10 @@ export default async function SearchPage({
     sortRaw === "featured"
       ? "featured"
       : sortRaw === "price_asc" || sortRaw === "price-asc"
-      ? "price_asc"
-      : sortRaw === "price_desc" || sortRaw === "price-desc"
-      ? "price_desc"
-      : "newest";
+        ? "price_asc"
+        : sortRaw === "price_desc" || sortRaw === "price-desc"
+          ? "price_desc"
+          : "newest";
 
   const anyAdvanced =
     !!brand ||
@@ -445,6 +446,17 @@ export default async function SearchPage({
   }
 
   const resultsLabel = getResultsLabel(type);
+
+  const requestKind: "product" | "service" =
+    type === "service" ? "service" : "product";
+  const requestHref = (() => {
+    const qp = new URLSearchParams();
+    qp.set("kind", requestKind);
+    if (q) qp.set("title", q);
+    return `/requests/new?${qp.toString()}`;
+  })();
+
+  const showRequestCta = items.length === 0 || items.length < 3;
 
   return (
     <main className="container-page py-6">
@@ -676,53 +688,88 @@ export default async function SearchPage({
         {items.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
             No results yet. Try adjusting your filters.
+            {showRequestCta && (
+              <div className="mt-3">
+                <Link
+                  href={requestHref}
+                  prefetch={false}
+                  className="inline-flex items-center rounded-lg border border-border bg-card/80 px-3 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-card"
+                >
+                  Didn’t find it? Post a request
+                </Link>
+              </div>
+            )}
           </div>
         ) : (
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {items.map((r) => (
-              <li key={`${r.kind}-${r.id}`}>
-                <Link
-                  href={r.href}
-                  prefetch={false}
-                  className="group block h-full overflow-hidden rounded-2xl border border-border bg-card/90 shadow-sm transition hover:border-brandBlue/70 hover:bg-card"
-                  aria-label={`${r.kind === "product" ? "Product" : "Service"}: ${r.name}`}
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden bg-muted">
-                    {r.imageUrl ? (
-                      <img
-                        src={r.imageUrl}
-                        alt={r.name}
-                        loading="lazy"
-                        className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">
-                        No photo
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {r.kind === "product" ? "Product" : "Service"}
+          <>
+            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {items.map((r) => (
+                <li key={`${r.kind}-${r.id}`}>
+                  <Link
+                    href={r.href}
+                    prefetch={false}
+                    className="group block h-full overflow-hidden rounded-2xl border border-border bg-card/90 shadow-sm transition hover:border-brandBlue/70 hover:bg-card"
+                    aria-label={`${
+                      r.kind === "product" ? "Product" : "Service"
+                    }: ${r.name}`}
+                  >
+                    <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+                      {r.imageUrl ? (
+                        <img
+                          src={r.imageUrl}
+                          alt={r.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">
+                          No photo
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
-                      {r.name}
+                    <div className="p-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {r.kind === "product" ? "Product" : "Service"}
+                      </div>
+                      <div className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
+                        {r.name}
+                      </div>
+                      {r.categoryLabel && (
+                        <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
+                          {r.categoryLabel}
+                        </div>
+                      )}
+                      {r.priceLabel && (
+                        <div className="mt-2 text-sm font-semibold text-brandBlue">
+                          {r.priceLabel}
+                        </div>
+                      )}
                     </div>
-                    {r.categoryLabel && (
-                      <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
-                        {r.categoryLabel}
-                      </div>
-                    )}
-                    {r.priceLabel && (
-                      <div className="mt-2 text-sm font-semibold text-brandBlue">
-                        {r.priceLabel}
-                      </div>
-                    )}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+
+            {showRequestCta && (
+              <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4">
+                <div className="text-sm font-semibold text-foreground">
+                  Didn’t find it? Post a request
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  Tell sellers what you need and get offers faster.
+                </div>
+                <div className="mt-3">
+                  <Link
+                    href={requestHref}
+                    prefetch={false}
+                    className="inline-flex items-center rounded-lg bg-[#161748] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#161748]/90"
+                  >
+                    Post a request
+                  </Link>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </section>
     </main>

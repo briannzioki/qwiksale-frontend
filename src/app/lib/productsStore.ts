@@ -65,7 +65,7 @@ export type UseProductsReturn = {
 
 /* Optional config for useProducts (non-breaking) */
 export type UseProductsOptions = {
-  /** Override the default pageSize (capped between 24..120). */
+  /** Override the default pageSize (capped between 24..48). */
   pageSize?: number;
   /** Provide initial products to prime cache (e.g., RSC prefetch). */
   initial?: Product[];
@@ -78,9 +78,9 @@ export type UseProductsOptions = {
 /* ------------------------------------------------------------------ */
 
 const LIST_KEY = "qs_products_list_v1"; // sessionStorage key
-const DEFAULT_PAGE_SIZE = 60;
+const DEFAULT_PAGE_SIZE = 48; // ✅ align with API caps
 const MIN_PAGE_SIZE = 24;
-const MAX_PAGE_SIZE = 120;
+const MAX_PAGE_SIZE = 48; // ✅ align with API caps
 
 const memory = {
   list: [] as Product[],
@@ -466,9 +466,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
       const pid = String(id);
       // Optimistic candidate
       const prev = memory.map.get(pid) || null;
-      const optimistic: Product | null = prev
-        ? withMediaMeta({ ...prev, ...patch, id: prev.id } as Product, "optimistic")
-        : null;
+      const optimistic: Product | null = prev ? withMediaMeta({ ...prev, ...patch, id: prev.id } as Product, "optimistic") : null;
 
       if (optimistic) {
         updateOneInMemory(optimistic);

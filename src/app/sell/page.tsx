@@ -63,9 +63,9 @@ export default async function SellLandingPage() {
                   prefetch={false}
                   href={`/signin?callbackUrl=${encodeURIComponent("/sell")}`}
                   className="btn-gradient-primary"
-                  aria-label="Sign in to post"
+                  aria-label="Sign in"
                 >
-                  Sign in to post
+                  Sign in
                 </Link>
                 <Link
                   prefetch={false}

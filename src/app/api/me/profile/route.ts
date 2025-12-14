@@ -8,6 +8,16 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
+const SHOULD_LOG =
+  process.env.NODE_ENV === "development" &&
+  process.env["API_DEBUG"] === "1";
+
+function warn(...args: any[]) {
+  if (!SHOULD_LOG) return;
+  // eslint-disable-next-line no-console
+  console.warn(...args);
+}
+
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -22,10 +32,11 @@ const RESERVED = new Set(
   (process.env["RESERVED_USERNAMES"] || "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
+    .filter(Boolean),
 );
 
-const looksLikeEmail = (e?: string) => !!e && EMAIL_RE.test(e.trim().toLowerCase());
+const looksLikeEmail = (e?: string) =>
+  !!e && EMAIL_RE.test(e.trim().toLowerCase());
 const looksLikeValidUsername = (u: string) => USERNAME_RE.test(u);
 
 function normalizeName(input: unknown): string | undefined {
@@ -48,14 +59,17 @@ function normalizeKePhone(raw: unknown): string | undefined {
   if (typeof raw !== "string") return undefined;
   const t = raw.trim();
   if (!t) return ""; // allow clearing
+
   if (/^\+254(7|1)\d{8}$/.test(t)) return t.replace(/^\+/, "");
+
   let s = t.replace(/\D+/g, "");
   if (/^07\d{8}$/.test(s) || /^01\d{8}$/.test(s)) s = "254" + s.slice(1);
   if (/^7\d{8}$/.test(s) || /^1\d{8}$/.test(s)) s = "254" + s;
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-const looksLikeValidKePhone = (s?: string) => !!s && /^254(7|1)\d{8}$/.test(s);
+const looksLikeValidKePhone = (s?: string) =>
+  !!s && /^254(7|1)\d{8}$/.test(s);
 
 /* ---------------------------------- GET ---------------------------------- */
 export async function GET() {
@@ -63,16 +77,23 @@ export async function GET() {
     const session = await auth().catch(() => null);
     const sessionUser = (session as any)?.user || null;
 
-    let userId: string | undefined = sessionUser?.id as string | undefined;
+    let userId: string | undefined =
+      (sessionUser?.id as string | undefined) || undefined;
+
     if (!userId && sessionUser?.email) {
       try {
         const u = await prisma.user.findUnique({
-          where: { email: sessionUser.email as string },
+          where: {
+            email: sessionUser.email as string,
+          },
           select: { id: true },
         });
         userId = u?.id;
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
+
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const user = await prisma.user.findUnique({
@@ -80,6 +101,7 @@ export async function GET() {
       select: {
         id: true,
         email: true,
+        emailVerified: true,
         username: true,
         name: true,
         image: true,
@@ -88,18 +110,25 @@ export async function GET() {
         postalCode: true,
         city: true,
         country: true,
+        storeLocationUrl: true,
+        verified: true,
       },
     });
+
     if (!user) return noStore({ error: "Not found" }, { status: 404 });
 
     const normalizedWhatsapp = normalizeKePhone(user.whatsapp ?? "") || null;
     const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
 
     return noStore({
-      user: { ...user, whatsapp: normalizedWhatsapp, profileComplete },
+      user: {
+        ...user,
+        whatsapp: normalizedWhatsapp,
+        profileComplete,
+      },
     });
   } catch (e) {
-    console.warn("[/api/me/profile GET] error:", e);
+    warn("[/api/me/profile GET] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
@@ -110,22 +139,34 @@ export async function PATCH(req: Request) {
     const session = await auth().catch(() => null);
     const sessionUser = (session as any)?.user || null;
 
-    let userId: string | undefined = sessionUser?.id as string | undefined;
+    let userId: string | undefined =
+      (sessionUser?.id as string | undefined) || undefined;
+
     if (!userId && sessionUser?.email) {
       try {
         const u = await prisma.user.findUnique({
-          where: { email: sessionUser.email as string },
+          where: {
+            email: sessionUser.email as string,
+          },
           select: { id: true },
         });
         userId = u?.id;
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
+
     if (!userId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     const me = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, emailVerified: true },
+      select: {
+        id: true,
+        email: true,
+        emailVerified: true,
+      },
     });
+
     if (!me) return noStore({ error: "Not found" }, { status: 404 });
 
     const body = (await req.json().catch(() => ({}))) as {
@@ -138,6 +179,8 @@ export async function PATCH(req: Request) {
       postalCode?: string | null;
       city?: string | null;
       country?: string | null;
+      storeLocationUrl?: string | null;
+      // NOTE: verified is intentionally NOT accepted here.
     };
 
     const data: Record<string, unknown> = {};
@@ -148,39 +191,68 @@ export async function PATCH(req: Request) {
     // email
     if (typeof body?.email === "string") {
       const nextEmail = body.email.trim().toLowerCase();
-      if (!looksLikeEmail(nextEmail))
+      if (!looksLikeEmail(nextEmail)) {
         return noStore({ error: "Invalid email address." }, { status: 400 });
+      }
+
       const changed = nextEmail !== (me.email ?? "").toLowerCase();
+
       if (changed) {
         const clash = await prisma.user.findFirst({
-          where: { email: { equals: nextEmail, mode: "insensitive" }, NOT: { id: me.id } },
+          where: {
+            email: {
+              equals: nextEmail,
+              mode: "insensitive",
+            },
+            NOT: { id: me.id },
+          },
           select: { id: true },
         });
-        if (clash) return noStore({ error: "Email already in use" }, { status: 409 });
+
+        if (clash) {
+          return noStore({ error: "Email already in use" }, { status: 409 });
+        }
+
         data["email"] = nextEmail;
-        if (typeof me.emailVerified !== "undefined") data["emailVerified"] = null;
+        if (typeof me.emailVerified !== "undefined") {
+          data["emailVerified"] = null;
+        }
       }
     }
 
     // username
     if (typeof body?.username === "string") {
       const username = body.username.trim();
+
       if (!looksLikeValidUsername(username)) {
         return noStore(
           {
             error:
               "Username must be 3–24 chars (letters, numbers, ., _), no leading/trailing dot/underscore, no doubles.",
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
-      if (RESERVED.has(username.toLowerCase()))
+
+      if (RESERVED.has(username.toLowerCase())) {
         return noStore({ error: "That username is reserved." }, { status: 409 });
+      }
+
       const clash = await prisma.user.findFirst({
-        where: { username: { equals: username, mode: "insensitive" }, NOT: { id: userId } },
+        where: {
+          username: {
+            equals: username,
+            mode: "insensitive",
+          },
+          NOT: { id: userId },
+        },
         select: { id: true },
       });
-      if (clash) return noStore({ error: "Username is already taken." }, { status: 409 });
+
+      if (clash) {
+        return noStore({ error: "Username is already taken." }, { status: 409 });
+      }
+
       data["username"] = username;
     }
 
@@ -194,19 +266,73 @@ export async function PATCH(req: Request) {
       if (norm && !looksLikeValidKePhone(norm)) {
         return noStore(
           { error: "WhatsApp must be a valid KE number (07XXXXXXXX / 2547XXXXXXXX)." },
-          { status: 400 }
+          { status: 400 },
         );
       }
       data["whatsapp"] = norm ? norm : null;
     }
 
-    if (body?.address !== undefined) data["address"] = body.address?.trim() || null;
-    if (body?.postalCode !== undefined) data["postalCode"] = body.postalCode?.trim() || null;
-    if (body?.city !== undefined) data["city"] = body.city?.trim() || null;
-    if (body?.country !== undefined) data["country"] = body.country?.trim() || null;
+    if (body?.address !== undefined) {
+      data["address"] = body.address?.trim() || null;
+    }
+    if (body?.postalCode !== undefined) {
+      data["postalCode"] = body.postalCode?.trim() || null;
+    }
+    if (body?.city !== undefined) {
+      data["city"] = body.city?.trim() || null;
+    }
+    if (body?.country !== undefined) {
+      data["country"] = body.country?.trim() || null;
+    }
 
-    if (Object.keys(data).length === 0)
+    // storeLocationUrl – must be a Google Maps link
+    if (typeof body?.storeLocationUrl === "string") {
+      const raw = body.storeLocationUrl.trim();
+
+      if (!raw) {
+        // Explicit clear
+        data["storeLocationUrl"] = null;
+      } else {
+        let url: URL;
+        try {
+          url = new URL(raw);
+        } catch {
+          return noStore(
+            { error: "Store location URL must be a valid Google Maps link." },
+            { status: 400 },
+          );
+        }
+
+        const host = url.hostname.toLowerCase();
+        const path = url.pathname.toLowerCase();
+
+        const allowed =
+          host === "maps.google.com" ||
+          (host.endsWith(".google.com") && path.includes("/maps")) ||
+          (host === "goo.gl" && path.startsWith("/maps")) ||
+          (host.endsWith(".goo.gl") && path.includes("/maps"));
+
+        if (!allowed) {
+          return noStore(
+            {
+              error:
+                "Store location URL must be a Google Maps link (maps.google.com or goo.gl/maps).",
+            },
+            { status: 400 },
+          );
+        }
+
+        const full = url.toString();
+        data["storeLocationUrl"] = full.length > 2048 ? full.slice(0, 2048) : full;
+      }
+    }
+
+    // NOTE: `verified` is intentionally *not* writable here.
+    // It remains strictly server/admin-controlled.
+
+    if (Object.keys(data).length === 0) {
       return noStore({ error: "Nothing to update." }, { status: 400 });
+    }
 
     const user = await prisma.user.update({
       where: { id: userId },
@@ -214,6 +340,7 @@ export async function PATCH(req: Request) {
       select: {
         id: true,
         email: true,
+        emailVerified: true,
         username: true,
         name: true,
         image: true,
@@ -222,6 +349,8 @@ export async function PATCH(req: Request) {
         postalCode: true,
         city: true,
         country: true,
+        storeLocationUrl: true,
+        verified: true,
       },
     });
 
@@ -237,17 +366,23 @@ export async function PATCH(req: Request) {
           },
         });
       }
-    } catch {}
+    } catch {
+      // ignore
+    }
 
     const normalizedWhatsapp = normalizeKePhone(user.whatsapp ?? "") || null;
     const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
 
     return noStore({
       ok: true,
-      user: { ...user, whatsapp: normalizedWhatsapp, profileComplete },
+      user: {
+        ...user,
+        whatsapp: normalizedWhatsapp,
+        profileComplete,
+      },
     });
   } catch (e) {
-    console.warn("[/api/me/profile PATCH] error:", e);
+    warn("[/api/me/profile PATCH] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }

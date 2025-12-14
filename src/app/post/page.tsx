@@ -14,30 +14,34 @@ export const metadata: Metadata = {
 
 export default function PostLandingPage() {
   return (
-    <div className="container-page py-10">
+    <main className="container-page py-10">
       {/* HERO */}
       <section className="mx-auto max-w-4xl text-center">
-        <div className="rounded-2xl p-8 md:p-10 text-white bg-gradient-to-br from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none">
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
+        <div className="rounded-2xl bg-gradient-to-br from-brandNavy via-brandGreen to-brandBlue p-8 text-white shadow-soft md:p-10 dark:shadow-none">
+          <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">
             Create a listing in minutes
           </h1>
-          <p className="mt-3 text-white/90 text-pretty">
-            Products or services — beautiful posts that buyers trust. Add photos,
-            set a price, and go.
+          <p className="mt-3 text-pretty text-white/90">
+            Products or services — beautiful posts that buyers trust. Add
+            photos, set a price, and go.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/sell/product"
+              prefetch={false}
               className="btn-gradient-primary"
               aria-label="Post a product"
+              data-testid="post-cta-product"
             >
               Post a product
             </Link>
             <Link
               href="/sell/service"
+              prefetch={false}
               className="btn-outline"
               aria-label="Post a service"
+              data-testid="post-cta-service"
             >
               Post a service
             </Link>
@@ -45,7 +49,9 @@ export default function PostLandingPage() {
 
           {/* Trust chips */}
           <div className="mt-5 grid grid-cols-1 gap-2 text-xs text-white/90 sm:grid-cols-3">
-            <div className="rounded-lg bg-white/10 px-3 py-2">Free to post</div>
+            <div className="rounded-lg bg-white/10 px-3 py-2">
+              Free to post
+            </div>
             <div className="rounded-lg bg-white/10 px-3 py-2">
               No commissions
             </div>
@@ -90,6 +96,7 @@ export default function PostLandingPage() {
           <div className="mt-6">
             <Link
               href="/sell/product"
+              prefetch={false}
               className="relative block w-full rounded-xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue px-4 py-2.5 text-center text-sm font-semibold text-white shadow transition hover:opacity-95"
               aria-label="Start a product listing"
             >
@@ -108,7 +115,8 @@ export default function PostLandingPage() {
               <h2 className="text-xl font-semibold">Offer a Service</h2>
             </div>
             <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">
-              Cleaning, repairs, beauty, events, transport, tech — get discovered.
+              Cleaning, repairs, beauty, events, transport, tech — get
+              discovered.
             </p>
             <ul className="mt-4 space-y-2 text-sm text-gray-700 dark:text-slate-200">
               <li className="flex items-start gap-2">
@@ -130,6 +138,7 @@ export default function PostLandingPage() {
           <div className="mt-6">
             <Link
               href="/sell/service"
+              prefetch={false}
               className="btn-outline block w-full text-center"
               aria-label="Start a service listing"
             >
@@ -192,7 +201,7 @@ export default function PostLandingPage() {
 
           <p className="mt-4 text-xs text-gray-500 dark:text-slate-400">
             New to selling? See tips and safety guidelines in{" "}
-            <Link href="/help" className="underline underline-offset-2">
+            <Link href="/help" prefetch={false} className="underline underline-offset-2">
               Help
             </Link>
             .
@@ -245,6 +254,7 @@ export default function PostLandingPage() {
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/sell/product"
+              prefetch={false}
               className="btn-gradient-primary"
               aria-label="Post a product"
             >
@@ -252,6 +262,7 @@ export default function PostLandingPage() {
             </Link>
             <Link
               href="/sell/service"
+              prefetch={false}
               className="btn-outline"
               aria-label="Post a service"
             >
@@ -260,6 +271,6 @@ export default function PostLandingPage() {
           </div>
         </div>
       </section>
-    </div>
+    </main>
   );
 }

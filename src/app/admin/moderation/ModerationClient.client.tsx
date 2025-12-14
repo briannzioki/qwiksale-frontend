@@ -2,7 +2,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import {
+  useEffect,
+  useState,
+  useTransition,
+  useCallback,
+} from "react";
 import { useRouter } from "next/navigation";
 
 export type ReportRow = {
@@ -45,7 +50,9 @@ function Badge({
     indigo: "bg-indigo-100 text-indigo-800",
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${map[tone]}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${map[tone]}`}
+    >
       {children}
     </span>
   );
@@ -131,7 +138,9 @@ export default function ModerationClient({
                 </td>
                 <td className="px-3 py-2">
                   <Badge
-                    tone={r.listingType === "product" ? "indigo" : "green"}
+                    tone={
+                      r.listingType === "product" ? "indigo" : "green"
+                    }
                   >
                     {r.listingType}
                   </Badge>
@@ -163,9 +172,9 @@ export default function ModerationClient({
                 </td>
                 <td className="px-3 py-2">
                   {r.resolved ? (
-                    <Badge tone="green">Yes</Badge>
+                    <Badge tone="green">Resolved</Badge>
                   ) : (
-                    <Badge tone="rose">No</Badge>
+                    <Badge tone="rose">Pending</Badge>
                   )}
                 </td>
                 <td className="px-3 py-2">
@@ -186,7 +195,11 @@ export default function ModerationClient({
         <span>
           Page {page} of {totalPages} • {total} reports
         </span>
-        <span aria-live="polite" id="bulk-status" className="sr-only" />
+        <span
+          aria-live="polite"
+          id="bulk-status"
+          className="sr-only"
+        />
       </nav>
     </>
   );
@@ -208,38 +221,40 @@ function RowActions({
   const [pending, start] = useTransition();
   const router = useRouter();
 
-  const patchStatus = (status: "ACTIVE" | "HIDDEN") => {
-    const msg =
-      status === "HIDDEN"
-        ? "Hide this listing? It will be invisible to the public."
-        : "Unhide this listing?";
+  const suspend = (nextSuspended: boolean) => {
+    const label = nextSuspended ? "suspend" : "unsuspend";
+    const msg = nextSuspended
+      ? "Suspend this listing? It will be blocked from the marketplace."
+      : "Unsuspend this listing and restore it.";
     if (!confirm(msg)) return;
 
     start(async () => {
       try {
-        const url =
-          type === "product"
-            ? `/api/products/${encodeURIComponent(listingId)}`
-            : `/api/services/${encodeURIComponent(listingId)}`;
-        const r = await fetch(url, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+        const res = await fetch("/api/admin/listings/suspend", {
+          method: "POST",
           cache: "no-store",
           credentials: "same-origin",
-          body: JSON.stringify({ status }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listingId,
+            kind: type,
+            suspended: nextSuspended,
+          }),
         });
-        if (!r.ok) {
-          let msg = `${r.status}`;
+        if (!res.ok) {
+          let msg = `${res.status}`;
           try {
-            const j = (await r.json()) as any;
+            const j = (await res.json()) as any;
             msg = String(j?.error || msg);
-          } catch {}
-          alert(`Failed: ${msg}`);
+          } catch {
+            // ignore
+          }
+          alert(`Failed to ${label} listing: ${msg}`);
           return;
         }
         router.refresh();
       } catch {
-        alert("Network error");
+        alert("Network error while updating listing.");
       }
     });
   };
@@ -255,40 +270,47 @@ function RowActions({
         const form = new FormData();
         form.set("ids", reportId);
         form.set("resolved", resolved ? "0" : "1");
-        await fetch("/admin/moderation/actions/resolve", {
-          method: "POST",
-          body: form,
-          cache: "no-store",
-          credentials: "same-origin",
-        });
+        const r = await fetch(
+          "/admin/moderation/actions/resolve",
+          {
+            method: "POST",
+            body: form,
+            cache: "no-store",
+            credentials: "same-origin",
+          },
+        );
+        if (!r.ok) {
+          alert("Failed to update report resolution.");
+          return;
+        }
         router.refresh();
       } catch {
-        alert("Network error");
+        alert("Network error while updating report.");
       }
     });
   };
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        onClick={() => patchStatus("HIDDEN")}
+        onClick={() => suspend(true)}
         className="rounded bg-red-600/90 px-2 py-1 text-xs text-white hover:bg-red-600 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
-        title="Hide listing"
+        title="Suspend listing"
       >
-        Hide
+        Suspend
       </button>
       <button
         type="button"
-        onClick={() => patchStatus("ACTIVE")}
+        onClick={() => suspend(false)}
         className="rounded bg-emerald-600/90 px-2 py-1 text-xs text-white hover:bg-emerald-600 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
-        title="Unhide listing"
+        title="Unsuspend listing"
       >
-        Unhide
+        Unsuspend
       </button>
       <button
         type="button"
@@ -296,7 +318,9 @@ function RowActions({
         className="rounded border border-border px-2 py-1 text-xs disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
-        title={resolved ? "Mark as unresolved" : "Mark as resolved"}
+        title={
+          resolved ? "Mark as unresolved" : "Mark as resolved"
+        }
       >
         {resolved ? "Unresolve" : "Resolve"}
       </button>
@@ -324,7 +348,9 @@ function BulkActions({
       document.querySelector<HTMLInputElement>('input[data-check="all"]');
     const boxes = () =>
       Array.from(
-        document.querySelectorAll<HTMLInputElement>('input[name="select"]'),
+        document.querySelectorAll<HTMLInputElement>(
+          'input[name="select"]',
+        ),
       );
 
     const updateCount = () => {
@@ -335,7 +361,8 @@ function BulkActions({
       if (status) status.textContent = `${checked} selected`;
       if (master) {
         master.checked = bs.length > 0 && checked === bs.length;
-        master.indeterminate = checked > 0 && checked < bs.length;
+        master.indeterminate =
+          checked > 0 && checked < bs.length;
       }
     };
 
@@ -356,17 +383,21 @@ function BulkActions({
     };
   }, []);
 
-  const getSelected = () =>
-    Array.from(
-      document.querySelectorAll<HTMLInputElement>(
-        'input[name="select"]:checked',
-      ),
-    ).map((i) => i.value);
+  const getSelected = useCallback(
+    () =>
+      Array.from(
+        document.querySelectorAll<HTMLInputElement>(
+          'input[name="select"]:checked',
+        ),
+      ).map((i) => i.value),
+    [],
+  );
 
   const doResolve = (flag: "1" | "0") =>
     start(async () => {
       const ids = getSelected();
-      if (!ids.length) return alert("Select at least one report.");
+      if (!ids.length)
+        return alert("Select at least one report.");
       const question =
         flag === "1"
           ? "Mark selected reports as resolved?"
@@ -385,42 +416,54 @@ function BulkActions({
       router.refresh();
     });
 
-  const doVisibility = (status: "ACTIVE" | "HIDDEN") =>
+  const doSuspend = (suspended: boolean) =>
     start(async () => {
       const ids = getSelected();
-      if (!ids.length) return alert("Select at least one report.");
-      const actionText =
-        status === "HIDDEN"
-          ? "Hide all selected listings?"
-          : "Unhide all selected listings?";
+      if (!ids.length)
+        return alert("Select at least one report.");
+      const actionText = suspended
+        ? "Suspend all selected listings?"
+        : "Unsuspend all selected listings?";
       if (!confirm(actionText)) return;
 
-      const byReportId = new Map(items.map((r) => [r.id, r] as const));
-
-      await Promise.all(
-        ids.map(async (rid) => {
-          const row = byReportId.get(rid);
-          if (!row) return;
-          const url =
-            row.listingType === "product"
-              ? `/api/products/${encodeURIComponent(row.listingId)}`
-              : `/api/services/${encodeURIComponent(row.listingId)}`;
-          await fetch(url, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            cache: "no-store",
-            credentials: "same-origin",
-            body: JSON.stringify({ status }),
-          }).catch(() => {});
-        }),
+      const byReportId = new Map(
+        items.map((r) => [r.id, r] as const),
       );
+
+      const payloadItems = ids
+        .map((rid) => byReportId.get(rid))
+        .filter(Boolean)
+        .map((row) => ({
+          listingId: row!.listingId,
+          kind: row!.listingType,
+        }));
+
+      if (!payloadItems.length) {
+        router.refresh();
+        return;
+      }
+
+      await fetch("/api/admin/listings/suspend", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: payloadItems,
+          suspended,
+        }),
+      }).catch(() => {});
+
       router.refresh();
     });
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
       <div className="mr-2 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-        Selected: <span className="font-semibold">{selectedCount}</span>
+        Selected:{" "}
+        <span className="font-semibold">
+          {selectedCount}
+        </span>
       </div>
 
       <button
@@ -446,23 +489,23 @@ function BulkActions({
       <span className="mx-2 opacity-40">•</span>
       <button
         type="button"
-        onClick={() => doVisibility("HIDDEN")}
+        onClick={() => doSuspend(true)}
         className="rounded bg-red-600/90 px-3 py-1 text-sm text-white hover:bg-red-600 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
-        title="Hide selected listings"
+        title="Suspend selected listings"
       >
-        Hide listings
+        Suspend listings
       </button>
       <button
         type="button"
-        onClick={() => doVisibility("ACTIVE")}
+        onClick={() => doSuspend(false)}
         className="rounded bg-[#161748] px-3 py-1 text-sm text-white hover:opacity-90 disabled:opacity-60"
         disabled={pending}
         aria-busy={pending}
-        title="Unhide selected listings"
+        title="Unsuspend selected listings"
       >
-        Unhide listings
+        Unsuspend listings
       </button>
     </div>
   );

@@ -229,7 +229,11 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
     relationRows = [];
   }
 
-  const images = mergeImgs(normalizeImagesFromRow(product), rowsToImgs(relationRows, product), product);
+  const images = mergeImgs(
+    normalizeImagesFromRow(product),
+    rowsToImgs(relationRows, product),
+    product
+  );
   const canDelete = isOwner || isAdmin;
   const lastUpdated = product?.updatedAt ?? product?.createdAt ?? null;
 
@@ -265,7 +269,14 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
             >
               View live
             </Link>
-            {canDelete && <DeleteListingButton productId={product.id} label="Delete" className="btn-danger" />}
+            {canDelete && (
+              <DeleteListingButton
+                productId={product.id}
+                label="Delete"
+                className="btn-danger"
+                redirectHref="/?deleted=1"
+              />
+            )}
           </div>
         }
       />

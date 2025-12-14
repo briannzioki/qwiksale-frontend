@@ -1,9 +1,18 @@
-﻿// src/app/dashboard/loading.tsx
-import { Skeleton, SkeletonLine, ButtonSkeleton } from "@/app/components/Skeletons";
+﻿import {
+  Skeleton,
+  SkeletonLine,
+  ButtonSkeleton,
+} from "@/app/components/Skeletons";
 
 export default function Loading() {
   return (
-    <main className="container-page py-6" aria-busy="true" aria-live="polite" role="status">
+    <main
+      id="main"
+      className="container-page py-6"
+      aria-busy="true"
+      aria-live="polite"
+      role="status"
+    >
       {/* header */}
       <div className="flex items-center justify-between">
         <SkeletonLine w="w-64" h="h-6" />
@@ -18,16 +27,25 @@ export default function Loading() {
         {/* header row */}
         <div className="grid grid-cols-6 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-4 w-full rounded-md" />
+            <Skeleton
+              key={i}
+              className="h-4 w-full rounded-md"
+            />
           ))}
         </div>
 
         {/* rows */}
         <div className="mt-3 space-y-3">
           {Array.from({ length: 6 }).map((_, r) => (
-            <div key={r} className="grid grid-cols-6 gap-3">
+            <div
+              key={r}
+              className="grid grid-cols-6 gap-3"
+            >
               {Array.from({ length: 6 }).map((__, c) => (
-                <Skeleton key={c} className="h-4 w-full rounded-md" />
+                <Skeleton
+                  key={c}
+                  className="h-4 w-full rounded-md"
+                />
               ))}
             </div>
           ))}
@@ -36,4 +54,3 @@ export default function Loading() {
     </main>
   );
 }
-

@@ -7,6 +7,7 @@ import { prisma } from "@/app/lib/prisma";
 import Link from "next/link";
 import ModerationClient from "@/app/admin/moderation/ModerationClient.client";
 import type { Metadata } from "next";
+import SectionHeader from "@/app/components/SectionHeader";
 
 export const metadata: Metadata = {
   title: "Moderation · QwikSale",
@@ -157,8 +158,41 @@ export default async function ModerationPage({
   const { items, total, totalPages, page, unresolved } =
     await loadReports(parsed);
 
+  const hasFilters =
+    !!parsed.q ||
+    !!parsed.type ||
+    !!parsed.reason ||
+    typeof parsed.resolved === "boolean";
+
   return (
     <div className="space-y-6">
+      <SectionHeader
+        title="Admin · Moderation"
+        subtitle="Review and act on user reports. Suspend or hide problematic listings, and track what&rsquo;s been resolved."
+        actions={
+          <div className="flex gap-2">
+            <Link
+              href="/admin/dashboard"
+              className="btn-outline text-sm"
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/admin/listings"
+              className="btn-outline text-sm"
+            >
+              Listings
+            </Link>
+            <Link
+              href="/admin/users"
+              className="btn-gradient-primary text-sm"
+            >
+              Users
+            </Link>
+          </div>
+        }
+      />
+
       {/* Hero */}
       <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-primary-foreground shadow">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -167,11 +201,11 @@ export default async function ModerationPage({
               Moderation
             </h1>
             <p className="mt-1 text-sm text-primary-foreground/90">
-              Review and act on reports. Showing page {page} of{" "}
-              {totalPages} • {total.toLocaleString()} total.
+              Page {page} of {totalPages} •{" "}
+              {total.toLocaleString()} reports total.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-background/20 px-3 py-1 text-xs text-primary-foreground">
               Unresolved:{" "}
               <span className="font-semibold">
@@ -276,6 +310,36 @@ export default async function ModerationPage({
           </Link>
         </div>
       </form>
+
+      {hasFilters && (
+        <div className="text-xs text-muted-foreground">
+          Active filters:{" "}
+          <span className="font-mono">
+            {parsed.q ? `q="${parsed.q}"` : "q=∅"}
+          </span>
+          {parsed.type && (
+            <>
+              {" "}
+              · <span className="font-mono">type={parsed.type}</span>
+            </>
+          )}
+          {parsed.reason && (
+            <>
+              {" "}
+              · <span className="font-mono">reason={parsed.reason}</span>
+            </>
+          )}
+          {typeof parsed.resolved === "boolean" && (
+            <>
+              {" "}
+              ·{" "}
+              <span className="font-mono">
+                resolved={parsed.resolved ? "1" : "0"}
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Results */}
       <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">

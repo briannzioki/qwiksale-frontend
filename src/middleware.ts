@@ -2,20 +2,64 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+/* ------------------- Env helpers (empty string = unset) ------------------- */
+function envStr(name: string): string | undefined {
+  const v = process.env[name];
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t ? t : undefined;
+}
+
+function siteUrlFromEnv(): string | undefined {
+  return (
+    envStr("NEXTAUTH_URL") ??
+    envStr("NEXT_PUBLIC_SITE_URL") ??
+    envStr("NEXT_PUBLIC_APP_URL") ??
+    envStr("NEXT_PUBLIC_BASE_URL")
+  );
+}
+
+function isLocalHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" || h.endsWith(".localhost");
+}
+
+/**
+ * Real prod deployment detector (not just NODE_ENV=production).
+ * Keep "next start" on http://localhost from acting like real prod.
+ */
+function isProdSite(): boolean {
+  if (process.env["VERCEL_ENV"] != null) {
+    return process.env["VERCEL_ENV"] === "production";
+  }
+
+  if (process.env.NODE_ENV !== "production") return false;
+
+  const url = siteUrlFromEnv();
+  if (!url) return true;
+
+  try {
+    const host = new URL(url).hostname;
+    return !isLocalHost(host);
+  } catch {
+    return true;
+  }
+}
+
+const IS_PROD_SITE = isProdSite();
+
 /* ------------------- Auth secret (match auth.config.ts) ------------------- */
 /**
  * IMPORTANT:
- * This must mirror src/auth.config.ts so that NextAuth (auth()/callbacks)
- * and getToken() are using the same secret.
+ * This must mirror src/auth.config.ts so that NextAuth and getToken()
+ * use the same secret.
  *
- * - In prod, you should set either AUTH_SECRET or NEXTAUTH_SECRET (or both).
- * - In dev/test, we fall back to a stable "dev-secret-change-me" just like
- *   auth.config.ts does, so cookies + JWTs stay in sync.
+ * Empty-string env vars must be treated as "unset".
  */
 const AUTH_SECRET =
-  process.env["AUTH_SECRET"] ??
-  process.env["NEXTAUTH_SECRET"] ??
-  (process.env.NODE_ENV !== "production" ? "dev-secret-change-me" : undefined);
+  envStr("AUTH_SECRET") ??
+  envStr("NEXTAUTH_SECRET") ??
+  (!IS_PROD_SITE ? "dev-secret-change-me" : undefined);
 
 /* ------------------- Edge-safe helpers ------------------- */
 function makeNonce(): string {
@@ -33,6 +77,15 @@ function isDocumentNav(req: NextRequest): boolean {
   const accept = (req.headers.get("accept") || "").toLowerCase();
   const dest = (req.headers.get("sec-fetch-dest") || "").toLowerCase();
   return dest === "document" || accept.includes("text/html");
+}
+
+function isHttpsRequest(req: NextRequest): boolean {
+  const xf = req.headers.get("x-forwarded-proto");
+  if (xf) {
+    const p = xf.split(",")[0]?.trim().toLowerCase();
+    if (p) return p === "https";
+  }
+  return req.nextUrl.protocol === "https:";
 }
 
 /* ------------------ Suggest soft limiter ------------------ */
@@ -58,7 +111,10 @@ function rlKeyFromReq(req: NextRequest) {
 }
 
 /* ------------------------- Security / CSP ------------------------- */
-function buildSecurityHeaders(nonce: string, opts?: { allowUnsafeEval?: boolean }) {
+function buildSecurityHeaders(
+  nonce: string,
+  opts?: { allowUnsafeEval?: boolean; isHttps?: boolean },
+) {
   const imgSrc = [
     "'self'",
     "data:",
@@ -133,9 +189,12 @@ function buildSecurityHeaders(nonce: string, opts?: { allowUnsafeEval?: boolean 
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "SAMEORIGIN");
   headers.set("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
-  if (process.env["NODE_ENV"] === "production") {
+
+  // Only set HSTS on real prod sites and only when request is HTTPS.
+  if (IS_PROD_SITE && opts?.isHttps) {
     headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
   }
+
   return headers;
 }
 
@@ -212,15 +271,11 @@ function parseAllow(env?: string | null) {
 /* -------------------- Read token safely -------------------- */
 async function readToken(req: NextRequest) {
   try {
-    // Use the same secret derivation as auth.config.ts so that
-    // getToken can actually decode the JWT issued by NextAuth.
     if (AUTH_SECRET) {
       return await getToken({ req, secret: AUTH_SECRET });
     }
-    // Fallback to getToken default behaviour if somehow no secret is set.
     return await getToken({ req } as any);
   } catch {
-    // On any failure, treat as anonymous.
     return null;
   }
 }
@@ -231,7 +286,6 @@ export async function middleware(req: NextRequest) {
   const adminData = isAdminDataPath(p);
   const isApi = p.startsWith("/api/");
 
-  // Default fallthrough response; set a cheap probe header
   const res = NextResponse.next();
   res.headers.set("X-QS-MW", "1");
 
@@ -251,7 +305,13 @@ export async function middleware(req: NextRequest) {
   }
 
   /* ---- Never touch NextAuth internals ---- */
-  if (p.startsWith("/api/auth")) return res;
+  if (p.startsWith("/api/auth")) {
+    // Auth endpoints must never be cached (csrf/proxy layers included).
+    res.headers.set("Cache-Control", "no-store");
+    res.headers.set("Pragma", "no-cache");
+    res.headers.set("Expires", "0");
+    return res;
+  }
 
   /* ---- JSON guard for specific POSTs ---- */
   if (
@@ -417,6 +477,12 @@ export async function middleware(req: NextRequest) {
       }
       return NextResponse.redirect(new URL(target, req.url), 302);
     }
+
+    // Auth pages should never be cached (prevents weird bootstrap/csrf edge cases).
+    res.headers.set("Cache-Control", "no-store");
+    res.headers.set("Pragma", "no-cache");
+    res.headers.set("Expires", "0");
+
     // Allow auth pages; don’t apply strict CSP here to avoid breaking CSRF.
     return res;
   }
@@ -443,7 +509,11 @@ export async function middleware(req: NextRequest) {
     const htmlRes = NextResponse.next({ request: { headers: forwarded } });
     htmlRes.headers.set("X-QS-MW", "1");
 
-    const sec = buildSecurityHeaders(nonce, { allowUnsafeEval: isDevLike });
+    const sec = buildSecurityHeaders(nonce, {
+      allowUnsafeEval: isDevLike,
+      isHttps: isHttpsRequest(req),
+    });
+
     for (const [k, v] of sec.entries()) {
       if (k.toLowerCase() === "content-security-policy" && useReportOnly) {
         htmlRes.headers.set("Content-Security-Policy-Report-Only", v);
@@ -460,7 +530,7 @@ export async function middleware(req: NextRequest) {
         value: did,
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env["NODE_ENV"] === "production",
+        secure: isHttpsRequest(req),
         path: "/",
         maxAge: 60 * 60 * 24 * 365,
       });
@@ -469,7 +539,6 @@ export async function middleware(req: NextRequest) {
     return htmlRes;
   }
 
-  // Non-HTML fallthrough
   return res;
 }
 

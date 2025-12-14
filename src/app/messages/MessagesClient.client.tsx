@@ -1,7 +1,7 @@
+// src/app/messages/MessagesClient.client.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
@@ -311,7 +311,10 @@ export default function MessagesClient({ meId }: Props) {
               const isSel = selected === t.id;
               const other = meId && t.buyerId === meId ? t.seller : t.buyer;
               const label = other.name || other.username || "User";
-              const sub = `${t.listingType === "product" ? "Product" : "Service"} • #${t.listingId.slice(0, 6)}…`;
+              const sub = `${t.listingType === "product" ? "Product" : "Service"} • #${t.listingId.slice(
+                0,
+                6
+              )}…`;
               const when = fmtTime(t.updatedAt || t.lastMessageAt);
 
               return (
@@ -431,7 +434,9 @@ export default function MessagesClient({ meId }: Props) {
               })()}
 
             {!msgsLoading && !msgsErr && messages.length === 0 && current && (
-              <div className="text-sm text-gray-600 dark:text-slate-300 px-1">No messages yet.</div>
+              <div className="text-sm text-gray-600 dark:text-slate-300 px-1">
+                No chat history yet.
+              </div>
             )}
           </div>
 

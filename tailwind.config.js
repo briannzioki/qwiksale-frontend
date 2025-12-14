@@ -188,7 +188,8 @@ const config = {
         blob: "blob 8s ease-in-out infinite",
         shimmer: "shimmer 2s linear infinite",
         "ping-soft": "ping-soft 1.5s cubic-bezier(0,0,0.2,1) infinite",
-        "spin-slow": "spin-slow 6s linear infinite",
+        // Keep in sync with globals.css Button spinner speed.
+        "spin-slow": "spin-slow 1.2s linear infinite",
       },
 
       /* ------------------------- Z-index ------------------------- */
@@ -341,7 +342,6 @@ const config = {
         ".ring-focus": { boxShadow: theme("boxShadow.focus") },
         ".glow": { boxShadow: theme("boxShadow.glow") },
         ".rounded-inherit": { borderRadius: "inherit" },
-        ".animate-spin-slow": { animation: theme("animation.spin-slow") },
 
         // Token-powered helpers
         ".bg-app": { backgroundColor: "var(--bg-app)" },
@@ -365,3 +365,5 @@ const config = {
 };
 
 module.exports = config;
+
+

@@ -1,4 +1,5 @@
-﻿export const runtime = "nodejs";
+﻿// src/app/page.tsx
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -6,6 +7,7 @@ import type { Metadata } from "next";
 import SectionHeader from "@/app/components/SectionHeader";
 import HomeClientNoSSR, {
   type HomeSeedProps,
+  type HomeServiceSeed,
 } from "@/app/_components/HomeClientNoSSR";
 import type { SearchParams15 } from "@/app/lib/next15";
 
@@ -22,6 +24,8 @@ type PageResponse = {
   totalPages: number;
   items: AnyItem[];
 };
+
+type ServiceSeed = HomeServiceSeed;
 
 /* ------------------------------ Small utilities ---------------------------- */
 function resolveBaseUrl(): string {
@@ -78,6 +82,77 @@ async function pickFirst(
   }
 }
 
+async function pickServiceSlice(
+  url: string,
+  softMs = 3500,
+  limit = 4,
+): Promise<ServiceSeed[]> {
+  try {
+    const r: any = await Promise.race([
+      fetch(url, { cache: "no-store" }),
+      timeout(softMs),
+    ]);
+
+    const json = await safeJSON<PageResponse | AnyItem[]>(r);
+
+    const rawItems: AnyItem[] = Array.isArray(json)
+      ? (json as AnyItem[])
+      : Array.isArray((json as PageResponse | null)?.items)
+      ? ((json as PageResponse).items as AnyItem[])
+      : [];
+
+    if (!rawItems.length) return [];
+
+    const seeds: ServiceSeed[] = [];
+    for (const raw of rawItems) {
+      if (!raw || raw.id == null) continue;
+
+      const anyRaw = raw as any;
+      const seed: ServiceSeed = {
+        id: String(raw.id),
+        name:
+          typeof anyRaw.name === "string"
+            ? anyRaw.name
+            : typeof anyRaw.title === "string"
+            ? anyRaw.title
+            : null,
+        price:
+          typeof anyRaw.price === "number"
+            ? anyRaw.price
+            : typeof anyRaw.amount === "number"
+            ? anyRaw.amount
+            : null,
+        image:
+          typeof anyRaw.image === "string"
+            ? anyRaw.image
+            : Array.isArray(anyRaw.images) && anyRaw.images.length > 0
+            ? anyRaw.images[0]
+            : null,
+        category:
+          typeof anyRaw.category === "string"
+            ? anyRaw.category
+            : null,
+        subcategory:
+          typeof anyRaw.subcategory === "string"
+            ? anyRaw.subcategory
+            : null,
+        location:
+          typeof anyRaw.location === "string"
+            ? anyRaw.location
+            : typeof anyRaw.city === "string"
+            ? anyRaw.city
+            : null,
+      };
+      seeds.push(seed);
+      if (seeds.length >= limit) break;
+    }
+
+    return seeds;
+  } catch {
+    return [];
+  }
+}
+
 async function bestEffortFirst(
   kind: "products" | "services",
 ): Promise<AnyItem | null> {
@@ -92,18 +167,44 @@ async function bestEffortFirst(
   return null;
 }
 
-/** Returns nullable IDs for SSR seed anchors (so tests can grab a link instantly). */
+async function getServiceSeeds(limit: number): Promise<ServiceSeed[]> {
+  const base = resolveBaseUrl();
+
+  const viaHome = await pickServiceSlice(
+    `${base}/api/home-feed?t=services&pageSize=${limit}`,
+    3500,
+    limit,
+  );
+  if (viaHome.length > 0) return viaHome;
+
+  const viaDirect = await pickServiceSlice(
+    `${base}/api/services?take=${limit}`,
+    3500,
+    limit,
+  );
+  if (viaDirect.length > 0) return viaDirect;
+
+  return [];
+}
+
+/** Returns nullable IDs for SSR seed anchors + a slice of services. */
 async function getSeedIds(): Promise<{
   productId: string | null;
   serviceId: string | null;
+  serviceSeeds: ServiceSeed[];
 }> {
-  const [prodItem, servItem] = await Promise.all([
+  const [prodItem, serviceSeeds] = await Promise.all([
     bestEffortFirst("products"),
-    bestEffortFirst("services"),
+    getServiceSeeds(4),
   ]);
+
   const productId = prodItem?.id != null ? String(prodItem.id) : null;
-  const serviceId = servItem?.id != null ? String(servItem.id) : null;
-  return { productId, serviceId };
+  const serviceId =
+    serviceSeeds.length > 0 && serviceSeeds[0]?.id
+      ? String(serviceSeeds[0].id)
+      : null;
+
+  return { productId, serviceId, serviceSeeds };
 }
 
 /* ------------------------------ Optional tab parse ------------------------- */
@@ -136,11 +237,16 @@ export default async function Page({
       ? (tabParamRaw as "all" | "products" | "services")
       : "all";
 
-  const { productId, serviceId } = await getSeedIds();
+  const { productId, serviceId, serviceSeeds } = await getSeedIds();
 
-  const seedProps: HomeSeedProps = {};
+  const seedProps: HomeSeedProps = {
+    initialTab: tab,
+  };
   if (productId) seedProps.productId = productId;
   if (serviceId) seedProps.serviceId = serviceId;
+  if (serviceSeeds.length > 0) {
+    seedProps.initialServices = serviceSeeds;
+  }
 
   // If we couldn't resolve any real service ID but we're on the services tab,
   // still surface a tiny fallback <a href="/service/..."> so tests never hang.
