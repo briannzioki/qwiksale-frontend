@@ -8,9 +8,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 
-const SHOULD_LOG =
-  process.env.NODE_ENV === "development" &&
-  process.env["API_DEBUG"] === "1";
+const SHOULD_LOG = process.env.NODE_ENV === "development" && process.env["API_DEBUG"] === "1";
 
 function warn(...args: any[]) {
   if (!SHOULD_LOG) return;
@@ -35,8 +33,7 @@ const RESERVED = new Set(
     .filter(Boolean),
 );
 
-const looksLikeEmail = (e?: string) =>
-  !!e && EMAIL_RE.test(e.trim().toLowerCase());
+const looksLikeEmail = (e?: string) => !!e && EMAIL_RE.test(e.trim().toLowerCase());
 const looksLikeValidUsername = (u: string) => USERNAME_RE.test(u);
 
 function normalizeName(input: unknown): string | undefined {
@@ -68,8 +65,7 @@ function normalizeKePhone(raw: unknown): string | undefined {
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-const looksLikeValidKePhone = (s?: string) =>
-  !!s && /^254(7|1)\d{8}$/.test(s);
+const looksLikeValidKePhone = (s?: string) => !!s && /^254(7|1)\d{8}$/.test(s);
 
 /* ---------------------------------- GET ---------------------------------- */
 export async function GET() {
@@ -77,15 +73,12 @@ export async function GET() {
     const session = await auth().catch(() => null);
     const sessionUser = (session as any)?.user || null;
 
-    let userId: string | undefined =
-      (sessionUser?.id as string | undefined) || undefined;
+    let userId: string | undefined = (sessionUser?.id as string | undefined) || undefined;
 
     if (!userId && sessionUser?.email) {
       try {
         const u = await prisma.user.findUnique({
-          where: {
-            email: sessionUser.email as string,
-          },
+          where: { email: sessionUser.email as string },
           select: { id: true },
         });
         userId = u?.id;
@@ -123,6 +116,8 @@ export async function GET() {
     return noStore({
       user: {
         ...user,
+        // Back-compat alias (some UI code checks for snake_case)
+        email_verified: user.emailVerified,
         whatsapp: normalizedWhatsapp,
         profileComplete,
       },
@@ -139,15 +134,12 @@ export async function PATCH(req: Request) {
     const session = await auth().catch(() => null);
     const sessionUser = (session as any)?.user || null;
 
-    let userId: string | undefined =
-      (sessionUser?.id as string | undefined) || undefined;
+    let userId: string | undefined = (sessionUser?.id as string | undefined) || undefined;
 
     if (!userId && sessionUser?.email) {
       try {
         const u = await prisma.user.findUnique({
-          where: {
-            email: sessionUser.email as string,
-          },
+          where: { email: sessionUser.email as string },
           select: { id: true },
         });
         userId = u?.id;
@@ -200,10 +192,7 @@ export async function PATCH(req: Request) {
       if (changed) {
         const clash = await prisma.user.findFirst({
           where: {
-            email: {
-              equals: nextEmail,
-              mode: "insensitive",
-            },
+            email: { equals: nextEmail, mode: "insensitive" },
             NOT: { id: me.id },
           },
           select: { id: true },
@@ -240,10 +229,7 @@ export async function PATCH(req: Request) {
 
       const clash = await prisma.user.findFirst({
         where: {
-          username: {
-            equals: username,
-            mode: "insensitive",
-          },
+          username: { equals: username, mode: "insensitive" },
           NOT: { id: userId },
         },
         select: { id: true },
@@ -264,43 +250,28 @@ export async function PATCH(req: Request) {
     if (body?.whatsapp !== undefined) {
       const norm = normalizeKePhone(body.whatsapp);
       if (norm && !looksLikeValidKePhone(norm)) {
-        return noStore(
-          { error: "WhatsApp must be a valid KE number (07XXXXXXXX / 2547XXXXXXXX)." },
-          { status: 400 },
-        );
+        return noStore({ error: "WhatsApp must be a valid KE number (07XXXXXXXX / 2547XXXXXXXX)." }, { status: 400 });
       }
       data["whatsapp"] = norm ? norm : null;
     }
 
-    if (body?.address !== undefined) {
-      data["address"] = body.address?.trim() || null;
-    }
-    if (body?.postalCode !== undefined) {
-      data["postalCode"] = body.postalCode?.trim() || null;
-    }
-    if (body?.city !== undefined) {
-      data["city"] = body.city?.trim() || null;
-    }
-    if (body?.country !== undefined) {
-      data["country"] = body.country?.trim() || null;
-    }
+    if (body?.address !== undefined) data["address"] = body.address?.trim() || null;
+    if (body?.postalCode !== undefined) data["postalCode"] = body.postalCode?.trim() || null;
+    if (body?.city !== undefined) data["city"] = body.city?.trim() || null;
+    if (body?.country !== undefined) data["country"] = body.country?.trim() || null;
 
     // storeLocationUrl – must be a Google Maps link
     if (typeof body?.storeLocationUrl === "string") {
       const raw = body.storeLocationUrl.trim();
 
       if (!raw) {
-        // Explicit clear
         data["storeLocationUrl"] = null;
       } else {
         let url: URL;
         try {
           url = new URL(raw);
         } catch {
-          return noStore(
-            { error: "Store location URL must be a valid Google Maps link." },
-            { status: 400 },
-          );
+          return noStore({ error: "Store location URL must be a valid Google Maps link." }, { status: 400 });
         }
 
         const host = url.hostname.toLowerCase();
@@ -314,10 +285,7 @@ export async function PATCH(req: Request) {
 
         if (!allowed) {
           return noStore(
-            {
-              error:
-                "Store location URL must be a Google Maps link (maps.google.com or goo.gl/maps).",
-            },
+            { error: "Store location URL must be a Google Maps link (maps.google.com or goo.gl/maps)." },
             { status: 400 },
           );
         }
@@ -377,6 +345,8 @@ export async function PATCH(req: Request) {
       ok: true,
       user: {
         ...user,
+        // Back-compat alias
+        email_verified: user.emailVerified,
         whatsapp: normalizedWhatsapp,
         profileComplete,
       },

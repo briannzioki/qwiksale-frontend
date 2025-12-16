@@ -17,6 +17,8 @@ export type BaseListing = {
   // Seller snapshot (safe)
   sellerId?: string | null;
   sellerName?: string | null;
+  /** Prefer username for profile/store routes; fallback to `u-<id>` when missing */
+  sellerUsername?: string | null;
   sellerLocation?: string | null;
   sellerMemberSince?: string | null;
   sellerRating?: number | null;

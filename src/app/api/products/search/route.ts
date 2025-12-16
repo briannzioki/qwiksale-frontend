@@ -5,6 +5,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/app/lib/prisma";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
@@ -54,6 +55,80 @@ function isSafeToCache(req: NextRequest, page: number, pageSize: number) {
   if (auth || (cookie && cookie.includes("session"))) return false;
   if (page > 10 || pageSize > 48) return false;
   return true;
+}
+
+/* ------------------------ seller badge helpers ------------------------ */
+
+type SellerTier = "basic" | "gold" | "diamond";
+type SellerBadgeInfo = { verified: boolean; tier: SellerTier };
+
+function normalizeTier(v: unknown): SellerTier {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (t.includes("diamond")) return "diamond";
+  if (t.includes("gold")) return "gold";
+  return "basic";
+}
+
+function pickVerifiedFromUserJson(u: any): boolean | null {
+  if (!u || typeof u !== "object") return null;
+  const keys = [
+    "verified",
+    "isVerified",
+    "accountVerified",
+    "sellerVerified",
+    "isSellerVerified",
+    "verifiedSeller",
+    "isAccountVerified",
+  ];
+  for (const k of keys) {
+    const v = (u as any)[k];
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v === 1;
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      if (["1", "true", "yes", "verified"].includes(s)) return true;
+      if (["0", "false", "no", "unverified"].includes(s)) return false;
+    }
+  }
+  return null;
+}
+
+function tierFromRow(row: any): SellerTier {
+  const v = row?.seller?.subscription ?? row?.seller?.tier ?? row?.seller?.plan;
+  return normalizeTier(v);
+}
+
+async function fetchSellerBadgeMap(ids: string[]) {
+  const out = new Map<string, SellerBadgeInfo>();
+  const uniq = Array.from(new Set(ids.filter(Boolean)));
+  if (!uniq.length) return out;
+
+  try {
+    const rows = (await prisma.$queryRaw<{ id: string; u: any }[]>`
+      SELECT u.id, row_to_json(u) as u
+      FROM "User" u
+      WHERE u.id IN (${Prisma.join(uniq)})
+    `) as { id: string; u: any }[];
+
+    for (const r of rows) {
+      const id = String(r?.id ?? "");
+      if (!id) continue;
+      const u = r?.u;
+      const verified = pickVerifiedFromUserJson(u);
+      const tier = normalizeTier(
+        (u as any)?.featuredTier ??
+          (u as any)?.subscriptionTier ??
+          (u as any)?.subscription ??
+          (u as any)?.plan ??
+          (u as any)?.tier,
+      );
+      out.set(id, { verified: verified ?? false, tier });
+    }
+  } catch {
+    // ignore: defaults applied by caller
+  }
+
+  return out;
 }
 
 /* ----------------------------- safety caps ------------------------------ */
@@ -143,7 +218,7 @@ export async function GET(req: NextRequest) {
     if (!rl.ok) {
       return addReqId(
         tooMany("You’re searching too fast. Please slow down.", rl.retryAfterSec),
-        reqId
+        reqId,
       );
     }
 
@@ -287,12 +362,31 @@ export async function GET(req: NextRequest) {
     const data = hasMore ? rows.slice(0, pageSize) : rows;
     const nextCursor = hasMore ? (data[data.length - 1]?.id ?? null) : null;
 
+    const sellerIds = Array.from(
+      new Set(data.map((r: any) => r?.sellerId).filter(Boolean)),
+    ) as string[];
+    const badgeMap = await fetchSellerBadgeMap(sellerIds);
+
+    const items = data.map((r: any) => {
+      const base = shape(r);
+      const sid = String(r?.sellerId ?? "");
+      const bmap = sid ? badgeMap.get(sid) : undefined;
+      const verified = bmap?.verified ?? false;
+      const tier = bmap?.tier ?? tierFromRow(r);
+      return {
+        ...base,
+        sellerVerified: verified,
+        sellerFeaturedTier: tier,
+        sellerBadges: { verified, tier },
+      };
+    });
+
     const payload = {
       page: safePage,
       pageSize,
       total,
       totalPages,
-      items: data.map(shape),
+      items,
       nextCursor,
       hasMore,
       applied: {
@@ -313,7 +407,7 @@ export async function GET(req: NextRequest) {
     const res = json(payload);
     return addReqId(
       isSafeToCache(req, safePage, pageSize) ? setEdgeCache(res, 45) : setNoStore(res),
-      reqId
+      reqId,
     );
   } catch (e) {
     // eslint-disable-next-line no-console

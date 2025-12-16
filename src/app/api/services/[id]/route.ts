@@ -16,11 +16,7 @@ const PLACEHOLDER = "/placeholder/default.jpg";
 const IS_PROD = process.env.NODE_ENV === "production";
 
 // Dev-seed hosts we never want to count in the API gallery
-const DEV_SEED_HOSTS = [
-  "picsum.photos",
-  "images.unsplash.com",
-  "plus.unsplash.com",
-];
+const DEV_SEED_HOSTS = ["picsum.photos", "images.unsplash.com", "plus.unsplash.com"];
 
 /* ---------------- analytics (console-only) ---------------- */
 type AnalyticsEvent =
@@ -61,10 +57,7 @@ function noStore(json: unknown, init?: ResponseInit) {
 function publicCache(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   if (IS_PROD) {
-    res.headers.set(
-      "Cache-Control",
-      "public, s-maxage=60, stale-while-revalidate=60",
-    );
+    res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=60");
   } else {
     res.headers.set("Cache-Control", "no-store");
   }
@@ -92,6 +85,90 @@ function isClearlyInvalidId(id: string): boolean {
   const bad = new Set(["example", "undefined", "null", "nan"]);
   if (bad.has(v.toLowerCase())) return true;
   return false;
+}
+
+/* ---------------- seller/account badge helpers ---------------- */
+type FeaturedTier = "basic" | "gold" | "diamond";
+
+function normalizeFeaturedTier(v: unknown): FeaturedTier | null {
+  const pick = (x: unknown): string => {
+    if (typeof x === "string") return x;
+    if (x && typeof x === "object") {
+      const any = x as any;
+      const cand =
+        any?.tier ??
+        any?.plan ??
+        any?.level ??
+        any?.name ??
+        any?.type ??
+        any?.subscription ??
+        any?.value ??
+        "";
+      if (typeof cand === "string") return cand;
+    }
+    return "";
+  };
+
+  const raw = pick(v).trim();
+  if (!raw) return null;
+
+  const s = raw.toLowerCase();
+  if (s.includes("diamond")) return "diamond";
+  if (s.includes("gold")) return "gold";
+  if (s.includes("basic")) return "basic";
+  return null;
+}
+
+function normalizeSellerVerified(u: any): boolean | null {
+  if (!u) return null;
+
+  const direct = u?.verified ?? u?.isVerified ?? u?.accountVerified ?? u?.sellerVerified ?? null;
+  if (typeof direct === "boolean") return direct;
+
+  const at = u?.verifiedAt ?? u?.verified_on ?? u?.verifiedOn ?? u?.verificationDate ?? null;
+  if (typeof at === "string" && at.trim()) return true;
+  if (at instanceof Date) return true;
+
+  return null;
+}
+
+type SellerFlags = {
+  sellerVerified: boolean | null;
+  sellerFeaturedTier: FeaturedTier | null;
+};
+
+/**
+ * Schema-safe seller flags fetch (row_to_json).
+ */
+async function fetchSellerFlagsById(
+  sellerId: string | null | undefined,
+): Promise<SellerFlags> {
+  if (!sellerId) return { sellerVerified: null, sellerFeaturedTier: null };
+
+  try {
+    const rows = await prisma.$queryRaw<{ u: any }[]>`
+      SELECT row_to_json(u) as u
+      FROM "User" u
+      WHERE u.id = ${sellerId}
+      LIMIT 1
+    `;
+    const u = rows?.[0]?.u ?? null;
+
+    const sub =
+      u?.featuredTier ??
+      u?.subscriptionTier ??
+      u?.subscription ??
+      u?.plan ??
+      u?.tier ??
+      null;
+
+    return {
+      sellerVerified: normalizeSellerVerified(u),
+      sellerFeaturedTier: normalizeFeaturedTier(sub),
+    };
+  } catch {
+    return { sellerVerified: null, sellerFeaturedTier: null };
+  }
 }
 
 /** base select for service (safe fields, includes gallery) */
@@ -124,9 +201,7 @@ const serviceBaseSelect = {
 
 function shapeService(s: any) {
   const createdAt =
-    s?.createdAt instanceof Date
-      ? s.createdAt.toISOString()
-      : String(s?.createdAt ?? "");
+    s?.createdAt instanceof Date ? s.createdAt.toISOString() : String(s?.createdAt ?? "");
   const sellerUsername = s?.seller?.username ?? null;
   const { _count: _c, ...rest } = s || {};
   return { ...rest, createdAt, sellerUsername };
@@ -141,12 +216,7 @@ function getServiceModel() {
 /* ---------- relation model helpers (ServiceImage[]) ------------ */
 function getServiceImageModel() {
   const any = prisma as any;
-  const candidates = [
-    "serviceImage",
-    "serviceImages",
-    "ServiceImage",
-    "ServiceImages",
-  ];
+  const candidates = ["serviceImage", "serviceImages", "ServiceImage", "ServiceImages"];
   for (const key of candidates) {
     const mdl = any?.[key];
     if (mdl && typeof mdl.findMany === "function") return mdl;
@@ -209,16 +279,10 @@ function isDevSeedHost(u?: string | null) {
  * - gallery for the API ONLY counts "real" media:
  *   no placeholders and no dev-seed hosts (Unsplash/Picsum).
  */
-function normalizeCoverAndGallery(
-  primary: any,
-  fullRow: any,
-  extraUrls: string[] = [],
-) {
+function normalizeCoverAndGallery(primary: any, fullRow: any, extraUrls: string[] = []) {
   const merged = { ...(fullRow || {}), ...(primary || {}) };
   const collected = (collectUrls(merged, undefined) ?? []).slice(0, 50);
-  const extra = extraUrls
-    .map((u) => (u ?? "").toString().trim())
-    .filter(Boolean);
+  const extra = extraUrls.map((u) => (u ?? "").toString().trim()).filter(Boolean);
 
   const rawCandidates = [
     merged?.image,
@@ -231,13 +295,10 @@ function normalizeCoverAndGallery(
     .filter(Boolean);
 
   // Hero cover: any non-placeholder, even if it's an Unsplash/Picsum dev image.
-  const cover =
-    rawCandidates.find((u) => !isPlaceholder(u)) || PLACEHOLDER;
+  const cover = rawCandidates.find((u) => !isPlaceholder(u)) || PLACEHOLDER;
 
   // API gallery: only "real" media; drop placeholders + dev-seed hosts.
-  const galleryReal = rawCandidates.filter(
-    (u) => !isPlaceholder(u) && !isDevSeedHost(u),
-  );
+  const galleryReal = rawCandidates.filter((u) => !isPlaceholder(u) && !isDevSeedHost(u));
   const gallery = Array.from(new Set(galleryReal)).slice(0, 50);
 
   return { cover, gallery };
@@ -254,24 +315,12 @@ export function HEAD() {
 }
 
 export function OPTIONS() {
-  const origin =
-    process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["APP_ORIGIN"] ??
-    "*";
+  const origin = process.env["NEXT_PUBLIC_APP_URL"] ?? process.env["APP_ORIGIN"] ?? "*";
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
-  res.headers.set(
-    "Vary",
-    "Origin, Authorization, Cookie, Accept-Encoding",
-  );
-  res.headers.set(
-    "Access-Control-Allow-Methods",
-    "GET, DELETE, OPTIONS, HEAD",
-  );
-  res.headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization",
-  );
+  res.headers.set("Vary", "Origin, Authorization, Cookie, Accept-Encoding");
+  res.headers.set("Access-Control-Allow-Methods", "GET, DELETE, OPTIONS, HEAD");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
   res.headers.set("Cache-Control", "no-store");
   return res;
@@ -280,57 +329,33 @@ export function OPTIONS() {
 /* ---------------- timeouts ---------------- */
 const TIMEOUT_MS = 1200;
 const race = <T,>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T | "timeout"> =>
-  Promise.race([
-    p,
-    new Promise<"timeout">((resolve) =>
-      setTimeout(() => resolve("timeout"), ms),
-    ),
-  ]).catch(() => "timeout" as const);
+  Promise.race([p, new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms))]).catch(
+    () => "timeout" as const,
+  );
 
 /* -------------------- GET /api/services/:id ------------------- */
 export async function GET(req: NextRequest) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
     const serviceId = getId(req);
     if (!serviceId) {
-      track("service_read_not_found", {
-        reqId,
-        reason: "missing_id",
-      });
-      return noStore(
-        { error: "Missing id" },
-        { status: 400 },
-      );
+      track("service_read_not_found", { reqId, reason: "missing_id" });
+      return noStore({ error: "Missing id" }, { status: 400 });
     }
 
     if (isClearlyInvalidId(serviceId)) {
-      track("service_read_not_found", {
-        reqId,
-        serviceId,
-        reason: "invalid_id",
-      });
-      const res = noStore(
-        { error: "Not found" },
-        { status: 404 },
-      );
+      track("service_read_not_found", { reqId, serviceId, reason: "invalid_id" });
+      const res = noStore({ error: "Not found" }, { status: 404 });
       res.headers.set("x-api-shortcircuit", "invalid-id");
       return res;
     }
 
     const Service = getServiceModel();
     if (!Service) {
-      track("service_read_not_found", {
-        reqId,
-        serviceId,
-        reason: "no_model",
-      });
-      return noStore(
-        { error: "Not found" },
-        { status: 404 },
-      );
+      track("service_read_not_found", { reqId, serviceId, reason: "no_model" });
+      return noStore({ error: "Not found" }, { status: 404 });
     }
 
     track("service_read_attempt", { reqId, serviceId });
@@ -345,37 +370,23 @@ export async function GET(req: NextRequest) {
       TIMEOUT_MS,
     );
 
-    const base =
-      baseRaw && baseRaw !== "timeout"
-        ? (baseRaw as any)
-        : null;
+    const base = baseRaw && baseRaw !== "timeout" ? (baseRaw as any) : null;
 
     if (!base) {
       track("service_read_not_found", {
         reqId,
         serviceId,
-        reason:
-          baseRaw === "timeout"
-            ? "base_timeout_or_missing"
-            : "not_found",
+        reason: baseRaw === "timeout" ? "base_timeout_or_missing" : "not_found",
       });
-      const res = noStore(
-        { error: "Not found" },
-        { status: 404 },
-      );
-      if (baseRaw === "timeout") {
-        res.headers.set("x-api-fallback", "timed-out");
-      }
+      const res = noStore({ error: "Not found" }, { status: 404 });
+      if (baseRaw === "timeout") res.headers.set("x-api-fallback", "timed-out");
       return res;
     }
 
     const shaped = shapeService(base);
     const rawStatus = (base as any)?.status;
     const normalizedStatus =
-      typeof rawStatus === "string" &&
-      rawStatus.trim()
-        ? rawStatus.trim().toUpperCase()
-        : "ACTIVE";
+      typeof rawStatus === "string" && rawStatus.trim() ? rawStatus.trim().toUpperCase() : "ACTIVE";
     const isDeleted = Boolean((base as any)?.deletedAt);
     const isDevLike = !IS_PROD;
 
@@ -385,32 +396,23 @@ export async function GET(req: NextRequest) {
 
     if (isDevLike) {
       // In dev/preview, allow any existing, non-deleted row
-      // to be readable to avoid flaky 404s in tests.
       allowedAsPublic = !isDeleted;
       requiresOwnerCheck = false;
     } else {
       const nonPublicStatuses = new Set(["DRAFT", "HIDDEN"]);
       if (!isDeleted && !nonPublicStatuses.has(normalizedStatus)) {
-        // ACTIVE, SOLD, etc. are treated as public.
         allowedAsPublic = true;
       } else {
         requiresOwnerCheck = true;
       }
     }
 
-    let viewerIsOwner = false;
-    let viewerIsAdmin = false;
-
     if (requiresOwnerCheck) {
       const sessionRaw = await race(auth(), 500);
-      const session =
-        sessionRaw === "timeout"
-          ? null
-          : (sessionRaw as any);
+      const session = sessionRaw === "timeout" ? null : (sessionRaw as any);
       const user = session?.user as any;
       const userId = user?.id as string | undefined;
-      const isAdmin =
-        user?.role === "ADMIN" || user?.isAdmin === true;
+      const isAdmin = user?.role === "ADMIN" || user?.isAdmin === true;
 
       let resolvedUserId: string | null = userId ?? null;
 
@@ -422,63 +424,42 @@ export async function GET(req: NextRequest) {
           }),
           600,
         );
-        const u =
-          uRaw && uRaw !== "timeout"
-            ? (uRaw as any)
-            : null;
+        const u = uRaw && uRaw !== "timeout" ? (uRaw as any) : null;
         resolvedUserId = u?.id ?? null;
       }
 
-      viewerIsAdmin = !!isAdmin;
-      viewerIsOwner =
-        !!resolvedUserId &&
-        !!base?.sellerId &&
-        String(base.sellerId) ===
-          String(resolvedUserId);
+      const viewerIsOwner =
+        !!resolvedUserId && !!base?.sellerId && String(base.sellerId) === String(resolvedUserId);
 
-      if (!viewerIsOwner && !viewerIsAdmin) {
-        track(
-          "service_read_unauthorized_owner_check",
-          {
-            reqId,
-            serviceId,
-          },
-        );
-        return noStore(
-          { error: "Not found" },
-          { status: 404 },
-        );
+      if (!viewerIsOwner && !isAdmin) {
+        track("service_read_unauthorized_owner_check", { reqId, serviceId });
+        return noStore({ error: "Not found" }, { status: 404 });
       }
     }
 
     // Media normalization (full row + related images)
     const [fullRowRaw, relUrlsRaw] = await Promise.all([
-      race(
-        Service.findUnique({
-          where: { id: serviceId },
-        }).catch(() => null),
-        600,
-      ),
+      race(Service.findUnique({ where: { id: serviceId } }).catch(() => null), 600),
       race(fetchServiceRelationUrls(serviceId), 600),
     ]);
 
-    const fullRow =
-      fullRowRaw !== "timeout"
-        ? (fullRowRaw as any)
-        : null;
-    const relUrls = Array.isArray(relUrlsRaw)
-      ? (relUrlsRaw as string[])
-      : [];
+    const fullRow = fullRowRaw !== "timeout" ? (fullRowRaw as any) : null;
+    const relUrls = Array.isArray(relUrlsRaw) ? (relUrlsRaw as string[]) : [];
 
-    const norm = normalizeCoverAndGallery(
-      shaped,
-      fullRow,
-      relUrls,
-    );
+    const norm = normalizeCoverAndGallery(shaped, fullRow, relUrls);
     const gallery = norm.gallery;
+
+    const sellerFlagsRaw = await race(fetchSellerFlagsById(shaped?.sellerId), 650);
+    const sellerFlags = sellerFlagsRaw !== "timeout" ? (sellerFlagsRaw as SellerFlags) : null;
+
+    const verified = sellerFlags?.sellerVerified ?? false;
+    const tier = sellerFlags?.sellerFeaturedTier ?? "basic";
 
     const payload = {
       ...shaped,
+      sellerVerified: verified,
+      sellerFeaturedTier: tier,
+      sellerBadges: { verified, tier },
       image: norm.cover,
       gallery,
       imageUrls: gallery,
@@ -486,138 +467,75 @@ export async function GET(req: NextRequest) {
       photos: gallery,
     };
 
-    const isPublicResponse =
-      allowedAsPublic && !isDevLike;
+    const isPublicResponse = allowedAsPublic && !isDevLike;
+    const res = isPublicResponse ? publicCache(payload) : noStore(payload);
 
-    const res = isPublicResponse
-      ? publicCache(payload)
-      : noStore(payload);
-
-    if (
-      fullRowRaw === "timeout" ||
-      relUrlsRaw === "timeout"
-    ) {
+    if (fullRowRaw === "timeout" || relUrlsRaw === "timeout") {
       res.headers.set("x-api-fallback", "timed-out");
     }
 
-    track(
-      isPublicResponse
-        ? "service_read_public_hit"
-        : "service_read_owner_hit",
-      {
-        reqId,
-        serviceId,
-        env: IS_PROD ? "prod" : "dev",
-        status: normalizedStatus,
-        deleted: isDeleted,
-        ownerView: !isPublicResponse,
-      },
-    );
+    track(isPublicResponse ? "service_read_public_hit" : "service_read_owner_hit", {
+      reqId,
+      serviceId,
+      env: IS_PROD ? "prod" : "dev",
+      status: normalizedStatus,
+      deleted: isDeleted,
+      ownerView: !isPublicResponse,
+    });
 
     return res;
   } catch (e) {
     console.warn("[services/:id GET] error:", e);
-    track("service_read_error", {
-      reqId,
-      message: (e as any)?.message ?? String(e),
-    });
-    return noStore(
-      { error: "Server error" },
-      { status: 500 },
-    );
+    track("service_read_error", { reqId, message: (e as any)?.message ?? String(e) });
+    return noStore({ error: "Server error" }, { status: 500 });
   }
 }
 
 /* ------------------ DELETE /api/services/:id ------------------ */
 export async function DELETE(req: NextRequest) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
     const idParam = getId(req);
-    if (!idParam) {
-      return noStore(
-        { error: "Missing id" },
-        { status: 400 },
-      );
-    }
+    if (!idParam) return noStore({ error: "Missing id" }, { status: 400 });
 
     const Service = getServiceModel();
-    if (!Service) {
-      return noStore(
-        { error: "Not found" },
-        { status: 404 },
-      );
-    }
+    if (!Service) return noStore({ error: "Not found" }, { status: 404 });
 
     const session = await auth();
     const user = session?.user as any;
     const userId = user?.id;
-    const isAdmin =
-      user?.role === "ADMIN" || user?.isAdmin === true;
+    const isAdmin = user?.role === "ADMIN" || user?.isAdmin === true;
 
-    if (!userId && !isAdmin) {
-      return noStore(
-        { error: "Unauthorized" },
-        { status: 401 },
-      );
-    }
+    if (!userId && !isAdmin) return noStore({ error: "Unauthorized" }, { status: 401 });
 
     // Resolve row (accept alt id fields just like products)
-    const ALT_ID_FIELDS = [
-      "id",
-      "serviceId",
-      "service_id",
-      "uid",
-      "uuid",
-      "slug",
-    ] as const;
+    const ALT_ID_FIELDS = ["id", "serviceId", "service_id", "uid", "uuid", "slug"] as const;
 
     let existing: any = null;
     for (const field of ALT_ID_FIELDS) {
       try {
         const where = { [field]: idParam } as any;
-        existing = await Service.findUnique({
-          where,
-          select: { id: true, sellerId: true },
-        });
+        existing = await Service.findUnique({ where, select: { id: true, sellerId: true } });
         if (existing) break;
       } catch {}
     }
 
-    if (!existing) {
-      return noStore(
-        { error: "Not found" },
-        { status: 404 },
-      );
-    }
+    if (!existing) return noStore({ error: "Not found" }, { status: 404 });
 
-    const isOwner =
-      userId && existing.sellerId === userId;
-    if (!isOwner && !isAdmin) {
-      return noStore(
-        { error: "Forbidden" },
-        { status: 403 },
-      );
-    }
+    const isOwner = userId && existing.sellerId === userId;
+    if (!isOwner && !isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
 
     // Delete gallery images + service
     await prisma.$transaction([
-      prisma.serviceImage.deleteMany({
-        where: { serviceId: existing.id },
-      }),
-      Service.delete({
-        where: { id: existing.id },
-      }),
+      prisma.serviceImage.deleteMany({ where: { serviceId: existing.id } }),
+      Service.delete({ where: { id: existing.id } }),
     ]);
 
     return noStore({ ok: true });
   } catch (e) {
     console.warn("[services/:id DELETE] error:", e);
-    return noStore(
-      { error: "Server error" },
-      { status: 500 },
-    );
+    return noStore({ error: "Server error" }, { status: 500 });
   }
 }

@@ -19,12 +19,21 @@ test.describe("Admin auth/redirects", () => {
     expect(res?.ok()).toBeTruthy();
 
     // Top-level admin shell heading should render
-    await expect(
-      page.getByRole("heading", { name: "Admin console" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
+
+    // Regression: old broken path showed this string
+    await expect(page.getByText(/failed to load metrics/i)).toHaveCount(0);
+
+    // Widgets (messages/chats) should be present again
+    const messagesWidget = page
+      .getByRole("region", { name: /messages snapshot/i })
+      .or(page.getByRole("link", { name: /open inbox/i }));
+    await expect(messagesWidget.first()).toBeVisible();
   });
 
-  test("visiting / or /dashboard does not break; admin area remains accessible", async ({ page }) => {
+  test("visiting / or /dashboard does not break; admin area remains accessible", async ({
+    page,
+  }) => {
     const r1 = await page.goto("/", { waitUntil: "domcontentloaded" });
     expect(r1?.status()).toBeLessThan(500);
 
@@ -36,9 +45,10 @@ test.describe("Admin auth/redirects", () => {
     expect(r3?.ok()).toBeTruthy();
 
     // Top-level admin shell heading should still be visible
-    await expect(
-      page.getByRole("heading", { name: "Admin console" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Admin console" })).toBeVisible();
+
+    // Regression guard
+    await expect(page.getByText(/failed to load metrics/i)).toHaveCount(0);
   });
 });
 
@@ -46,7 +56,9 @@ test.describe("User auth/redirects", () => {
   test.skip(!hasUserState, "Missing user auth storage state.");
   test.use({ storageState: USER_STATE });
 
-  test("visiting / resolves (home or /dashboard) and dashboard is accessible", async ({ page }) => {
+  test("visiting / resolves (home or /dashboard) and dashboard is accessible", async ({
+    page,
+  }) => {
     const res = await page.goto("/", { waitUntil: "domcontentloaded" });
     expect(res?.status()).toBeLessThan(500);
 
@@ -57,7 +69,9 @@ test.describe("User auth/redirects", () => {
     expect(me.status(), await me.text()).toBe(200);
   });
 
-  test("trying to open /admin is hard-blocked (redirect, 401/403, or unauthorized UI)", async ({ page }) => {
+  test("trying to open /admin is hard-blocked (redirect, 401/403, or unauthorized UI)", async ({
+    page,
+  }) => {
     const res = await page.goto("/admin", { waitUntil: "domcontentloaded" }).catch(() => null);
 
     const urlIsAdmin = /\/admin(\/|$)/.test(page.url());
@@ -70,8 +84,6 @@ test.describe("User auth/redirects", () => {
     const blocked = !urlIsAdmin || status === 401 || status === 403 || unauthorizedUI > 0;
     expect(blocked).toBeTruthy();
 
-    await expect(
-      page.getByRole("heading", { name: /admin/i }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /admin/i })).toHaveCount(0);
   });
 });

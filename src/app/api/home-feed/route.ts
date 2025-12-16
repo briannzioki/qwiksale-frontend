@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/app/lib/prisma";
 import { jsonPublic } from "@/app/api/_lib/responses";
 
@@ -39,6 +40,7 @@ type ProductRow = {
   featured?: boolean | null;
   createdAt?: Date | string | null;
   location?: string | null;
+  sellerId?: string | null;
 };
 
 type ServiceRow = {
@@ -52,6 +54,7 @@ type ServiceRow = {
   featured?: boolean | null;
   createdAt?: Date | string | null;
   location?: string | null;
+  sellerId?: string | null;
 };
 
 const productSelect = {
@@ -67,6 +70,7 @@ const productSelect = {
   featured: true,
   createdAt: true,
   location: true,
+  sellerId: true,
 } as const;
 
 const serviceSelect = {
@@ -80,6 +84,7 @@ const serviceSelect = {
   featured: true,
   createdAt: true,
   location: true,
+  sellerId: true,
 } as const;
 
 /* ------------------------------- Small utils ------------------------------ */
@@ -127,7 +132,8 @@ function toSort(v: string | null): SortKey {
 
 function toStatus(v: string | null): StatusParam {
   const t = (v || "").trim().toLowerCase();
-  if (t === "active" || t === "hidden" || t === "draft" || t === "sold") return t;
+  if (t === "active" || t === "hidden" || t === "draft" || t === "sold")
+    return t;
   return "any";
 }
 
@@ -141,6 +147,83 @@ function toIso(x: unknown): string {
   const s = String(x);
   const t = Date.parse(s);
   return Number.isFinite(t) ? new Date(t).toISOString() : "";
+}
+
+/* ------------------------ seller badge helpers ------------------------ */
+
+type SellerTier = "basic" | "gold" | "diamond";
+type SellerBadgeInfo = { verified: boolean; tier: SellerTier };
+
+function normalizeTier(v: unknown): SellerTier {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (t.includes("diamond")) return "diamond";
+  if (t.includes("gold")) return "gold";
+  return "basic";
+}
+
+function pickVerifiedFromUserJson(u: any): boolean | null {
+  if (!u || typeof u !== "object") return null;
+  const keys = [
+    "verified",
+    "isVerified",
+    "accountVerified",
+    "sellerVerified",
+    "isSellerVerified",
+    "verifiedSeller",
+    "isAccountVerified",
+  ];
+  for (const k of keys) {
+    const v = (u as any)[k];
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v === 1;
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      if (["1", "true", "yes", "verified"].includes(s)) return true;
+      if (["0", "false", "no", "unverified"].includes(s)) return false;
+    }
+  }
+  return null;
+}
+
+function pickTierFromUserJson(u: any): SellerTier {
+  if (!u || typeof u !== "object") return "basic";
+  const v =
+    (u as any).featuredTier ??
+    (u as any).subscriptionTier ??
+    (u as any).subscription ??
+    (u as any).plan ??
+    (u as any).tier;
+  return normalizeTier(v);
+}
+
+async function fetchSellerBadgeMap(ids: string[]) {
+  const out = new Map<string, SellerBadgeInfo>();
+  const uniq = Array.from(new Set(ids.filter(Boolean)));
+  if (!uniq.length) return out;
+
+  try {
+    const rows = await Promise.race([
+      prisma.$queryRaw<{ id: string; u: any }[]>`
+        SELECT u.id, row_to_json(u) as u
+        FROM "User" u
+        WHERE u.id IN (${Prisma.join(uniq)})
+      `,
+      rejectingTimeout(SOFT_TIMEOUT_MS),
+    ]).catch(() => []);
+
+    for (const r of rows as any[]) {
+      const id = String(r?.id ?? "");
+      if (!id) continue;
+      const u = r?.u;
+      const verified = pickVerifiedFromUserJson(u);
+      const tier = pickTierFromUserJson(u);
+      out.set(id, { verified: verified ?? false, tier });
+    }
+  } catch {
+    // ignore: return empty map (defaults applied by caller)
+  }
+
+  return out;
 }
 
 /* --------------------------------- Query --------------------------------- */
@@ -200,7 +283,11 @@ export async function GET(req: NextRequest) {
 
   // helpers
   const makeSearchOR = (fields: string[], needle: string) =>
-    ({ OR: fields.map((f) => ({ [f]: { contains: needle, mode: "insensitive" } })) } as any);
+    ({
+      OR: fields.map((f) => ({
+        [f]: { contains: needle, mode: "insensitive" },
+      })),
+    } as any);
 
   const priceClause = () => {
     if (minPriceStr === null && maxPriceStr === null) return undefined;
@@ -236,23 +323,36 @@ export async function GET(req: NextRequest) {
     if (sw) AND.push(sw);
 
     if (tokens.length) {
-      for (const t of tokens) AND.push(makeSearchOR(["name", "brand", "category", "subcategory"], t));
+      for (const t of tokens)
+        AND.push(
+          makeSearchOR(["name", "brand", "category", "subcategory"], t),
+        );
     } else if (q) {
       AND.push(makeSearchOR(["name", "brand", "category", "subcategory"], q));
     }
 
-    if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
-    if (subcategory) AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (category)
+      AND.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory)
+      AND.push({
+        subcategory: { equals: subcategory, mode: "insensitive" },
+      });
     if (brand) AND.push({ brand: { contains: brand, mode: "insensitive" } });
-    if (condition) AND.push({ condition: { equals: condition, mode: "insensitive" } });
+    if (condition)
+      AND.push({ condition: { equals: condition, mode: "insensitive" } });
     if (typeof featured === "boolean") AND.push({ featured });
 
     const p = priceClause();
     if (p) {
-      AND.push(p.includeNulls ? { OR: [{ price: null }, { price: p.clause }] } : { price: p.clause });
+      AND.push(
+        p.includeNulls
+          ? { OR: [{ price: null }, { price: p.clause }] }
+          : { price: p.clause },
+      );
     }
 
-    if (sort === "price_asc" || sort === "price_desc") AND.push({ price: { not: null } });
+    if (sort === "price_asc" || sort === "price_desc")
+      AND.push({ price: { not: null } });
 
     return AND.length ? { AND } : {};
   };
@@ -263,31 +363,49 @@ export async function GET(req: NextRequest) {
     if (sw) AND.push(sw);
 
     if (tokens.length) {
-      for (const t of tokens) AND.push(makeSearchOR(["name", "description", "category", "subcategory"], t));
+      for (const t of tokens)
+        AND.push(
+          makeSearchOR(["name", "description", "category", "subcategory"], t),
+        );
     } else if (q) {
-      AND.push(makeSearchOR(["name", "description", "category", "subcategory"], q));
+      AND.push(
+        makeSearchOR(["name", "description", "category", "subcategory"], q),
+      );
     }
 
-    if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
-    if (subcategory) AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
+    if (category)
+      AND.push({ category: { equals: category, mode: "insensitive" } });
+    if (subcategory)
+      AND.push({
+        subcategory: { equals: subcategory, mode: "insensitive" },
+      });
     if (typeof featured === "boolean") AND.push({ featured });
 
     const p = priceClause();
     if (p) {
-      AND.push(p.includeNulls ? { OR: [{ price: null }, { price: p.clause }] } : { price: p.clause });
+      AND.push(
+        p.includeNulls
+          ? { OR: [{ price: null }, { price: p.clause }] }
+          : { price: p.clause },
+      );
     }
 
-    if (sort === "price_asc" || sort === "price_desc") AND.push({ price: { not: null } });
+    if (sort === "price_asc" || sort === "price_desc")
+      AND.push({ price: { not: null } });
 
     return AND.length ? { AND } : {};
   };
 
   const orderFor = (kind: "product" | "service"): any[] => {
-    if (sort === "price_asc") return [{ price: "asc" }, { createdAt: "desc" }, { id: "desc" }];
-    if (sort === "price_desc") return [{ price: "desc" }, { createdAt: "desc" }, { id: "desc" }];
-    if (sort === "featured") return [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }];
+    if (sort === "price_asc")
+      return [{ price: "asc" }, { createdAt: "desc" }, { id: "desc" }];
+    if (sort === "price_desc")
+      return [{ price: "desc" }, { createdAt: "desc" }, { id: "desc" }];
+    if (sort === "featured")
+      return [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }];
 
-    const isSearchLike = !!q || !!category || !!subcategory || (kind === "product" && !!brand);
+    const isSearchLike =
+      !!q || !!category || !!subcategory || (kind === "product" && !!brand);
     return isSearchLike
       ? [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }]
       : [{ createdAt: "desc" }, { id: "desc" }];
@@ -325,6 +443,7 @@ export async function GET(req: NextRequest) {
         featured: !!p.featured,
         location: p.location ?? null,
         createdAt: toIso(p.createdAt),
+        sellerId: p.sellerId ? String(p.sellerId) : null,
       };
     });
   };
@@ -359,6 +478,7 @@ export async function GET(req: NextRequest) {
         featured: !!s.featured,
         location: s.location ?? null,
         createdAt: toIso(s.createdAt),
+        sellerId: s.sellerId ? String(s.sellerId) : null,
       };
     });
   };
@@ -418,15 +538,46 @@ export async function GET(req: NextRequest) {
       if (items.length > limit) items = items.slice(0, limit);
     }
 
+    const allSellerIds = Array.from(
+      new Set(
+        [...items, ...productsArr, ...servicesArr]
+          .map((x: any) => x?.sellerId)
+          .filter(Boolean),
+      ),
+    ) as string[];
+    const badgeMap = await fetchSellerBadgeMap(allSellerIds);
+
+    const applyBadges = (arr: any[]) =>
+      arr.map((x: any) => {
+        const sid = String(x?.sellerId ?? "");
+        const b = sid ? badgeMap.get(sid) : undefined;
+        const verified = b?.verified ?? false;
+        const tier = b?.tier ?? "basic";
+        return {
+          ...x,
+          sellerVerified: verified,
+          sellerFeaturedTier: tier,
+          sellerBadges: { verified, tier },
+        };
+      });
+
+    const itemsWithBadges = applyBadges(items);
+    const productsWithBadges = applyBadges(
+      productsArr.slice(0, Math.min(productsArr.length, limit)),
+    );
+    const servicesWithBadges = applyBadges(
+      servicesArr.slice(0, Math.min(servicesArr.length, limit)),
+    );
+
     const payload = {
       mode,
       page,
       pageSize: limit, // keep field name for backward compat
-      total: items.length,
+      total: itemsWithBadges.length,
       totalPages: 1 as const,
-      items,
-      products: productsArr.slice(0, Math.min(productsArr.length, limit)),
-      services: servicesArr.slice(0, Math.min(servicesArr.length, limit)),
+      items: itemsWithBadges,
+      products: productsWithBadges,
+      services: servicesWithBadges,
       debug: {
         sort,
         status: statusParam,

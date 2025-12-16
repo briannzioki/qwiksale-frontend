@@ -10,6 +10,7 @@ import FavoriteButton from "@/app/components/favorites/FavoriteButton";
 import type { HomeSeedProps } from "./HomeClientNoSSR";
 
 type Mode = "all" | "products" | "services";
+type FeaturedTier = "basic" | "gold" | "diamond";
 
 type ProductItem = {
   type: "product";
@@ -24,6 +25,10 @@ type ProductItem = {
   featured?: boolean | null;
   location?: string | null;
   createdAt?: string | null;
+
+  /** Seller/account flags for public UI */
+  sellerVerified?: boolean | null;
+  sellerFeaturedTier?: FeaturedTier | null;
 };
 
 type ServiceItem = {
@@ -37,6 +42,10 @@ type ServiceItem = {
   featured?: boolean | null;
   location?: string | null;
   createdAt?: string | null;
+
+  /** Seller/account flags for public UI */
+  sellerVerified?: boolean | null;
+  sellerFeaturedTier?: FeaturedTier | null;
 };
 
 type AnyItem = ProductItem | ServiceItem;
@@ -116,6 +125,163 @@ function useDebounced<T>(value: T, delay = DEBOUNCE_MS): T {
   return debounced;
 }
 
+function coerceFeaturedTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes("diamond")) return "diamond";
+  if (s.includes("gold")) return "gold";
+  if (s.includes("basic")) return "basic";
+  return null;
+}
+
+function pickSellerVerified(raw: any): boolean | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
+
+  const candidates: unknown[] = [
+    raw?.sellerVerified,
+    raw?.seller_verified,
+    raw?.accountVerified,
+    raw?.account_verified,
+    seller?.verified,
+    seller?.isVerified,
+    seller?.sellerVerified,
+    seller?.accountVerified,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === "boolean") return c;
+  }
+
+  const hasSellerContext = Boolean(
+    raw?.sellerId ||
+      raw?.sellerName ||
+      raw?.seller ||
+      raw?.user ||
+      raw?.owner ||
+      seller,
+  );
+
+  if (hasSellerContext && typeof raw?.verified === "boolean") {
+    return raw.verified;
+  }
+
+  return null;
+}
+
+function pickSellerFeaturedTier(raw: any): FeaturedTier | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
+
+  const candidates: unknown[] = [
+    seller?.featuredTier,
+    seller?.featured_tier,
+    seller?.tier,
+    seller?.featuredLevel,
+    raw?.sellerFeaturedTier,
+    raw?.seller_featured_tier,
+    raw?.accountFeaturedTier,
+    raw?.account_featured_tier,
+    raw?.featuredTier,
+    raw?.featured_tier,
+  ];
+
+  for (const c of candidates) {
+    const t = coerceFeaturedTier(c);
+    if (t) return t;
+  }
+
+  return null;
+}
+
+/* ------------------------ Seller pill UI (brand-consistent) ------------------------ */
+
+function VerifiedPill({ verified }: { verified: boolean }) {
+  return (
+    <span
+      className={[
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        verified
+          ? "border-emerald-500/30 bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+          : "border-border bg-muted text-muted-foreground",
+      ].join(" ")}
+      aria-label={verified ? "Verified seller" : "Unverified seller"}
+    >
+      <span className="text-[10px]" aria-hidden="true">
+        {verified ? "✓" : "✕"}
+      </span>{" "}
+      <span>{verified ? "Verified" : "Unverified"}</span>
+    </span>
+  );
+}
+
+function TierPill({ tier }: { tier: FeaturedTier }) {
+  const base =
+    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold";
+  if (tier === "gold") {
+    return (
+      <span
+        className={`${base} border-amber-400/40 bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 text-amber-950 dark:border-amber-900/40 dark:from-amber-900/25 dark:via-amber-900/10 dark:to-amber-900/25 dark:text-amber-100`}
+        aria-label="Featured tier gold"
+      >
+        <span className="text-[10px]" aria-hidden="true">
+          ★
+        </span>{" "}
+        <span>gold</span>
+      </span>
+    );
+  }
+
+  if (tier === "diamond") {
+    return (
+      <span
+        className={`${base} border-sky-300/50 bg-gradient-to-r from-sky-200 via-cyan-100 to-indigo-200 text-slate-900 dark:border-sky-900/40 dark:from-sky-900/25 dark:via-sky-900/10 dark:to-sky-900/25 dark:text-slate-100`}
+        aria-label="Featured tier diamond"
+      >
+        <span className="text-[10px]" aria-hidden="true">
+          ◆
+        </span>{" "}
+        <span>diamond</span>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`${base} border-border bg-muted text-foreground`}
+      aria-label="Featured tier basic"
+    >
+      <span className="text-[10px]" aria-hidden="true">
+        ★
+      </span>{" "}
+      <span>basic</span>
+    </span>
+  );
+}
+
+function SellerBadges({
+  verified,
+  tier,
+}: {
+  verified?: boolean | null;
+  tier?: FeaturedTier | null;
+}) {
+  const showVerified = typeof verified === "boolean";
+  const showTier = !!tier;
+
+  if (!showVerified && !showTier) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {showVerified ? <VerifiedPill verified={Boolean(verified)} /> : null}
+      {tier ? <TierPill tier={tier} /> : null}
+    </div>
+  );
+}
+
 function coerceItems(json: any): PageResponse<AnyItem> {
   const base = json?.page || json?.page === 0 ? json : json?.data || json;
 
@@ -141,8 +307,8 @@ function coerceItems(json: any): PageResponse<AnyItem> {
           typeof x.price === "number"
             ? x.price
             : typeof x.amount === "number"
-            ? x.amount
-            : null,
+              ? x.amount
+              : null,
         image:
           x.image ||
           x.thumbnail ||
@@ -152,10 +318,13 @@ function coerceItems(json: any): PageResponse<AnyItem> {
           typeof x.featured === "boolean"
             ? x.featured
             : x.isFeatured === true
-            ? true
-            : null,
+              ? true
+              : null,
         location: x.location ?? x.city ?? null,
         createdAt: x.createdAt ?? x.created_at ?? null,
+
+        sellerVerified: pickSellerVerified(x),
+        sellerFeaturedTier: pickSellerFeaturedTier(x),
       };
 
       if (type === "service") {
@@ -178,8 +347,8 @@ function coerceItems(json: any): PageResponse<AnyItem> {
     typeof base?.total === "number"
       ? base.total
       : typeof json?.total === "number"
-      ? json.total
-      : items.length;
+        ? json.total
+        : items.length;
 
   const pageSize =
     typeof base?.pageSize === "number" ? base.pageSize : PAGE_SIZE;
@@ -269,37 +438,38 @@ export default function HomeClient(seed?: HomeSeedProps) {
           typeof svc.name === "string"
             ? svc.name
             : typeof anySvc.title === "string"
-            ? anySvc.title
-            : "Service",
-        category:
-          typeof svc.category === "string" ? svc.category : null,
-        subcategory:
-          typeof svc.subcategory === "string" ? svc.subcategory : null,
+              ? anySvc.title
+              : "Service",
+        category: typeof svc.category === "string" ? svc.category : null,
+        subcategory: typeof svc.subcategory === "string" ? svc.subcategory : null,
         price:
           typeof svc.price === "number"
             ? svc.price
             : typeof anySvc.amount === "number"
-            ? anySvc.amount
-            : null,
+              ? anySvc.amount
+              : null,
         image:
           typeof svc.image === "string"
             ? svc.image
             : Array.isArray(anySvc.images) && anySvc.images.length > 0
-            ? anySvc.images[0]
-            : null,
+              ? anySvc.images[0]
+              : null,
         featured:
           typeof anySvc.featured === "boolean"
             ? anySvc.featured
             : anySvc.isFeatured === true
-            ? true
-            : null,
+              ? true
+              : null,
         location:
           typeof svc.location === "string"
             ? svc.location
             : typeof anySvc.city === "string"
-            ? anySvc.city
-            : null,
+              ? anySvc.city
+              : null,
         createdAt: null,
+
+        sellerVerified: pickSellerVerified(anySvc),
+        sellerFeaturedTier: pickSellerFeaturedTier(anySvc),
       } as ServiceItem;
     });
 
@@ -322,8 +492,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
     if (dcategory) params.set("category", dcategory);
     if (dsubcategory) params.set("subcategory", dsubcategory);
     if (dbrand && dmode === "products") params.set("brand", dbrand);
-    if (dcondition && dmode === "products")
-      params.set("condition", dcondition);
+    if (dcondition && dmode === "products") params.set("condition", dcondition);
     if (dminPrice) params.set("minPrice", dminPrice);
     if (dmaxPrice) params.set("maxPrice", dmaxPrice);
     if (dfeaturedOnly) params.set("featured", "true");
@@ -376,8 +545,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
 
         const hasError =
           !r.ok ||
-          (typeof (jsonRaw as any).error === "string" &&
-            (jsonRaw as any).error) ||
+          (typeof (jsonRaw as any).error === "string" && (jsonRaw as any).error) ||
           (typeof (jsonRaw as any).message === "string" &&
             !Array.isArray((jsonRaw as any).items));
 
@@ -415,9 +583,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
           fallbackMode === "all"
         ) {
           const want = dmode === "products" ? "product" : "service";
-          const filtered = (pageJson.items || []).filter(
-            (x) => x.type === want,
-          );
+          const filtered = (pageJson.items || []).filter((x) => x.type === want);
           pageJson = {
             ...pageJson,
             items: filtered,
@@ -472,9 +638,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
   const pageNum = res?.page ?? 1;
   const totalPages = res?.totalPages ?? 1;
   const total = res?.total ?? 0;
-  const items: AnyItem[] = Array.isArray(res?.items)
-    ? (res!.items as AnyItem[])
-    : [];
+  const items: AnyItem[] = Array.isArray(res?.items) ? (res!.items as AnyItem[]) : [];
   const hasItems = items.length > 0;
 
   const clearAll = () => {
@@ -495,8 +659,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
   if (category) activeChips.push(`Category: ${category}`);
   if (subcategory) activeChips.push(`Subcategory: ${subcategory}`);
   if (brand && mode === "products") activeChips.push(`Brand: ${brand}`);
-  if (condition && mode === "products")
-    activeChips.push(`Condition: ${condition}`);
+  if (condition && mode === "products") activeChips.push(`Condition: ${condition}`);
   if (minPrice) activeChips.push(`Min: ${minPrice}`);
   if (maxPrice) activeChips.push(`Max: ${maxPrice}`);
   if (featuredOnly) activeChips.push("Featured only");
@@ -505,8 +668,8 @@ export default function HomeClient(seed?: HomeSeedProps) {
       sort === "price_asc"
         ? "Price ↑"
         : sort === "price_desc"
-        ? "Price ↓"
-        : "Featured first",
+          ? "Price ↓"
+          : "Featured first",
     );
 
   const makeChip = (label: string) => (
@@ -523,10 +686,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
   return (
     <div className="flex flex-col gap-6">
       {/* Tabs: All / Products / Services */}
-      <div
-        className="sticky top-[64px] z-30 card-surface p-2"
-        aria-label="Browse type tabs"
-      >
+      <div className="sticky top-[64px] z-30 card-surface p-2" aria-label="Browse type tabs">
         <HomeTabs />
       </div>
 
@@ -716,8 +876,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
         <SkeletonGrid />
       ) : !hasItems ? (
         <div className="card-surface p-6 text-sm text-muted-foreground">
-          No {mode === "all" ? "items" : mode} found. Try adjusting your
-          filters.
+          No {mode === "all" ? "items" : mode} found. Try adjusting your filters.
         </div>
       ) : (
         <section
@@ -735,8 +894,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
 
             const c1 = it.category || "";
             const c2 = it.subcategory || "";
-            const categoryText =
-              c1 && c2 ? `${c1} • ${c2}` : c1 || c2 || "General";
+            const categoryText = c1 && c2 ? `${c1} • ${c2}` : c1 || c2 || "General";
 
             const href = isProduct
               ? `/product/${encodeURIComponent(it.id)}`
@@ -785,13 +943,15 @@ export default function HomeClient(seed?: HomeSeedProps) {
                     )}
                   </div>
                   <div className="p-3">
-                    <h3 className="line-clamp-1 font-semibold text-foreground">
-                      {title}
-                    </h3>
-                    <p className="line-clamp-1 text-xs text-muted-foreground">
-                      {categoryText}
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-foreground">
+                    <h3 className="line-clamp-1 font-semibold text-foreground">{title}</h3>
+                    <p className="line-clamp-1 text-xs text-muted-foreground">{categoryText}</p>
+
+                    <SellerBadges
+                      verified={it.sellerVerified ?? null}
+                      tier={it.sellerFeaturedTier ?? null}
+                    />
+
+                    <p className="mt-1 text-sm font-bold text-[#39a0ca] dark:text-[#7dd3fc]">
                       {fmtKES(price)}
                     </p>
                   </div>
@@ -803,16 +963,13 @@ export default function HomeClient(seed?: HomeSeedProps) {
       )}
 
       {/* Local pagination (does not touch URL) */}
-      <section
-        className="flex items-center justify-between"
-        aria-live="polite"
-      >
+      <section className="flex items-center justify-between" aria-live="polite">
         <p className="text-xs text-muted-foreground">
           {loading
             ? "Loading…"
             : err
-            ? "Error loading listings."
-            : `${total} items • Page ${pageNum} of ${totalPages}`}
+              ? "Error loading listings."
+              : `${total} items • Page ${pageNum} of ${totalPages}`}
         </p>
         <div className="flex items-center gap-2">
           <button

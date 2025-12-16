@@ -140,8 +140,8 @@ async function pickServiceSlice(
           typeof anyRaw.location === "string"
             ? anyRaw.location
             : typeof anyRaw.city === "string"
-            ? anyRaw.city
-            : null,
+              ? anyRaw.city
+              : null,
       };
       seeds.push(seed);
       if (seeds.length >= limit) break;
@@ -256,6 +256,24 @@ export default async function Page({
 
   return (
     <main id="main" className="min-h-[60svh]">
+      <section aria-label="Welcome" className="container mx-auto px-4 py-6">
+        <SectionHeader
+          as="h1"
+          title="QwikSale"
+          subtitle="Kenya’s most trusted marketplace, buy & sell anything fast."
+          kicker="Welcome"
+        />
+      </section>
+
+      <section
+        aria-label="Search results"
+        className="container mx-auto px-4 pb-12"
+      >
+        <HomeClientNoSSR {...seedProps} />
+      </section>
+
+      {/* NOTE: Keep seed anchors in the DOM, but render them AFTER the real feed
+          so Playwright "a[href^='/product/']".first() hits a real card first. */}
       {hasAnySeedLink && (
         <section
           aria-label="Quick links"
@@ -298,22 +316,6 @@ export default async function Page({
           </div>
         </section>
       )}
-
-      <section aria-label="Welcome" className="container mx-auto px-4 py-6">
-        <SectionHeader
-          as="h1"
-          title="QwikSale"
-          subtitle="Kenya’s most trusted marketplace, buy & sell anything fast."
-          kicker="Welcome"
-        />
-      </section>
-
-      <section
-        aria-label="Search results"
-        className="container mx-auto px-4 pb-12"
-      >
-        <HomeClientNoSSR {...seedProps} />
-      </section>
     </main>
   );
 }

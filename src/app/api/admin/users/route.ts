@@ -14,6 +14,9 @@ type AdminUser = {
   username: string | null;
   role: string | null;
   createdAt: string | null;
+  verified?: boolean | null;
+  suspended?: boolean | null;
+  banned?: boolean | null;
 };
 
 function noStoreJson(json: unknown, init?: ResponseInit) {
@@ -54,41 +57,81 @@ export async function GET(req: NextRequest) {
       if (q) {
         const like = { contains: q, mode: "insensitive" } as const;
         where.OR = [{ email: like }, { name: like }, { username: like }];
-        // exact id match (optional — won’t 500 on non-uuid)
         if (q.length >= 8) where.OR.push({ id: q });
       }
       if (ALLOWED_ROLES.has(roleRaw)) {
         where.role = roleRaw;
       }
 
-      const [total, rows] = await Promise.all([
-        prisma.user.count({ where }).catch(() => 0),
-        prisma.user.findMany({
-          where,
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          skip,
-          take: limit,
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            username: true,
-            role: true,
-            createdAt: true,
-          },
-        }),
+      const db = prisma as any;
+
+      const [total, rowsBase] = await Promise.all([
+        db.user.count({ where }).catch(() => 0),
+        (async () => {
+          // Try “wide” select first (includes enforcement fields). If schema drift, retry narrow.
+          try {
+            return await db.user.findMany({
+              where,
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              skip,
+              take: limit,
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                username: true,
+                role: true,
+                createdAt: true,
+                verified: true,
+                suspended: true,
+                banned: true,
+              },
+            });
+          } catch {
+            return await db.user.findMany({
+              where,
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              skip,
+              take: limit,
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                username: true,
+                role: true,
+                createdAt: true,
+              },
+            });
+          }
+        })(),
       ]);
 
-      const out: AdminUser[] = rows.map((u) => ({
+      const out: AdminUser[] = (rowsBase as any[]).map((u: any) => ({
         id: String(u.id),
         email: u.email ?? null,
         name: u.name ?? null,
         username: u.username ?? null,
         role: u.role ?? null,
-        createdAt: u.createdAt instanceof Date ? u.createdAt.toISOString() : (u.createdAt as any) ?? null,
+        createdAt:
+          u.createdAt instanceof Date
+            ? u.createdAt.toISOString()
+            : (u.createdAt as any) ?? null,
+        verified: typeof u.verified === "boolean" ? u.verified : null,
+        suspended: typeof u.suspended === "boolean" ? u.suspended : null,
+        banned: typeof u.banned === "boolean" ? u.banned : null,
       }));
 
-      log.info({ returned: out.length, total, page, limit, q: q || null, role: where.role ?? null }, "admin_users_ok");
+      log.info(
+        {
+          returned: out.length,
+          total,
+          page,
+          limit,
+          q: q || null,
+          role: where.role ?? null,
+        },
+        "admin_users_ok",
+      );
 
       const res = noStoreJson(out);
       res.headers.set("X-Total-Count", String(total));

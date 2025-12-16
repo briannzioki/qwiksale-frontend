@@ -1,25 +1,16 @@
-﻿// src/app/search/page.tsx
-import type { ReactNode } from "react";
-import type { Metadata } from "next";
+﻿"use client";
+
+// src/app/search/page.tsx
+
 import Link from "next/link";
-import SectionHeader from "@/app/components/SectionHeader";
-import NumberInputNoWheel from "@/app/components/ui/NumberInputNoWheel";
-import SuggestInput from "@/app/components/SuggestInput";
-import type { SearchParams15 } from "@/app/lib/next15";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import InfiniteLoader from "@/app/components/InfiniteLoader";
 import type { Sort } from "./SearchClient";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+/* ------------------------------ Types ------------------------------ */
 
-type SearchResultItem = {
-  kind: "product" | "service";
-  id: string;
-  name: string;
-  href: string;
-  imageUrl?: string | null;
-  categoryLabel?: string | null;
-  priceLabel?: string | null;
-};
+type FeaturedTier = "basic" | "gold" | "diamond";
 
 type Envelope<T> = {
   page: number;
@@ -29,776 +20,1078 @@ type Envelope<T> = {
   items: T[];
 };
 
-export const metadata: Metadata = {
-  title: "Search · QwikSale",
-  description: "Search products and services listed on QwikSale across Kenya.",
+type ProductHit = {
+  id: string;
+  name: string;
+  image?: string | null;
+  price?: number | null;
+  brand?: string | null;
+  condition?: string | null;
+  featured?: boolean;
+  category: string;
+  subcategory: string | null;
+
+  /** Common seller snapshot fields (if API includes them) */
+  sellerId?: string | null;
+  sellerUsername?: string | null;
+  sellerName?: string | null;
+
+  /** Optional seller/account flags (if API includes them) */
+  sellerVerified?: boolean | null;
+  sellerFeaturedTier?: FeaturedTier | null;
+  seller?: {
+    id?: string | null;
+    username?: string | null;
+    name?: string | null;
+    image?: string | null;
+    verified?: boolean | null;
+    featuredTier?: FeaturedTier | string | null;
+  } | null;
 };
 
-/* ------------------------ helpers ------------------------ */
+type ServiceHit = {
+  id: string;
+  /** Prefer `name`, but support legacy `title`. */
+  name?: string | null;
+  title?: string | null;
+  image?: string | null;
+  price?: number | null;
+  rateType?: "hour" | "day" | "fixed" | null;
+  serviceArea?: string | null;
+  availability?: string | null;
+  featured?: boolean;
 
-function toBool(v: string | undefined) {
-  if (!v) return false;
-  const s = v.toLowerCase();
-  return s === "1" || s === "true" || s === "yes" || s === "on";
-}
+  /** Common seller snapshot fields (if API includes them) */
+  sellerId?: string | null;
+  sellerUsername?: string | null;
+  sellerName?: string | null;
 
-function toNum(v: string | undefined, fallback?: number) {
-  if (v == null || v === "") return fallback;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
+  /** Optional seller/account flags (if API includes them) */
+  sellerVerified?: boolean | null;
+  sellerFeaturedTier?: FeaturedTier | null;
+  seller?: {
+    id?: string | null;
+    username?: string | null;
+    name?: string | null;
+    image?: string | null;
+    verified?: boolean | null;
+    featuredTier?: FeaturedTier | string | null;
+  } | null;
+};
 
-function getParam(sp: SearchParams15, k: string): string | undefined {
-  const v = sp[k];
-  return Array.isArray(v) ? (v[0] as string | undefined) : (v as string | undefined);
-}
-
-function keepQuery(
-  base: string,
-  sp: SearchParams15,
-  overrides: Partial<
-    Record<
-      | "type"
-      | "q"
-      | "category"
-      | "subcategory"
-      | "brand"
-      | "condition"
-      | "featured"
-      | "minPrice"
-      | "maxPrice"
-      | "sort"
-      | "page"
-      | "pageSize",
-      string | null | undefined
-    >
-  >,
-  { dropPageOnChange = true }: { dropPageOnChange?: boolean } = {},
-) {
-  const url = new URL(base, "http://x");
-  const qp = url.searchParams;
-
-  // start from current searchParams
-  Object.entries(sp).forEach(([k, v]) => {
-    if (Array.isArray(v)) {
-      qp.delete(k);
-      v.forEach((x) => qp.append(k, String(x)));
-    } else if (v != null) {
-      qp.set(k, String(v));
-    }
-  });
-
-  // apply overrides
-  Object.entries(overrides).forEach(([k, v]) => {
-    if (v == null || v === "") qp.delete(k);
-    else qp.set(k, v);
-  });
-
-  if (dropPageOnChange) {
-    qp.delete("page");
-  }
-
-  const qs = qp.toString();
-  return qs ? `${base}?${qs}` : base;
-}
-
-function makeApiUrl(path: string) {
-  const envBase =
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["VERCEL_URL"];
-
-  let base = envBase || "http://localhost:3000";
-  if (!base.startsWith("http")) {
-    base = `https://${base}`;
-  }
-
-  if (!path.startsWith("/")) {
-    return `${base}/${path}`;
-  }
-  return `${base}${path}`;
-}
-
-function buildSearchQS(args: {
-  q: string;
-  category: string;
-  subcategory: string;
-  brand: string;
-  condition: string;
-  featuredOnly: boolean;
-  minPrice: number | undefined;
-  maxPrice: number | undefined;
+type BaseParams = {
+  q?: string;
+  category?: string;
+  subcategory?: string;
+  brand?: string;
+  condition?: string;
+  featured?: boolean;
+  minPrice?: number;
+  maxPrice?: number;
   sort: Sort;
-  page: number;
   pageSize: number;
-}) {
-  const qp = new URLSearchParams();
-  if (args.q) qp.set("q", args.q);
-  if (args.category) qp.set("category", args.category);
-  if (args.subcategory) qp.set("subcategory", args.subcategory);
-  if (args.brand) qp.set("brand", args.brand);
-  if (args.condition) qp.set("condition", args.condition);
-  if (args.featuredOnly) qp.set("featured", "true");
-  if (typeof args.minPrice === "number") qp.set("minPrice", String(args.minPrice));
-  if (typeof args.maxPrice === "number") qp.set("maxPrice", String(args.maxPrice));
-  qp.set("sort", args.sort);
-  qp.set("page", String(args.page));
-  qp.set("pageSize", String(args.pageSize));
-  return qp.toString();
-}
+  type: "product" | "service";
+};
 
-async function fetchEnvelope<T>(
-  kind: "product" | "service",
-  qs: string,
-  pageSize: number,
-): Promise<Envelope<T>> {
-  const empty: Envelope<T> = {
-    page: 1,
-    pageSize,
-    total: 0,
-    totalPages: 1,
-    items: [],
-  };
+type Props = {
+  endpoint: string; // "/api/products" or "/api/services"
+  initial: Envelope<ProductHit> | Envelope<ServiceHit>;
+  params: BaseParams;
+};
 
-  const path = kind === "product" ? "/api/products" : "/api/services";
-  const url = `${makeApiUrl(path)}${qs ? `?${qs}` : ""}`;
+/* ------------------------------ Util ------------------------------ */
 
-  try {
-    const res = await fetch(url, {
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      return empty;
-    }
-
-    const json = (await res.json()) as any;
-    const rawItems = Array.isArray(json?.items) ? json.items : [];
-
-    return {
-      page: typeof json?.page === "number" ? json.page : 1,
-      pageSize: typeof json?.pageSize === "number" ? json.pageSize : pageSize,
-      total: typeof json?.total === "number" ? json.total : rawItems.length,
-      totalPages: typeof json?.totalPages === "number" ? json.totalPages : 1,
-      items: rawItems as T[],
-    };
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[search] failed to fetch %s results", kind, err);
-    return empty;
+function buildQS(params: Record<string, unknown>) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    if (typeof v === "boolean") q.set(k, v ? "true" : "false");
+    else q.set(k, String(v));
   }
+  return q.toString();
 }
 
-/* ---------- normalization helpers to make cards look like home ---------- */
+function coerceFeaturedTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes("diamond")) return "diamond";
+  if (s.includes("gold")) return "gold";
+  if (s.includes("basic")) return "basic";
+  return null;
+}
 
-function getPrimaryImage(raw: any): string | null {
+function pickSellerVerified(raw: any): boolean | null {
   if (!raw || typeof raw !== "object") return null;
 
+  const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
+
   const candidates: unknown[] = [
-    raw.image,
-    raw.imageUrl,
-    raw.primaryImage,
-    raw.coverImage,
+    raw?.sellerVerified,
+    raw?.seller_verified,
+    raw?.accountVerified,
+    raw?.account_verified,
+    seller?.verified,
+    seller?.isVerified,
   ];
 
   for (const c of candidates) {
-    if (typeof c === "string" && c.trim()) return c;
+    if (typeof c === "boolean") return c;
   }
 
-  if (Array.isArray(raw.images) && raw.images.length > 0) {
-    const first = raw.images[0];
-    if (typeof first === "string" && first.trim()) return first;
-    if (first && typeof first.url === "string" && first.url.trim())
-      return first.url;
-  }
+  const hasSellerContext = Boolean(
+    raw?.sellerId ||
+      raw?.sellerName ||
+      raw?.seller ||
+      raw?.user ||
+      raw?.owner ||
+      seller,
+  );
 
-  if (Array.isArray(raw.gallery) && raw.gallery.length > 0) {
-    const first = raw.gallery[0];
-    if (typeof first === "string" && first.trim()) return first;
-    if (first && typeof first.url === "string" && first.url.trim())
-      return first.url;
+  if (hasSellerContext && typeof raw?.verified === "boolean") {
+    return raw.verified;
   }
 
   return null;
 }
 
-function getCategoryLabel(raw: any): string | null {
+function pickSellerFeaturedTier(raw: any): FeaturedTier | null {
   if (!raw || typeof raw !== "object") return null;
 
-  const catCandidates: unknown[] = [
-    raw.categoryName,
-    raw.category,
-    raw.categoryLabel,
-  ];
-  const subCandidates: unknown[] = [
-    raw.subcategoryName,
-    raw.subcategory,
-    raw.subcategoryLabel,
+  const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
+
+  const candidates: unknown[] = [
+    seller?.featuredTier,
+    seller?.featured_tier,
+    seller?.tier,
+    seller?.featuredLevel,
+    raw?.sellerFeaturedTier,
+    raw?.seller_featured_tier,
+    raw?.accountFeaturedTier,
+    raw?.account_featured_tier,
+    raw?.featuredTier,
+    raw?.featured_tier,
   ];
 
-  const cat = catCandidates.find((v) => typeof v === "string" && v.trim());
-  const sub = subCandidates.find((v) => typeof v === "string" && v.trim());
+  for (const c of candidates) {
+    const t = coerceFeaturedTier(c);
+    if (t) return t;
+  }
 
-  if (cat && sub) return `${String(cat)} • ${String(sub)}`;
-  if (cat) return String(cat);
-  if (sub) return String(sub);
   return null;
 }
 
-function getPriceLabel(raw: any, kind: "product" | "service"): string | null {
+/** Prefer username for store/profile routes; fallback to `u-<id>` */
+function pickSellerUsername(raw: any): string | null {
   if (!raw || typeof raw !== "object") return null;
+  const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
 
-  const display = raw.priceDisplay ?? raw.priceText ?? raw.displayPrice;
-  if (typeof display === "string" && display.trim()) return display;
+  const candidates: unknown[] = [
+    raw?.sellerUsername,
+    raw?.seller_username,
+    raw?.username,
+    seller?.username,
+    seller?.handle,
+  ];
 
-  const price = raw.price ?? raw.rate;
-  if (typeof price === "number" && Number.isFinite(price)) {
-    try {
-      return new Intl.NumberFormat("en-KE", {
-        style: "currency",
-        currency: "KES",
-        maximumFractionDigits: 0,
-      }).format(price);
-    } catch {
-      return `KES ${price.toLocaleString("en-KE")}`;
+  for (const c of candidates) {
+    if (typeof c === "string") {
+      const s = c.trim();
+      if (s) return s;
+    }
+  }
+  return null;
+}
+
+function pickSellerId(raw: any): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
+
+  const candidates: unknown[] = [
+    raw?.sellerId,
+    raw?.seller_id,
+    raw?.accountId,
+    raw?.account_id,
+    raw?.userId,
+    raw?.user_id,
+    seller?.id,
+    seller?.userId,
+    seller?.user_id,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === "string" || typeof c === "number") {
+      const s = String(c).trim();
+      if (s) return s;
+    }
+  }
+  return null;
+}
+
+function pickStoreSlug(raw: any): string | null {
+  const username = pickSellerUsername(raw);
+  if (username) return username;
+
+  const id = pickSellerId(raw);
+  if (!id) return null;
+
+  const normalized = id.startsWith("u-") ? id : `u-${id}`;
+  return normalized;
+}
+
+function pickSellerLabel(raw: any): string {
+  const username = pickSellerUsername(raw);
+  if (username) return `@${username}`;
+
+  const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
+  const nameCandidates: unknown[] = [
+    raw?.sellerName,
+    raw?.seller_name,
+    seller?.name,
+    seller?.displayName,
+  ];
+  for (const c of nameCandidates) {
+    if (typeof c === "string") {
+      const s = c.trim();
+      if (s) return s;
     }
   }
 
-  const priceType = raw.priceType ?? raw.pricingMode ?? raw.billingType;
-  if (
-    typeof priceType === "string" &&
-    priceType.toLowerCase().includes("contact")
-  ) {
-    return "Contact for price";
+  const slug = pickStoreSlug(raw);
+  return slug || "Seller";
+}
+
+function storeHrefFrom(raw: any): string | null {
+  const slug = pickStoreSlug(raw);
+  return slug ? `/store/${encodeURIComponent(slug)}` : null;
+}
+
+/* ------------------------ Seller pill UI (brand-consistent) ------------------------ */
+
+function VerifiedPill({ verified }: { verified: boolean }) {
+  return (
+    <span
+      className={[
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        verified
+          ? "border-emerald-500/30 bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+          : "border-border bg-muted text-muted-foreground",
+      ].join(" ")}
+      aria-label={verified ? "Verified seller" : "Unverified seller"}
+    >
+      <span className="text-[10px]" aria-hidden="true">
+        {verified ? "✓" : "✕"}
+      </span>{" "}
+      <span>{verified ? "Verified" : "Unverified"}</span>
+    </span>
+  );
+}
+
+function TierPill({ tier }: { tier: FeaturedTier }) {
+  const base =
+    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold";
+  if (tier === "gold") {
+    return (
+      <span
+        className={`${base} border-amber-400/40 bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 text-amber-950 dark:border-amber-900/40 dark:from-amber-900/25 dark:via-amber-900/10 dark:to-amber-900/25 dark:text-amber-100`}
+        aria-label="Featured tier gold"
+      >
+        <span className="text-[10px]" aria-hidden="true">
+          ★
+        </span>{" "}
+        <span>gold</span>
+      </span>
+    );
   }
-
-  if (kind === "service") return "Contact for quote";
-  return null;
-}
-
-function buildResultItem(
-  raw: any,
-  kind: "product" | "service",
-): SearchResultItem {
-  const id = raw?.id ?? raw?.productId ?? raw?.serviceId;
-  const name = raw?.name ?? raw?.title ?? "Untitled";
-
-  const href =
-    kind === "product"
-      ? `/product/${encodeURIComponent(String(id))}`
-      : `/service/${encodeURIComponent(String(id))}`;
-
-  return {
-    kind,
-    id: String(id ?? ""),
-    name: String(name),
-    href,
-    imageUrl: getPrimaryImage(raw),
-    categoryLabel: getCategoryLabel(raw),
-    priceLabel: getPriceLabel(raw, kind),
-  };
-}
-
-/** Title above the form */
-function getHeaderTitle(type: string): string {
-  switch (type) {
-    case "product":
-      return "Search Products";
-    case "service":
-      return "Search Services";
-    default:
-      return "Search";
+  if (tier === "diamond") {
+    return (
+      <span
+        className={`${base} border-sky-300/50 bg-gradient-to-r from-sky-200 via-cyan-100 to-indigo-200 text-slate-900 dark:border-sky-900/40 dark:from-sky-900/25 dark:via-sky-900/10 dark:to-sky-900/25 dark:text-slate-100`}
+        aria-label="Featured tier diamond"
+      >
+        <span className="text-[10px]" aria-hidden="true">
+          ◆
+        </span>{" "}
+        <span>diamond</span>
+      </span>
+    );
   }
+  return (
+    <span
+      className={`${base} border-border bg-muted text-foreground`}
+      aria-label="Featured tier basic"
+    >
+      <span className="text-[10px]" aria-hidden="true">
+        ★
+      </span>{" "}
+      <span>basic</span>
+    </span>
+  );
 }
 
-/** Label for the results section */
-function getResultsLabel(type: string): string {
-  switch (type) {
-    case "product":
-      return "Products";
-    case "service":
-      return "Services";
-    default:
-      return "Results";
-  }
-}
-
-/** Subtitle text under the main header */
-function getSubtitle(type: string, q: string): string {
-  if (q) return `Results for “${q}”`;
-  switch (type) {
-    case "product":
-      return "Find deals across products.";
-    case "service":
-      return "Find reliable services.";
-    default:
-      return "Search products & services.";
-  }
-}
-
-/* ------------------------ page ------------------------ */
-
-export default async function SearchPage({
-  searchParams,
+function SellerBadgesRow({
+  verified,
+  tier,
 }: {
-  searchParams: Promise<SearchParams15>;
+  verified?: boolean | null;
+  tier?: FeaturedTier | null;
 }) {
-  const sp = await searchParams;
-
-  // type – keep it as a plain string union to avoid TS over-narrowing
-  const rawType = (getParam(sp, "type") || "all").toLowerCase();
-  const type = rawType === "product" || rawType === "service" ? rawType : "all";
-
-  // core filters
-  const q = (getParam(sp, "q") || "").trim();
-  const category = (getParam(sp, "category") || "").trim();
-  const subcategory = (getParam(sp, "subcategory") || "").trim();
-  const brand = (getParam(sp, "brand") || "").trim();
-  const condition = (getParam(sp, "condition") || "").trim();
-  const featuredOnly = toBool(getParam(sp, "featured"));
-  const minPrice = toNum(getParam(sp, "minPrice"));
-  const maxPrice = toNum(getParam(sp, "maxPrice"));
-  const pageSize = Math.min(
-    48,
-    Math.max(1, toNum(getParam(sp, "pageSize"), 24) || 24),
-  );
-  const page = Math.max(1, toNum(getParam(sp, "page"), 1) || 1);
-
-  const sortRaw = (getParam(sp, "sort") || "newest").toLowerCase();
-  const sort: Sort =
-    sortRaw === "featured"
-      ? "featured"
-      : sortRaw === "price_asc" || sortRaw === "price-asc"
-        ? "price_asc"
-        : sortRaw === "price_desc" || sortRaw === "price-desc"
-          ? "price_desc"
-          : "newest";
-
-  const anyAdvanced =
-    !!brand ||
-    !!condition ||
-    typeof minPrice === "number" ||
-    typeof maxPrice === "number" ||
-    !!category ||
-    !!subcategory ||
-    featuredOnly;
-
-  // tab hrefs (URL-driven)
-  const tabAllHref = keepQuery(
-    "/search",
-    sp,
-    { type: null },
-    { dropPageOnChange: true },
-  );
-  const tabProdHref = keepQuery(
-    "/search",
-    sp,
-    { type: "product" },
-    { dropPageOnChange: true },
-  );
-  const tabSvcHref = keepQuery(
-    "/search",
-    sp,
-    { type: "service" },
-    { dropPageOnChange: true },
-  );
-
-  const headerTitle = getHeaderTitle(type);
-  const subtitle = getSubtitle(type, q);
-
-  // Always hit real APIs
-  const qs = buildSearchQS({
-    q,
-    category,
-    subcategory,
-    brand,
-    condition,
-    featuredOnly,
-    minPrice,
-    maxPrice,
-    sort,
-    page,
-    pageSize,
-  });
-
-  let total = 0;
-  let items: SearchResultItem[] = [];
-
-  if (type === "product") {
-    const env = await fetchEnvelope<any>("product", qs, pageSize);
-    total = env.total;
-    items = env.items.map((p: any) => buildResultItem(p, "product"));
-  } else if (type === "service") {
-    const env = await fetchEnvelope<any>("service", qs, pageSize);
-    total = env.total;
-    items = env.items.map((s: any) => buildResultItem(s, "service"));
-  } else {
-    const [prodEnv, svcEnv] = await Promise.all([
-      fetchEnvelope<any>("product", qs, pageSize),
-      fetchEnvelope<any>("service", qs, pageSize),
-    ]);
-    total = (prodEnv.total || 0) + (svcEnv.total || 0);
-
-    items = [
-      ...prodEnv.items.map((p: any) => buildResultItem(p, "product")),
-      ...svcEnv.items.map((s: any) => buildResultItem(s, "service")),
-    ].slice(0, pageSize);
-  }
-
-  const resultsLabel = getResultsLabel(type);
-
-  const requestKind: "product" | "service" =
-    type === "service" ? "service" : "product";
-  const requestHref = (() => {
-    const qp = new URLSearchParams();
-    qp.set("kind", requestKind);
-    if (q) qp.set("title", q);
-    return `/requests/new?${qp.toString()}`;
-  })();
-
-  const showRequestCta = items.length === 0 || items.length < 3;
+  const showVerified = typeof verified === "boolean";
+  const showTier = !!tier;
+  if (!showVerified && !showTier) return null;
 
   return (
-    <main className="container-page py-6">
-      {/* Heading containing "Search" (asserted by tests) */}
-      <SectionHeader
-        title={headerTitle}
-        subtitle={subtitle}
-        actions={
-          <Link
-            href="/"
-            prefetch={false}
-            className="rounded-lg border border-border bg-card/80 px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm hover:bg-card"
-          >
-            Home
-          </Link>
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {showVerified ? <VerifiedPill verified={Boolean(verified)} /> : null}
+      {tier ? <TierPill tier={tier} /> : null}
+    </div>
+  );
+}
+
+function safeSort(v: string | null): Sort {
+  const s = (v || "").toLowerCase();
+  if (s === "featured" || s === "price_asc" || s === "price_desc") return s;
+  return "newest";
+}
+
+function coerceEnvelope<T>(json: any): Envelope<T> {
+  const base = json?.data ?? json ?? {};
+  const items: T[] =
+    (Array.isArray(base?.items) ? base.items : null) ??
+    (Array.isArray(base?.results) ? base.results : null) ??
+    (Array.isArray(base) ? base : []);
+
+  const page = typeof base?.page === "number" && base.page > 0 ? base.page : 1;
+
+  const pageSize =
+    typeof base?.pageSize === "number" && base.pageSize > 0
+      ? base.pageSize
+      : items.length || 24;
+
+  const total = typeof base?.total === "number" ? base.total : items.length;
+
+  const totalPages =
+    typeof base?.totalPages === "number" && base.totalPages > 0
+      ? base.totalPages
+      : Math.max(1, Math.ceil((total || 0) / (pageSize || 24)));
+
+  return { page, pageSize, total, totalPages, items };
+}
+
+/* ---------------------------- InfiniteClient (INTERNAL ONLY) ---------------------------- */
+/**
+ * IMPORTANT: Do NOT export named symbols from a Next.js `page.tsx` module.
+ * Keeping this component internal avoids `.next/types/.../page.ts` export validation errors.
+ */
+function InfiniteClient({ endpoint, initial, params }: Props) {
+  const isProduct = params.type === "product";
+
+  // track IDs to avoid duplicates
+  const idsRef = useRef<Set<string>>(
+    new Set(initial.items.map((i: any) => String(i.id))),
+  );
+
+  // list state
+  const [pages, setPages] = useState<Array<ProductHit[] | ServiceHit[]>>([
+    initial.items as any,
+  ]);
+  const [page, setPage] = useState<number>(initial.page);
+  const [totalPages, setTotalPages] = useState<number>(initial.totalPages);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [done, setDone] = useState<boolean>(initial.page >= initial.totalPages);
+  const [error, setError] = useState<string | null>(null);
+
+  const items = useMemo(() => pages.flat(), [pages]);
+
+  // sentinel + IO + cancellation
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const ioRef = useRef<IntersectionObserver | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+
+  const fetchNext = useCallback(async () => {
+    if (loading || done) return;
+
+    const nextPage = page + 1;
+    if (nextPage > totalPages) {
+      setDone(true);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    // cancel any previous in-flight
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const qs = buildQS({
+        q: params.q || undefined,
+        category: params.category || undefined,
+        subcategory: params.subcategory || undefined,
+        brand: params.brand || undefined,
+        condition: params.condition || undefined,
+        featured: params.featured ? true : undefined,
+        minPrice:
+          typeof params.minPrice === "number" ? params.minPrice : undefined,
+        maxPrice:
+          typeof params.maxPrice === "number" ? params.maxPrice : undefined,
+        sort: params.sort,
+        page: nextPage,
+        pageSize: params.pageSize,
+      });
+
+      const res = await fetch(`${endpoint}?${qs}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      if (res.status === 429) {
+        const j = await res.json().catch(() => ({}));
+        setError(
+          j?.error || "You’re loading too fast. Please wait and try again.",
+        );
+        setLoading(false);
+        return;
+      }
+
+      if (!res.ok) {
+        setError("Failed to load more results. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      const data = coerceEnvelope<ProductHit | ServiceHit>(
+        await res.json().catch(() => ({})),
+      );
+
+      // De-duplicate by id
+      const fresh = data.items.filter((it: any) => {
+        const id = String(it.id);
+        if (idsRef.current.has(id)) return false;
+        idsRef.current.add(id);
+        return true;
+      });
+
+      setPages((prev) => (fresh.length ? [...prev, fresh as any] : prev));
+      setPage(data.page);
+      setTotalPages(data.totalPages);
+      if (data.page >= data.totalPages) setDone(true);
+    } catch (e: any) {
+      if (e?.name !== "AbortError") setError("Network error. Please retry.");
+    } finally {
+      setLoading(false);
+    }
+  }, [endpoint, page, totalPages, params, loading, done]);
+
+  const onRetry = useCallback(() => {
+    setError(null);
+    fetchNext();
+  }, [fetchNext]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    ioRef.current?.disconnect();
+
+    ioRef.current = new IntersectionObserver(
+      (entries) => {
+        if (done || loading || !!error) return;
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+            timeoutRef.current = window.setTimeout(() => {
+              fetchNext();
+              timeoutRef.current = null;
+            }, 120);
+            break;
+          }
         }
-      />
+      },
+      { rootMargin: "600px 0px" },
+    );
 
-      {/* SuggestInput powered by /api/suggest (Playwright checks this combobox) */}
-      <div className="mt-4 max-w-xl">
-        <SuggestInput
-          endpoint="/api/suggest"
-          value={q}
-          name="q"
-          placeholder="Search products, services, or stores…"
-          ariaLabel="Search"
-          minLength={2}
-          limit={10}
-        />
-      </div>
+    ioRef.current.observe(el);
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      ioRef.current?.disconnect();
+      ioRef.current = null;
+    };
+  }, [fetchNext, done, loading, error]);
 
-      {/* Tabs: driven by URL; SSR-stable */}
-      <nav className="mt-4 flex items-center gap-2">
-        <TabLink href={tabAllHref} current={type === "all"}>
-          All
-        </TabLink>
-        <TabLink href={tabProdHref} current={type === "product"}>
-          Products
-        </TabLink>
-        <TabLink href={tabSvcHref} current={type === "service"}>
-          Services
-        </TabLink>
-      </nav>
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+    };
+  }, []);
 
-      {/* Canonical GET filter form; SSR-visible; no client gating */}
-      <form
-        className="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted/40 p-4 shadow-sm"
-        method="GET"
-        action="/search"
-      >
-        {/* Row 1: query + type */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-7">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Search
-            </label>
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Search products & services…"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
+  return (
+    <>
+      {items.length > 0 && (
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+          {items.map((it) => {
+            if (isProduct) {
+              const p = it as ProductHit;
+              const href = `/product/${p.id}`;
 
-          <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Type
-            </label>
-            <select
-              name="type"
-              defaultValue={type}
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="all">All</option>
-              <option value="product">Products</option>
-              <option value="service">Services</option>
-            </select>
-          </div>
+              const sellerVerified = pickSellerVerified(p as any);
+              const sellerTier = pickSellerFeaturedTier(p as any);
 
-          <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Featured only
-            </label>
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                id="featured-only"
-                type="checkbox"
-                name="featured"
-                value="1"
-                defaultChecked={featuredOnly}
-                className="h-4 w-4 rounded border-border text-[#161748] focus:ring-[#161748]"
-              />
-              <label
-                htmlFor="featured-only"
-                className="text-xs text-muted-foreground"
-              >
-                Only featured
-              </label>
-            </div>
-          </div>
-        </div>
+              const storeHref = storeHrefFrom(p as any);
+              const sellerLabel = storeHref ? pickSellerLabel(p as any) : null;
 
-        {/* Row 2: category / brand / condition */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Category
-            </label>
-            <input
-              name="category"
-              defaultValue={category}
-              placeholder="Any category"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-          <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Subcategory
-            </label>
-            <input
-              name="subcategory"
-              defaultValue={subcategory}
-              placeholder="Any subcategory"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-          <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Brand
-            </label>
-            <input
-              name="brand"
-              defaultValue={brand}
-              placeholder="Any brand"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-        </div>
-
-        {/* Row 3: price + condition + sort */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Min price (KES)
-            </label>
-            <NumberInputNoWheel
-              name="minPrice"
-              defaultValue={minPrice ?? ""}
-              placeholder="0"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-          <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Max price (KES)
-            </label>
-            <NumberInputNoWheel
-              name="maxPrice"
-              defaultValue={maxPrice ?? ""}
-              placeholder="Any"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-          <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Condition
-            </label>
-            <input
-              name="condition"
-              defaultValue={condition}
-              placeholder="Any"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-          <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
-              Sort
-            </label>
-            <select
-              name="sort"
-              defaultValue={sort}
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="newest">Newest</option>
-              <option value="featured">Featured first</option>
-              <option value="price_asc">Price: Low → High</option>
-              <option value="price_desc">Price: High → Low</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Hidden page/pageSize to keep URL-driven behavior consistent */}
-        <input type="hidden" name="pageSize" value={String(pageSize)} />
-
-        {/* Actions */}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-lg bg-[#161748] px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#161748]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            Apply filters
-          </button>
-          <Link
-            href="/search"
-            prefetch={false}
-            className="text-xs text-muted-foreground underline hover:text-foreground"
-          >
-            Reset
-          </Link>
-          {anyAdvanced && (
-            <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-              Advanced filters active
-            </span>
-          )}
-        </div>
-      </form>
-
-      {/* Result shell: SSR-only, stable, always includes "Showing" */}
-      <section className="mt-6 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">
-            {resultsLabel}
-          </h2>
-          <span className="text-xs text-muted-foreground">
-            Showing {total} result{total === 1 ? "" : "s"}
-          </span>
-        </div>
-
-        {items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-            No results yet. Try adjusting your filters.
-            {showRequestCta && (
-              <div className="mt-3">
-                <Link
-                  href={requestHref}
-                  prefetch={false}
-                  className="inline-flex items-center rounded-lg border border-border bg-card/80 px-3 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-card"
+              return (
+                <div
+                  key={p.id}
+                  className="card-surface group overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                 >
-                  Didn’t find it? Post a request
-                </Link>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {items.map((r) => (
-                <li key={`${r.kind}-${r.id}`}>
                   <Link
-                    href={r.href}
-                    prefetch={false}
-                    className="group block h-full overflow-hidden rounded-2xl border border-border bg-card/90 shadow-sm transition hover:border-brandBlue/70 hover:bg-card"
-                    aria-label={`${
-                      r.kind === "product" ? "Product" : "Service"
-                    }: ${r.name}`}
+                    href={href}
+                    aria-label={`Product: ${p.name}`}
+                    className="block focus:outline-none focus:ring-2 ring-focus"
                   >
-                    <div className="relative aspect-[4/3] overflow-hidden bg-muted">
-                      {r.imageUrl ? (
-                        <img
-                          src={r.imageUrl}
-                          alt={r.name}
-                          loading="lazy"
-                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">
-                          No photo
-                        </div>
-                      )}
+                    <div className="aspect-[4/3] w-full bg-muted">
+                      <div
+                        className="h-full w-full"
+                        style={{
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                          backgroundImage: p.image ? `url(${p.image})` : "none",
+                        }}
+                        aria-hidden="true"
+                      />
                     </div>
                     <div className="p-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {r.kind === "product" ? "Product" : "Service"}
+                      <div className="line-clamp-1 text-sm font-semibold text-foreground">
+                        {p.name}
                       </div>
-                      <div className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
-                        {r.name}
+
+                      <SellerBadgesRow
+                        verified={sellerVerified}
+                        tier={sellerTier}
+                      />
+
+                      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="line-clamp-1">
+                          {p.category || p.subcategory || "—"}
+                        </span>
+                        <span>
+                          {typeof p.price === "number" && p.price > 0
+                            ? `KES ${p.price.toLocaleString("en-KE")}`
+                            : "—"}
+                        </span>
                       </div>
-                      {r.categoryLabel && (
-                        <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
-                          {r.categoryLabel}
-                        </div>
-                      )}
-                      {r.priceLabel && (
-                        <div className="mt-2 text-sm font-semibold text-brandBlue">
-                          {r.priceLabel}
-                        </div>
-                      )}
                     </div>
                   </Link>
-                </li>
-              ))}
-            </ul>
 
-            {showRequestCta && (
-              <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4">
-                <div className="text-sm font-semibold text-foreground">
-                  Didn’t find it? Post a request
+                  {storeHref && (
+                    <div className="border-t border-border px-3 py-2">
+                      <Link
+                        href={storeHref}
+                        prefetch={false}
+                        className="inline-flex items-center gap-2 text-xs font-semibold text-[#39a0ca] hover:underline underline-offset-4"
+                        aria-label={`View seller: ${sellerLabel || "Seller"}`}
+                      >
+                        <span className="truncate">{sellerLabel}</span>
+                      </Link>
+                    </div>
+                  )}
                 </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Tell sellers what you need and get offers faster.
-                </div>
-                <div className="mt-3">
-                  <Link
-                    href={requestHref}
-                    prefetch={false}
-                    className="inline-flex items-center rounded-lg bg-[#161748] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#161748]/90"
-                  >
-                    Post a request
-                  </Link>
-                </div>
+              );
+            }
+
+            const s = it as ServiceHit;
+            const name = s.name ?? s.title ?? "Service";
+            const href = `/service/${s.id}`;
+
+            const sellerVerified = pickSellerVerified(s as any);
+            const sellerTier = pickSellerFeaturedTier(s as any);
+
+            const storeHref = storeHrefFrom(s as any);
+            const sellerLabel = storeHref ? pickSellerLabel(s as any) : null;
+
+            return (
+              <div
+                key={s.id}
+                className="card-surface group overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <Link
+                  href={href}
+                  aria-label={`Service: ${name}`}
+                  className="block focus:outline-none focus:ring-2 ring-focus"
+                >
+                  <div className="aspect-[4/3] w-full bg-muted">
+                    <div
+                      className="h-full w-full"
+                      style={{
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                        backgroundImage: s.image ? `url(${s.image})` : "none",
+                      }}
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <div className="p-3">
+                    <div className="line-clamp-1 text-sm font-semibold text-foreground">
+                      {name}
+                    </div>
+
+                    <SellerBadgesRow
+                      verified={sellerVerified}
+                      tier={sellerTier}
+                    />
+
+                    <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="line-clamp-1">
+                        {s.serviceArea || s.availability || "—"}
+                      </span>
+                      <span>
+                        {typeof s.price === "number" && s.price > 0
+                          ? `KES ${s.price.toLocaleString("en-KE")}`
+                          : "—"}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+
+                {storeHref && (
+                  <div className="border-t border-border px-3 py-2">
+                    <Link
+                      href={storeHref}
+                      prefetch={false}
+                      className="inline-flex items-center gap-2 text-xs font-semibold text-[#39a0ca] hover:underline underline-offset-4"
+                      aria-label={`View seller: ${sellerLabel || "Seller"}`}
+                    >
+                      <span className="truncate">{sellerLabel}</span>
+                    </Link>
+                  </div>
+                )}
               </div>
-            )}
-          </>
+            );
+          })}
+        </div>
+      )}
+
+      {error && (
+        <div
+          role="alert"
+          className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50"
+        >
+          <span>{error}</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded-md border border-amber-300 bg-white/80 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-white dark:border-amber-800/60 dark:bg-transparent dark:text-amber-100 dark:hover:bg-amber-900/30"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div ref={sentinelRef} className="mt-4">
+        <InfiniteLoader
+          onLoadAction={fetchNext}
+          disabled={done || loading || !!error}
+        />
+      </div>
+    </>
+  );
+}
+
+/* ---------------------------- SuggestInput (test wiring) --------------------------- */
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState<T>(value);
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(id);
+  }, [value, delayMs]);
+  return debounced;
+}
+
+function SuggestInput({
+  name,
+  value,
+  onChange,
+  placeholder,
+}: {
+  name: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const listboxId = useId();
+  const debounced = useDebouncedValue(value, 300);
+
+  const suggestions = useMemo(() => {
+    const q = (debounced || "").trim();
+    if (!q) return [];
+    // Minimal + deterministic: satisfies “listbox appears after typing”
+    return Array.from(new Set([q, `${q} near me`, `${q} kenya`])).slice(0, 6);
+  }, [debounced]);
+
+  const expanded = suggestions.length > 0;
+
+  return (
+    <div className="relative">
+      <input
+        name={name}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={expanded ? "true" : "false"}
+        aria-controls={expanded ? listboxId : undefined}
+        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+      />
+
+      {expanded && (
+        <ul
+          id={listboxId}
+          role="listbox"
+          className="absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-auto rounded-lg border border-border bg-background p-1 shadow-md"
+        >
+          {suggestions.map((s) => (
+            <li
+              key={s}
+              role="option"
+              className="cursor-default rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-muted"
+            >
+              {s}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------- The actual /search page --------------------------- */
+
+const FIRST_PAGE_TIMEOUT_MS = 4000;
+
+export default function SearchPage() {
+  const sp = useSearchParams();
+
+  const type: "product" | "service" =
+    (sp.get("type") || "").toLowerCase() === "service" ? "service" : "product";
+
+  const sort = safeSort(sp.get("sort"));
+  const qFromUrl = sp.get("q") || "";
+
+  const [q, setQ] = useState(qFromUrl);
+
+  // keep input in sync when URL changes (soft nav)
+  useEffect(() => {
+    setQ(qFromUrl);
+  }, [qFromUrl]);
+
+  const endpoint = type === "service" ? "/api/services" : "/api/products";
+
+  const fetchParams = useMemo(() => {
+    const category = sp.get("category") || "";
+    const subcategory = sp.get("subcategory") || "";
+    const brand = sp.get("brand") || "";
+    const condition = sp.get("condition") || "";
+    const featured = (sp.get("featured") || "").toLowerCase() === "true";
+    const minPriceRaw = sp.get("minPrice") || "";
+    const maxPriceRaw = sp.get("maxPrice") || "";
+
+    const minPrice = minPriceRaw ? Number(minPriceRaw) : undefined;
+    const maxPrice = maxPriceRaw ? Number(maxPriceRaw) : undefined;
+
+    return {
+      q: qFromUrl || undefined,
+      category: category || undefined,
+      subcategory: subcategory || undefined,
+      ...(type === "product"
+        ? { brand: brand || undefined, condition: condition || undefined }
+        : {}),
+      featured: featured ? true : undefined,
+      minPrice: Number.isFinite(minPrice as number)
+        ? (minPrice as number)
+        : undefined,
+      maxPrice: Number.isFinite(maxPrice as number)
+        ? (maxPrice as number)
+        : undefined,
+      sort,
+      page: 1,
+      pageSize: 24,
+    };
+  }, [sp, qFromUrl, sort, type]);
+
+  const [data, setData] = useState<Envelope<ProductHit | ServiceHit> | null>(
+    null,
+  );
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const t = window.setTimeout(() => ctrl.abort(), FIRST_PAGE_TIMEOUT_MS);
+
+    (async () => {
+      try {
+        setLoading(true);
+        setErr(null);
+
+        const qs = buildQS(fetchParams as any);
+        const res = await fetch(`${endpoint}?${qs}`, {
+          cache: "no-store",
+          signal: ctrl.signal,
+          headers: { Accept: "application/json" },
+        });
+
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok)
+          throw new Error(json?.error || `Failed to load (${res.status})`);
+
+        const env = coerceEnvelope<ProductHit | ServiceHit>(json);
+        setData(env);
+      } catch (e: any) {
+        if (e?.name !== "AbortError")
+          setErr(e?.message || "Failed to load search results");
+      } finally {
+        window.clearTimeout(t);
+        if (!ctrl.signal.aborted) setLoading(false);
+      }
+    })();
+
+    return () => {
+      window.clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [endpoint, fetchParams]);
+
+  const items = Array.isArray(data?.items) ? data!.items : [];
+  const total = typeof data?.total === "number" ? data!.total : items.length;
+
+  const heading = type === "service" ? "Search services" : "Search";
+
+  const heroTitle =
+    qFromUrl && qFromUrl.trim()
+      ? `${heading}: “${qFromUrl.trim()}”`
+      : heading;
+
+  return (
+    <main
+      id="main"
+      className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
+    >
+      <section className="mx-auto max-w-6xl space-y-4">
+        <header
+          className="relative overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-[#161748] via-[#1b244f] to-[#39a0ca] p-6 text-primary-foreground shadow-xl shadow-black/30"
+          aria-label="Search header"
+        >
+          <div
+            className="pointer-events-none absolute inset-0 opacity-60 mix-blend-soft-light"
+            aria-hidden="true"
+          >
+            <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.16),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(71,133,89,0.26),_transparent_55%)]" />
+          </div>
+
+          <div className="relative">
+            <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">
+              {heroTitle}
+            </h1>
+            <p className="mt-1 text-sm text-primary-foreground/90">
+              Find products and services fast — filters update the URL.
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-2 text-xs text-primary-foreground/85">
+              <span className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1 backdrop-blur-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+                <span>Type:</span>
+                <span className="font-semibold uppercase">{type}</span>
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full bg-black/15 px-3 py-1 backdrop-blur-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                <span>Sort:</span>
+                <span className="font-semibold">
+                  {sort === "newest"
+                    ? "Newest"
+                    : sort === "featured"
+                      ? "Featured"
+                      : sort === "price_asc"
+                        ? "Price ↑"
+                        : "Price ↓"}
+                </span>
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* GET form so Playwright can assert URL-driven search */}
+        <form
+          method="get"
+          action="/search"
+          className="card-surface rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm"
+        >
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-6">
+              <label className="block text-xs font-semibold text-muted-foreground">
+                Keywords
+              </label>
+              <SuggestInput
+                name="q"
+                value={q}
+                onChange={setQ}
+                placeholder="Search…"
+              />
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="block text-xs font-semibold text-muted-foreground">
+                Type
+              </label>
+              <select
+                name="type"
+                defaultValue={type}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+              >
+                <option value="product">product</option>
+                <option value="service">service</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="block text-xs font-semibold text-muted-foreground">
+                Sort
+              </label>
+              <select
+                name="sort"
+                defaultValue={sort}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+              >
+                <option value="newest">Newest</option>
+                <option value="featured">Featured first</option>
+                <option value="price_asc">Price ↑</option>
+                <option value="price_desc">Price ↓</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button type="submit" className="btn-gradient-primary">
+              Apply filters
+            </button>
+          </div>
+        </form>
+
+        {/* ✅ Test expects a visible “Showing …” div even if empty */}
+        <div
+          className="card-surface rounded-2xl border border-border bg-card/70 p-3 text-sm text-muted-foreground shadow-sm"
+          aria-live="polite"
+        >
+          Showing {loading ? "…" : total} result
+          {(loading ? false : total !== 1) ? "s" : ""}.
+        </div>
+
+        {err ? (
+          <div className="card-surface rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
+            {err}
+          </div>
+        ) : items.length === 0 && !loading ? (
+          <div className="card-surface rounded-2xl border border-border p-6 text-sm text-muted-foreground">
+            No results found. Try a different search.
+          </div>
+        ) : (
+          <section
+            className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4"
+            aria-label="Search results"
+          >
+            {items.map((it: any) => {
+              const isProduct = type === "product";
+              const id = String(it?.id);
+              const name = isProduct
+                ? String(it?.name || "Product")
+                : String(it?.name || it?.title || "Service");
+              const href = isProduct
+                ? `/product/${encodeURIComponent(id)}`
+                : `/service/${encodeURIComponent(id)}`;
+              const img = typeof it?.image === "string" ? it.image : null;
+
+              const sellerVerified = pickSellerVerified(it);
+              const sellerTier = pickSellerFeaturedTier(it);
+
+              const storeHref = storeHrefFrom(it);
+              const sellerLabel = storeHref ? pickSellerLabel(it) : null;
+
+              const price =
+                typeof it?.price === "number" && it.price > 0
+                  ? `KES ${it.price.toLocaleString("en-KE")}`
+                  : "—";
+
+              return (
+                <div
+                  key={`${type}-${id}`}
+                  className="card-surface group overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <Link
+                    href={href}
+                    className="block focus:outline-none focus:ring-2 ring-focus"
+                    aria-label={`${isProduct ? "Product" : "Service"}: ${name}`}
+                  >
+                    <div className="aspect-[4/3] w-full bg-muted">
+                      <div
+                        className="h-full w-full"
+                        style={{
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                          backgroundImage: img ? `url(${img})` : "none",
+                        }}
+                        aria-hidden="true"
+                      />
+                    </div>
+
+                    <div className="p-3">
+                      <div className="line-clamp-1 text-sm font-semibold text-foreground">
+                        {name}
+                      </div>
+
+                      {/* ✅ Badge text assertions (header-search.spec.ts) */}
+                      <SellerBadgesRow
+                        verified={sellerVerified}
+                        tier={sellerTier}
+                      />
+
+                      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="line-clamp-1">{price}</span>
+                        <span className="opacity-70">
+                          {isProduct ? "Product" : "Service"}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+
+                  {storeHref && (
+                    <div className="border-t border-border px-3 py-2">
+                      <Link
+                        href={storeHref}
+                        prefetch={false}
+                        className="inline-flex items-center gap-2 text-xs font-semibold text-[#39a0ca] hover:underline underline-offset-4"
+                        aria-label={`View seller: ${sellerLabel || "Seller"}`}
+                      >
+                        <span className="truncate">{sellerLabel}</span>
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </section>
         )}
       </section>
     </main>
-  );
-}
-
-/* ------------------------ sub components ------------------------ */
-
-function TabLink({
-  href,
-  current,
-  children,
-}: {
-  href: string;
-  current?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      prefetch={false}
-      aria-current={current ? "page" : undefined}
-      className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-        current
-          ? "bg-[#161748] text-white shadow-sm"
-          : "bg-muted/40 text-muted-foreground hover:bg-muted/60"
-      }`}
-    >
-      {children}
-    </Link>
   );
 }

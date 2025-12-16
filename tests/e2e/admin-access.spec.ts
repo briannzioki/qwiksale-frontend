@@ -17,28 +17,38 @@ test.describe("Admin access control", () => {
     const hasAdminCreds =
       !!process.env["E2E_ADMIN_EMAIL"] && !!process.env["E2E_ADMIN_PASSWORD"];
 
-    test.skip(
-      !hasAdminCreds,
-      "Set E2E_ADMIN_EMAIL/PASSWORD to run admin flow",
-    );
+    test.skip(!hasAdminCreds, "Set E2E_ADMIN_EMAIL/PASSWORD to run admin flow");
 
     // Reuse pre-authenticated admin storage prepared in global-setup.
     test.use({
       storageState: "tests/e2e/.auth/admin.json",
     });
 
-    test("admin lands on Admin home and can open Users + Listings (SSR)", async ({ page }) => {
+    test("admin lands on Admin home and can open Users + Listings (SSR)", async ({
+      page,
+    }) => {
       // Already authenticated; hitting /admin should render the admin dashboard.
       await page.goto("/admin", { waitUntil: "domcontentloaded" });
-      await expect(
-        page.getByRole("heading", { name: /admin dashboard/i }),
-      ).toBeVisible();
+
+      // Admin shell heading (be tolerant across UI copy)
+      const adminHeading = page
+        .getByRole("heading", { name: /admin dashboard/i })
+        .or(page.getByRole("heading", { name: "Admin console" }));
+
+      await expect(adminHeading.first()).toBeVisible();
+
+      // Guard against the old deterministic failure mode
+      await expect(page.getByText(/failed to load metrics/i)).toHaveCount(0);
+
+      // Chats/widgets should be present (either as a region or a clear CTA inside it)
+      const messagesWidget = page
+        .getByRole("region", { name: /messages snapshot/i })
+        .or(page.getByRole("link", { name: /open inbox/i }));
+      await expect(messagesWidget.first()).toBeVisible();
 
       // Users page SSR loads
       await page.getByRole("link", { name: /users/i }).first().click();
-      await expect(
-        page.getByRole("heading", { name: /all users/i }),
-      ).toBeVisible();
+      await expect(page.getByRole("heading", { name: /all users/i })).toBeVisible();
 
       // Listings page SSR loads
       await page.getByRole("link", { name: /listings/i }).first().click();

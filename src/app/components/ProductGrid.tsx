@@ -5,6 +5,7 @@ import Link from "next/link";
 import SmartImage from "@/app/components/SmartImage";
 import ProductCard from "@/app/components/ProductCard";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
+import VerifiedBadge from "@/app/components/VerifiedBadge";
 
 /* --------------------------------- types --------------------------------- */
 
@@ -16,6 +17,11 @@ type BaseItem = {
   price: number | null;
   image: string | null;
   featured?: boolean | null;
+
+  /** Seller/account flags for public UI (optional) */
+  verified?: boolean | null;
+  featuredTier?: "basic" | "gold" | "diamond" | string | null;
+
   createdAt?: string;
 };
 
@@ -107,6 +113,14 @@ function MixedTile({
     ? "Service image"
     : "Product image";
 
+  const tier = (() => {
+    if (typeof it.featuredTier === "string") {
+      const t = it.featuredTier.trim().toLowerCase();
+      if (t === "basic" || t === "gold" || t === "diamond") return t;
+    }
+    return it.featured ? "basic" : null;
+  })();
+
   // Border-first card using semantic tokens
   return (
     <Link
@@ -145,6 +159,16 @@ function MixedTile({
           <p className="mt-0.5 text-xs text-muted-foreground">
             {it.type === "service" ? "Service" : "Product"}
           </p>
+
+          {(typeof it.verified === "boolean" || tier) && (
+            <div className="mt-2">
+              <VerifiedBadge
+                verified={typeof it.verified === "boolean" ? it.verified : null}
+                featured={Boolean(it.featured)}
+                featuredTier={tier}
+              />
+            </div>
+          )}
         </div>
       </div>
     </Link>
@@ -192,6 +216,11 @@ export default function ProductGrid(props: Props) {
                 price: p.price ?? null,
                 image: p.image ?? null,
                 featured: Boolean(p.featured),
+
+                // optional seller/account flags
+                verified: typeof p.verified === "boolean" ? p.verified : null,
+                featuredTier: p.featuredTier ?? null,
+
                 position: idx,
                 prefetch: prefetchCards,
               } as any)}

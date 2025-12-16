@@ -4,11 +4,123 @@
 import * as React from "react";
 import type { LucideProps } from "lucide-react";
 import {
-  Search, Plus, Edit, Trash2, Heart, Share2, Phone, MessageCircle, MapPin,
-  CheckCircle2, XCircle, Info, ShieldCheck, AlertTriangle, Camera,
-  Image as ImageIcon, UploadCloud, Filter, ListFilter, ArrowUpDown, Star,
-  Sparkles, ShoppingBag, User, LogIn, LogOut, Settings, Loader2, Check, Home,
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  Heart,
+  Share2,
+  Phone,
+  MessageCircle,
+  MapPin,
+  CheckCircle2,
+  XCircle,
+  Info,
+  ShieldCheck,
+  AlertTriangle,
+  Camera,
+  Image as ImageIcon,
+  UploadCloud,
+  Filter,
+  ListFilter,
+  ArrowUpDown,
+  Star,
+  Sparkles,
+  ShoppingBag,
+  User,
+  LogIn,
+  LogOut,
+  Settings,
+  Loader2,
+  Check,
+  Home,
 } from "lucide-react";
+
+/* ----------------------------- custom tier icons ---------------------------- */
+
+const STAR_D =
+  "M12 2l2.8 6.2L21 9.3l-4.8 4.4L17.4 21 12 17.8 6.6 21l1.2-7.3L3 9.3l6.2-1.1L12 2z";
+
+const TierGoldIcon = React.forwardRef<SVGSVGElement, LucideProps>(
+  function TierGoldIcon(
+    { color = "currentColor", strokeWidth = 2, ...rest },
+    ref,
+  ) {
+    const rid = React.useId();
+    const gid = `qs-gold-${rid}`;
+    return (
+      <svg
+        ref={ref}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        xmlns="http://www.w3.org/2000/svg"
+        {...rest}
+      >
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#FDE68A" />
+            <stop offset="55%" stopColor="#F59E0B" />
+            <stop offset="100%" stopColor="#B45309" />
+          </linearGradient>
+        </defs>
+
+        {/* smooth overlay */}
+        <path d={STAR_D} fill={`url(#${gid})`} opacity="0.75" stroke="none" />
+        {/* crisp outline */}
+        <path d={STAR_D} fill="none" />
+      </svg>
+    );
+  },
+);
+
+const TierDiamondIcon = React.forwardRef<SVGSVGElement, LucideProps>(
+  function TierDiamondIcon(
+    { color = "currentColor", strokeWidth = 2, ...rest },
+    ref,
+  ) {
+    const rid = React.useId();
+    const gid = `qs-diamond-${rid}`;
+    return (
+      <svg
+        ref={ref}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        xmlns="http://www.w3.org/2000/svg"
+        {...rest}
+      >
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#C7D2FE" />
+            <stop offset="55%" stopColor="#60A5FA" />
+            <stop offset="100%" stopColor="#2563EB" />
+          </linearGradient>
+        </defs>
+
+        {/* smooth overlay */}
+        <path
+          d="M12 2 19 9 12 22 5 9 12 2Z"
+          fill={`url(#${gid})`}
+          opacity="0.7"
+          stroke="none"
+        />
+        {/* outline */}
+        <path d="M12 2 19 9 12 22 5 9 12 2Z" fill="none" />
+        {/* facets */}
+        <path d="M5 9h14" />
+        <path d="M12 2l3.5 7" />
+        <path d="M12 2 8.5 9" />
+      </svg>
+    );
+  },
+);
 
 /* Registry */
 export const icons = {
@@ -42,6 +154,11 @@ export const icons = {
   spinner: Loader2,
   check: Check,
   home: Home,
+
+  // Featured tiers
+  tierBasic: Star,
+  tierGold: TierGoldIcon,
+  tierDiamond: TierDiamondIcon,
 } as const;
 
 export type IconName = keyof typeof icons;

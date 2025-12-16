@@ -6,8 +6,9 @@ export const revalidate = 0;
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { JSX, ReactNode } from "react";
+import { revalidatePath } from "next/cache";
 import SectionHeader from "@/app/components/SectionHeader";
-import { getSessionUser, isSuperAdminUser } from "@/app/lib/authz";
+import { getSessionUser, isSuperAdminUser, requireAdmin } from "@/app/lib/authz";
 import { prisma } from "@/app/lib/prisma";
 
 export const metadata: Metadata = {
@@ -50,9 +51,7 @@ function withTimeout<T>(
       setTimeout(
         () =>
           resolve(
-            typeof fallback === "function"
-              ? (fallback as any)()
-              : fallback,
+            typeof fallback === "function" ? (fallback as any)() : fallback,
           ),
         ms,
       ),
@@ -60,11 +59,7 @@ function withTimeout<T>(
   ]);
 }
 
-async function fetchWithTimeout(
-  input: string,
-  init: RequestInit,
-  ms: number,
-) {
+async function fetchWithTimeout(input: string, init: RequestInit, ms: number) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), ms);
   try {
@@ -171,23 +166,42 @@ async function fetchUsersFallback(opts: {
     where["role"] = role;
   }
 
-  const rows = await prisma.user.findMany({
-    where,
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: limit,
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      username: true,
-      role: true,
-      createdAt: true,
-      // assuming these exist on your User model; if not, adjust or remove
-      verified: true as any,
-      suspended: true as any,
-      banned: true as any,
-    } as any,
-  });
+  const db = prisma as any;
+
+  // Try a “wide” select first; if schema drift exists, fall back to a “narrow” select.
+  let rows: any[] = [];
+  try {
+    rows = await db.user.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        role: true,
+        createdAt: true,
+        verified: true,
+        suspended: true,
+        banned: true,
+      },
+    });
+  } catch {
+    rows = await db.user.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+  }
 
   return rows.map((u: any) => ({
     id: String(u.id),
@@ -199,13 +213,63 @@ async function fetchUsersFallback(opts: {
       u.createdAt instanceof Date
         ? u.createdAt.toISOString()
         : (u.createdAt as string | null) ?? null,
-    verified:
-      typeof u.verified === "boolean" ? u.verified : null,
-    suspended:
-      typeof u.suspended === "boolean" ? u.suspended : null,
-    banned:
-      typeof u.banned === "boolean" ? u.banned : null,
+    verified: typeof u.verified === "boolean" ? u.verified : null,
+    suspended: typeof u.suspended === "boolean" ? u.suspended : null,
+    banned: typeof u.banned === "boolean" ? u.banned : null,
   }));
+}
+
+/* ----------------------------
+   Server actions: enforcement
+   ---------------------------- */
+async function setUserEnforcementFlag(formData: FormData) {
+  "use server";
+
+  const gate = await requireAdmin({
+    mode: "result",
+    callbackUrl: "/admin/users",
+    adminFallbackHref: "/dashboard",
+  });
+
+  if (!gate || (gate as any).authorized !== true) {
+    throw new Error("Unauthorized");
+  }
+
+  const viewerId = String((gate as any)?.user?.id ?? "");
+  const userId = String(formData.get("userId") ?? "").trim();
+  const field = String(formData.get("field") ?? "").trim().toLowerCase();
+  const valueRaw = String(formData.get("value") ?? "").trim().toLowerCase();
+
+  if (!userId) throw new Error("Missing userId");
+  if (field !== "banned" && field !== "suspended") {
+    throw new Error("Invalid enforcement field");
+  }
+
+  const next =
+    valueRaw === "1" ||
+    valueRaw === "true" ||
+    valueRaw === "yes" ||
+    valueRaw === "on";
+
+  // Safety: don’t let an admin lock themselves out via UI.
+  if (viewerId && viewerId === userId && next) {
+    throw new Error("Refusing to update your own enforcement flags.");
+  }
+
+  const db = prisma as any;
+  try {
+    await db.user.update({
+      where: { id: userId },
+      data: { [field]: next },
+      select: { id: true },
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("[admin/users] setUserEnforcementFlag failed:", e);
+    throw new Error("Failed to update user.");
+  }
+
+  revalidatePath("/admin/users");
 }
 
 /**
@@ -519,7 +583,72 @@ export default async function Page({
                           </Badge>
                         </Td>
                         <Td>
-                          <Badge tone={statusTone}>{statusLabel}</Badge>
+                          <div className="flex flex-col gap-1">
+                            <Badge tone={statusTone}>{statusLabel}</Badge>
+
+                            {/* Enforcement controls (admins) */}
+                            <div className="flex flex-wrap gap-1">
+                              <form action={setUserEnforcementFlag}>
+                                <input type="hidden" name="userId" value={u.id} />
+                                <input type="hidden" name="field" value="banned" />
+                                <input
+                                  type="hidden"
+                                  name="value"
+                                  value={isBanned ? "false" : "true"}
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={isSelf}
+                                  aria-disabled={isSelf}
+                                  title={
+                                    isSelf
+                                      ? "You can’t update your own enforcement status."
+                                      : isBanned
+                                        ? "Unban user"
+                                        : "Ban user"
+                                  }
+                                  className={`rounded px-2 py-1 text-[11px] text-white transition disabled:opacity-60 ${
+                                    isBanned
+                                      ? "bg-emerald-600/90 hover:bg-emerald-600"
+                                      : "bg-red-600/90 hover:bg-red-600"
+                                  }`}
+                                >
+                                  {isBanned ? "Unban" : "Ban"}
+                                </button>
+                              </form>
+
+                              <form action={setUserEnforcementFlag}>
+                                <input type="hidden" name="userId" value={u.id} />
+                                <input type="hidden" name="field" value="suspended" />
+                                <input
+                                  type="hidden"
+                                  name="value"
+                                  value={isSuspended ? "false" : "true"}
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={isSelf || isBanned}
+                                  aria-disabled={isSelf || isBanned}
+                                  title={
+                                    isSelf
+                                      ? "You can’t update your own enforcement status."
+                                      : isBanned
+                                        ? "User is banned"
+                                        : isSuspended
+                                          ? "Unsuspend user"
+                                          : "Suspend user"
+                                  }
+                                  className={`rounded px-2 py-1 text-[11px] text-white transition disabled:opacity-60 ${
+                                    isSuspended
+                                      ? "bg-emerald-600/90 hover:bg-emerald-600"
+                                      : "bg-amber-600/90 hover:bg-amber-600"
+                                  }`}
+                                >
+                                  {isSuspended ? "Unsuspend" : "Suspend"}
+                                </button>
+                              </form>
+                            </div>
+                          </div>
                         </Td>
                         <Td>{fmtDateKE(u.createdAt)}</Td>
                         {viewerIsSuper ? (
@@ -549,9 +678,7 @@ export default async function Page({
               <Link
                 href={
                   safePage > 1
-                    ? keepQuery("/admin/users", sp, {
-                        page: String(safePage - 1),
-                      })
+                    ? keepQuery("/admin/users", sp, { page: String(safePage - 1) })
                     : "#"
                 }
                 aria-disabled={safePage <= 1}
@@ -563,48 +690,42 @@ export default async function Page({
               </Link>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(7, totalPages) }).map(
-                  (_, i) => {
-                    const half = 3;
-                    let p = i + 1;
+                {Array.from({ length: Math.min(7, totalPages) }).map((_, i) => {
+                  const half = 3;
+                  let p = i + 1;
 
-                    if (totalPages > 7) {
-                      const start = Math.max(
-                        1,
-                        Math.min(safePage - half, totalPages - 6),
-                      );
-                      p = start + i;
-                    }
-
-                    const isCurrent = p === safePage;
-
-                    return (
-                      <Link
-                        key={p}
-                        href={keepQuery("/admin/users", sp, {
-                          page: String(p),
-                        })}
-                        prefetch={false}
-                        aria-current={isCurrent ? "page" : undefined}
-                        className={`rounded px-2 py-1 ${
-                          isCurrent
-                            ? "bg-[#161748] text-primary-foreground"
-                            : "hover:bg-muted"
-                        }`}
-                      >
-                        {p}
-                      </Link>
+                  if (totalPages > 7) {
+                    const start = Math.max(
+                      1,
+                      Math.min(safePage - half, totalPages - 6),
                     );
-                  },
-                )}
+                    p = start + i;
+                  }
+
+                  const isCurrent = p === safePage;
+
+                  return (
+                    <Link
+                      key={p}
+                      href={keepQuery("/admin/users", sp, { page: String(p) })}
+                      prefetch={false}
+                      aria-current={isCurrent ? "page" : undefined}
+                      className={`rounded px-2 py-1 ${
+                        isCurrent
+                          ? "bg-[#161748] text-primary-foreground"
+                          : "hover:bg-muted"
+                      }`}
+                    >
+                      {p}
+                    </Link>
+                  );
+                })}
               </div>
 
               <Link
                 href={
                   safePage < totalPages
-                    ? keepQuery("/admin/users", sp, {
-                        page: String(safePage + 1),
-                      })
+                    ? keepQuery("/admin/users", sp, { page: String(safePage + 1) })
                     : "#"
                 }
                 aria-disabled={safePage >= totalPages}
@@ -638,11 +759,7 @@ function Td({
   className?: string;
 }) {
   return (
-    <td
-      className={`whitespace-nowrap px-4 py-2 align-middle ${
-        className ?? ""
-      }`}
-    >
+    <td className={`whitespace-nowrap px-4 py-2 align-middle ${className ?? ""}`}>
       {children}
     </td>
   );
@@ -683,10 +800,10 @@ function StatPill({
   const colors: Record<typeof tone, string> = {
     slate: "bg-muted text-muted-foreground",
     green: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-    amber:
-      "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+    amber: "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
     rose: "bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300",
   } as const;
+
   return (
     <div
       className={`flex items-center justify-between rounded-full px-3 py-1.5 text-xs ${colors[tone]}`}
