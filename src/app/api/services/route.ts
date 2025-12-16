@@ -86,6 +86,63 @@ function getServiceModel() {
   return typeof svc?.findMany === "function" ? svc : null;
 }
 
+/* ---------------- seller/account badge helpers ---------------- */
+type FeaturedTier = "basic" | "gold" | "diamond";
+
+function normalizeFeaturedTier(v: unknown): FeaturedTier | null {
+  const pick = (x: unknown): string => {
+    if (typeof x === "string") return x;
+    if (x && typeof x === "object") {
+      const any = x as any;
+      const cand =
+        any?.tier ??
+        any?.plan ??
+        any?.level ??
+        any?.name ??
+        any?.type ??
+        any?.subscription ??
+        any?.value ??
+        "";
+      if (typeof cand === "string") return cand;
+    }
+    return "";
+  };
+
+  const raw = pick(v).trim();
+  if (!raw) return null;
+
+  const s = raw.toLowerCase();
+  if (s.includes("diamond")) return "diamond";
+  if (s.includes("gold")) return "gold";
+  if (s.includes("basic")) return "basic";
+  return null;
+}
+
+function normalizeSellerVerified(u: any): boolean | null {
+  if (!u) return null;
+
+  const direct =
+    u?.verified ??
+    u?.isVerified ??
+    u?.accountVerified ??
+    u?.sellerVerified ??
+    null;
+
+  if (typeof direct === "boolean") return direct;
+
+  const at =
+    u?.verifiedAt ??
+    u?.verified_on ??
+    u?.verifiedOn ??
+    u?.verificationDate ??
+    null;
+
+  if (typeof at === "string" && at.trim()) return true;
+  if (at instanceof Date) return true;
+
+  return null;
+}
+
 /* ------------------------------ caps ----------------------------------- */
 const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
@@ -411,6 +468,45 @@ export async function GET(req: NextRequest) {
 
     // Select candidates (schema-tolerant)
     const selectCandidates: any[] = [
+      // richest seller flags (schema-tolerant via outer try loops)
+      {
+        id: true,
+        name: true,
+        category: true,
+        subcategory: true,
+        price: true,
+        rateType: true,
+        serviceArea: true,
+        image: true,
+        gallery: true,
+        location: true,
+        featured: true,
+        createdAt: true,
+        sellerId: true,
+        seller: {
+          select: { username: true, subscription: true, verified: true },
+        },
+      },
+      {
+        id: true,
+        name: true,
+        category: true,
+        subcategory: true,
+        price: true,
+        rateType: true,
+        serviceArea: true,
+        image: true,
+        gallery: true,
+        location: true,
+        featured: true,
+        createdAt: true,
+        sellerId: true,
+        seller: {
+          select: { username: true, subscription: true, isVerified: true },
+        },
+      },
+
+      // existing fallbacks
       {
         id: true,
         name: true,
@@ -527,8 +623,7 @@ export async function GET(req: NextRequest) {
 
     const response = await softTimeout(
       async () => {
-        const total =
-          chosenTotal ?? (await Service.count({ where: chosenWhere }));
+        const total = chosenTotal ?? (await Service.count({ where: chosenWhere }));
 
         let rowsRaw: any[] = [];
         outer: for (const select of selectCandidates) {
@@ -554,6 +649,7 @@ export async function GET(req: NextRequest) {
 
         const items = (data as any[]).map((s) => {
           const gallery = Array.isArray(s.gallery) ? s.gallery.filter(Boolean) : [];
+          const sellerObj = s?.seller as any;
           return {
             id: String(s.id),
             name: String(s.name ?? "Service"),
@@ -576,7 +672,9 @@ export async function GET(req: NextRequest) {
                 ? s.createdAt
                 : "",
             sellerId: s?.sellerId ? String(s.sellerId) : undefined,
-            sellerUsername: s?.seller?.username ?? null,
+            sellerUsername: sellerObj?.username ?? null,
+            sellerVerified: normalizeSellerVerified(sellerObj),
+            sellerFeaturedTier: normalizeFeaturedTier(sellerObj?.subscription ?? null),
           };
         });
 

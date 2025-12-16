@@ -1,4 +1,3 @@
-// src/app/components/ListingCard.tsx
 "use client";
 
 // src/app/components/ListingCard.tsx
@@ -11,6 +10,7 @@ import { Icon } from "@/app/components/Icon";
 import { Badge } from "@/app/components/Badge";
 import { Button } from "@/app/components/Button";
 import ReviewStars from "@/app/components/ReviewStars";
+import VerifiedBadge from "@/app/components/VerifiedBadge";
 
 type Kind = "product" | "service";
 
@@ -26,7 +26,13 @@ export type ListingCardProps = {
   saved?: boolean;
   kind?: Kind;
   conditionLabel?: string;
+
+  /** Back-compat highlight flag (also used for ring). */
   featured?: boolean;
+
+  /** Preferred featured tier (basic/gold/diamond) when available. */
+  featuredTier?: "basic" | "gold" | "diamond" | string | null;
+
   className?: string;
 
   /** Optional rating summary for this listing. */
@@ -83,6 +89,83 @@ function formatPrice(
   }
 }
 
+function SellerTextBadges({
+  verified,
+  tier,
+}: {
+  verified?: boolean;
+  tier?: "basic" | "gold" | "diamond" | null;
+}) {
+  const showVerified = typeof verified === "boolean";
+  const showTier = tier === "basic" || tier === "gold" || tier === "diamond";
+  if (!showVerified && !showTier) return null;
+
+  const pillBase =
+    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold";
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {showVerified ? (
+        verified ? (
+          <span
+            className={cn(
+              pillBase,
+              "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200",
+            )}
+          >
+            <span aria-hidden>✓</span>
+            {" "}
+            <span>Verified</span>
+          </span>
+        ) : (
+          <span
+            className={cn(
+              pillBase,
+              "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200",
+            )}
+          >
+            <span aria-hidden>!</span>
+            {" "}
+            <span>Unverified</span>
+          </span>
+        )
+      ) : null}
+
+      {showTier ? (
+        tier === "gold" ? (
+          <span
+            className={cn(
+              pillBase,
+              "border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100",
+            )}
+          >
+            <span aria-hidden>★</span>
+            {" "}
+            <span>Featured Gold</span>
+          </span>
+        ) : tier === "diamond" ? (
+          <span
+            className={cn(
+              pillBase,
+              "border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100",
+            )}
+          >
+            <span aria-hidden>💎</span>
+            {" "}
+            <span>Featured Diamond</span>
+          </span>
+        ) : (
+          <span className={cn(pillBase, "border-border bg-muted text-foreground")}>
+            <span aria-hidden>★</span>
+            {" "}
+            <span>Featured Basic</span>
+          </span>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 export default function ListingCard({
   id,
   href,
@@ -96,6 +179,7 @@ export default function ListingCard({
   kind = "product",
   conditionLabel,
   featured = false,
+  featuredTier,
   className,
   ratingAverage,
   ratingCount,
@@ -120,6 +204,14 @@ export default function ListingCard({
     ratingAverage > 0 &&
     typeof ratingCount === "number" &&
     ratingCount > 0;
+
+  const tier = React.useMemo<"basic" | "gold" | "diamond" | null>(() => {
+    if (typeof featuredTier === "string") {
+      const t = featuredTier.trim().toLowerCase();
+      if (t === "basic" || t === "gold" || t === "diamond") return t;
+    }
+    return featured ? "basic" : null;
+  }, [featuredTier, featured]);
 
   async function handleSaveToggle(e: React.MouseEvent) {
     e.preventDefault();
@@ -255,12 +347,17 @@ export default function ListingCard({
           />
           <div className="absolute inset-x-0 bottom-0 p-3 md:p-3.5 text-white">
             <div className="flex items-center gap-1.5 text-xs opacity-90">
-              {verified ? (
-                <>
-                  <Icon name="verified" className="text-emerald-300" aria-hidden />
-                  <span className="sr-only">Verified</span>
-                </>
+              {typeof verified === "boolean" ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-semibold">
+                  <Icon
+                    name="verified"
+                    className={verified ? "text-emerald-300" : "text-amber-300"}
+                    aria-hidden
+                  />
+                  <span>{verified ? "Verified" : "Unverified"}</span>
+                </span>
               ) : null}
+
               {location ? (
                 <span className="flex items-center gap-1">
                   <Icon name="pin" aria-hidden />
@@ -299,16 +396,18 @@ export default function ListingCard({
               </div>
             )}
 
-            <div className="flex items-center gap-2">
-              {verified ? (
-                <Badge tone="green" variant="soft">
-                  <Icon name="secure" aria-hidden /> Verified
-                </Badge>
-              ) : (
-                <Badge tone="slate" variant="soft">
-                  <Icon name="info" aria-hidden /> Community
-                </Badge>
-              )}
+            <div className="flex flex-col gap-1">
+              {/* Keep your existing badge component for styling/consistency */}
+              <VerifiedBadge
+                verified={typeof verified === "boolean" ? verified : null}
+                featured={featured}
+                featuredTier={tier}
+              />
+              {/* Add explicit visible text for Playwright assertions */}
+              <SellerTextBadges
+                {...(typeof verified === "boolean" ? { verified } : {})}
+                tier={tier}
+              />
             </div>
           </div>
 

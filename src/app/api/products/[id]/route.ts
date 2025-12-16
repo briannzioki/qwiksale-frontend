@@ -65,7 +65,7 @@ function publicCache(json: unknown, init?: ResponseInit) {
   if (IS_PROD) {
     res.headers.set(
       "Cache-Control",
-      "public, s-maxage=60, stale-while-revalidate=60"
+      "public, s-maxage=60, stale-while-revalidate=60",
     );
   } else {
     res.headers.set("Cache-Control", "no-store");
@@ -96,6 +96,103 @@ function isClearlyInvalidId(id: string): boolean {
   return false;
 }
 
+/* ---------------- seller/account badge helpers ---------------- */
+type FeaturedTier = "basic" | "gold" | "diamond";
+
+function normalizeFeaturedTier(v: unknown): FeaturedTier | null {
+  const pick = (x: unknown): string => {
+    if (typeof x === "string") return x;
+    if (x && typeof x === "object") {
+      const any = x as any;
+      const cand =
+        any?.tier ??
+        any?.plan ??
+        any?.level ??
+        any?.name ??
+        any?.type ??
+        any?.subscription ??
+        any?.value ??
+        "";
+      if (typeof cand === "string") return cand;
+    }
+    return "";
+  };
+
+  const raw = pick(v).trim();
+  if (!raw) return null;
+
+  const s = raw.toLowerCase();
+  if (s.includes("diamond")) return "diamond";
+  if (s.includes("gold")) return "gold";
+  if (s.includes("basic")) return "basic";
+  return null;
+}
+
+function normalizeSellerVerified(u: any): boolean | null {
+  if (!u) return null;
+
+  const direct =
+    u?.verified ??
+    u?.isVerified ??
+    u?.accountVerified ??
+    u?.sellerVerified ??
+    null;
+
+  if (typeof direct === "boolean") return direct;
+
+  const at =
+    u?.verifiedAt ??
+    u?.verified_on ??
+    u?.verifiedOn ??
+    u?.verificationDate ??
+    null;
+
+  if (typeof at === "string" && at.trim()) return true;
+  if (at instanceof Date) return true;
+
+  return null;
+}
+
+type SellerFlags = {
+  sellerVerified: boolean | null;
+  sellerFeaturedTier: FeaturedTier | null;
+};
+
+/**
+ * Schema-safe seller flags fetch:
+ * - Uses row_to_json(u) so we don't hard-depend on specific columns existing.
+ */
+async function fetchSellerFlagsById(
+  sellerId: string | null | undefined,
+): Promise<SellerFlags> {
+  if (!sellerId) return { sellerVerified: null, sellerFeaturedTier: null };
+
+  try {
+    const rows = await prisma.$queryRaw<{ u: any }[]>`
+      SELECT row_to_json(u) as u
+      FROM "User" u
+      WHERE u.id = ${sellerId}
+      LIMIT 1
+    `;
+    const u = rows?.[0]?.u ?? null;
+
+    const sub =
+      u?.featuredTier ??
+      u?.subscriptionTier ??
+      u?.subscription ??
+      u?.plan ??
+      u?.tier ??
+      null;
+
+    return {
+      sellerVerified: normalizeSellerVerified(u),
+      sellerFeaturedTier: normalizeFeaturedTier(sub),
+    };
+  } catch {
+    return { sellerVerified: null, sellerFeaturedTier: null };
+  }
+}
+
 /* ----------------------------- HEAD / CORS ----------------------------- */
 export function HEAD() {
   const h = baseHeaders(new Headers());
@@ -107,24 +204,12 @@ export function HEAD() {
 }
 
 export function OPTIONS() {
-  const origin =
-    process.env["NEXT_PUBLIC_APP_URL"] ??
-    process.env["APP_ORIGIN"] ??
-    "*";
+  const origin = process.env["NEXT_PUBLIC_APP_URL"] ?? process.env["APP_ORIGIN"] ?? "*";
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
-  res.headers.set(
-    "Vary",
-    "Origin, Authorization, Cookie, Accept-Encoding"
-  );
-  res.headers.set(
-    "Access-Control-Allow-Methods",
-    "GET, PATCH, DELETE, OPTIONS, HEAD"
-  );
-  res.headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
+  res.headers.set("Vary", "Origin, Authorization, Cookie, Accept-Encoding");
+  res.headers.set("Access-Control-Allow-Methods", "GET, PATCH, DELETE, OPTIONS, HEAD");
+  res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.headers.set("Access-Control-Max-Age", "86400");
   res.headers.set("Cache-Control", "no-store");
   return res;
@@ -164,9 +249,7 @@ function shapeProduct(p: any) {
   const rel = (p as any)?.favorites;
   const isFavoritedByMe = Array.isArray(rel) && rel.length > 0;
   const createdAt =
-    p?.createdAt instanceof Date
-      ? p.createdAt.toISOString()
-      : String(p?.createdAt ?? "");
+    p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
   const sellerUsername = p?.seller?.username ?? null;
   const { _count: _c, favorites: _f, ...rest } = p || {};
   return {
@@ -187,12 +270,7 @@ function getProductModel() {
 /* ---------- relation model helpers (ProductImage[]) ------------ */
 function getProductImageModel() {
   const any = prisma as any;
-  const candidates = [
-    "productImage",
-    "productImages",
-    "ProductImage",
-    "ProductImages",
-  ];
+  const candidates = ["productImage", "productImages", "ProductImage", "ProductImages"];
   for (const key of candidates) {
     const mdl = any?.[key];
     if (mdl && typeof mdl.findMany === "function") return mdl;
@@ -204,9 +282,7 @@ function getProductImageModel() {
  * Fetch related image URLs without selecting non-existent columns.
  * We avoid `select` entirely and then read from common URL-ish keys.
  */
-async function fetchProductRelationUrls(
-  productId: string
-): Promise<string[]> {
+async function fetchProductRelationUrls(productId: string): Promise<string[]> {
   try {
     const Model = getProductImageModel();
     if (!Model) return [];
@@ -245,16 +321,10 @@ function isPlaceholder(u?: string | null) {
   return s === PLACEHOLDER || s.endsWith("/placeholder/default.jpg");
 }
 
-function normalizeCoverAndGallery(
-  primary: any,
-  fullRow: any,
-  extraUrls: string[] = []
-) {
+function normalizeCoverAndGallery(primary: any, fullRow: any, extraUrls: string[] = []) {
   const merged = { ...(fullRow || {}), ...(primary || {}) };
   const collected = (collectUrls(merged, undefined) ?? []).slice(0, 50);
-  const extra = extraUrls
-    .map((u) => (u ?? "").toString().trim())
-    .filter(Boolean);
+  const extra = extraUrls.map((u) => (u ?? "").toString().trim()).filter(Boolean);
   const rawCandidates = [
     merged?.image,
     merged?.coverImage,
@@ -269,9 +339,7 @@ function normalizeCoverAndGallery(
   const cover = firstReal || PLACEHOLDER;
 
   const realGallery = rawCandidates.filter((u) => !isPlaceholder(u));
-  const gallery = realGallery.length
-    ? Array.from(new Set([cover, ...realGallery]))
-    : [PLACEHOLDER];
+  const gallery = realGallery.length ? Array.from(new Set([cover, ...realGallery])) : [PLACEHOLDER];
 
   return { cover, gallery: gallery.slice(0, 50) };
 }
@@ -280,46 +348,28 @@ function normalizeCoverAndGallery(
 const TIMEOUT_MS = 1200;
 
 const race = <T,>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T | "timeout"> =>
-  Promise.race([
-    p,
-    new Promise<"timeout">((resolve) =>
-      setTimeout(() => resolve("timeout"), ms)
-    ),
-  ]).catch(() => "timeout" as const);
+  Promise.race([p, new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms))]).catch(
+    () => "timeout" as const,
+  );
 
 /* ---- accepted alt id fields when resolving a row ---- */
-const ALT_ID_FIELDS = [
-  "id",
-  "productId",
-  "product_id",
-  "uid",
-  "uuid",
-  "slug",
-] as const;
+const ALT_ID_FIELDS = ["id", "productId", "product_id", "uid", "uuid", "slug"] as const;
 
 /* -------------------- GET /api/products/:id ------------------- */
 export async function GET(req: NextRequest) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
     const productId = getId(req);
     if (!productId) {
-      track("product_read_not_found", {
-        reqId,
-        reason: "missing_id",
-      });
+      track("product_read_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });
     }
 
     // ⚡️ Instant short-circuit (no DB): invalid or placeholder ids
     if (isClearlyInvalidId(productId)) {
-      track("product_read_not_found", {
-        reqId,
-        productId,
-        reason: "invalid_id",
-      });
+      track("product_read_not_found", { reqId, productId, reason: "invalid_id" });
       const res = noStore({ error: "Not found" }, { status: 404 });
       res.headers.set("x-api-shortcircuit", "invalid-id");
       return res;
@@ -327,11 +377,7 @@ export async function GET(req: NextRequest) {
 
     const Product = getProductModel();
     if (!Product) {
-      track("product_read_not_found", {
-        reqId,
-        productId,
-        reason: "no_model",
-      });
+      track("product_read_not_found", { reqId, productId, reason: "no_model" });
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
@@ -348,12 +394,9 @@ export async function GET(req: NextRequest) {
         where: { id: productId, status: "ACTIVE" },
         select: selectPublic,
       }),
-      TIMEOUT_MS
+      TIMEOUT_MS,
     );
-    const activeItem =
-      activeItemRaw && activeItemRaw !== "timeout"
-        ? (activeItemRaw as any)
-        : null;
+    const activeItem = activeItemRaw && activeItemRaw !== "timeout" ? (activeItemRaw as any) : null;
 
     // Attempt B (DEV/Preview only): allow any status for public read
     let devLooseItem: any = null;
@@ -363,40 +406,39 @@ export async function GET(req: NextRequest) {
           where: { id: productId },
           select: selectPublic,
         }),
-        900
+        900,
       );
-      devLooseItem =
-        foundLoose && foundLoose !== "timeout"
-          ? (foundLoose as any)
-          : null;
+      devLooseItem = foundLoose && foundLoose !== "timeout" ? (foundLoose as any) : null;
     }
 
     const publicItem = activeItem ?? devLooseItem;
 
     if (publicItem) {
       const [fullRowRaw, relUrlsRaw] = await Promise.all([
-        race(
-          Product.findUnique({ where: { id: productId } }).catch(
-            () => null
-          ),
-          600
-        ),
+        race(Product.findUnique({ where: { id: productId } }).catch(() => null), 600),
         race(fetchProductRelationUrls(productId), 600),
       ]);
-      const fullRow =
-        fullRowRaw !== "timeout" ? (fullRowRaw as any) : null;
+      const fullRow = fullRowRaw !== "timeout" ? (fullRowRaw as any) : null;
       const relUrls = Array.isArray(relUrlsRaw) ? relUrlsRaw : [];
 
       const shaped = shapeProduct(publicItem);
       const norm = normalizeCoverAndGallery(shaped, fullRow, relUrls);
 
       const normGallery = norm.gallery;
-      const isPurePlaceholderGallery =
-        normGallery.length === 1 && normGallery[0] === PLACEHOLDER;
+      const isPurePlaceholderGallery = normGallery.length === 1 && normGallery[0] === PLACEHOLDER;
       const gallery = isPurePlaceholderGallery ? [] : normGallery;
+
+      const sellerFlagsRaw = await race(fetchSellerFlagsById(shaped?.sellerId), 650);
+      const sellerFlags = sellerFlagsRaw !== "timeout" ? (sellerFlagsRaw as SellerFlags) : null;
+
+      const verified = sellerFlags?.sellerVerified ?? false;
+      const tier = sellerFlags?.sellerFeaturedTier ?? "basic";
 
       const payload = {
         ...shaped,
+        sellerVerified: verified,
+        sellerFeaturedTier: tier,
+        sellerBadges: { verified, tier },
         image: norm.cover,
         gallery,
         imageUrls: gallery,
@@ -407,8 +449,7 @@ export async function GET(req: NextRequest) {
       track("product_read_public_hit", {
         reqId,
         productId,
-        favoritesCount:
-          (publicItem as any)?.["_count"]?.favorites ?? 0,
+        favoritesCount: (publicItem as any)?.["_count"]?.favorites ?? 0,
         devLoose: !!devLooseItem && !activeItem,
       });
       return publicCache(payload);
@@ -416,11 +457,8 @@ export async function GET(req: NextRequest) {
 
     // Owner-gated read as fallback
     const sessionRaw = await race(auth(), 500);
-    const session =
-      sessionRaw === "timeout" ? null : (sessionRaw as any);
-    const sessionUserId = (session?.user as any)?.id as
-      | string
-      | undefined;
+    const session = sessionRaw === "timeout" ? null : (sessionRaw as any);
+    const sessionUserId = (session?.user as any)?.id as string | undefined;
 
     let userId: string | null = sessionUserId ?? null;
     if (!userId && (session?.user as any)?.email) {
@@ -429,18 +467,14 @@ export async function GET(req: NextRequest) {
           where: { email: (session?.user as any).email },
           select: { id: true },
         }),
-        600
+        600,
       );
-      const u =
-        uRaw !== "timeout" ? (uRaw as any) : null;
+      const u = uRaw !== "timeout" ? (uRaw as any) : null;
       userId = u?.id ?? null;
     }
 
     if (!userId) {
-      track("product_read_unauthorized_owner_check", {
-        reqId,
-        productId,
-      });
+      track("product_read_unauthorized_owner_check", { reqId, productId });
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
@@ -459,12 +493,9 @@ export async function GET(req: NextRequest) {
         where: { id: productId, sellerId: userId },
         select: selectOwner,
       }),
-      TIMEOUT_MS
+      TIMEOUT_MS,
     );
-    const ownerItem =
-      ownerItemRaw && ownerItemRaw !== "timeout"
-        ? (ownerItemRaw as any)
-        : null;
+    const ownerItem = ownerItemRaw && ownerItemRaw !== "timeout" ? (ownerItemRaw as any) : null;
 
     if (!ownerItem) {
       track("product_read_not_found", {
@@ -476,33 +507,31 @@ export async function GET(req: NextRequest) {
     }
 
     const [fullRowRaw, relUrlsRaw] = await Promise.all([
-      race(
-        Product.findUnique({ where: { id: productId } }).catch(
-          () => null
-        ),
-        600
-      ),
+      race(Product.findUnique({ where: { id: productId } }).catch(() => null), 600),
       race(fetchProductRelationUrls(productId), 600),
     ]);
-    const fullRow =
-      fullRowRaw !== "timeout" ? (fullRowRaw as any) : null;
+    const fullRow = fullRowRaw !== "timeout" ? (fullRowRaw as any) : null;
     const relUrls = Array.isArray(relUrlsRaw) ? relUrlsRaw : [];
 
     const shapedOwner = shapeProduct(ownerItem);
-    const normOwner = normalizeCoverAndGallery(
-      shapedOwner,
-      fullRow,
-      relUrls
-    );
+    const normOwner = normalizeCoverAndGallery(shapedOwner, fullRow, relUrls);
 
     const ownerNormGallery = normOwner.gallery;
     const ownerPurePlaceholder =
-      ownerNormGallery.length === 1 &&
-      ownerNormGallery[0] === PLACEHOLDER;
+      ownerNormGallery.length === 1 && ownerNormGallery[0] === PLACEHOLDER;
     const ownerGallery = ownerPurePlaceholder ? [] : ownerNormGallery;
+
+    const sellerFlagsRaw = await race(fetchSellerFlagsById(shapedOwner?.sellerId), 650);
+    const sellerFlags = sellerFlagsRaw !== "timeout" ? (sellerFlagsRaw as SellerFlags) : null;
+
+    const verified = sellerFlags?.sellerVerified ?? false;
+    const tier = sellerFlags?.sellerFeaturedTier ?? "basic";
 
     const ownerPayload = {
       ...shapedOwner,
+      sellerVerified: verified,
+      sellerFeaturedTier: tier,
+      sellerBadges: { verified, tier },
       image: normOwner.cover,
       gallery: ownerGallery,
       imageUrls: ownerGallery,
@@ -525,41 +554,28 @@ export async function GET(req: NextRequest) {
 /* ------------------- PATCH /api/products/:id ------------------ */
 export async function PATCH(req: NextRequest) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
     const idParam = getId(req);
     if (!idParam) {
-      track("product_update_not_found", {
-        reqId,
-        reason: "missing_id",
-      });
+      track("product_update_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });
     }
 
     const Product = getProductModel();
     if (!Product) {
-      track("product_update_not_found", {
-        reqId,
-        idParam,
-        reason: "no_model",
-      });
+      track("product_update_not_found", { reqId, idParam, reason: "no_model" });
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
     track("product_update_attempt", { reqId, idParam });
 
     const session = await auth();
-    const userId = (session as any)?.user?.id as
-      | string
-      | undefined;
+    const userId = (session as any)?.user?.id as string | undefined;
     if (!userId) {
       track("product_update_unauthorized", { reqId, idParam });
-      return noStore(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Resolve existing by alternate id fields too
@@ -575,11 +591,7 @@ export async function PATCH(req: NextRequest) {
       } catch {}
     }
     if (!existing) {
-      track("product_update_not_found", {
-        reqId,
-        idParam,
-        reason: "no_existing",
-      });
+      track("product_update_not_found", { reqId, idParam, reason: "no_existing" });
       return noStore({ error: "Not found" }, { status: 404 });
     }
     if (existing.sellerId && existing.sellerId !== userId) {
@@ -588,49 +600,17 @@ export async function PATCH(req: NextRequest) {
     }
 
     const ctype = req.headers.get("content-type") || "";
-    if (
-      !ctype
-        .toLowerCase()
-        .includes("application/json")
-    ) {
-      return noStore(
-        {
-          error:
-            "Content-Type must be application/json",
-        },
-        { status: 415 }
-      );
+    if (!ctype.toLowerCase().includes("application/json")) {
+      return noStore({ error: "Content-Type must be application/json" }, { status: 415 });
     }
 
-    const body: any = await req
-      .json()
-      .catch(() => ({}));
+    const body: any = await req.json().catch(() => ({}));
 
     const normCondition = (() => {
-      const t = String(
-        body?.condition ?? ""
-      )
-        .trim()
-        .toLowerCase();
+      const t = String(body?.condition ?? "").trim().toLowerCase();
       if (!t) return undefined;
-      if (
-        [
-          "brand new",
-          "brand-new",
-          "brand_new",
-          "new",
-        ].includes(t)
-      )
-        return "brand new";
-      if (
-        [
-          "pre-owned",
-          "pre owned",
-          "pre_owned",
-          "used",
-        ].includes(t)
-      )
-        return "pre-owned";
+      if (["brand new", "brand-new", "brand_new", "new"].includes(t)) return "brand new";
+      if (["pre-owned", "pre owned", "pre_owned", "used"].includes(t)) return "pre-owned";
       return undefined;
     })();
 
@@ -638,8 +618,8 @@ export async function PATCH(req: NextRequest) {
       typeof body?.price === "number"
         ? Math.max(0, Math.round(body.price))
         : body?.price === null
-        ? null
-        : undefined;
+          ? null
+          : undefined;
 
     const normStatus =
       body?.status === "ACTIVE" ||
@@ -649,17 +629,11 @@ export async function PATCH(req: NextRequest) {
       body?.status === "ARCHIVED"
         ? body.status
         : body?.status == null
-        ? undefined
-        : undefined;
+          ? undefined
+          : undefined;
 
-    const normGallery = Array.isArray(
-      body?.gallery
-    )
-      ? body.gallery
-          .map((x: unknown) =>
-            String(x || "")
-          )
-          .filter(Boolean)
+    const normGallery = Array.isArray(body?.gallery)
+      ? body.gallery.map((x: unknown) => String(x || "")).filter(Boolean)
       : undefined;
 
     const data: {
@@ -674,74 +648,24 @@ export async function PATCH(req: NextRequest) {
       gallery?: string[];
       location?: string | null;
       negotiable?: boolean;
-      status?:
-        | "ACTIVE"
-        | "SOLD"
-        | "HIDDEN"
-        | "DRAFT"
-        | "ARCHIVED";
+      status?: "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT" | "ARCHIVED";
     } = {};
 
-    if (typeof body?.name === "string")
-      data.name = body.name
-        .trim()
-        .slice(0, 140);
-    if (
-      typeof body?.description ===
-        "string" ||
-      body?.description === null
-    )
-      data.description =
-        body?.description ?? null;
-    if (
-      typeof body?.category ===
-      "string"
-    )
-      data.category = body.category.slice(
-        0,
-        64
-      );
-    if (
-      typeof body?.subcategory ===
-        "string" ||
-      body?.subcategory === null
-    )
-      data.subcategory =
-        body?.subcategory ?? null;
-    if (
-      typeof body?.brand === "string"
-    )
-      data.brand = body.brand.slice(
-        0,
-        64
-      );
-    if (normCondition !== undefined)
-      data.condition = normCondition;
-    if (normPrice !== undefined)
-      data.price = normPrice;
-    if (
-      typeof body?.image ===
-        "string" ||
-      body?.image === null
-    )
-      data.image = body?.image ?? null;
-    if (normGallery !== undefined)
-      data.gallery = normGallery;
-    if (
-      typeof body?.location ===
-        "string" ||
-      body?.location === null
-    )
-      data.location =
-        body?.location ?? null;
-    if (
-      typeof body?.negotiable ===
-      "boolean"
-    )
-      data.negotiable =
-        body.negotiable;
-    if (normStatus !== undefined)
-      data.status = normStatus as any;
+    if (typeof body?.name === "string") data.name = body.name.trim().slice(0, 140);
+    if (typeof body?.description === "string" || body?.description === null)
+      data.description = body?.description ?? null;
+    if (typeof body?.category === "string") data.category = body.category.slice(0, 64);
+    if (typeof body?.subcategory === "string" || body?.subcategory === null)
+      data.subcategory = body?.subcategory ?? null;
+    if (typeof body?.brand === "string") data.brand = body.brand.slice(0, 64);
+    if (normCondition !== undefined) data.condition = normCondition;
+    if (normPrice !== undefined) data.price = normPrice;
+    if (typeof body?.image === "string" || body?.image === null) data.image = body?.image ?? null;
+    if (normGallery !== undefined) data.gallery = normGallery;
+    if (typeof body?.location === "string" || body?.location === null)
+      data.location = body?.location ?? null;
+    if (typeof body?.negotiable === "boolean") data.negotiable = body.negotiable;
+    if (normStatus !== undefined) data.status = normStatus as any;
 
     const select: any = {
       ...productBaseSelect,
@@ -761,67 +685,52 @@ export async function PATCH(req: NextRequest) {
       select,
     });
 
-    const [fullRow, relUrls] =
-      await Promise.all([
-        Product.findUnique({
-          where: { id: existing.id },
-        }).catch(() => null),
-        (async () => {
-          const g: string[] =
-            Array.isArray(data.gallery)
-              ? data.gallery
-              : fullRow?.gallery ??
-                [];
-          if (
-            Array.isArray(g) &&
-            g.length > 0
-          )
-            return [] as string[];
-          return fetchProductRelationUrls(
-            existing.id
-          ).catch(
-            () =>
-              [] as string[]
-          );
-        })(),
-      ]);
+    // ✅ FIX: do NOT reference `fullRow` inside the Promise.all initializer (TDZ crash).
+    const fullRow = await Product.findUnique({ where: { id: existing.id } }).catch(() => null);
+
+    const existingGallery: string[] = Array.isArray(data.gallery)
+      ? data.gallery
+      : Array.isArray((fullRow as any)?.gallery)
+        ? ((fullRow as any).gallery as any[])
+            .map((x: unknown) => String(x ?? "").trim())
+            .filter(Boolean)
+        : [];
+
+    const relUrls =
+      existingGallery.length > 0
+        ? ([] as string[])
+        : await fetchProductRelationUrls(existing.id).catch(() => [] as string[]);
 
     const shaped = shapeProduct(updated);
-    const norm = normalizeCoverAndGallery(
-      { ...shaped, ...(body || {}) },
-      fullRow,
-      relUrls
-    );
+    const norm = normalizeCoverAndGallery({ ...shaped, ...(body || {}) }, fullRow, relUrls);
 
     const normGallery2 = norm.gallery;
     const isPurePlaceholderGallery =
-      normGallery2.length === 1 &&
-      normGallery2[0] === PLACEHOLDER;
-    const gallery = isPurePlaceholderGallery
-      ? []
-      : normGallery2;
+      normGallery2.length === 1 && normGallery2[0] === PLACEHOLDER;
+    const gallery = isPurePlaceholderGallery ? [] : normGallery2;
 
     try {
       revalidateTag("home:active");
       revalidateTag("products:latest");
-      revalidateTag(
-        `product:${existing.id}`
-      );
-      revalidateTag(
-        `user:${userId}:listings`
-      );
+      revalidateTag(`product:${existing.id}`);
+      revalidateTag(`user:${userId}:listings`);
       revalidatePath("/");
-      revalidatePath(
-        `/product/${existing.id}`
-      );
-      revalidatePath(
-        `/listing/${existing.id}`
-      );
+      revalidatePath(`/product/${existing.id}`);
+      revalidatePath(`/listing/${existing.id}`);
     } catch {}
+
+    const sellerFlagsRaw = await race(fetchSellerFlagsById(shaped?.sellerId), 650);
+    const sellerFlags = sellerFlagsRaw !== "timeout" ? (sellerFlagsRaw as SellerFlags) : null;
+
+    const verified = sellerFlags?.sellerVerified ?? false;
+    const tier = sellerFlags?.sellerFeaturedTier ?? "basic";
 
     const payload = {
       ...shaped,
       id: String(existing.id),
+      sellerVerified: verified,
+      sellerFeaturedTier: tier,
+      sellerBadges: { verified, tier },
       image: norm.cover,
       gallery,
       imageUrls: gallery,
@@ -833,57 +742,36 @@ export async function PATCH(req: NextRequest) {
       reqId,
       idParam,
       productId: existing.id,
-      favoritesCount:
-        (updated as any)?.["_count"]
-          ?.favorites ?? 0,
+      favoritesCount: (updated as any)?.["_count"]?.favorites ?? 0,
     });
 
     return noStore(payload);
   } catch (e) {
     console.warn("[products/:id PATCH] error:", e);
-    track("product_update_error", {
-      reqId,
-      message:
-        (e as any)?.message ??
-        String(e),
-    });
-    return noStore(
-      { error: "Server error" },
-      { status: 500 }
-    );
+    track("product_update_error", { reqId, message: (e as any)?.message ?? String(e) });
+    return noStore({ error: "Server error" }, { status: 500 });
   }
 }
 
 /* ------------------ DELETE /api/products/:id ------------------ */
 export async function DELETE(req: NextRequest) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
     const idParam = getId(req);
     if (!idParam) {
-      track("product_delete_not_found", {
-        reqId,
-        reason: "missing_id",
-      });
+      track("product_delete_not_found", { reqId, reason: "missing_id" });
       return noStore({ error: "Missing id" }, { status: 400 });
     }
 
     const Product = getProductModel();
     if (!Product) {
-      track("product_delete_not_found", {
-        reqId,
-        idParam,
-        reason: "no_model",
-      });
+      track("product_delete_not_found", { reqId, idParam, reason: "no_model" });
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    track("product_delete_attempt", {
-      reqId,
-      idParam,
-    });
+    track("product_delete_attempt", { reqId, idParam });
 
     const session = await auth();
     const s: any = session?.user ?? {};
@@ -891,14 +779,8 @@ export async function DELETE(req: NextRequest) {
     const isAdmin = !!isAdminUser(s);
 
     if (!userId && !isAdmin) {
-      track("product_delete_unauthorized", {
-        reqId,
-        idParam,
-      });
-      return noStore(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      track("product_delete_unauthorized", { reqId, idParam });
+      return noStore({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Resolve row (accept alt id fields)
@@ -914,71 +796,33 @@ export async function DELETE(req: NextRequest) {
       } catch {}
     }
     if (!existing) {
-      track("product_delete_not_found", {
-        reqId,
-        idParam,
-        reason: "no_existing",
-      });
+      track("product_delete_not_found", { reqId, idParam, reason: "no_existing" });
       return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    const isOwner =
-      !!userId && existing.sellerId === userId;
+    const isOwner = !!userId && existing.sellerId === userId;
     if (!isOwner && !isAdmin) {
-      track("product_delete_forbidden", {
-        reqId,
-        idParam,
-      });
-      return noStore(
-        { error: "Forbidden" },
-        { status: 403 }
-      );
+      track("product_delete_forbidden", { reqId, idParam });
+      return noStore({ error: "Forbidden" }, { status: 403 });
     }
 
-    await prisma.$transaction([
-      prisma.favorite.deleteMany({
-        where: { productId: existing.id },
-      }),
-      Product.delete({
-        where: { id: existing.id },
-      }),
-    ]);
+    await prisma.$transaction([prisma.favorite.deleteMany({ where: { productId: existing.id } }), Product.delete({ where: { id: existing.id } })]);
 
     try {
       revalidateTag("home:active");
       revalidateTag("products:latest");
-      revalidateTag(
-        `product:${existing.id}`
-      );
-      if (userId)
-        revalidateTag(
-          `user:${userId}:listings`
-        );
+      revalidateTag(`product:${existing.id}`);
+      if (userId) revalidateTag(`user:${userId}:listings`);
       revalidatePath("/");
-      revalidatePath(
-        `/product/${existing.id}`
-      );
-      revalidatePath(
-        `/listing/${existing.id}`
-      );
+      revalidatePath(`/product/${existing.id}`);
+      revalidatePath(`/listing/${existing.id}`);
     } catch {}
 
-    track("product_delete_success", {
-      reqId,
-      productId: existing.id,
-    });
+    track("product_delete_success", { reqId, productId: existing.id });
     return noStore({ ok: true });
   } catch (e) {
     console.warn("[products/:id DELETE] error:", e);
-    track("product_delete_error", {
-      reqId,
-      message:
-        (e as any)?.message ??
-        String(e),
-    });
-    return noStore(
-      { error: "Server error" },
-      { status: 500 }
-    );
+    track("product_delete_error", { reqId, message: (e as any)?.message ?? String(e) });
+    return noStore({ error: "Server error" }, { status: 500 });
   }
 }

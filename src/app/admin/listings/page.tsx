@@ -51,22 +51,14 @@ function withTimeout<T>(
     new Promise<T>((resolve) =>
       setTimeout(
         () =>
-          resolve(
-            typeof fallback === "function"
-              ? (fallback as any)()
-              : fallback,
-          ),
+          resolve(typeof fallback === "function" ? (fallback as any)() : fallback),
         ms,
       ),
     ),
   ]);
 }
 
-async function fetchWithTimeout(
-  input: string,
-  init: RequestInit,
-  ms: number,
-) {
+async function fetchWithTimeout(input: string, init: RequestInit, ms: number) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), ms);
   try {
@@ -115,9 +107,7 @@ function getParam(sp: SearchParams, k: string): string | undefined {
 function keepQuery(
   base: string,
   sp: SearchParams,
-  overrides: Partial<
-    Record<"page" | "q" | "type" | "featured", string>
-  >,
+  overrides: Partial<Record<"page" | "q" | "type" | "featured", string>>,
 ) {
   const url = new URL(base, "http://x");
   const qp = url.searchParams;
@@ -163,6 +153,13 @@ function normalizeListingsPayload(payload: unknown): Listing[] {
   return [];
 }
 
+function statusToSuspended(row: any): boolean | null {
+  if (typeof row?.suspended === "boolean") return row.suspended;
+  const s = typeof row?.status === "string" ? row.status.trim().toUpperCase() : "";
+  if (!s) return null;
+  return s === "HIDDEN";
+}
+
 // Fallback: direct Prisma query if /api/admin/listings fails or returns 0 rows.
 async function fetchListingsFallback(opts: {
   q: string;
@@ -172,113 +169,155 @@ async function fetchListingsFallback(opts: {
 }): Promise<Listing[]> {
   const { q, type, featured, limit } = opts;
 
-  const baseWhere: Record<string, unknown> = {};
-  if (featured === "yes") baseWhere["featured"] = true;
-  if (featured === "no") baseWhere["featured"] = false;
-  if (q) {
-    const like = { contains: q, mode: "insensitive" as const };
-    baseWhere["OR"] = [
-      { name: like },
-      { sellerName: like } as any,
-    ];
-  }
+  const anyPrisma = prisma as any;
 
-  const orderBy = [
-    { createdAt: "desc" as const },
-    { id: "desc" as const },
-  ];
+  const buildWhere = (includeSellerName: boolean) => {
+    const baseWhere: any = {};
+    if (featured === "yes") baseWhere.featured = true;
+    if (featured === "no") baseWhere.featured = false;
+
+    if (q) {
+      const like = { contains: q, mode: "insensitive" as const };
+      const or: any[] = [{ name: like }];
+
+      // Only include sellerName if the model actually supports it; we’ll retry without it if Prisma throws.
+      if (includeSellerName) {
+        or.push({ sellerName: like });
+      }
+
+      baseWhere.OR = or;
+    }
+
+    return baseWhere;
+  };
+
+  const orderBy = [{ createdAt: "desc" as const }, { id: "desc" as const }];
 
   const wantsProduct = type === "any" || type === "product";
   const wantsService = type === "any" || type === "service";
 
-  const split =
-    wantsProduct && wantsService ? Math.max(1, Math.floor(limit / 2)) : limit;
+  const split = wantsProduct && wantsService ? Math.max(1, Math.floor(limit / 2)) : limit;
   const takeProducts = wantsProduct ? split : 0;
   const takeServices = wantsService ? limit - takeProducts : 0;
 
+  const serviceModel =
+    anyPrisma.service ??
+    anyPrisma.services ??
+    anyPrisma.Service ??
+    anyPrisma.Services ??
+    null;
+
+  const selectWide: any = {
+    id: true,
+    name: true,
+    price: true,
+    featured: true,
+    createdAt: true,
+    status: true,
+    sellerId: true,
+    sellerName: true,
+    disabled: true,
+    suspended: true,
+    seller: { select: { id: true, name: true } },
+  };
+
+  const selectNarrow: any = {
+    id: true,
+    name: true,
+    price: true,
+    featured: true,
+    createdAt: true,
+    seller: { select: { id: true, name: true } },
+  };
+
+  async function safeFindMany(model: any, take: number): Promise<any[]> {
+    if (!model?.findMany || take <= 0) return [];
+    // 1) where with sellerName, wide select
+    try {
+      return await model.findMany({
+        where: buildWhere(true),
+        orderBy,
+        take,
+        select: selectWide,
+      });
+    } catch {
+      // 2) where without sellerName, wide select
+      try {
+        return await model.findMany({
+          where: buildWhere(false),
+          orderBy,
+          take,
+          select: selectWide,
+        });
+      } catch {
+        // 3) where without sellerName, narrow select
+        return await model.findMany({
+          where: buildWhere(false),
+          orderBy,
+          take,
+          select: selectNarrow,
+        });
+      }
+    }
+  }
+
   const [productRows, serviceRows] = await Promise.all([
-    wantsProduct
-      ? prisma.product.findMany({
-          where: baseWhere,
-          orderBy,
-          take: takeProducts,
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            featured: true,
-            createdAt: true,
-            sellerId: true as any,
-            sellerName: true as any,
-            disabled: true as any,
-            suspended: true as any,
-            seller: { select: { id: true, name: true } },
-          } as any,
-        })
-      : Promise.resolve([] as any[]),
-    wantsService
-      ? prisma.service.findMany({
-          where: baseWhere,
-          orderBy,
-          take: takeServices,
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            featured: true,
-            createdAt: true,
-            sellerId: true as any,
-            sellerName: true as any,
-            disabled: true as any,
-            suspended: true as any,
-            seller: { select: { id: true, name: true } },
-          } as any,
-        })
-      : Promise.resolve([] as any[]),
+    wantsProduct ? safeFindMany(anyPrisma.product ?? prisma.product, takeProducts) : Promise.resolve([] as any[]),
+    wantsService ? safeFindMany(serviceModel, takeServices) : Promise.resolve([] as any[]),
   ]);
 
-  const rows: Listing[] = [
-    ...productRows.map((p: any) => ({
-      id: String(p.id),
-      kind: "product" as const,
-      name: String(p.name ?? ""),
-      price: typeof p.price === "number" ? p.price : null,
-      featured: typeof p.featured === "boolean" ? p.featured : null,
-      createdAt:
-        p.createdAt instanceof Date
-          ? p.createdAt.toISOString()
-          : p.createdAt
-          ? String(p.createdAt)
-          : null,
-      sellerName: (p.sellerName as string) ?? p.seller?.name ?? null,
-      sellerId: (p.sellerId as string) ?? p.seller?.id ?? null,
-      disabled:
-        typeof p.disabled === "boolean" ? p.disabled : null,
-      suspended:
-        typeof p.suspended === "boolean" ? p.suspended : null,
-    })),
-    ...serviceRows.map((s: any) => ({
-      id: String(s.id),
-      kind: "service" as const,
-      name: String(s.name ?? ""),
-      price: typeof s.price === "number" ? s.price : null,
-      featured: typeof s.featured === "boolean" ? s.featured : null,
-      createdAt:
-        s.createdAt instanceof Date
-          ? s.createdAt.toISOString()
-          : s.createdAt
-          ? String(s.createdAt)
-          : null,
-      sellerName: (s.sellerName as string) ?? s.seller?.name ?? null,
-      sellerId: (s.sellerId as string) ?? s.seller?.id ?? null,
-      disabled:
-        typeof s.disabled === "boolean" ? s.disabled : null,
-      suspended:
-        typeof s.suspended === "boolean" ? s.suspended : null,
-    })),
+  const mapped: Listing[] = [
+    ...productRows.map((p: any) => {
+      const suspended = statusToSuspended(p);
+      return {
+        id: String(p.id),
+        kind: "product" as const,
+        name: String(p.name ?? ""),
+        price: typeof p.price === "number" ? p.price : null,
+        featured: typeof p.featured === "boolean" ? p.featured : null,
+        createdAt:
+          p.createdAt instanceof Date
+            ? p.createdAt.toISOString()
+            : p.createdAt
+              ? String(p.createdAt)
+              : null,
+        sellerName: (p.sellerName as string) ?? p.seller?.name ?? null,
+        sellerId: (p.sellerId as string) ?? p.seller?.id ?? null,
+        disabled: typeof p.disabled === "boolean" ? p.disabled : null,
+        suspended: typeof suspended === "boolean" ? suspended : null,
+      };
+    }),
+    ...serviceRows.map((s: any) => {
+      const suspended = statusToSuspended(s);
+      return {
+        id: String(s.id),
+        kind: "service" as const,
+        name: String(s.name ?? ""),
+        price: typeof s.price === "number" ? s.price : null,
+        featured: typeof s.featured === "boolean" ? s.featured : null,
+        createdAt:
+          s.createdAt instanceof Date
+            ? s.createdAt.toISOString()
+            : s.createdAt
+              ? String(s.createdAt)
+              : null,
+        sellerName: (s.sellerName as string) ?? s.seller?.name ?? null,
+        sellerId: (s.sellerId as string) ?? s.seller?.id ?? null,
+        disabled: typeof s.disabled === "boolean" ? s.disabled : null,
+        suspended: typeof suspended === "boolean" ? suspended : null,
+      };
+    }),
   ];
 
-  return rows;
+  // Deterministic: sort combined list by createdAt desc, then id desc
+  mapped.sort((a, b) => {
+    const da = a.createdAt ?? "";
+    const db = b.createdAt ?? "";
+    if (da !== db) return db.localeCompare(da);
+    return String(b.id).localeCompare(String(a.id));
+  });
+
+  return mapped;
 }
 
 /**
@@ -291,14 +330,8 @@ export default async function Page({ searchParams }: PageProps) {
   const sp: SearchParams = ((await searchParams) ?? {}) as SearchParams;
 
   const q = (getParam(sp, "q") || "").trim();
-  const type = (getParam(sp, "type") || "any") as
-    | "any"
-    | "product"
-    | "service";
-  const featured = (getParam(sp, "featured") || "any") as
-    | "any"
-    | "yes"
-    | "no";
+  const type = (getParam(sp, "type") || "any") as "any" | "product" | "service";
+  const featured = (getParam(sp, "featured") || "any") as "any" | "yes" | "no";
   const page = Math.max(1, Number(getParam(sp, "page") || 1));
 
   const qs = new URLSearchParams();
@@ -378,18 +411,10 @@ export default async function Page({ searchParams }: PageProps) {
         subtitle={`Products & services across the marketplace. Showing ${total.toLocaleString()}.`}
         actions={
           <div className="flex gap-2">
-            <Link
-              href="/admin"
-              className="btn-outline text-sm"
-              prefetch={false}
-            >
+            <Link href="/admin" className="btn-outline text-sm" prefetch={false}>
               Admin home
             </Link>
-            <Link
-              href="/admin/users"
-              className="btn-outline text-sm"
-              prefetch={false}
-            >
+            <Link href="/admin/users" className="btn-outline text-sm" prefetch={false}>
               Users
             </Link>
             <Link
@@ -448,11 +473,7 @@ export default async function Page({ searchParams }: PageProps) {
           </div>
           <div className="md:col-span-3">
             <label className="label">Featured</label>
-            <select
-              name="featured"
-              defaultValue={featured}
-              className="select"
-            >
+            <select name="featured" defaultValue={featured} className="select">
               <option value="any">Any</option>
               <option value="yes">Yes only</option>
               <option value="no">Non-featured</option>
@@ -461,11 +482,7 @@ export default async function Page({ searchParams }: PageProps) {
           <input type="hidden" name="page" value="1" />
           <div className="md:col-span-12 flex items-end gap-2 pt-1">
             <button className="btn-gradient-primary">Apply</button>
-            <Link
-              href="/admin/listings"
-              className="btn-outline"
-              prefetch={false}
-            >
+            <Link href="/admin/listings" className="btn-outline" prefetch={false}>
               Clear
             </Link>
           </div>
@@ -477,8 +494,7 @@ export default async function Page({ searchParams }: PageProps) {
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="font-semibold">Listings</h2>
           <span className="text-xs text-muted-foreground">
-            Total: {total.toLocaleString()} • Page {safePage} /{" "}
-            {totalPages}
+            Total: {total.toLocaleString()} • Page {safePage} / {totalPages}
           </span>
         </div>
 
@@ -491,8 +507,8 @@ export default async function Page({ searchParams }: PageProps) {
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <caption className="sr-only">
-                  Admin listing table showing products and services with
-                  seller, featured and enforcement status
+                  Admin listing table showing products and services with seller,
+                  featured and enforcement status
                 </caption>
                 <thead className="bg-muted text-muted-foreground">
                   <tr className="text-left">
@@ -511,11 +527,7 @@ export default async function Page({ searchParams }: PageProps) {
                     const isDisabled = !!r.disabled;
                     const isSuspended = !!r.suspended;
 
-                    const statusTone = isSuspended
-                      ? "rose"
-                      : isDisabled
-                        ? "amber"
-                        : "green";
+                    const statusTone = isSuspended ? "rose" : isDisabled ? "amber" : "green";
 
                     const statusLabel = isSuspended
                       ? "Suspended"
@@ -530,48 +542,27 @@ export default async function Page({ searchParams }: PageProps) {
                         : "";
 
                     return (
-                      <tr
-                        key={`${r.kind}:${r.id}`}
-                        className={`hover:bg-muted ${rowHighlight}`}
-                      >
+                      <tr key={`${r.kind}:${r.id}`} className={`hover:bg-muted ${rowHighlight}`}>
                         <Td>
-                          <Badge
-                            tone={
-                              r.kind === "product" ? "indigo" : "green"
-                            }
-                          >
-                            {r.kind === "product"
-                              ? "Product"
-                              : "Service"}
+                          <Badge tone={r.kind === "product" ? "indigo" : "green"}>
+                            {r.kind === "product" ? "Product" : "Service"}
                           </Badge>
                         </Td>
                         <Td className="max-w-[320px]">
                           <Link
-                            href={
-                              r.kind === "product"
-                                ? `/product/${r.id}`
-                                : `/service/${r.id}`
-                            }
+                            href={r.kind === "product" ? `/product/${r.id}` : `/service/${r.id}`}
                             prefetch={false}
                             className="underline text-[#161748] dark:text-[#39a0ca]"
                           >
-                            <span className="line-clamp-1">
-                              {r.name}
-                            </span>
+                            <span className="line-clamp-1">{r.name}</span>
                           </Link>
                         </Td>
                         <Td>{fmtKES(r.price)}</Td>
                         <Td>
-                          {r.featured ? (
-                            <Badge tone="indigo">Featured</Badge>
-                          ) : (
-                            <Badge>—</Badge>
-                          )}
+                          {r.featured ? <Badge tone="indigo">Featured</Badge> : <Badge>—</Badge>}
                         </Td>
                         <Td>
-                          <Badge tone={statusTone}>
-                            {statusLabel}
-                          </Badge>
+                          <Badge tone={statusTone}>{statusLabel}</Badge>
                         </Td>
                         <Td>
                           {r.sellerName ?? "—"}{" "}
@@ -585,32 +576,20 @@ export default async function Page({ searchParams }: PageProps) {
                         <Td>
                           <div className="flex items-center justify-end gap-2">
                             <Link
-                              href={
-                                r.kind === "product"
-                                  ? `/product/${r.id}/edit`
-                                  : `/service/${r.id}/edit`
-                              }
+                              href={r.kind === "product" ? `/product/${r.id}/edit` : `/service/${r.id}/edit`}
                               prefetch={false}
                               className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
                             >
                               Edit
                             </Link>
                             <Link
-                              href={
-                                r.kind === "product"
-                                  ? `/product/${r.id}`
-                                  : `/service/${r.id}`
-                              }
+                              href={r.kind === "product" ? `/product/${r.id}` : `/service/${r.id}`}
                               prefetch={false}
                               className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
                             >
                               View
                             </Link>
-                            <ListingActions
-                              id={r.id}
-                              kind={r.kind}
-                              suspended={!!r.suspended}
-                            />
+                            <ListingActions id={r.id} kind={r.kind} suspended={!!r.suspended} />
                           </div>
                         </Td>
                       </tr>
@@ -628,9 +607,7 @@ export default async function Page({ searchParams }: PageProps) {
               <Link
                 href={
                   safePage > 1
-                    ? keepQuery("/admin/listings", sp, {
-                        page: String(safePage - 1),
-                      })
+                    ? keepQuery("/admin/listings", sp, { page: String(safePage - 1) })
                     : "#"
                 }
                 prefetch={false}
@@ -643,19 +620,11 @@ export default async function Page({ searchParams }: PageProps) {
               </Link>
 
               <div className="flex items-center gap-1">
-                {Array.from({
-                  length: Math.min(7, totalPages),
-                }).map((_, i) => {
+                {Array.from({ length: Math.min(7, totalPages) }).map((_, i) => {
                   const half = 3;
                   let p = i + 1;
                   if (totalPages > 7) {
-                    const start = Math.max(
-                      1,
-                      Math.min(
-                        safePage - half,
-                        totalPages - 6,
-                      ),
-                    );
+                    const start = Math.max(1, Math.min(safePage - half, totalPages - 6));
                     p = start + i;
                   }
                   const isCurrent = p === safePage;
@@ -663,13 +632,9 @@ export default async function Page({ searchParams }: PageProps) {
                   return (
                     <Link
                       key={p}
-                      href={keepQuery("/admin/listings", sp, {
-                        page: String(p),
-                      })}
+                      href={keepQuery("/admin/listings", sp, { page: String(p) })}
                       prefetch={false}
-                      aria-current={
-                        isCurrent ? "page" : undefined
-                      }
+                      aria-current={isCurrent ? "page" : undefined}
                       className={`rounded px-2 py-1 ${
                         isCurrent
                           ? "bg-[#161748] text-primary-foreground"
@@ -685,9 +650,7 @@ export default async function Page({ searchParams }: PageProps) {
               <Link
                 href={
                   safePage < totalPages
-                    ? keepQuery("/admin/listings", sp, {
-                        page: String(safePage + 1),
-                      })
+                    ? keepQuery("/admin/listings", sp, { page: String(safePage + 1) })
                     : "#"
                 }
                 prefetch={false}
@@ -715,9 +678,7 @@ function Th({
 }) {
   return (
     <th
-      className={`whitespace-nowrap px-4 py-2 text-left font-semibold ${
-        className ?? ""
-      }`}
+      className={`whitespace-nowrap px-4 py-2 text-left font-semibold ${className ?? ""}`}
     >
       {children}
     </th>
@@ -732,11 +693,7 @@ function Td({
   className?: string;
 }) {
   return (
-    <td
-      className={`whitespace-nowrap px-4 py-2 align-middle ${
-        className ?? ""
-      }`}
-    >
+    <td className={`whitespace-nowrap px-4 py-2 align-middle ${className ?? ""}`}>
       {children}
     </td>
   );
@@ -777,19 +734,14 @@ function StatPill({
   tone?: StatTone;
 }) {
   const colors: Record<StatTone, string> = {
-    slate:
-      "bg-muted text-muted-foreground dark:bg-muted/40 dark:text-muted-foreground",
-    indigo:
-      "bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300",
-    amber:
-      "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+    slate: "bg-muted text-muted-foreground dark:bg-muted/40 dark:text-muted-foreground",
+    indigo: "bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300",
+    amber: "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
     rose: "bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300",
   };
 
   return (
-    <div
-      className={`flex items-center justify-between rounded-full px-3 py-1.5 text-xs ${colors[tone]}`}
-    >
+    <div className={`flex items-center justify-between rounded-full px-3 py-1.5 text-xs ${colors[tone]}`}>
       <span className="font-medium">{label}</span>
       <span className="font-semibold">
         {Number(value || 0).toLocaleString("en-KE")}

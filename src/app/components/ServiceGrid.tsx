@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import IconButton from "@/app/components/IconButton";
 import DeleteListingButton from "@/app/components/DeleteListingButton"; // ✅ canonical import
+import VerifiedBadge from "@/app/components/VerifiedBadge";
 
 type ServiceItem = {
   id: string;
@@ -13,6 +14,11 @@ type ServiceItem = {
   price: number | null;
   image: string | null;
   featured?: boolean | null;
+
+  /** Seller/account flags for public UI (optional) */
+  verified?: boolean | null;
+  featuredTier?: "basic" | "gold" | "diamond" | string | null;
+
   category?: string | null;
   subcategory?: string | null;
   location?: string | null;
@@ -117,6 +123,14 @@ export default function ServiceGrid({
 
           const ariaTitle = s.name || "Service";
 
+          const tier = (() => {
+            if (typeof s.featuredTier === "string") {
+              const t = s.featuredTier.trim().toLowerCase();
+              if (t === "basic" || t === "gold" || t === "diamond") return t;
+            }
+            return s.featured ? "basic" : null;
+          })();
+
           return (
             <div key={s.id} className="group relative">
               {/* Owner overlay controls — positioned OUTSIDE the link to avoid accidental navigation */}
@@ -196,6 +210,16 @@ export default function ServiceGrid({
                     <p className="mt-1 font-bold text-brandBlue">
                       {fmtKES(s.price)}
                     </p>
+
+                    {(typeof s.verified === "boolean" || tier) && (
+                      <div className="mt-2">
+                        <VerifiedBadge
+                          verified={typeof s.verified === "boolean" ? s.verified : null}
+                          featured={Boolean(s.featured)}
+                          featuredTier={tier}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </Link>

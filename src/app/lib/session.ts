@@ -1,4 +1,4 @@
-// src/lib/session.ts
+// src/app/lib/session.ts
 import "server-only";
 import { auth } from "@/auth";
 import type { Session } from "next-auth";

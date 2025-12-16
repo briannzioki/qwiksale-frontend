@@ -13,6 +13,9 @@ import {
 import DashboardCharts from "./_components/DashboardCharts";
 import DashboardMetrics from "./_components/DashboardMetrics";
 import DashboardMessagesPreview from "./_components/DashboardMessagesPreview";
+import ProfileCompletionCard, {
+  type ProfileCompletion,
+} from "./_components/ProfileCompletionCard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +34,8 @@ type Me = {
   email: string | null;
   image: string | null;
   subscription: string | null;
+  username: string | null;
+  emailVerified: Date | string | null;
 };
 
 type DashboardChartPoint = {
@@ -60,6 +65,32 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([p.catch(() => fallback), t]).finally(() => {
     if (tid) clearTimeout(tid);
   }) as Promise<T>;
+}
+
+function isVerifiedEmail(value: unknown): boolean {
+  if (!value) return false;
+  if (value instanceof Date) return Number.isFinite(value.getTime());
+  if (typeof value === "string") return value.trim().length > 0;
+  return false;
+}
+
+function computeProfileCompletion(input: {
+  username?: string | null;
+  emailVerified?: unknown;
+}): ProfileCompletion {
+  const missingFields: Array<"username" | "emailVerified"> = [];
+
+  const u =
+    typeof input.username === "string" ? input.username.trim() : "";
+  if (!u) missingFields.push("username");
+
+  if (!isVerifiedEmail(input.emailVerified)) missingFields.push("emailVerified");
+
+  const total = 2;
+  const done = total - missingFields.length;
+  const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+
+  return { percent, missingFields };
 }
 
 export default async function DashboardPage({
@@ -222,6 +253,8 @@ export default async function DashboardPage({
       email: sessionEmail,
       image: typeof viewerAny?.image === "string" ? viewerAny.image : null,
       subscription: null,
+      username: typeof viewerAny?.username === "string" ? viewerAny.username : null,
+      emailVerified: typeof viewerAny?.emailVerified === "string" ? viewerAny.emailVerified : null,
     };
 
     // User row fetch with timeout + safe fallback. Try by id first, then email.
@@ -236,6 +269,8 @@ export default async function DashboardPage({
               email: true,
               image: true,
               subscription: true,
+              username: true,
+              emailVerified: true,
             },
           });
           if (byId) return byId as Me;
@@ -250,6 +285,8 @@ export default async function DashboardPage({
               email: true,
               image: true,
               subscription: true,
+              username: true,
+              emailVerified: true,
             },
           });
           if (byEmail) return byEmail as Me;
@@ -305,6 +342,16 @@ export default async function DashboardPage({
     const newLast7Days = metrics.newLast7Days ?? 0;
     const likesOnMyListings = metrics.likesOnMyListings ?? 0;
 
+    // ---- Profile completion payload (single server-side source of truth) ----
+    const profileCompletion = computeProfileCompletion({
+      username: me.username,
+      emailVerified: me.emailVerified,
+    });
+
+    const completeProfileHref = `/account/complete-profile?next=${encodeURIComponent(
+      "/dashboard",
+    )}`;
+
     // ---- Build 7-day chart data (listings per day + messages per day) ----
     const now = new Date();
     const listingCountsByDay: Record<string, number> = {};
@@ -329,7 +376,11 @@ export default async function DashboardPage({
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     for (let offset = DASHBOARD_CHART_DAYS - 1; offset >= 0; offset--) {
-      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
+      const d = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() - offset,
+      );
       const key = d.toISOString().slice(0, 10);
       const label = d.toLocaleDateString("en-KE", {
         month: "short",
@@ -352,7 +403,10 @@ export default async function DashboardPage({
         id="main"
         className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
       >
-        <section className="mx-auto flex max-w-6xl flex-col gap-6" data-e2e="dashboard-auth">
+        <section
+          className="mx-auto flex max-w-6xl flex-col gap-6"
+          data-e2e="dashboard-auth"
+        >
           {/* Page title + hero */}
           <header className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-2">
@@ -395,14 +449,18 @@ export default async function DashboardPage({
                       .
                     </p>
                     <p className="mt-1 text-sm text-slate-100/80">
-                      Quick snapshot of your listings, favorites, and messages on QwikSale.
+                      Quick snapshot of your listings, favorites, and messages on
+                      QwikSale.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-col items-start gap-2 md:items-end">
                   <span className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-medium text-slate-50 backdrop-blur-sm">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true" />
+                    <span
+                      className="h-2 w-2 rounded-full bg-emerald-400"
+                      aria-hidden="true"
+                    />
                     <span>Plan:</span>
                     <span className="font-semibold">{subLabel}</span>
                   </span>
@@ -480,6 +538,47 @@ export default async function DashboardPage({
                 </div>
               </div>
             </section>
+
+            {/* Required UX: banner when profile is incomplete (username/email verification) */}
+            {profileCompletion.missingFields.length > 0 && (
+              <div
+                role="alert"
+                className="rounded-3xl border border-amber-300/60 bg-amber-50/70 p-4 text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50 md:p-5"
+                data-testid="dashboard-complete-profile-banner"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">Complete profile</div>
+                    <div className="mt-1 text-sm opacity-90">
+                      Finish setting up your account to get the best experience on QwikSale.
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={completeProfileHref}
+                      prefetch={false}
+                      className="btn-gradient-primary text-xs md:text-sm"
+                      data-testid="dashboard-complete-profile-cta"
+                    >
+                      Complete profile
+                    </Link>
+                    <Link
+                      href="/account/profile"
+                      prefetch={false}
+                      className="btn-outline text-xs md:text-sm"
+                    >
+                      Edit Account
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Required UX: profile completion progress card */}
+            <ProfileCompletionCard
+              completion={profileCompletion}
+              href={completeProfileHref}
+            />
           </header>
 
           {/* Main dashboard content */}
@@ -541,7 +640,11 @@ export default async function DashboardPage({
                     Post your first item to get started.
                   </p>
                   <div className="mt-4">
-                    <Link href="/sell" prefetch={false} className="btn-gradient-primary">
+                    <Link
+                      href="/sell"
+                      prefetch={false}
+                      className="btn-gradient-primary"
+                    >
                       Post a Listing
                     </Link>
                   </div>
@@ -549,7 +652,10 @@ export default async function DashboardPage({
               ) : (
                 <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {recentListings.map((item) => (
-                    <RecentListingCard key={`${item.type}-${item.id}`} item={item} />
+                    <RecentListingCard
+                      key={`${item.type}-${item.id}`}
+                      item={item}
+                    />
                   ))}
                 </div>
               )}

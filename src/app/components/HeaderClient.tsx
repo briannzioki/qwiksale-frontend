@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 
 import Navbar from "@/app/components/Navbar";
@@ -34,7 +34,12 @@ const FEED_TIMEOUT_MS = 12_000;
 
 function RequestsIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+    >
       <path d="M7 3h10a2 2 0 0 1 2 2v14.5a1.5 1.5 0 0 1-2.4 1.2l-3.7-2.78a1.5 1.5 0 0 0-1.8 0l-3.7 2.78A1.5 1.5 0 0 1 5 19.5V5a2 2 0 0 1 2-2Zm0 2v14.1l3.1-2.33a3.5 3.5 0 0 1 4.2 0L17 19.1V5H7Zm2.5 3.5h5a1 1 0 1 1 0 2h-5a1 1 0 1 1 0-2Zm0 4h6a1 1 0 1 1 0 2h-6a1 1 0 1 1 0-2Z" />
     </svg>
   );
@@ -108,7 +113,8 @@ function RequestsDrawer({
 
         if (!r.ok) {
           const msg =
-            (j && typeof j?.error === "string" && j.error) || `Failed to load (${r.status})`;
+            (j && typeof j?.error === "string" && j.error) ||
+            `Failed to load (${r.status})`;
           throw new Error(msg);
         }
 
@@ -118,7 +124,8 @@ function RequestsDrawer({
             const id = String(x?.id ?? "");
             const title = String(x?.title ?? x?.name ?? "");
             const kindRaw = String(x?.kind ?? "").toLowerCase();
-            const kind: "product" | "service" = kindRaw === "service" ? "service" : "product";
+            const kind: "product" | "service" =
+              kindRaw === "service" ? "service" : "product";
             if (!id || !title) return null;
             return {
               id,
@@ -149,7 +156,7 @@ function RequestsDrawer({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [open]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -175,7 +182,9 @@ function RequestsDrawer({
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
           <div className="min-w-0">
             <div className="text-sm font-extrabold tracking-tight">Requests</div>
-            <div className="text-xs text-[var(--text-muted)]">Latest gigs &amp; buyer needs</div>
+            <div className="text-xs text-[var(--text-muted)]">
+              Latest gigs &amp; buyer needs
+            </div>
           </div>
           <button
             type="button"
@@ -207,9 +216,12 @@ function RequestsDrawer({
             <ul className="space-y-2">
               {items.map((it) => {
                 const detail = `/requests/${encodeURIComponent(it.id)}`;
-                const href = isAuthedHint ? detail : `/signin?callbackUrl=${encodeURIComponent(detail)}`;
+                const href = isAuthedHint
+                  ? detail
+                  : `/signin?callbackUrl=${encodeURIComponent(detail)}`;
 
-                const when = fmtRelativeIso(it.createdAt) || fmtRelativeIso(it.boostUntil) || null;
+                const when =
+                  fmtRelativeIso(it.createdAt) || fmtRelativeIso(it.boostUntil) || null;
 
                 return (
                   <li key={it.id}>
@@ -269,6 +281,7 @@ function RequestsDrawer({
 }
 
 export default function HeaderClient({ initialAuth }: Props) {
+  const router = useRouter();
   const pathname = usePathname() || "/";
   const inAdmin = pathname.startsWith("/admin");
 
@@ -278,7 +291,9 @@ export default function HeaderClient({ initialAuth }: Props) {
   const liveAuthed = status === "authenticated" && !!session;
   const isAuthedHint = liveAuthed || initialAuth.isAuthed;
 
-  const liveVerified = Boolean((session as any)?.user?.verified || (session as any)?.user?.isVerified);
+  const liveVerified = Boolean(
+    (session as any)?.user?.verified || (session as any)?.user?.isVerified,
+  );
   const isVerified = liveVerified || initialAuth.isVerified === true;
 
   const [requestsOpen, setRequestsOpen] = React.useState(false);
@@ -291,7 +306,9 @@ export default function HeaderClient({ initialAuth }: Props) {
     const root = document.getElementById("header-inline-search");
     if (!root) return null;
     const input = root.querySelector<HTMLInputElement>('input[name="q"]');
-    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="header-inline-search-toggle"]');
+    const toggle = root.querySelector<HTMLButtonElement>(
+      '[data-testid="header-inline-search-toggle"]',
+    );
     return {
       root,
       input,
@@ -329,6 +346,57 @@ export default function HeaderClient({ initialAuth }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /* -------------------- Hardening: Home/Logo click must navigate -------------------- */
+  React.useEffect(() => {
+    if (inAdmin) return;
+
+    const root =
+      (document.querySelector<HTMLElement>('[data-testid="site-header"]') ??
+        document.querySelector<HTMLElement>("header") ??
+        document.querySelector<HTMLElement>("nav") ??
+        document.body) ||
+      null;
+
+    if (!root) return;
+
+    const selectors = [
+      '[data-testid="home-link"]',
+      '[data-testid="site-home-link"]',
+      'a[aria-label="Home"]',
+      'a[aria-label="QwikSale"]',
+      'a[href="/"]',
+    ];
+
+    let homeEl: HTMLElement | null = null;
+    for (const sel of selectors) {
+      const el = root.querySelector<HTMLElement>(sel);
+      if (el) {
+        homeEl = el;
+        break;
+      }
+    }
+    if (!homeEl) return;
+
+    const onClickCapture = (e: MouseEvent) => {
+      // Let modified clicks do their normal thing.
+      const isModified =
+        e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
+      if (isModified) return;
+
+      // If already home, don’t interfere.
+      if (pathname === "/") return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      router.push("/");
+    };
+
+    homeEl.addEventListener("click", onClickCapture, true);
+    return () => {
+      homeEl?.removeEventListener("click", onClickCapture, true);
+    };
+  }, [inAdmin, pathname, router]);
+
   /* ------------------------------ Header right slot ------------------------------ */
   const rightSlot = (
     <div className="flex items-center gap-2.5">
@@ -342,7 +410,9 @@ export default function HeaderClient({ initialAuth }: Props) {
             className="inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
           >
             <RequestsIcon className="h-5 w-5" />
-            <span className="text-sm font-semibold text-[var(--text)]">Requests</span>
+            <span className="text-sm font-semibold text-[var(--text)]">
+              Requests
+            </span>
           </button>
 
           {isAuthedHint && (
@@ -373,7 +443,11 @@ export default function HeaderClient({ initialAuth }: Props) {
 
       <AuthButtons initialIsAuthedHint={isAuthedHint} isVerified={isVerified} />
 
-      <RequestsDrawer open={requestsOpen} onClose={() => setRequestsOpen(false)} isAuthedHint={isAuthedHint} />
+      <RequestsDrawer
+        open={requestsOpen}
+        onClose={() => setRequestsOpen(false)}
+        isAuthedHint={isAuthedHint}
+      />
     </div>
   );
 

@@ -10,7 +10,24 @@ test("product happy flow: search → open → gallery keys", async ({ page }) =>
   const first = j?.items?.[0];
   test.skip(!first?.id, "No products in API to test with");
 
+  // Pull badge expectations (only assert if data exists)
+  const detailApi = await page.request.get(`/api/products/${first.id}`, { timeout: 30_000 }).catch(() => null);
+  const detailJson = detailApi && detailApi.ok() ? await detailApi.json().catch(() => ({} as any)) : ({} as any);
+
+  const sellerVerified = detailJson?.sellerVerified as unknown;
+  const sellerFeaturedTier = detailJson?.sellerFeaturedTier as unknown;
+
   await page.goto(`/product/${first.id}`, { waitUntil: "domcontentloaded" });
+
+  // ✅ Assert badges near public UI (only if API provides the data)
+  if (typeof sellerVerified === "boolean") {
+    const label = sellerVerified ? "Verified" : "Unverified";
+    await expect(page.getByText(new RegExp(`\\b${label}\\b`, "i")).first()).toBeVisible();
+  }
+  const tier = typeof sellerFeaturedTier === "string" ? sellerFeaturedTier.trim().toLowerCase() : "";
+  if (tier === "basic" || tier === "gold" || tier === "diamond") {
+    await expect(page.getByText(new RegExp(`\\b${tier}\\b`, "i")).first()).toBeVisible();
+  }
 
   // Open lightbox — allow either the explicit button or the overlay
   const openBtn = page

@@ -16,6 +16,8 @@ type Row = {
   createdAt: string | null;
   sellerName: string | null;
   sellerId: string | null;
+  disabled?: boolean | null;
+  suspended?: boolean | null;
 };
 
 function noStoreJson(json: unknown, init?: ResponseInit) {
@@ -33,16 +35,33 @@ function toInt(v: string | null, def: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
 
-function normStatus(v: string | null): "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT" | undefined {
+function normStatus(
+  v: string | null,
+): "ACTIVE" | "SOLD" | "HIDDEN" | "DRAFT" | undefined {
   const t = (v || "").trim().toUpperCase();
   return ["ACTIVE", "SOLD", "HIDDEN", "DRAFT"].includes(t) ? (t as any) : undefined;
 }
 
 function buildOrder(sort: string | null) {
   const t = (sort || "").toLowerCase();
-  if (t === "price_asc") return [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
-  if (t === "price_desc") return [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
-  if (t === "featured") return [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
+  if (t === "price_asc")
+    return [
+      { price: "asc" as const },
+      { createdAt: "desc" as const },
+      { id: "desc" as const },
+    ];
+  if (t === "price_desc")
+    return [
+      { price: "desc" as const },
+      { createdAt: "desc" as const },
+      { id: "desc" as const },
+    ];
+  if (t === "featured")
+    return [
+      { featured: "desc" as const },
+      { createdAt: "desc" as const },
+      { id: "desc" as const },
+    ];
   return [{ createdAt: "desc" as const }, { id: "desc" as const }];
 }
 
@@ -54,6 +73,13 @@ function parseBool(v: string | null): boolean | undefined {
   return undefined;
 }
 
+function statusToSuspended(row: any): boolean | null {
+  if (typeof row?.suspended === "boolean") return row.suspended;
+  const s = typeof row?.status === "string" ? row.status.trim().toUpperCase() : "";
+  if (!s) return null;
+  return s === "HIDDEN";
+}
+
 export async function GET(req: NextRequest) {
   const denied = await assertAdmin();
   if (denied) return denied;
@@ -63,8 +89,9 @@ export async function GET(req: NextRequest) {
       const url = new URL(req.url);
 
       const q = (url.searchParams.get("q") || "").trim();
-      // accept both ?type= and ?kind= (client sends "type")
-      const type = (url.searchParams.get("type") || url.searchParams.get("kind") || "").trim().toLowerCase();
+      const type = (url.searchParams.get("type") || url.searchParams.get("kind") || "")
+        .trim()
+        .toLowerCase();
       const status = normStatus(url.searchParams.get("status"));
       const featured = parseBool(url.searchParams.get("featured"));
       const sort = url.searchParams.get("sort");
@@ -78,25 +105,42 @@ export async function GET(req: NextRequest) {
       const takeProducts = wantsProduct ? split : 0;
       const takeServices = wantsService ? limit - takeProducts : 0;
 
-      const baseWhere: any = {};
-      if (status) baseWhere.status = status;
-      if (typeof featured === "boolean") baseWhere.featured = featured;
-      if (q) {
-        baseWhere.OR = [
-          { name: { contains: q, mode: "insensitive" } },
-          { sellerName: { contains: q, mode: "insensitive" } } as any,
-        ];
-      }
+      const buildWhere = (includeSellerName: boolean) => {
+        const baseWhere: any = {};
+        if (status) baseWhere.status = status;
+        if (typeof featured === "boolean") baseWhere.featured = featured;
+        if (q) {
+          const like = { contains: q, mode: "insensitive" } as const;
+          const or: any[] = [{ name: like }];
+          if (includeSellerName) or.push({ sellerName: like });
+          baseWhere.OR = or;
+        }
+        return baseWhere;
+      };
+
       const orderBy = buildOrder(sort);
 
-      const productSelect = {
+      const productSelectWide: any = {
         id: true,
         name: true,
         price: true,
         featured: true,
         createdAt: true,
-        sellerId: true as any,
-        sellerName: true as any,
+        status: true,
+        sellerId: true,
+        sellerName: true,
+        disabled: true,
+        suspended: true,
+        seller: { select: { id: true, name: true } },
+      };
+
+      const productSelectNarrow: any = {
+        id: true,
+        name: true,
+        price: true,
+        featured: true,
+        createdAt: true,
+        status: true,
         seller: { select: { id: true, name: true } },
       };
 
@@ -108,68 +152,108 @@ export async function GET(req: NextRequest) {
         anyPrisma.Services ??
         null;
 
+      const whereForCounts = buildWhere(true);
+
       const [productTotal, serviceTotal] = await Promise.all([
-        prisma.product.count({ where: baseWhere }).catch(() => 0),
-        serviceModel?.count ? serviceModel.count({ where: baseWhere }).catch(() => 0) : Promise.resolve(0),
+        (anyPrisma.product ?? prisma.product).count({ where: whereForCounts }).catch(() => 0),
+        serviceModel?.count
+          ? serviceModel.count({ where: whereForCounts }).catch(() => 0)
+          : Promise.resolve(0),
       ]);
 
+      async function safeFindMany(model: any, take: number): Promise<any[]> {
+        if (!model?.findMany || take <= 0) return [];
+        // try where with sellerName + wide select; fall back to no sellerName; then narrow
+        try {
+          return await model.findMany({
+            where: buildWhere(true),
+            orderBy,
+            skip,
+            take,
+            select: productSelectWide,
+          });
+        } catch {
+          try {
+            return await model.findMany({
+              where: buildWhere(false),
+              orderBy,
+              skip,
+              take,
+              select: productSelectWide,
+            });
+          } catch {
+            return await model.findMany({
+              where: buildWhere(false),
+              orderBy,
+              skip,
+              take,
+              select: productSelectNarrow,
+            });
+          }
+        }
+      }
+
       const [productRows, serviceRows] = await Promise.all([
-        wantsProduct
-          ? prisma.product.findMany({
-              where: baseWhere,
-              orderBy,
-              skip,
-              take: takeProducts,
-              select: productSelect,
-            })
-          : Promise.resolve([] as any[]),
-        wantsService && serviceModel?.findMany
-          ? serviceModel.findMany({
-              where: baseWhere,
-              orderBy,
-              skip,
-              take: takeServices,
-              select: {
-                id: true,
-                name: true,
-                price: true,
-                featured: true,
-                createdAt: true,
-                sellerId: true as any,
-                sellerName: true as any,
-                seller: { select: { id: true, name: true } },
-              },
-            })
-          : Promise.resolve([] as any[]),
+        wantsProduct ? safeFindMany(anyPrisma.product ?? prisma.product, takeProducts) : Promise.resolve([] as any[]),
+        wantsService ? safeFindMany(serviceModel, takeServices) : Promise.resolve([] as any[]),
       ]);
 
       const rows: Row[] = [
-        ...productRows.map((p: any) => ({
-          id: String(p.id),
-          kind: "product" as const,
-          name: String(p.name ?? ""),
-          price: typeof p.price === "number" ? p.price : null,
-          featured: typeof p.featured === "boolean" ? p.featured : null,
-          createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt ? String(p.createdAt) : null,
-          sellerName: (p.sellerName as string) ?? p.seller?.name ?? null,
-          sellerId: (p.sellerId as string) ?? p.seller?.id ?? null,
-        })),
-        ...serviceRows.map((s: any) => ({
-          id: String(s.id),
-          kind: "service" as const,
-          name: String(s.name ?? ""),
-          price: typeof s.price === "number" ? s.price : null,
-          featured: typeof s.featured === "boolean" ? s.featured : null,
-          createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt ? String(s.createdAt) : null,
-          sellerName: (s.sellerName as string) ?? s.seller?.name ?? null,
-          sellerId: (s.sellerId as string) ?? s.seller?.id ?? null,
-        })),
+        ...productRows.map((p: any) => {
+          const suspended = statusToSuspended(p);
+          return {
+            id: String(p.id),
+            kind: "product" as const,
+            name: String(p.name ?? ""),
+            price: typeof p.price === "number" ? p.price : null,
+            featured: typeof p.featured === "boolean" ? p.featured : null,
+            createdAt:
+              p.createdAt instanceof Date
+                ? p.createdAt.toISOString()
+                : p.createdAt
+                  ? String(p.createdAt)
+                  : null,
+            sellerName: (p.sellerName as string) ?? p.seller?.name ?? null,
+            sellerId: (p.sellerId as string) ?? p.seller?.id ?? null,
+            disabled: typeof p.disabled === "boolean" ? p.disabled : null,
+            suspended: typeof suspended === "boolean" ? suspended : null,
+          };
+        }),
+        ...serviceRows.map((s: any) => {
+          const suspended = statusToSuspended(s);
+          return {
+            id: String(s.id),
+            kind: "service" as const,
+            name: String(s.name ?? ""),
+            price: typeof s.price === "number" ? s.price : null,
+            featured: typeof s.featured === "boolean" ? s.featured : null,
+            createdAt:
+              s.createdAt instanceof Date
+                ? s.createdAt.toISOString()
+                : s.createdAt
+                  ? String(s.createdAt)
+                  : null,
+            sellerName: (s.sellerName as string) ?? s.seller?.name ?? null,
+            sellerId: (s.sellerId as string) ?? s.seller?.id ?? null,
+            disabled: typeof s.disabled === "boolean" ? s.disabled : null,
+            suspended: typeof suspended === "boolean" ? suspended : null,
+          };
+        }),
       ];
 
-      const combinedTotal = (wantsProduct ? productTotal : 0) + (wantsService ? serviceTotal : 0);
+      const combinedTotal =
+        (wantsProduct ? productTotal : 0) + (wantsService ? serviceTotal : 0);
 
       log.info(
-        { returned: rows.length, page, limit, productTotal, serviceTotal, combinedTotal, type: type || "both" },
+        {
+          returned: rows.length,
+          page,
+          limit,
+          productTotal,
+          serviceTotal,
+          combinedTotal,
+          type: type || "both",
+        },
         "admin_listings_ok",
       );
 

@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { getViewer } from "@/app/lib/auth";
-import { json, err, noStore } from "@/app/api/_lib/http";
+import { err, noStore } from "@/app/api/_lib/http";
 import { validateEmailOtp } from "@/app/lib/email-verify";
 import { prisma } from "@/app/lib/prisma";
 
@@ -27,13 +27,22 @@ export async function POST(req: Request) {
   const ok = await validateEmailOtp(viewer.email, code);
   if (!ok) return err(400, "invalid or expired code");
 
-  await prisma.user.update({
+  // Email verification is NOT seller/store verification.
+  const updated = await prisma.user.update({
     where: { id: viewer.id },
     data: {
-      verified: true,
       emailVerified: new Date(),
+    },
+    select: {
+      emailVerified: true,
     },
   });
 
-  return noStore({ ok: true, verified: true });
+  // Response: keep it explicit and avoid "verified" (seller verification).
+  // Provide a back-compat alias for any client that previously checked snake_case.
+  return noStore({
+    ok: true,
+    emailVerified: true,
+    email_verified: updated.emailVerified,
+  });
 }

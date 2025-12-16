@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { getViewer } from "@/app/lib/auth";
-import { json, err, noStore } from "@/app/api/_lib/http";
+import { err, noStore } from "@/app/api/_lib/http";
 import { guardRate } from "@/app/api/_lib/guard";
 import { sendEmail, otpEmailHTML } from "@/app/api/_lib/email";
 import { issueEmailOtp } from "@/app/lib/email-verify";
@@ -19,7 +19,6 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   const email = viewer.email;
-
   const code = await issueEmailOtp(email);
 
   const subject = "Verify your QwikSale email";

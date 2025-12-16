@@ -22,17 +22,14 @@ type Profile = {
   // New bits
   storeLocationUrl?: string | null;
   emailVerified?: string | null; // ISO string or null
-  verified?: boolean | null; // store / seller verification
+  verified?: boolean | null; // store / seller verification (NOT email)
   profileComplete?: boolean;
 };
 
-type MeProfileResponse =
-  | { user: Profile }
-  | { error: string };
+type MeProfileResponse = { user: Profile } | { error: string };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const USERNAME_RE =
-  /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
+const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 
 function looksLikeGoogleMapsUrl(input: string): boolean {
   if (!input) return false;
@@ -68,21 +65,22 @@ export default function ProfileClient() {
   const [image, setImage] = useState<string | null>(null);
 
   // New: store location Google Maps URL
-  const [storeLocationUrl, setStoreLocationUrl] =
-    useState("");
+  const [storeLocationUrl, setStoreLocationUrl] = useState("");
 
   // Track initial values for validation / change-detection
   const [initialEmail, setInitialEmail] = useState("");
-  const [initialUsername, setInitialUsername] =
-    useState("");
+  const [initialUsername, setInitialUsername] = useState("");
 
   // New: email verification + store verification flags
-  const [emailVerified, setEmailVerified] =
-    useState(false);
-  const [storeVerified, setStoreVerified] =
-    useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [storeVerified, setStoreVerified] = useState(false);
 
   const [unauth, setUnauth] = useState(false);
+
+  const verifyEmailHref = useMemo(() => {
+    // return back to this page; auto-send code once on page load
+    return `/account/verify-email?next=${encodeURIComponent("/account/profile")}&auto=1`;
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -107,12 +105,8 @@ export default function ProfileClient() {
           return;
         }
 
-        const j = (await r
-          .json()
-          .catch(() => ({}))) as MeProfileResponse;
-        const u = (j as any)?.user as
-          | Profile
-          | undefined;
+        const j = (await r.json().catch(() => ({}))) as MeProfileResponse;
+        const u = (j as any)?.user as Profile | undefined;
 
         if (alive && u) {
           const em = u.email ?? "";
@@ -133,20 +127,11 @@ export default function ProfileClient() {
 
           // New bits
           setStoreLocationUrl(u.storeLocationUrl ?? "");
-          setEmailVerified(
-            Boolean(
-              (u as any)?.emailVerified ||
-                (u as any)?.email_verified,
-            ),
-          );
-          setStoreVerified(
-            Boolean((u as any)?.verified),
-          );
+          setEmailVerified(Boolean((u as any)?.emailVerified || (u as any)?.email_verified));
+          setStoreVerified(Boolean((u as any)?.verified));
         }
       } catch {
-        toast.error(
-          "Network error while loading profile.",
-        );
+        toast.error("Network error while loading profile.");
       } finally {
         if (alive) setLoading(false);
       }
@@ -177,10 +162,7 @@ export default function ProfileClient() {
 
     const trimmedStoreLocation = storeLocationUrl.trim();
 
-    if (
-      trimmedStoreLocation &&
-      !looksLikeGoogleMapsUrl(trimmedStoreLocation)
-    ) {
+    if (trimmedStoreLocation && !looksLikeGoogleMapsUrl(trimmedStoreLocation)) {
       toast.error(
         "Store location URL must be a valid Google Maps link (maps.google.com or goo.gl/maps).",
       );
@@ -192,18 +174,12 @@ export default function ProfileClient() {
       country: country.trim(),
       postalCode: postalCode.trim(),
       address: address.trim(),
-      // New: always send trimmed store location; empty => clear on server
-      storeLocationUrl:
-        trimmedStoreLocation || null,
+      storeLocationUrl: trimmedStoreLocation || null,
     };
 
     // email (optional change)
     const nextEmail = email.trim().toLowerCase();
-    if (
-      nextEmail &&
-      nextEmail !==
-        (initialEmail || "").toLowerCase()
-    ) {
+    if (nextEmail && nextEmail !== (initialEmail || "").toLowerCase()) {
       if (!EMAIL_RE.test(nextEmail)) {
         toast.error("Enter a valid email.");
         return;
@@ -213,10 +189,7 @@ export default function ProfileClient() {
 
     // username (optional change)
     const nextUser = username.trim();
-    if (
-      nextUser &&
-      nextUser !== (initialUsername || "").trim()
-    ) {
+    if (nextUser && nextUser !== (initialUsername || "").trim()) {
       if (!USERNAME_RE.test(nextUser)) {
         toast.error(
           "Username must be 3–24 chars (letters, numbers, ., _), no leading/trailing dot/underscore, no doubles.",
@@ -228,13 +201,9 @@ export default function ProfileClient() {
 
     // whatsapp
     const waRaw = whatsapp.trim();
-    const wa = waRaw
-      ? normalizeKenyanPhone(waRaw)
-      : null;
+    const wa = waRaw ? normalizeKenyanPhone(waRaw) : null;
     if (waRaw && !wa) {
-      toast.error(
-        "Enter a valid Kenyan WhatsApp (07XXXXXXXX or +2547XXXXXXX).",
-      );
+      toast.error("Enter a valid Kenyan WhatsApp (07XXXXXXXX or +2547XXXXXXX).");
       return;
     }
     payload["whatsapp"] = wa ?? null;
@@ -255,10 +224,7 @@ export default function ProfileClient() {
       const j = await r.json().catch(() => ({}));
 
       if (!r.ok) {
-        toast.error(
-          (j as any)?.error ||
-            "Failed to save profile.",
-        );
+        toast.error((j as any)?.error || "Failed to save profile.");
         return;
       }
 
@@ -268,35 +234,22 @@ export default function ProfileClient() {
         setEmailVerified(false); // changed email => verification reset server-side
       }
       if (payload["username"]) {
-        setInitialUsername(
-          payload["username"] as string,
-        );
+        setInitialUsername(payload["username"] as string);
       }
 
       // If server echoed user, keep flags in sync
-      const savedUser = (j as any)?.user as
-        | Profile
-        | undefined;
+      const savedUser = (j as any)?.user as Profile | undefined;
       if (savedUser) {
-        setStoreLocationUrl(
-          savedUser.storeLocationUrl ?? "",
-        );
+        setStoreLocationUrl(savedUser.storeLocationUrl ?? "");
         setEmailVerified(
-          Boolean(
-            (savedUser as any)?.emailVerified ||
-              (savedUser as any)?.email_verified,
-          ),
+          Boolean((savedUser as any)?.emailVerified || (savedUser as any)?.email_verified),
         );
-        setStoreVerified(
-          Boolean((savedUser as any)?.verified),
-        );
+        setStoreVerified(Boolean((savedUser as any)?.verified));
       }
 
       toast.success("Profile updated!");
     } catch {
-      toast.error(
-        "Network error while saving profile.",
-      );
+      toast.error("Network error while saving profile.");
     } finally {
       setSaving(false);
     }
@@ -305,9 +258,7 @@ export default function ProfileClient() {
   if (loading) {
     return (
       <div className="card p-5">
-        <p className="text-sm text-gray-600 dark:text-slate-400">
-          Loading…
-        </p>
+        <p className="text-sm text-gray-600 dark:text-slate-400">Loading…</p>
       </div>
     );
   }
@@ -317,10 +268,7 @@ export default function ProfileClient() {
       <div className="card p-5">
         <p className="text-sm">
           Please{" "}
-          <Link
-            className="underline"
-            href="/signin?callbackUrl=%2Faccount%2Fprofile"
-          >
+          <Link className="underline" href="/signin?callbackUrl=%2Faccount%2Fprofile">
             sign in
           </Link>{" "}
           to view your profile.
@@ -330,120 +278,95 @@ export default function ProfileClient() {
   }
 
   return (
-    <form
-      onSubmit={onSave}
-      className="space-y-5"
-      aria-busy={saving}
-    >
+    <form onSubmit={onSave} className="space-y-5" aria-busy={saving}>
       {/* Account */}
       <div className="card p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold">
-            Account
-          </h2>
+          <h2 className="text-base font-semibold">Account</h2>
           {storeVerified && (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
               <span aria-hidden>✓</span>
-              Verified seller
+              <span>Verified seller</span>
             </span>
           )}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label
-              className="label"
-              htmlFor="email"
-            >
+            <label className="label" htmlFor="email">
               Email
             </label>
             <input
               id="email"
               className="input"
               value={email}
-              onChange={(e) =>
-                setEmail(e.target.value)
-              }
+              onChange={(e) => setEmail(e.target.value)}
               inputMode="email"
-              aria-invalid={
-                !!email &&
-                !EMAIL_RE.test(
-                  email.trim().toLowerCase(),
-                )
-              }
+              aria-invalid={!!email && !EMAIL_RE.test(email.trim().toLowerCase())}
             />
+
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               {email ? (
                 emailVerified ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
                     <span aria-hidden>✓</span>
-                    Email verified
+                    {/* IMPORTANT: keep this exact text node for Playwright exact match */}
+                    <span>Email verified</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-                    <span aria-hidden>!</span>
-                    Verify email to boost trust
-                  </span>
+                  <>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                      <span aria-hidden>!</span>
+                      Verify email to boost trust
+                    </span>
+
+                    <Link
+                      href={verifyEmailHref}
+                      prefetch={false}
+                      data-testid="profile-verify-email"
+                      className="inline-flex items-center rounded-full border border-amber-200/70 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-900/60 dark:bg-slate-950/40 dark:text-amber-200 dark:hover:bg-amber-950/30"
+                    >
+                      Verify now
+                    </Link>
+                  </>
                 )
               ) : null}
             </div>
+
             <p className="mt-1 text-xs text-gray-500">
-              Changing your email may require
-              re-verification.
+              Changing your email may require re-verification.
             </p>
           </div>
 
           <div>
-            <label
-              className="label"
-              htmlFor="username"
-            >
+            <label className="label" htmlFor="username">
               Username
             </label>
             <input
               id="username"
               className="input"
               value={username}
-              onChange={(e) =>
-                setUsername(e.target.value)
-              }
-              aria-invalid={
-                !!username &&
-                !USERNAME_RE.test(
-                  username.trim(),
-                )
-              }
+              onChange={(e) => setUsername(e.target.value)}
+              aria-invalid={!!username && !USERNAME_RE.test(username.trim())}
               placeholder="yourname"
             />
-            <p className="mt-1 text-xs text-gray-500">
-              This appears on your store and
-              listings.
-            </p>
+            <p className="mt-1 text-xs text-gray-500">This appears on your store and listings.</p>
           </div>
         </div>
       </div>
 
       {/* Profile photo */}
       <div className="card p-5">
-        <h2 className="mb-3 text-base font-semibold">
-          Profile photo
-        </h2>
-        <ProfilePhotoUploader
-          initialImage={image}
-        />
+        <h2 className="mb-3 text-base font-semibold">Profile photo</h2>
+        <ProfilePhotoUploader initialImage={image} />
       </div>
 
       {/* Contact */}
       <div className="card p-5">
-        <h2 className="mb-3 text-base font-semibold">
-          Contact
-        </h2>
+        <h2 className="mb-3 text-base font-semibold">Contact</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label
-              htmlFor="whatsapp"
-              className="label"
-            >
+            <label htmlFor="whatsapp" className="label">
               WhatsApp (optional)
             </label>
             <input
@@ -451,26 +374,18 @@ export default function ProfileClient() {
               className="input"
               placeholder="07XXXXXXXX or +2547XXXXXXX"
               value={whatsapp}
-              onChange={(e) =>
-                setWhatsapp(e.target.value)
-              }
+              onChange={(e) => setWhatsapp(e.target.value)}
               onBlur={snapNormalizeWhatsapp}
               inputMode="tel"
-              aria-invalid={
-                !!whatsapp && !normalizedWa
-              }
+              aria-invalid={!!whatsapp && !normalizedWa}
             />
             {whatsapp ? (
               <p className="mt-1 text-xs">
                 Normalized:{" "}
                 {normalizedWa ? (
-                  <span className="text-emerald-600">
-                    +{normalizedWa}
-                  </span>
+                  <span className="text-emerald-600">+{normalizedWa}</span>
                 ) : (
-                  <span className="text-red-600">
-                    Invalid
-                  </span>
+                  <span className="text-red-600">Invalid</span>
                 )}
               </p>
             ) : null}
@@ -480,106 +395,75 @@ export default function ProfileClient() {
 
       {/* Location + Store link */}
       <div className="card p-5">
-        <h2 className="mb-3 text-base font-semibold">
-          Location
-        </h2>
+        <h2 className="mb-3 text-base font-semibold">Location</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label
-              className="label"
-              htmlFor="city"
-            >
+            <label className="label" htmlFor="city">
               City
             </label>
             <input
               id="city"
               className="input"
               value={city}
-              onChange={(e) =>
-                setCity(e.target.value)
-              }
+              onChange={(e) => setCity(e.target.value)}
               placeholder="Nairobi"
             />
           </div>
 
           <div>
-            <label
-              className="label"
-              htmlFor="country"
-            >
+            <label className="label" htmlFor="country">
               Country
             </label>
             <input
               id="country"
               className="input"
               value={country}
-              onChange={(e) =>
-                setCountry(e.target.value)
-              }
+              onChange={(e) => setCountry(e.target.value)}
               placeholder="Kenya"
             />
           </div>
 
           <div>
-            <label
-              className="label"
-              htmlFor="postal"
-            >
+            <label className="label" htmlFor="postal">
               Postal code
             </label>
             <input
               id="postal"
               className="input"
               value={postalCode}
-              onChange={(e) =>
-                setPostalCode(e.target.value)
-              }
+              onChange={(e) => setPostalCode(e.target.value)}
               placeholder="00100"
               inputMode="numeric"
             />
           </div>
 
           <div>
-            <label
-              className="label"
-              htmlFor="address"
-            >
+            <label className="label" htmlFor="address">
               Address
             </label>
             <input
               id="address"
               className="input"
               value={address}
-              onChange={(e) =>
-                setAddress(e.target.value)
-              }
+              onChange={(e) => setAddress(e.target.value)}
               placeholder="Street, building, etc."
             />
           </div>
 
           <div className="sm:col-span-2">
-            <label
-              className="label"
-              htmlFor="storeLocationUrl"
-            >
+            <label className="label" htmlFor="storeLocationUrl">
               Store location (Google Maps URL)
             </label>
             <input
               id="storeLocationUrl"
               className="input"
               value={storeLocationUrl}
-              onChange={(e) =>
-                setStoreLocationUrl(
-                  e.target.value,
-                )
-              }
+              onChange={(e) => setStoreLocationUrl(e.target.value)}
               placeholder="https://maps.google.com/… or https://goo.gl/maps/…"
             />
             <p className="mt-1 text-xs text-gray-500">
-              This link can be shown on your
-              listings to help buyers find your
-              store or meeting point. Only Google
-              Maps links are allowed.
+              This link can be shown on your listings to help buyers find your store or meeting point.
+              Only Google Maps links are allowed.
             </p>
           </div>
         </div>
@@ -587,11 +471,7 @@ export default function ProfileClient() {
 
       {/* Actions */}
       <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={saving}
-          className="btn-gradient-primary disabled:opacity-60"
-        >
+        <button type="submit" disabled={saving} className="btn-gradient-primary disabled:opacity-60">
           {saving ? "Saving…" : "Save changes"}
         </button>
         <Link href="/dashboard" className="btn-outline">
@@ -601,13 +481,9 @@ export default function ProfileClient() {
 
       {/* Danger zone */}
       <div className="card border border-red-200/60 p-5 dark:border-red-800/40">
-        <h2 className="mb-2 text-base font-semibold text-red-600">
-          Danger zone
-        </h2>
+        <h2 className="mb-2 text-base font-semibold text-red-600">Danger zone</h2>
         <p className="mb-3 text-sm text-gray-600 dark:text-slate-400">
-          This will permanently delete your
-          account and all your listings. This
-          action cannot be undone.
+          This will permanently delete your account and all your listings. This action cannot be undone.
         </p>
         <DeleteAccountButton email={email} />
       </div>

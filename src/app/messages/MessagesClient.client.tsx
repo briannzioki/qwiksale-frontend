@@ -64,6 +64,18 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
+function storeSlugForUser(u: { id: string; username: string | null }) {
+  const username = (u.username || "").trim();
+  if (username) return username;
+  const id = String(u.id || "").trim();
+  if (!id) return "";
+  return id.startsWith("u-") ? id : `u-${id}`;
+}
+function storeHrefForUser(u: { id: string; username: string | null }) {
+  const slug = storeSlugForUser(u);
+  return slug ? `/store/${encodeURIComponent(slug)}` : "";
+}
+
 /* -------------------------------- Component -------------------------------- */
 export default function MessagesClient({ meId }: Props) {
   const sp = useSearchParams();
@@ -235,7 +247,13 @@ export default function MessagesClient({ meId }: Props) {
     if (!current) return null;
     const other = meId && current.buyerId === meId ? current.seller : current.buyer;
     const label = other.username || other.name || "User";
-    return { label, image: other.image, initials: initials(other.name, other.username) };
+    const storeHref = storeHrefForUser({ id: other.id, username: other.username });
+    return {
+      label,
+      image: other.image,
+      initials: initials(other.name, other.username),
+      storeHref,
+    };
   }, [current, meId]);
 
   /* --------------------------------- Send ---------------------------------- */
@@ -362,7 +380,19 @@ export default function MessagesClient({ meId }: Props) {
                   {counterpart?.initials}
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate font-semibold">{counterpart?.label || "Conversation"}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="truncate font-semibold">{counterpart?.label || "Conversation"}</div>
+                    {counterpart?.storeHref ? (
+                      <Link
+                        href={counterpart.storeHref}
+                        prefetch={false}
+                        className="shrink-0 text-xs font-semibold text-brandBlue hover:underline"
+                        aria-label="View profile"
+                      >
+                        View profile
+                      </Link>
+                    ) : null}
+                  </div>
                   <div className="truncate text-xs text-gray-500 dark:text-slate-400">
                     {current.listingType === "product" ? "Product" : "Service"} • #{current.listingId}
                   </div>

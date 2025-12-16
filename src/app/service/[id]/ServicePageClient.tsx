@@ -1,4 +1,3 @@
-// src/app/service/[id]/ServicePageClient.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
@@ -19,6 +18,8 @@ import { ReviewList } from "@/app/components/ReviewList";
 import { AddReviewForm } from "@/app/components/AddReviewForm";
 import { useListingReviews } from "@/app/hooks/useListingReviews";
 import SellerInfo from "@/app/components/SellerInfo";
+
+type FeaturedTier = "basic" | "gold" | "diamond";
 
 export type ServiceWire = {
   id: string;
@@ -51,23 +52,32 @@ export type ServiceWire = {
   sellerMemberSince?: string | null;
   sellerRating?: number | null;
   sellerSales?: number | null;
-  seller?: {
-    id?: string;
-    username?: string | null;
-    name?: string | null;
-    image?: string | null;
-    phone?: string | null;
-    location?: string | null;
-    memberSince?: string | null;
-    rating?: number | null;
-    sales?: number | null;
-    verified?: boolean | null;
-    storeLocationUrl?: string | null;
-  } | null;
+  seller?:
+    | {
+        id?: string;
+        username?: string | null;
+        name?: string | null;
+        image?: string | null;
+        phone?: string | null;
+        location?: string | null;
+        memberSince?: string | null;
+        rating?: number | null;
+        sales?: number | null;
+        verified?: boolean | null;
+        storeLocationUrl?: string | null;
+
+        featuredTier?: FeaturedTier | string | null;
+        featured_tier?: string | null;
+        tier?: string | null;
+      }
+    | null;
 
   /** Optional store-location URL from API */
   sellerStoreLocationUrl?: string | null;
+
+  /** Optional seller/account flags */
   sellerVerified?: boolean | null;
+  sellerFeaturedTier?: FeaturedTier | null;
 };
 
 type StoreRow = ReturnType<typeof useServices> extends { services: infer U }
@@ -110,7 +120,123 @@ function isPlaceholder(u?: string | null) {
   return s === PLACEHOLDER || s.endsWith("/placeholder/default.jpg");
 }
 
-export default function ServicePageClient({ id, initialData }: { id: string; initialData: ServiceWire | null }) {
+function pickFirstBool(...xs: unknown[]): boolean | null {
+  for (const x of xs) {
+    if (typeof x === "boolean") return x;
+  }
+  return null;
+}
+
+function coerceFeaturedTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes("diamond")) return "diamond";
+  if (s.includes("gold")) return "gold";
+  if (s.includes("basic")) return "basic";
+  return null;
+}
+
+/**
+ * Keep store slugs compatible with src/app/store/[username]/page.tsx:
+ * - username must match /^[a-z0-9._-]{2,128}$/i
+ * - otherwise always fall back to u-<userId>
+ */
+function normalizeStoreHandle(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  let s = raw.trim();
+  if (!s) return "";
+  try {
+    s = decodeURIComponent(s);
+  } catch {
+    // ignore
+  }
+  s = s.trim().replace(/^@+/, "");
+  return s;
+}
+
+function isStoreCodeToken(raw: unknown): boolean {
+  const s = normalizeStoreHandle(raw);
+  if (!s) return false;
+  const lower = s.toLowerCase();
+  if (lower === "undefined" || lower === "null" || lower === "nan") return false;
+  if (/^(?:sto|store)[-_]?\d{1,18}$/i.test(s)) return true;
+  if (/^\d{1,18}$/.test(s)) return true;
+  return false;
+}
+
+function coerceValidStoreUsername(raw: unknown): string | null {
+  const s = normalizeStoreHandle(raw);
+  if (!s) return null;
+
+  // ✅ critical: reject store-code-ish tokens like Sto-83535/store-83535/83535
+  if (isStoreCodeToken(s)) return null;
+
+  return /^[a-z0-9._-]{2,128}$/i.test(s) ? s : null;
+}
+
+function coerceValidUserId(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const lower = s.toLowerCase();
+  if (lower === "undefined" || lower === "null" || lower === "nan") return null;
+
+  // ✅ critical: do not treat store codes as user ids
+  if (isStoreCodeToken(s)) return null;
+
+  if (s.length > 120) return null;
+  return s;
+}
+
+function SellerBadgesRow({
+  verified,
+  tier,
+}: {
+  verified: boolean;
+  tier: FeaturedTier;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="seller-badges-row">
+      {verified ? (
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+          <span aria-hidden>✓</span>
+          <span>Verified</span>
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+          <span aria-hidden>!</span>
+          <span>Unverified</span>
+        </span>
+      )}
+
+      {tier === "gold" ? (
+        <span className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 px-2 py-0.5 text-[11px] font-semibold text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100">
+          <span aria-hidden>★</span>
+          <span>Featured Gold</span>
+        </span>
+      ) : tier === "diamond" ? (
+        <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 px-2 py-0.5 text-[11px] font-semibold text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100">
+          <span aria-hidden>💎</span>
+          <span>Featured Diamond</span>
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground">
+          <span aria-hidden>★</span>
+          <span>Featured Basic</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+export default function ServicePageClient({
+  id,
+  initialData,
+}: {
+  id: string;
+  initialData: ServiceWire | null;
+}) {
   const { data: session } = useSession();
   const viewerId = (session?.user as any)?.id as string | undefined;
 
@@ -227,7 +353,10 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
   }, [id, gone, fetching, fetched]);
 
   const didRefetchEmpty = useRef(false);
-  const hasRealFromCurrent = useMemo(() => hasRealGallery(fetched ?? service ?? {}), [fetched, service, hasRealGallery]);
+  const hasRealFromCurrent = useMemo(
+    () => hasRealGallery(fetched ?? service ?? {}),
+    [fetched, service, hasRealGallery],
+  );
 
   useEffect(() => {
     if (!id || gone || fetching) return;
@@ -350,7 +479,9 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
             404
           </div>
           <h1 className="text-lg font-semibold text-foreground">Service unavailable</h1>
-          <p className="mt-1 text-sm text-muted-foreground">This service was removed or isn’t available anymore.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This service was removed or isn’t available anymore.
+          </p>
           <div className="mt-4 flex items-center justify-center gap-2">
             <Link href="/" prefetch={false} className="btn-gradient-primary">
               Home
@@ -365,6 +496,25 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
   }
 
   const displayMaybe = (fetched || service) as Detail | undefined;
+
+  // ✅ Always resolve to a real boolean + tier (no “missing badges” on partial data)
+  const resolvedVerified =
+    pickFirstBool(
+      (displayMaybe as any)?.sellerVerified,
+      (displayMaybe as any)?.verified,
+      (displayMaybe as any)?.seller?.verified,
+      (displayMaybe as any)?.seller?.isVerified,
+    ) ?? false;
+
+  const resolvedTier: FeaturedTier =
+    coerceFeaturedTier((displayMaybe as any)?.sellerFeaturedTier) ??
+    coerceFeaturedTier((displayMaybe as any)?.seller_featured_tier) ??
+    coerceFeaturedTier((displayMaybe as any)?.featuredTier) ??
+    coerceFeaturedTier((displayMaybe as any)?.featured_tier) ??
+    coerceFeaturedTier((displayMaybe as any)?.seller?.featuredTier) ??
+    coerceFeaturedTier((displayMaybe as any)?.seller?.featured_tier) ??
+    coerceFeaturedTier((displayMaybe as any)?.seller?.tier) ??
+    "basic";
 
   const display: Detail = {
     id: displayMaybe?.id ?? id ?? "unknown",
@@ -388,12 +538,15 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
     sellerRating: typeof displayMaybe?.sellerRating === "number" ? displayMaybe.sellerRating : null,
     sellerSales: typeof displayMaybe?.sellerSales === "number" ? displayMaybe.sellerSales : null,
     seller: displayMaybe?.seller ?? null,
-    ...(displayMaybe && "status" in displayMaybe && displayMaybe.status != null ? { status: displayMaybe.status as any } : {}),
-    sellerStoreLocationUrl: displayMaybe?.sellerStoreLocationUrl ?? (displayMaybe as any)?.storeLocationUrl ?? undefined,
-    sellerVerified:
-      typeof displayMaybe?.sellerVerified === "boolean"
-        ? displayMaybe.sellerVerified
-        : (displayMaybe as any)?.verified ?? undefined,
+    ...(displayMaybe && "status" in displayMaybe && displayMaybe.status != null
+      ? { status: displayMaybe.status as any }
+      : {}),
+    sellerStoreLocationUrl:
+      displayMaybe?.sellerStoreLocationUrl ?? (displayMaybe as any)?.storeLocationUrl ?? null,
+
+    // ✅ stable flags
+    sellerVerified: resolvedVerified,
+    sellerFeaturedTier: resolvedTier,
   };
 
   const galleryToRender = useMemo(() => {
@@ -409,7 +562,10 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
     return pruned;
   }, [displayMaybe]);
 
-  const enableLightbox = useMemo(() => galleryToRender.some((u) => u && u !== PLACEHOLDER), [galleryToRender]);
+  const enableLightbox = useMemo(
+    () => galleryToRender.some((u) => u && u !== PLACEHOLDER),
+    [galleryToRender],
+  );
 
   const seller = useMemo(() => {
     const nested: any = (display as any)?.seller || {};
@@ -419,14 +575,21 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
       typeof nested?.storeLocationUrl === "string"
         ? nested.storeLocationUrl
         : typeof (display as any)?.sellerStoreLocationUrl === "string"
-        ? (display as any).sellerStoreLocationUrl
-        : typeof (display as any)?.storeLocationUrl === "string"
-        ? (display as any).storeLocationUrl
-        : null;
+          ? (display as any).sellerStoreLocationUrl
+          : typeof (display as any)?.storeLocationUrl === "string"
+            ? (display as any).storeLocationUrl
+            : null;
 
+    // ✅ force boolean + tier for consistent visible badges
     const verified =
-      (nested && typeof nested.verified === "boolean" && nested.verified) ||
-      Boolean((display as any)?.sellerVerified ?? (display as any)?.verified ?? false);
+      pickFirstBool(nested?.verified, nested?.isVerified, (display as any)?.sellerVerified) ?? false;
+
+    const featuredTier: FeaturedTier =
+      coerceFeaturedTier(nested?.featuredTier) ??
+      coerceFeaturedTier(nested?.featured_tier) ??
+      coerceFeaturedTier(nested?.tier) ??
+      coerceFeaturedTier((display as any)?.sellerFeaturedTier) ??
+      "basic";
 
     return {
       id: nested?.id ?? display?.sellerId ?? null,
@@ -436,24 +599,60 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
       phone: nested?.phone ?? display?.sellerPhone ?? null,
       location: nested?.location ?? display?.sellerLocation ?? null,
       memberSince: nested?.memberSince ?? display?.sellerMemberSince ?? null,
-      rating: typeof nested?.rating === "number" ? nested.rating : typeof display?.sellerRating === "number" ? display?.sellerRating : null,
-      sales: typeof nested?.sales === "number" ? nested.sales : typeof display?.sellerSales === "number" ? display?.sellerSales : null,
+      rating:
+        typeof nested?.rating === "number"
+          ? nested.rating
+          : typeof display?.sellerRating === "number"
+            ? display?.sellerRating
+            : null,
+      sales:
+        typeof nested?.sales === "number"
+          ? nested.sales
+          : typeof display?.sellerSales === "number"
+            ? display?.sellerSales
+            : null,
       storeLocationUrl,
       verified,
+      featuredTier,
     };
   }, [display]);
 
-  const isOwner = Boolean(viewerId && seller.id && viewerId === seller.id);
+  // ✅ compute a *real* seller user id for ownership + store links (never Sto-xxxxx)
+  const sellerUserIdForStore = useMemo(() => {
+    const nestedId = (display as any)?.seller?.id;
+    const candidates = [nestedId, seller.id, display.sellerId];
+    for (const c of candidates) {
+      const v = coerceValidUserId(c);
+      if (v) return v;
+    }
+    return null;
+  }, [display, seller.id, display.sellerId]);
+
+  const isOwner = Boolean(viewerId && sellerUserIdForStore && viewerId === sellerUserIdForStore);
+
+  // ✅ FIX: prefer a VALID username handle; otherwise fall back to u-<real user id>.
+  // Never allow store-code-ish tokens like Sto-83535 to become the store slug.
+  const displaySellerUsername = (display as any)?.sellerUsername as unknown;
+  const displayUsername = (display as any)?.username as unknown;
+
+  const storeSlug = useMemo(() => {
+    const uname =
+      coerceValidStoreUsername(seller.username) ??
+      coerceValidStoreUsername(displaySellerUsername) ??
+      coerceValidStoreUsername(displayUsername);
+
+    if (uname) return uname;
+
+    const uid = sellerUserIdForStore;
+    return uid ? `u-${uid}` : null;
+  }, [seller.username, displaySellerUsername, displayUsername, sellerUserIdForStore]);
 
   const storeHref = useMemo(() => {
-    const uname = seller.username;
-    const sid = seller.id;
-    if (uname) return `/store/${encodeURIComponent(uname)}`;
-    if (sid) return `/store/u-${encodeURIComponent(sid)}`;
-    return `/store`;
-  }, [seller.username, seller.id]);
+    if (!storeSlug) return null;
+    return `/store/${encodeURIComponent(storeSlug)}`;
+  }, [storeSlug]);
 
-  const sellerIdForDonate: string | null = seller.id != null ? String(seller.id) : null;
+  const sellerIdForDonate: string | null = sellerUserIdForStore;
 
   const seo = useMemo(() => {
     const nonPlaceholder = galleryToRender.filter((u) => u && u !== PLACEHOLDER);
@@ -497,9 +696,9 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
       (reviews as any[]).find(
         (r: any) =>
           (viewerId && r.userId && String(r.userId) === String(viewerId)) ||
-          (viewerId && r.user?.id && String(r.user.id) === String(viewerId))
+          (viewerId && r.user?.id && String(r.user.id) === String(viewerId)),
       ) || null,
-    [reviews, viewerId]
+    [reviews, viewerId],
   );
 
   const reviewSummary: ReviewSummaryPayload | null = useMemo(
@@ -507,22 +706,30 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
       summary
         ? {
             average: typeof summary.average === "number" ? summary.average : avgRating ?? null,
-            count: typeof summary.count === "number" ? summary.count : reviewCount ?? (reviews as any[]).length,
+            count:
+              typeof summary.count === "number"
+                ? summary.count
+                : reviewCount ?? (reviews as any[]).length,
             viewerRating:
-              viewerReview && typeof (viewerReview as any).rating === "number" ? (viewerReview as any).rating : null,
+              viewerReview && typeof (viewerReview as any).rating === "number"
+                ? (viewerReview as any).rating
+                : null,
           }
         : (reviews as any[]).length
-        ? {
-            average:
-              typeof avgRating === "number"
-                ? avgRating
-                : (reviews as any[]).reduce((acc, r: any) => acc + (r.rating || 0), 0) / (reviews as any[]).length,
-            count: (reviews as any[]).length,
-            viewerRating:
-              viewerReview && typeof (viewerReview as any).rating === "number" ? (viewerReview as any).rating : null,
-          }
-        : null,
-    [summary, avgRating, reviewCount, reviews, viewerReview]
+          ? {
+              average:
+                typeof avgRating === "number"
+                  ? avgRating
+                  : (reviews as any[]).reduce((acc, r: any) => acc + (r.rating || 0), 0) /
+                    (reviews as any[]).length,
+              count: (reviews as any[]).length,
+              viewerRating:
+                viewerReview && typeof (viewerReview as any).rating === "number"
+                  ? (viewerReview as any).rating
+                  : null,
+            }
+          : null,
+    [summary, avgRating, reviewCount, reviews, viewerReview],
   );
 
   /* -------------------------------- UI --------------------------------- */
@@ -542,10 +749,7 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         {/* Media */}
         <div className="lg:col-span-3">
-          <div
-            className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm"
-            data-gallery-wrap
-          >
+          <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm" data-gallery-wrap>
             <div className="relative" style={{ aspectRatio: "16 / 10" }}>
               {display.featured && (
                 <span className="absolute left-3 top-3 z-20 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
@@ -625,20 +829,32 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
             <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">
               {fmtKES(display.price)} {rateSuffix(display.rateType ?? null)}
             </p>
-            {display.serviceArea && <p className="text-sm text-muted-foreground">Service Area: {display.serviceArea}</p>}
-            {display.location && <p className="text-sm text-muted-foreground">Base Location: {display.location}</p>}
+            {display.serviceArea && (
+              <p className="text-sm text-muted-foreground">Service Area: {display.serviceArea}</p>
+            )}
+            {display.location && (
+              <p className="text-sm text-muted-foreground">Base Location: {display.location}</p>
+            )}
           </div>
 
           {/* Description */}
           <div className="rounded-xl border border-border bg-card p-4">
             <h2 className="mb-2 font-semibold text-foreground">Description</h2>
-            <p className="whitespace-pre-line text-foreground">{display.description || "No description provided."}</p>
+            <p className="whitespace-pre-line text-foreground">
+              {display.description || "No description provided."}
+            </p>
+          </div>
+
+          {/* ✅ Explicit visible badges (no more missing Verified/Unverified text) */}
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="text-sm font-semibold text-foreground">Provider badges</div>
+            <SellerBadgesRow verified={seller.verified} tier={seller.featuredTier} />
           </div>
 
           {/* Provider / Contact / Store / Donate */}
           <SellerInfo
             label="Provider"
-            sellerId={sellerIdForDonate}
+            sellerId={sellerUserIdForStore}
             username={seller.username ?? null}
             name={seller.name ?? null}
             avatarUrl={seller.image ?? null}
@@ -647,7 +863,8 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
             memberSince={seller.memberSince ?? null}
             rating={typeof seller.rating === "number" ? seller.rating : null}
             salesCount={typeof seller.sales === "number" ? seller.sales : null}
-            verified={seller.verified === true}
+            verified={seller.verified}
+            featuredTier={seller.featuredTier}
             storeHref={storeHref}
             donateSellerId={sellerIdForDonate}
             contactSlot={
@@ -667,10 +884,7 @@ export default function ServicePageClient({ id, initialData }: { id: string; ini
             className="rounded-xl border border-border bg-card p-4"
             data-section="reviews"
             {...(reviewSummary
-              ? {
-                  "data-review-avg": reviewSummary.average ?? undefined,
-                  "data-review-count": reviewSummary.count,
-                }
+              ? { "data-review-avg": reviewSummary.average ?? undefined, "data-review-count": reviewSummary.count }
               : {})}
           >
             <div className="flex items-center justify-between gap-2">

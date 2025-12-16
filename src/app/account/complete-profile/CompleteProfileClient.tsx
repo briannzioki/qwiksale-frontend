@@ -23,12 +23,14 @@ type Me = {
   city: string | null;
   country: string | null;
   image?: string | null;
-  verified?: boolean | null;
+
+  verified?: boolean | null; // seller/store verification (keep)
+  emailVerified?: string | null; // email verification timestamp (ISO) or null
+  email_verified?: string | null; // backward-compat (if any API ever used snake_case)
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const looksLikeEmail = (e?: string) =>
-  !!e && EMAIL_RE.test(e.trim().toLowerCase());
+const looksLikeEmail = (e?: string) => !!e && EMAIL_RE.test(e.trim().toLowerCase());
 
 function normalizeKePhone(raw: string): string {
   const trimmed = (raw || "").trim();
@@ -39,22 +41,14 @@ function normalizeKePhone(raw: string): string {
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
-const looksLikeValidKePhone = (input: string) =>
-  /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
+const looksLikeValidKePhone = (input: string) => /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
 
 // 3–24; letters/digits/._; no leading/trailing sep; no doubles
 const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 const looksLikeValidUsername = (u: string) => USERNAME_RE.test(u);
-const isSafePath = (p?: string | null): p is string =>
-  !!p && /^\/(?!\/)/.test(p);
+const isSafePath = (p?: string | null): p is string => !!p && /^\/(?!\/)/.test(p);
 
-type NameStatus =
-  | "idle"
-  | "checking"
-  | "available"
-  | "taken"
-  | "invalid"
-  | "error";
+type NameStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "error";
 
 /* -------------------------------- Component -------------------------------- */
 
@@ -88,16 +82,16 @@ export default function CompleteProfileClient() {
   const didLoadMe = useRef(false);
   const loadAbort = useRef<AbortController | null>(null);
 
-  const whatsappNormalized = useMemo(
-    () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
-    [whatsapp],
-  );
+  const whatsappNormalized = useMemo(() => (whatsapp ? normalizeKePhone(whatsapp) : ""), [whatsapp]);
 
   const sessionUser: any = (session as any)?.user ?? null;
-  const sessionVerified = Boolean(
-    sessionUser?.verified === true || sessionUser?.isVerified === true,
-  );
-  const effectiveVerified = Boolean(me?.verified === true || sessionVerified);
+
+  // IMPORTANT: email verification is NOT "verified seller"
+  const emailIsVerified = Boolean(me?.emailVerified || (me as any)?.email_verified);
+
+  const verifyEmailHref = useMemo(() => {
+    return `/account/verify-email?next=${encodeURIComponent(ret)}&auto=1`;
+  }, [ret]);
 
   const signinHref = `/signin?callbackUrl=${encodeURIComponent(
     `/account/complete-profile?next=${encodeURIComponent(ret)}`,
@@ -120,8 +114,7 @@ export default function CompleteProfileClient() {
     // Quick prefill from session while we fetch full profile
     try {
       const se = typeof sessionUser?.email === "string" ? sessionUser.email : "";
-      const su =
-        typeof sessionUser?.username === "string" ? sessionUser.username : "";
+      const su = typeof sessionUser?.username === "string" ? sessionUser.username : "";
       if (se && !email) setEmail(se.trim());
       if (su && !username) setUsername(su.trim());
     } catch {
@@ -141,7 +134,7 @@ export default function CompleteProfileClient() {
 
     (async () => {
       try {
-        const r = await fetch("/api/me", {
+        const r = await fetch("/api/me/profile", {
           cache: "no-store",
           signal: ctrl.signal,
           credentials: "same-origin",
@@ -161,8 +154,8 @@ export default function CompleteProfileClient() {
           j?.user && typeof j.user === "object"
             ? (j.user as Me)
             : j && typeof j === "object" && "email" in j
-            ? (j as Me)
-            : null;
+              ? (j as Me)
+              : null;
 
         if (!alive) return;
 
@@ -215,15 +208,12 @@ export default function CompleteProfileClient() {
       usernameAbort.current = ctrl;
 
       try {
-        const res = await fetch(
-          `/api/username/check?u=${encodeURIComponent(u)}`,
-          {
-            signal: ctrl.signal,
-            cache: "no-store",
-            credentials: "same-origin",
-            headers: { accept: "application/json" },
-          },
-        );
+        const res = await fetch(`/api/username/check?u=${encodeURIComponent(u)}`, {
+          signal: ctrl.signal,
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        });
         if (!res.ok) {
           setNameStatus("error");
           return;
@@ -269,8 +259,8 @@ export default function CompleteProfileClient() {
         nameStatus === "checking"
           ? "Please wait for the username check…"
           : nameStatus === "taken"
-          ? "That username is taken."
-          : "Invalid username.",
+            ? "That username is taken."
+            : "Invalid username.",
       );
       return;
     }
@@ -319,19 +309,19 @@ export default function CompleteProfileClient() {
     nameStatus === "available"
       ? "Looks good — available."
       : nameStatus === "taken"
-      ? "That username is taken."
-      : nameStatus === "invalid"
-      ? "Use 3–24 chars: letters, numbers, dot, underscore."
-      : nameStatus === "checking"
-      ? "Checking availability…"
-      : "";
+        ? "That username is taken."
+        : nameStatus === "invalid"
+          ? "Use 3–24 chars: letters, numbers, dot, underscore."
+          : nameStatus === "checking"
+            ? "Checking availability…"
+            : "";
 
   const nameHintClass =
     nameStatus === "available"
       ? "text-emerald-700"
       : nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "error"
-      ? "text-red-600"
-      : "text-[var(--text-muted)]";
+        ? "text-red-600"
+        : "text-[var(--text-muted)]";
 
   const emailInvalid = email.trim().length > 0 && !looksLikeEmail(email.trim());
 
@@ -369,9 +359,7 @@ export default function CompleteProfileClient() {
           </div>
 
           <div className="card-surface p-4 sm:p-6">
-            <h1 className="text-xl font-semibold text-[var(--text-strong)]">
-              Finish setting up your account
-            </h1>
+            <h1 className="text-xl font-semibold text-[var(--text-strong)]">Finish setting up your account</h1>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
               Sign in to add your username, contact details, and verify your email.
             </p>
@@ -403,17 +391,10 @@ export default function CompleteProfileClient() {
         )}
 
         {/* Main form card */}
-        <form
-          onSubmit={onSave}
-          className="card-surface p-4 sm:p-6 space-y-6"
-          noValidate
-          aria-busy={saving}
-        >
+        <form onSubmit={onSave} className="card-surface p-4 sm:p-6 space-y-6" noValidate aria-busy={saving}>
           {/* Intro */}
           <header className="space-y-1">
-            <h1 className="text-xl font-semibold text-[var(--text-strong)]">
-              Finish setting up your account
-            </h1>
+            <h1 className="text-xl font-semibold text-[var(--text-strong)]">Finish setting up your account</h1>
             <p className="text-sm text-[var(--text-muted)]">
               A clear username and contact details help buyers and sellers recognise you and get in touch quickly.
             </p>
@@ -421,11 +402,9 @@ export default function CompleteProfileClient() {
 
           {/* Account section */}
           <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--text-strong)]">
-              Account
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Account</h2>
 
-            {!effectiveVerified && (
+            {!emailIsVerified && (
               <div className="rounded-xl border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50">
                 <div className="font-semibold">Verify your email</div>
                 <div className="mt-0.5 text-xs text-amber-950/80 dark:text-amber-50/80">
@@ -433,11 +412,7 @@ export default function CompleteProfileClient() {
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button asChild size="sm" variant="primary">
-                    <Link
-                      href="/account/profile?verify=1"
-                      prefetch={false}
-                      data-testid="complete-profile-verify-email"
-                    >
+                    <Link href={verifyEmailHref} prefetch={false} data-testid="complete-profile-verify-email">
                       Verify email
                     </Link>
                   </Button>
@@ -469,9 +444,7 @@ export default function CompleteProfileClient() {
                   disabled={saving}
                   aria-invalid={emailInvalid || undefined}
                 />
-                <p className="mt-1 text-xs text-[var(--text-muted)]">
-                  Changing your sign-in email may require verification.
-                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">Changing your sign-in email may require verification.</p>
               </div>
 
               <div>
@@ -488,9 +461,7 @@ export default function CompleteProfileClient() {
                   required
                   minLength={3}
                   maxLength={24}
-                  aria-invalid={
-                    nameStatus === "taken" || nameStatus === "invalid" ? true : undefined
-                  }
+                  aria-invalid={nameStatus === "taken" || nameStatus === "invalid" ? true : undefined}
                   aria-describedby="username-help username-status"
                   disabled={saving}
                   inputMode="text"
@@ -503,11 +474,7 @@ export default function CompleteProfileClient() {
                   Shown on your listings. 3–24 chars, letters/numbers/dot/underscore.
                 </p>
                 {nameHint && (
-                  <p
-                    id="username-status"
-                    className={`mt-1 text-xs ${nameHintClass}`}
-                    aria-live="polite"
-                  >
+                  <p id="username-status" className={`mt-1 text-xs ${nameHintClass}`} aria-live="polite">
                     {nameHint}
                   </p>
                 )}
@@ -517,9 +484,7 @@ export default function CompleteProfileClient() {
 
           {/* Profile photo */}
           <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--text-strong)]">
-              Profile photo
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Profile photo</h2>
             <p className="text-sm text-[var(--text-muted)]">
               A clear photo helps people recognise you. You can change this any time.
             </p>
@@ -528,9 +493,7 @@ export default function CompleteProfileClient() {
 
           {/* Contact */}
           <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--text-strong)]">
-              Contact
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Contact</h2>
             <div>
               <label className="label">WhatsApp (optional)</label>
               <input
@@ -545,46 +508,28 @@ export default function CompleteProfileClient() {
                 spellCheck={false}
               />
               <p className="mt-1 text-xs text-[var(--text-muted)]">
-                Will be stored as{" "}
-                <code className="font-mono">{whatsappNormalized || "—"}</code>.
+                Will be stored as <code className="font-mono">{whatsappNormalized || "—"}</code>.
               </p>
             </div>
           </section>
 
           {/* Location */}
           <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--text-strong)]">
-              Location (optional)
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Location (optional)</h2>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className="label">City</label>
-                <input
-                  className="input"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  disabled={saving}
-                />
+                <input className="input" value={city} onChange={(e) => setCity(e.target.value)} disabled={saving} />
               </div>
               <div>
                 <label className="label">Country</label>
-                <input
-                  className="input"
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  disabled={saving}
-                />
+                <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} disabled={saving} />
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className="label">Postal code</label>
-                <input
-                  className="input"
-                  value={postalCode}
-                  onChange={(e) => setPostal(e.target.value)}
-                  disabled={saving}
-                />
+                <input className="input" value={postalCode} onChange={(e) => setPostal(e.target.value)} disabled={saving} />
               </div>
               <div>
                 <label className="label">Address</label>
@@ -601,21 +546,14 @@ export default function CompleteProfileClient() {
 
           {/* Actions */}
           <section className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-4">
-            <p className="text-xs text-[var(--text-muted)]">
-              You can update these details later from your account settings.
-            </p>
+            <p className="text-xs text-[var(--text-muted)]">You can update these details later from your account settings.</p>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="submit"
                 size="sm"
                 variant="primary"
                 loading={saving}
-                disabled={
-                  saving ||
-                  nameStatus === "checking" ||
-                  nameStatus === "invalid" ||
-                  !looksLikeEmail(email.trim())
-                }
+                disabled={saving || nameStatus === "checking" || nameStatus === "invalid" || !looksLikeEmail(email.trim())}
               >
                 {saving ? "Saving…" : "Save profile"}
               </Button>

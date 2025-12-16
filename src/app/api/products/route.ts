@@ -22,8 +22,17 @@ function safe(obj: unknown) {
     return String(obj);
   }
 }
-async function softTimeout<T>(work: () => Promise<T>, ms: number, fallback: () => T | Promise<T>): Promise<T> {
-  return Promise.race([work(), new Promise<T>((resolve) => setTimeout(async () => resolve(await fallback()), ms))]);
+async function softTimeout<T>(
+  work: () => Promise<T>,
+  ms: number,
+  fallback: () => T | Promise<T>
+): Promise<T> {
+  return Promise.race([
+    work(),
+    new Promise<T>((resolve) =>
+      setTimeout(async () => resolve(await fallback()), ms)
+    ),
+  ]);
 }
 
 /* ----------------------------- tiny helpers ----------------------------- */
@@ -90,6 +99,91 @@ const productListSelect = {
     select: { id: true, username: true, name: true, image: true, subscription: true },
   },
 } as const;
+
+/* ---------------- seller/account badge helpers ---------------- */
+type FeaturedTier = "basic" | "gold" | "diamond";
+
+function normalizeFeaturedTier(v: unknown): FeaturedTier | null {
+  const pick = (x: unknown): string => {
+    if (typeof x === "string") return x;
+    if (x && typeof x === "object") {
+      const any = x as any;
+      const cand =
+        any?.tier ??
+        any?.plan ??
+        any?.level ??
+        any?.name ??
+        any?.type ??
+        any?.subscription ??
+        any?.value ??
+        "";
+      if (typeof cand === "string") return cand;
+    }
+    return "";
+  };
+
+  const raw = pick(v).trim();
+  if (!raw) return null;
+
+  const s = raw.toLowerCase();
+  if (s.includes("diamond")) return "diamond";
+  if (s.includes("gold")) return "gold";
+  if (s.includes("basic")) return "basic";
+  return null;
+}
+
+function normalizeSellerVerified(u: any): boolean | null {
+  if (!u) return null;
+
+  const direct =
+    u?.verified ??
+    u?.isVerified ??
+    u?.accountVerified ??
+    u?.sellerVerified ??
+    null;
+
+  if (typeof direct === "boolean") return direct;
+
+  const at =
+    u?.verifiedAt ??
+    u?.verified_on ??
+    u?.verifiedOn ??
+    u?.verificationDate ??
+    null;
+
+  if (typeof at === "string" && at.trim()) return true;
+  if (at instanceof Date) return true;
+
+  return null;
+}
+
+function withSellerSelectField(selectBase: any, field: "verified" | "isVerified") {
+  const baseSellerSelect = selectBase?.seller?.select ?? {};
+  return {
+    ...selectBase,
+    seller: {
+      select: {
+        ...baseSellerSelect,
+        [field]: true,
+      },
+    },
+  };
+}
+
+async function findManyProductsWithSellerFlags(listArgs: any, selectBase: any) {
+  // Try `verified` first, then `isVerified`, then fall back cleanly.
+  try {
+    const sel = withSellerSelectField(selectBase, "verified");
+    return await prisma.product.findMany({ ...listArgs, select: sel });
+  } catch {
+    try {
+      const sel = withSellerSelectField(selectBase, "isVerified");
+      return await prisma.product.findMany({ ...listArgs, select: sel });
+    } catch {
+      return await prisma.product.findMany({ ...listArgs, select: selectBase });
+    }
+  }
+}
 
 /* ----------------------------- safety caps ------------------------------ */
 const MAX_PAGE_SIZE = 48;
@@ -306,7 +400,6 @@ export async function GET(req: NextRequest) {
 
     const listArgs: any = {
       where,
-      select,
       orderBy,
       take: pageSize + 1,
     };
@@ -343,7 +436,7 @@ export async function GET(req: NextRequest) {
     const response = await softTimeout(async () => {
       const [total, productsRaw, facets] = await Promise.all([
         prisma.product.count({ where }),
-        prisma.product.findMany(listArgs),
+        findManyProductsWithSellerFlags(listArgs, select),
         wantFacets && !cursor && page === 1 ? computeFacets(where) : Promise.resolve(undefined),
       ]);
 
@@ -361,7 +454,11 @@ export async function GET(req: NextRequest) {
 
         const createdAt =
           p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
-        const sellerUsername = p?.seller?.username ?? null;
+
+        const sellerObj = p?.seller as any;
+        const sellerUsername = sellerObj?.username ?? null;
+        const sellerVerified = normalizeSellerVerified(sellerObj);
+        const sellerFeaturedTier = normalizeFeaturedTier(sellerObj?.subscription ?? null);
 
         const { _count, favorites, seller, ...rest } = p;
         return {
@@ -376,6 +473,8 @@ export async function GET(req: NextRequest) {
           favoritesCount,
           isFavoritedByMe: !!userId && isFavoritedByMe,
           sellerUsername,
+          sellerVerified,
+          sellerFeaturedTier,
         };
       });
 

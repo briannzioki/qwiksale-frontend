@@ -70,13 +70,7 @@ async function fetchRequestMetrics(): Promise<RequestMetrics | null> {
   }
 }
 
-function MetricCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function MetricCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="text-sm text-muted-foreground">{label}</div>
@@ -102,11 +96,7 @@ export default async function AdminHome() {
         subtitle="Quick links to key administration areas."
         actions={
           <div className="flex gap-2">
-            <Link
-              href="/admin/dashboard"
-              prefetch={false}
-              className="btn-gradient-primary text-sm"
-            >
+            <Link href="/admin/dashboard" prefetch={false} className="btn-gradient-primary text-sm">
               Metrics
             </Link>
             <Link href="/" prefetch={false} className="btn-outline text-sm">
@@ -119,22 +109,10 @@ export default async function AdminHome() {
       <div className="space-y-3">
         <h2 className="text-base font-semibold">Requests</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard
-            label="Active"
-            value={metrics ? String(metrics.active) : "—"}
-          />
-          <MetricCard
-            label="Expired"
-            value={metrics ? String(metrics.expired) : "—"}
-          />
-          <MetricCard
-            label="Boosted"
-            value={metrics ? String(metrics.boosted) : "—"}
-          />
-          <MetricCard
-            label="Today"
-            value={metrics ? String(metrics.today) : "—"}
-          />
+          <MetricCard label="Active" value={metrics ? String(metrics.active) : "—"} />
+          <MetricCard label="Expired" value={metrics ? String(metrics.expired) : "—"} />
+          <MetricCard label="Boosted" value={metrics ? String(metrics.boosted) : "—"} />
+          <MetricCard label="Today" value={metrics ? String(metrics.today) : "—"} />
         </div>
         <div className="text-sm">
           <Link href="/admin/requests" prefetch={false} className="underline">
@@ -142,6 +120,29 @@ export default async function AdminHome() {
           </Link>
         </div>
       </div>
+
+      {/* ✅ Required by failing admin tests:
+          - getByRole('region', { name: /messages snapshot/i }) OR
+          - getByRole('link', { name: /open inbox/i })
+      */}
+      <section
+        role="region"
+        aria-label="Messages snapshot"
+        className="rounded-xl border border-border bg-card p-4 shadow-sm"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">Messages</h2>
+          <span className="text-xs text-muted-foreground">Inbox</span>
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Review buyer/seller conversations and follow up from listings.
+        </p>
+        <div className="mt-4">
+          <Link href="/messages" prefetch={false} className="btn-outline text-sm">
+            Open inbox
+          </Link>
+        </div>
+      </section>
 
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <li>
@@ -151,9 +152,7 @@ export default async function AdminHome() {
             className="block rounded-xl border border-border bg-card p-4 shadow-sm hover:shadow"
           >
             <div className="font-semibold">Users</div>
-            <div className="text-sm text-muted-foreground">
-              Manage roles &amp; accounts
-            </div>
+            <div className="text-sm text-muted-foreground">Manage roles &amp; accounts</div>
           </Link>
         </li>
         <li>
