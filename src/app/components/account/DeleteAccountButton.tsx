@@ -27,7 +27,8 @@ export default function DeleteAccountButton({
   userEmail,
   email,
   onDeletedAction,
-  className = "rounded-2xl bg-red-600 px-4 py-2 text-white shadow-sm hover:bg-red-700",
+  className =
+    "rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-2 text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
   children,
   confirmLabel = "Delete account",
 }: Props) {
@@ -37,7 +38,10 @@ export default function DeleteAccountButton({
   const descId = `delacc-desc-${uid}`;
 
   const effectiveEmail = (userEmail ?? email ?? "").trim();
-  const normalizedEmail = useMemo(() => effectiveEmail.toLowerCase(), [effectiveEmail]);
+  const normalizedEmail = useMemo(
+    () => effectiveEmail.toLowerCase(),
+    [effectiveEmail],
+  );
 
   const [open, setOpen] = useState(false);
   const [ack, setAck] = useState(false);
@@ -97,7 +101,7 @@ export default function DeleteAccountButton({
       }
       if (e.key === "Tab" && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+          'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
         );
         if (!focusable.length) return;
         const first = focusable.item(0);
@@ -155,7 +159,8 @@ export default function DeleteAccountButton({
         body: JSON.stringify({ confirm: true, email: effectiveEmail }),
       });
       const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error((json as any)?.error || `Delete failed (${res.status})`);
+      if (!res.ok)
+        throw new Error((json as any)?.error || `Delete failed (${res.status})`);
 
       setOpen(false);
       setAck(false);
@@ -203,7 +208,7 @@ export default function DeleteAccountButton({
         <>
           <div
             role="presentation"
-            className="fixed inset-0 z-50 bg-black/40"
+            className="fixed inset-0 z-50 bg-[var(--bg)] opacity-60 backdrop-brightness-50"
             onClick={() => {
               setOpen(false);
               emit("qs:account:delete:cancel", { email: effectiveEmail });
@@ -218,48 +223,63 @@ export default function DeleteAccountButton({
           >
             <div
               ref={dialogRef}
-              className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-950 p-5 shadow-lg border border-gray-200 dark:border-gray-800"
+              className="w-full max-w-md rounded-2xl bg-[var(--bg-elevated)] p-5 shadow-soft border border-[var(--border-subtle)] text-[var(--text)]"
               aria-busy={loading ? "true" : "false"}
             >
-              <h2 id={titleId} className="text-lg font-semibold text-red-700 dark:text-red-400">
+              <h2
+                id={titleId}
+                className="text-lg font-extrabold tracking-tight text-[var(--text)]"
+              >
                 Delete your account?
               </h2>
-              <p id={descId} className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                This action is <strong>permanent</strong> and will remove your profile, listings, and data.
-                To confirm, tick the box and type your email{" "}
-                <span className="font-mono">{effectiveEmail}</span> below.
+              <p
+                id={descId}
+                className="mt-2 text-sm text-[var(--text-muted)] leading-relaxed"
+              >
+                This action is <strong>permanent</strong> and will remove your
+                profile, listings, and data. To confirm, tick the box and type
+                your email <span className="font-mono">{effectiveEmail}</span>{" "}
+                below.
               </p>
 
-              <label className="mt-4 flex items-start gap-2 text-sm text-gray-800 dark:text-gray-200">
+              <label className="mt-4 flex items-start gap-2 text-sm text-[var(--text)]">
                 <input
                   type="checkbox"
                   className="mt-0.5"
                   checked={ack}
                   onChange={(e) => setAck(e.target.checked)}
                 />
-                <span>I understand this action is <strong>irreversible</strong>.</span>
+                <span>
+                  I understand this action is <strong>irreversible</strong>.
+                </span>
               </label>
 
               <div className="mt-3">
-                <label className="text-xs text-gray-600 dark:text-gray-400">
+                <label className="text-xs text-[var(--text-muted)]">
                   Type your email to confirm
                 </label>
                 <input
                   type="email"
                   inputMode="email"
                   placeholder={effectiveEmail}
-                  className="mt-1 w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-300 dark:focus:ring-red-800"
+                  className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none transition focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
                   aria-invalid={ack && typed.length > 0 && !canDelete}
                 />
                 {ack && typed.length > 0 && !canDelete && (
-                  <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">Email does not match.</div>
+                  <div className="mt-1 text-xs text-[var(--text-muted)]">
+                    Email does not match.
+                  </div>
                 )}
               </div>
 
               {err && (
-                <div className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert" aria-live="polite">
+                <div
+                  className="mt-3 text-sm text-[var(--text)] rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2"
+                  role="alert"
+                  aria-live="polite"
+                >
                   {err}
                 </div>
               )}
@@ -268,7 +288,7 @@ export default function DeleteAccountButton({
                 <button
                   ref={cancelBtnRef}
                   type="button"
-                  className="rounded-xl px-4 py-2 text-sm ring-1 ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-900"
+                  className="rounded-xl px-4 py-2 text-sm font-semibold border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus disabled:opacity-60"
                   onClick={() => {
                     setOpen(false);
                     setAck(false);
@@ -285,8 +305,10 @@ export default function DeleteAccountButton({
                   onClick={handleDelete}
                   disabled={!canDelete || loading}
                   className={[
-                    "rounded-xl px-4 py-2 text-sm text-white",
-                    canDelete ? "bg-red-600 hover:bg-red-700" : "bg-red-300 dark:bg-red-800/40",
+                    "rounded-xl px-4 py-2 text-sm font-semibold transition active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus disabled:opacity-60",
+                    canDelete
+                      ? "bg-[var(--text)] text-[var(--bg)] hover:opacity-95"
+                      : "border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-muted)]",
                   ].join(" ")}
                   aria-busy={loading ? "true" : "false"}
                 >

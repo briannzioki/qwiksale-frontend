@@ -62,14 +62,14 @@ const TierGoldIcon = React.forwardRef<SVGSVGElement, LucideProps>(
       >
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#FDE68A" />
-            <stop offset="55%" stopColor="#F59E0B" />
-            <stop offset="100%" stopColor="#B45309" />
+            <stop offset="0%" stopColor="var(--text)" stopOpacity="0.22" />
+            <stop offset="55%" stopColor="var(--text)" stopOpacity="0.12" />
+            <stop offset="100%" stopColor="var(--text)" stopOpacity="0.06" />
           </linearGradient>
         </defs>
 
         {/* smooth overlay */}
-        <path d={STAR_D} fill={`url(#${gid})`} opacity="0.75" stroke="none" />
+        <path d={STAR_D} fill={`url(#${gid})`} opacity="1" stroke="none" />
         {/* crisp outline */}
         <path d={STAR_D} fill="none" />
       </svg>
@@ -98,9 +98,9 @@ const TierDiamondIcon = React.forwardRef<SVGSVGElement, LucideProps>(
       >
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#C7D2FE" />
-            <stop offset="55%" stopColor="#60A5FA" />
-            <stop offset="100%" stopColor="#2563EB" />
+            <stop offset="0%" stopColor="var(--text)" stopOpacity="0.20" />
+            <stop offset="55%" stopColor="var(--text)" stopOpacity="0.10" />
+            <stop offset="100%" stopColor="var(--text)" stopOpacity="0.05" />
           </linearGradient>
         </defs>
 
@@ -108,7 +108,7 @@ const TierDiamondIcon = React.forwardRef<SVGSVGElement, LucideProps>(
         <path
           d="M12 2 19 9 12 22 5 9 12 2Z"
           fill={`url(#${gid})`}
-          opacity="0.7"
+          opacity="1"
           stroke="none"
         />
         {/* outline */}
@@ -164,10 +164,19 @@ export const icons = {
 export type IconName = keyof typeof icons;
 export type IconSize = "xs" | "sm" | "md" | "lg" | "xl";
 
-const sizePx: Record<IconSize, number> = { xs: 14, sm: 16, md: 18, lg: 20, xl: 24 };
+const sizePx: Record<IconSize, number> = {
+  xs: 14,
+  sm: 16,
+  md: 18,
+  lg: 20,
+  xl: 24,
+};
 
 export function getIcon(name: IconName | string, fallback: IconName = "info") {
-  return (icons as Record<string, React.ComponentType<LucideProps>>)[name] ?? icons[fallback];
+  return (
+    (icons as Record<string, React.ComponentType<LucideProps>>)[name] ??
+    icons[fallback]
+  );
 }
 
 export type IconProps = Omit<LucideProps, "size"> & {
@@ -182,7 +191,7 @@ export type IconProps = Omit<LucideProps, "size"> & {
 export const Icon = React.memo(
   React.forwardRef<SVGSVGElement, IconProps>(function Icon(
     { name, size = "md", label, title, className, strokeWidth = 2, ...rest },
-    ref
+    ref,
   ) {
     const Comp = getIcon(name);
     const pixel = typeof size === "number" ? size : sizePx[size];
@@ -205,7 +214,7 @@ export const Icon = React.memo(
         {(title || label) && <title>{title || label}</title>}
       </Comp>
     );
-  })
+  }),
 );
 
 /* Spinner */

@@ -1,9 +1,9 @@
-// src/app/donate/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { normalizeKenyanPhone } from "@/app/lib/phone";
+import { cx, pillClass, pillGroupClass } from "@/app/components/ui/pill";
 
 /* --------------------------- Helpers & Types --------------------------- */
 
@@ -140,7 +140,7 @@ export default function DonatePage() {
           toast.success("STK push sent ✨");
 
           try {
-            // @ts-ignore — optional analytics
+            // @ts-ignore - optional analytics
             window.plausible?.("Donation Initiated", {
               props: { amount: amt },
             });
@@ -172,14 +172,45 @@ export default function DonatePage() {
     }
   }
 
+  const panelClass =
+    "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-soft";
+
+  const labelClass = "block text-sm font-semibold text-[var(--text)]";
+
+  const helpClass = "mt-1 text-xs text-[var(--text-muted)]";
+
+  const inputClass =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const primaryBtnBase =
+    "min-h-[44px] rounded-xl px-4 py-2.5 text-sm font-semibold shadow-soft transition active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-5 sm:py-3 sm:text-base";
+
+  const primaryBtnEnabled =
+    "border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)] hover:bg-[var(--bg-elevated)]";
+
+  const primaryBtnDisabled =
+    "cursor-not-allowed border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-muted)] opacity-70";
+
+  const secondaryBtn =
+    "min-h-[44px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-4 py-2.5 text-sm font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-5 sm:py-3 sm:text-base";
+
+  const smallBtn =
+    "min-h-[44px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-4 py-2 text-sm font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
   return (
-    <div className="mx-auto max-w-xl p-6">
+    <div className="container-page max-w-xl py-4 sm:py-6">
       {/* Header */}
-      <section className="rounded-2xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-6 text-white shadow-sm">
-        <h1 className="text-2xl font-extrabold md:text-3xl">
+      <section
+        className={cx(
+          "rounded-2xl px-4 py-6 text-white shadow-soft sm:px-6 sm:py-8",
+          "border border-[var(--border-subtle)]",
+          "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]",
+        )}
+      >
+        <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
           Support QwikSale
         </h1>
-        <p className="mt-1 text-white/90">
+        <p className="mt-1 text-xs text-white/80 sm:text-sm">
           Your donation keeps the marketplace fast, safe, and ad-free.
         </p>
       </section>
@@ -187,20 +218,23 @@ export default function DonatePage() {
       {/* Form */}
       <form
         onSubmit={donate}
-        className="mt-6 rounded-2xl border border-border bg-card p-5 text-foreground shadow-sm"
+        className={cx("mt-4 p-2.5 sm:mt-6 sm:p-5", panelClass)}
       >
-        <p className="text-foreground">
-          We’re a neutral mediator — sellers handle their own sales. Donations
+        <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+          We’re a neutral mediator. Sellers handle their own sales. Donations
           help us tackle spam, improve trust &amp; safety, and build new
           features for everyone.
         </p>
 
         {/* Amount presets */}
-        <div className="mt-5">
-          <label className="mb-2 block text-sm font-semibold text-foreground">
-            Amount
-          </label>
-          <div className="flex flex-wrap gap-2">
+        <div className="mt-4">
+          <label className={cx("mb-1", labelClass)}>Amount</label>
+
+          <div
+            className={pillGroupClass(
+              "flex gap-2 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] pb-1 sm:flex-wrap sm:overflow-visible sm:whitespace-normal",
+            )}
+          >
             {PRESETS.map((v) => {
               const active = activePreset === v;
               return (
@@ -211,25 +245,21 @@ export default function DonatePage() {
                     setActivePreset(v);
                     setAmount(v);
                   }}
-                  className={`rounded-xl border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
-                    active
-                      ? "border-brandNavy bg-brandNavy text-white ring-brandNavy/40"
-                      : "border-border bg-card text-foreground hover:bg-muted"
-                  }`}
+                  className={pillClass({ active, size: "md" })}
                   aria-pressed={active}
                 >
                   {fmtKES(v)}
                 </button>
               );
             })}
+
             <button
               type="button"
               onClick={() => setActivePreset(null)}
-              className={`rounded-xl border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
-                activePreset === null
-                  ? "border-brandNavy bg-brandNavy text-white ring-brandNavy/40"
-                  : "border-border bg-card text-foreground hover:bg-muted"
-              }`}
+              className={pillClass({
+                active: activePreset === null,
+                size: "md",
+              })}
               aria-pressed={activePreset === null}
             >
               Custom
@@ -238,74 +268,74 @@ export default function DonatePage() {
 
           {/* Custom amount */}
           {activePreset === null && (
-            <div className="mt-3 flex items-center gap-3">
+            <div className="mt-2 flex flex-wrap items-center gap-2.5">
               <input
                 type="number"
                 min={1}
                 max={MAX_DONATION}
                 step={1}
                 inputMode="numeric"
-                className="w-48 rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue"
+                className={cx(
+                  "w-40 min-[420px]:w-48",
+                  "rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)]",
+                  "px-3 py-2 text-[var(--text)] shadow-sm",
+                  "placeholder:text-[var(--text-muted)]",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                )}
                 placeholder="Enter KES amount"
                 value={amount === "" ? "" : amount}
                 onChange={(e) => setCustomAmount(e.target.value)}
                 aria-describedby="amountHelp"
               />
               {typeof amount === "number" && amount > 0 && (
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm font-semibold text-[var(--text)]">
                   {fmtKES(amount)}
                 </span>
               )}
             </div>
           )}
-          <p
-            id="amountHelp"
-            className="mt-1 text-xs text-muted-foreground"
-          >
+
+          <p id="amountHelp" className={helpClass}>
             Minimum 1 KES. Max {fmtKES(MAX_DONATION)}.
           </p>
         </div>
 
         {/* Phone number */}
-        <div className="mt-5">
-          <label
-            htmlFor="donation-phone"
-            className="block text-sm font-semibold text-foreground"
-          >
-            Phone (Safaricom) — format{" "}
-            <span className="font-mono">2547/2541XXXXXXXX</span>
+        <div className="mt-4">
+          <label htmlFor="donation-phone" className={labelClass}>
+            Phone (Safaricom){" "}
+            <span className="text-[11px] font-mono text-[var(--text-muted)] sm:text-xs">
+              2547/2541XXXXXXXX
+            </span>
           </label>
           <input
             id="donation-phone"
             inputMode="numeric"
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brandBlue"
+            className={inputClass}
             placeholder="2547XXXXXXXX or 2541XXXXXXXX"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             required
             aria-describedby="phoneHelp"
           />
-          <p
-            id="phoneHelp"
-            className="mt-1 text-xs text-muted-foreground"
-          >
+          <p id="phoneHelp" className={helpClass}>
             We’ll send a one-time STK push to this number.
           </p>
         </div>
 
         {/* Actions */}
-        <div className="mt-6 flex items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-3">
           <button
             type="submit"
             disabled={!canSubmit}
-            className={`rounded-xl px-5 py-3 font-semibold shadow transition focus:outline-none focus:ring-2 ${
-              canSubmit
-                ? "bg-brandNavy text-white hover:opacity-90 ring-brandNavy/40"
-                : "cursor-not-allowed bg-muted text-muted-foreground ring-transparent"
-            }`}
+            className={cx(
+              primaryBtnBase,
+              canSubmit ? primaryBtnEnabled : primaryBtnDisabled,
+            )}
           >
             {submitting ? "Processing…" : "Donate via M-Pesa"}
           </button>
+
           <button
             type="button"
             onClick={() => {
@@ -314,10 +344,11 @@ export default function DonatePage() {
               setError("");
               setStatus("");
             }}
-            className="rounded-xl border border-border bg-background px-5 py-3 font-semibold hover:bg-muted"
+            className={secondaryBtn}
           >
             Reset
           </button>
+
           {submitting && (
             <button
               type="button"
@@ -326,7 +357,7 @@ export default function DonatePage() {
                 setSubmitting(false);
                 setStatus("Cancelled.");
               }}
-              className="ml-auto rounded-xl border border-border bg-background px-4 py-2 text-sm hover:bg-muted"
+              className={cx("ml-auto", smallBtn)}
               title="Cancel request"
             >
               Cancel
@@ -335,10 +366,10 @@ export default function DonatePage() {
         </div>
 
         {/* Status & errors */}
-        <div className="mt-4 space-y-2">
+        <div className="mt-3 space-y-2">
           {status && (
             <div
-              className="text-sm text-foreground"
+              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm"
               role="status"
               aria-live="polite"
             >
@@ -347,7 +378,7 @@ export default function DonatePage() {
           )}
           {error && (
             <div
-              className="text-sm text-red-600 dark:text-red-400"
+              className="rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-sm font-semibold text-[var(--text)] shadow-sm"
               role="alert"
               aria-live="assertive"
             >
@@ -356,10 +387,13 @@ export default function DonatePage() {
           )}
         </div>
 
-        <div className="mt-4 text-[12px] text-muted-foreground">
+        <div className="mt-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
           After you approve on your phone, we’ll receive a confirmation. If
           anything looks stuck, try again. Questions?{" "}
-          <a className="underline" href="/help">
+          <a
+            className="underline underline-offset-4 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus"
+            href="/help"
+          >
             Contact support
           </a>
           .

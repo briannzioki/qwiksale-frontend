@@ -29,7 +29,7 @@ type PollOpts = {
   maxIntervalMs?: number;
   /** Multiplier for backoff. Default 1.5. */
   backoffFactor?: number;
-  /** Jitter percentage (0–1). Default 0.15 (±15%). */
+  /** Jitter percentage (0-1). Default 0.15 (±15%). */
   jitterPct?: number;
   /** Stop polling after this many attempts. Default 60. */
   maxAttempts?: number;
@@ -266,7 +266,7 @@ export function usePaymentStatusPoll(paymentId?: string | null, opts: PollOpts =
     error,
     payload,
     // actions
-    start,   // start(true) to poll immediately
+    start, // start(true) to poll immediately
     stop,
   };
 }

@@ -36,7 +36,9 @@ type Envelope<T> = {
 
 function getParam(sp: SearchParams15, k: string): string | undefined {
   const v = sp[k];
-  return Array.isArray(v) ? (v[0] as string | undefined) : (v as string | undefined);
+  return Array.isArray(v)
+    ? (v[0] as string | undefined)
+    : (v as string | undefined);
 }
 
 function toBool(v: string | undefined, fallback = false) {
@@ -64,7 +66,17 @@ function makeApiUrl(path: string) {
 
 function buildQS(sp: SearchParams15) {
   const qp = new URLSearchParams();
-  const keys = ["q", "kind", "status", "category", "ownerId", "boosted", "includeExpired", "page", "pageSize"];
+  const keys = [
+    "q",
+    "kind",
+    "status",
+    "category",
+    "ownerId",
+    "boosted",
+    "includeExpired",
+    "page",
+    "pageSize",
+  ];
   for (const k of keys) {
     const v = getParam(sp, k);
     if (v != null && String(v).trim() !== "") qp.set(k, String(v));
@@ -102,7 +114,10 @@ export default async function AdminRequestsPage({
   const includeExpired = toBool(getParam(sp, "includeExpired"), true);
 
   const page = Math.max(1, toNum(getParam(sp, "page"), 1));
-  const pageSize = Math.min(100, Math.max(1, toNum(getParam(sp, "pageSize"), 25)));
+  const pageSize = Math.min(
+    100,
+    Math.max(1, toNum(getParam(sp, "pageSize"), 25)),
+  );
 
   const qs = buildQS(sp);
   const url = `${makeApiUrl("/api/admin/requests")}${qs ? `?${qs}` : ""}`;
@@ -133,9 +148,11 @@ export default async function AdminRequestsPage({
     // ignore
   }
 
+  const SectionHeaderAny = SectionHeader as any;
+
   return (
     <div className="space-y-5">
-      <SectionHeader
+      <SectionHeaderAny
         title="Requests"
         subtitle="Admin directory of user requests."
         actions={
@@ -150,24 +167,28 @@ export default async function AdminRequestsPage({
       <form
         method="GET"
         action="/admin/requests"
-        className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 shadow-sm md:grid-cols-12"
+        className="grid grid-cols-1 gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft md:grid-cols-12"
       >
         <div className="md:col-span-5">
-          <label className="block text-xs font-semibold text-muted-foreground">Search</label>
+          <label className="block text-xs font-semibold text-[var(--text-muted)]">
+            Search
+          </label>
           <input
             name="q"
             defaultValue={q}
             placeholder="Title/description/tags..."
-            className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+            className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
           />
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-muted-foreground">Kind</label>
+          <label className="block text-xs font-semibold text-[var(--text-muted)]">
+            Kind
+          </label>
           <select
             name="kind"
             defaultValue={kind || ""}
-            className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+            className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
           >
             <option value="">All</option>
             <option value="product">Product</option>
@@ -176,37 +197,45 @@ export default async function AdminRequestsPage({
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-muted-foreground">Status</label>
+          <label className="block text-xs font-semibold text-[var(--text-muted)]">
+            Status
+          </label>
           <input
             name="status"
             defaultValue={status}
             placeholder="ACTIVE/CLOSED..."
-            className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+            className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
           />
         </div>
 
         <div className="md:col-span-3">
-          <label className="block text-xs font-semibold text-muted-foreground">Category</label>
+          <label className="block text-xs font-semibold text-[var(--text-muted)]">
+            Category
+          </label>
           <input
             name="category"
             defaultValue={category}
             placeholder="Any"
-            className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+            className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
           />
         </div>
 
         <div className="md:col-span-4">
-          <label className="block text-xs font-semibold text-muted-foreground">Owner ID</label>
+          <label className="block text-xs font-semibold text-[var(--text-muted)]">
+            Owner ID
+          </label>
           <input
             name="ownerId"
             defaultValue={ownerId}
             placeholder="cuid..."
-            className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+            className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
           />
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-xs font-semibold text-muted-foreground">Boosted only</label>
+          <label className="block text-xs font-semibold text-[var(--text-muted)]">
+            Boosted only
+          </label>
           <div className="mt-2 flex items-center gap-2">
             <input
               id="boosted"
@@ -214,16 +243,18 @@ export default async function AdminRequestsPage({
               name="boosted"
               value="1"
               defaultChecked={boosted}
-              className="h-4 w-4 rounded border-border"
+              className="h-4 w-4 rounded border border-[var(--border-subtle)] bg-[var(--bg)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
-            <label htmlFor="boosted" className="text-xs text-muted-foreground">
+            <label htmlFor="boosted" className="text-xs text-[var(--text-muted)]">
               Boosted
             </label>
           </div>
         </div>
 
         <div className="md:col-span-3">
-          <label className="block text-xs font-semibold text-muted-foreground">Include expired</label>
+          <label className="block text-xs font-semibold text-[var(--text-muted)]">
+            Include expired
+          </label>
           <div className="mt-2 flex items-center gap-2">
             <input
               id="includeExpired"
@@ -231,9 +262,12 @@ export default async function AdminRequestsPage({
               name="includeExpired"
               value="1"
               defaultChecked={includeExpired}
-              className="h-4 w-4 rounded border-border"
+              className="h-4 w-4 rounded border border-[var(--border-subtle)] bg-[var(--bg)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
-            <label htmlFor="includeExpired" className="text-xs text-muted-foreground">
+            <label
+              htmlFor="includeExpired"
+              className="text-xs text-[var(--text-muted)]"
+            >
               Include expired
             </label>
           </div>
@@ -247,27 +281,33 @@ export default async function AdminRequestsPage({
             <button type="submit" className="btn-gradient-primary text-sm">
               Apply
             </button>
-            <Link href="/admin/requests" prefetch={false} className="btn-outline text-sm">
+            <Link
+              href="/admin/requests"
+              prefetch={false}
+              className="btn-outline text-sm"
+            >
               Reset
             </Link>
           </div>
         </div>
       </form>
 
-      <div className="rounded-xl border border-border bg-card shadow-sm">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="text-sm font-semibold text-foreground">Results</div>
-          <div className="text-xs text-muted-foreground">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft">
+        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+          <div className="text-sm font-semibold text-[var(--text)]">Results</div>
+          <div className="text-xs text-[var(--text-muted)]">
             Showing {env.total} request{env.total === 1 ? "" : "s"}
           </div>
         </div>
 
         {env.items.length === 0 ? (
-          <div className="p-6 text-sm text-muted-foreground">No requests match your filters.</div>
+          <div className="p-6 text-sm text-[var(--text-muted)]">
+            No requests match your filters.
+          </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[900px] w-full text-sm">
-              <thead className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
+            <table className="min-w-[900px] w-full text-sm text-[var(--text)]">
+              <thead className="bg-[var(--bg-subtle)] text-xs uppercase tracking-wide text-[var(--text-muted)]">
                 <tr>
                   <th className="px-4 py-3 text-left">Title</th>
                   <th className="px-4 py-3 text-left">Kind</th>
@@ -279,45 +319,57 @@ export default async function AdminRequestsPage({
                   <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-[var(--border-subtle)]">
                 {env.items.map((r) => (
-                  <tr key={r.id} className="hover:bg-muted/20">
+                  <tr key={r.id} className="hover:bg-[var(--bg-subtle)]">
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-foreground line-clamp-1">{r.title}</div>
-                      <div className="text-xs text-muted-foreground line-clamp-1">{r.location || "—"}</div>
+                      <div className="line-clamp-1 font-semibold text-[var(--text)]">
+                        {r.title}
+                      </div>
+                      <div className="line-clamp-1 text-xs text-[var(--text-muted)]">
+                        {r.location || "-"}
+                      </div>
                     </td>
-                    <td className="px-4 py-3">{r.kind}</td>
-                    <td className="px-4 py-3">{r.category || "—"}</td>
+                    <td className="px-4 py-3 text-[var(--text)]">{r.kind}</td>
+                    <td className="px-4 py-3 text-[var(--text)]">
+                      {r.category || "-"}
+                    </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs">
+                      <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--text)]">
                         {r.status}
                       </span>
                       {isExpired(r.expiresAt) && (
-                        <span className="ml-2 inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                        <span className="ml-2 inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--text-muted)]">
                           Expired
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {r.createdAt ? new Date(r.createdAt).toLocaleString("en-KE") : "—"}
+                    <td className="px-4 py-3 text-xs text-[var(--text-muted)]">
+                      {r.createdAt
+                        ? new Date(r.createdAt).toLocaleString("en-KE")
+                        : "-"}
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {r.expiresAt ? new Date(r.expiresAt).toLocaleString("en-KE") : "—"}
+                    <td className="px-4 py-3 text-xs text-[var(--text-muted)]">
+                      {r.expiresAt
+                        ? new Date(r.expiresAt).toLocaleString("en-KE")
+                        : "-"}
                     </td>
                     <td className="px-4 py-3">
                       {isBoosted(r.boostUntil) ? (
-                        <span className="inline-flex items-center rounded-full bg-[#161748] px-2 py-0.5 text-xs font-semibold text-white">
+                        <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-semibold text-[var(--text)]">
                           Boosted
                         </span>
                       ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
+                        <span className="text-xs text-[var(--text-muted)]">
+                          -
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <Link
                         href={`/admin/requests/${encodeURIComponent(r.id)}`}
                         prefetch={false}
-                        className="text-sm font-semibold text-brandBlue hover:underline"
+                        className="text-sm font-semibold text-[var(--text)] underline decoration-[var(--border-subtle)] underline-offset-4 hover:decoration-[var(--border)] focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
                       >
                         View
                       </Link>
@@ -332,7 +384,7 @@ export default async function AdminRequestsPage({
 
       {env.totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-[var(--text-muted)]">
             Page {env.page} of {env.totalPages}
           </div>
           <div className="flex gap-2">

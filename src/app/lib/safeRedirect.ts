@@ -64,7 +64,7 @@ export function safeRedirect(to: string | URL, currentPath?: string, currentSear
       return;
     }
 
-    // No currentPath provided — be conservative to avoid loops.
+    // No currentPath provided - be conservative to avoid loops.
     if (!allowBlind) {
       if (!target.includes("?")) return; // only allow "blind" when querystring present
     }

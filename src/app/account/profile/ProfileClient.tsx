@@ -127,7 +127,9 @@ export default function ProfileClient() {
 
           // New bits
           setStoreLocationUrl(u.storeLocationUrl ?? "");
-          setEmailVerified(Boolean((u as any)?.emailVerified || (u as any)?.email_verified));
+          setEmailVerified(
+            Boolean((u as any)?.emailVerified || (u as any)?.email_verified),
+          );
           setStoreVerified(Boolean((u as any)?.verified));
         }
       } catch {
@@ -192,7 +194,7 @@ export default function ProfileClient() {
     if (nextUser && nextUser !== (initialUsername || "").trim()) {
       if (!USERNAME_RE.test(nextUser)) {
         toast.error(
-          "Username must be 3–24 chars (letters, numbers, ., _), no leading/trailing dot/underscore, no doubles.",
+          "Username must be 3-24 chars (letters, numbers, ., _), no leading/trailing dot/underscore, no doubles.",
         );
         return;
       }
@@ -242,7 +244,9 @@ export default function ProfileClient() {
       if (savedUser) {
         setStoreLocationUrl(savedUser.storeLocationUrl ?? "");
         setEmailVerified(
-          Boolean((savedUser as any)?.emailVerified || (savedUser as any)?.email_verified),
+          Boolean(
+            (savedUser as any)?.emailVerified || (savedUser as any)?.email_verified,
+          ),
         );
         setStoreVerified(Boolean((savedUser as any)?.verified));
       }
@@ -255,20 +259,32 @@ export default function ProfileClient() {
     }
   }
 
+  const cardClass =
+    "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-5 shadow-sm";
+
+  const sectionTitleClass =
+    "text-sm sm:text-base font-semibold text-[var(--text)]";
+
+  const helpTextClass =
+    "mt-1 text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]";
+
   if (loading) {
     return (
-      <div className="card p-5">
-        <p className="text-sm text-gray-600 dark:text-slate-400">Loading…</p>
+      <div className={cardClass}>
+        <p className="text-xs sm:text-sm text-[var(--text-muted)]">Loading…</p>
       </div>
     );
   }
 
   if (unauth) {
     return (
-      <div className="card p-5">
-        <p className="text-sm">
+      <div className={cardClass}>
+        <p className="text-xs sm:text-sm text-[var(--text)]">
           Please{" "}
-          <Link className="underline" href="/signin?callbackUrl=%2Faccount%2Fprofile">
+          <Link
+            className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
+            href="/signin?callbackUrl=%2Faccount%2Fprofile"
+          >
             sign in
           </Link>{" "}
           to view your profile.
@@ -278,20 +294,24 @@ export default function ProfileClient() {
   }
 
   return (
-    <form onSubmit={onSave} className="space-y-5" aria-busy={saving}>
+    <form
+      onSubmit={onSave}
+      className="space-y-4 sm:space-y-6 text-[var(--text)]"
+      aria-busy={saving}
+    >
       {/* Account */}
-      <div className="card p-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold">Account</h2>
+      <div className={cardClass}>
+        <div className="mb-2 sm:mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className={sectionTitleClass}>Account</h2>
           {storeVerified && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]">
               <span aria-hidden>✓</span>
               <span>Verified seller</span>
             </span>
           )}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
           <div>
             <label className="label" htmlFor="email">
               Email
@@ -308,14 +328,14 @@ export default function ProfileClient() {
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               {email ? (
                 emailVerified ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]">
                     <span aria-hidden>✓</span>
                     {/* IMPORTANT: keep this exact text node for Playwright exact match */}
                     <span>Email verified</span>
                   </span>
                 ) : (
                   <>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]">
                       <span aria-hidden>!</span>
                       Verify email to boost trust
                     </span>
@@ -324,7 +344,11 @@ export default function ProfileClient() {
                       href={verifyEmailHref}
                       prefetch={false}
                       data-testid="profile-verify-email"
-                      className="inline-flex items-center rounded-full border border-amber-200/70 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-900/60 dark:bg-slate-950/40 dark:text-amber-200 dark:hover:bg-amber-950/30"
+                      className={[
+                        "inline-flex items-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-2.5 py-1 text-[11px] font-semibold",
+                        "text-[var(--text)] hover:bg-[var(--bg-subtle)] active:scale-[.99]",
+                        "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                      ].join(" ")}
                     >
                       Verify now
                     </Link>
@@ -333,7 +357,7 @@ export default function ProfileClient() {
               ) : null}
             </div>
 
-            <p className="mt-1 text-xs text-gray-500">
+            <p className={helpTextClass}>
               Changing your email may require re-verification.
             </p>
           </div>
@@ -350,21 +374,23 @@ export default function ProfileClient() {
               aria-invalid={!!username && !USERNAME_RE.test(username.trim())}
               placeholder="yourname"
             />
-            <p className="mt-1 text-xs text-gray-500">This appears on your store and listings.</p>
+            <p className={helpTextClass}>
+              This appears on your store and listings.
+            </p>
           </div>
         </div>
       </div>
 
       {/* Profile photo */}
-      <div className="card p-5">
-        <h2 className="mb-3 text-base font-semibold">Profile photo</h2>
+      <div className={cardClass}>
+        <h2 className={`mb-2 sm:mb-3 ${sectionTitleClass}`}>Profile photo</h2>
         <ProfilePhotoUploader initialImage={image} />
       </div>
 
       {/* Contact */}
-      <div className="card p-5">
-        <h2 className="mb-3 text-base font-semibold">Contact</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
+      <div className={cardClass}>
+        <h2 className={`mb-2 sm:mb-3 ${sectionTitleClass}`}>Contact</h2>
+        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="whatsapp" className="label">
               WhatsApp (optional)
@@ -380,12 +406,16 @@ export default function ProfileClient() {
               aria-invalid={!!whatsapp && !normalizedWa}
             />
             {whatsapp ? (
-              <p className="mt-1 text-xs">
+              <p className="mt-1 text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
                 Normalized:{" "}
                 {normalizedWa ? (
-                  <span className="text-emerald-600">+{normalizedWa}</span>
+                  <span className="font-semibold text-[var(--text)]">
+                    +{normalizedWa}
+                  </span>
                 ) : (
-                  <span className="text-red-600">Invalid</span>
+                  <span className="font-semibold text-[var(--text)]">
+                    Invalid
+                  </span>
                 )}
               </p>
             ) : null}
@@ -394,9 +424,9 @@ export default function ProfileClient() {
       </div>
 
       {/* Location + Store link */}
-      <div className="card p-5">
-        <h2 className="mb-3 text-base font-semibold">Location</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
+      <div className={cardClass}>
+        <h2 className={`mb-2 sm:mb-3 ${sectionTitleClass}`}>Location</h2>
+        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
           <div>
             <label className="label" htmlFor="city">
               City
@@ -461,17 +491,21 @@ export default function ProfileClient() {
               onChange={(e) => setStoreLocationUrl(e.target.value)}
               placeholder="https://maps.google.com/… or https://goo.gl/maps/…"
             />
-            <p className="mt-1 text-xs text-gray-500">
-              This link can be shown on your listings to help buyers find your store or meeting point.
-              Only Google Maps links are allowed.
+            <p className={helpTextClass}>
+              This link can be shown on your listings to help buyers find your
+              store or meeting point. Only Google Maps links are allowed.
             </p>
           </div>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-3">
-        <button type="submit" disabled={saving} className="btn-gradient-primary disabled:opacity-60">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <button
+          type="submit"
+          disabled={saving}
+          className="btn-gradient-primary disabled:opacity-60"
+        >
           {saving ? "Saving…" : "Save changes"}
         </button>
         <Link href="/dashboard" className="btn-outline">
@@ -480,10 +514,13 @@ export default function ProfileClient() {
       </div>
 
       {/* Danger zone */}
-      <div className="card border border-red-200/60 p-5 dark:border-red-800/40">
-        <h2 className="mb-2 text-base font-semibold text-red-600">Danger zone</h2>
-        <p className="mb-3 text-sm text-gray-600 dark:text-slate-400">
-          This will permanently delete your account and all your listings. This action cannot be undone.
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-3 sm:p-5 shadow-sm">
+        <h2 className="mb-1.5 sm:mb-2 text-sm sm:text-base font-semibold text-[var(--text)]">
+          Danger zone
+        </h2>
+        <p className="mb-2.5 sm:mb-3 text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
+          This will permanently delete your account and all your listings. This
+          action cannot be undone.
         </p>
         <DeleteAccountButton email={email} />
       </div>

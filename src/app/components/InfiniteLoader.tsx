@@ -33,11 +33,14 @@ export default function InfiniteLoader({
   rootMargin = "600px 0px",
   threshold = 0,
   once = false,
-  className = "h-12",
+  // Phone-first: sentinel is invisible but still steals vertical space.
+  // Keep it tappable-height-ish on xs (h-9) and restore to previous on sm+.
+  className = "h-9 sm:h-12",
   onRetryAction,
   showRetry = false,
   retryLabel = "Retry",
-  retryClassName = "mt-3",
+  // Phone-first spacing: slightly tighter on xs
+  retryClassName = "mt-2 sm:mt-3",
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const ioRef = useRef<IntersectionObserver | null>(null);
@@ -122,7 +125,7 @@ export default function InfiniteLoader({
           break; // only need one matching entry
         }
       },
-      { rootMargin, threshold }
+      { rootMargin, threshold },
     );
 
     io.observe(el);
@@ -150,7 +153,7 @@ export default function InfiniteLoader({
           <button
             type="button"
             onClick={() => void onRetryAction()}
-            className="btn-outline"
+            className="btn-outline h-9 px-3 text-xs sm:text-sm"
             aria-label="Retry loading more results"
           >
             {retryLabel}

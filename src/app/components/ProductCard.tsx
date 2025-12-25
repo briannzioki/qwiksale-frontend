@@ -9,7 +9,17 @@ import SmartImage from "@/app/components/SmartImage";
 import { shimmer as shimmerMaybe } from "@/app/lib/blur";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
 import ReviewStars from "@/app/components/ReviewStars";
-import VerifiedBadge from "@/app/components/VerifiedBadge";
+
+type FeaturedTier = "basic" | "gold" | "diamond";
+
+type SellerBadgesWire =
+  | {
+      verified?: boolean | null;
+      tier?: FeaturedTier | string | null;
+    }
+  | null;
+
+type SellerBadges = { verified: boolean | null; tier: FeaturedTier | null };
 
 type Props = {
   id: string;
@@ -20,13 +30,19 @@ type Props = {
   /** Listing highlight */
   featured?: boolean | null;
 
-  /** Seller/account flags for public UI (preferred names) */
+  /** Canonical resolved inputs (preferred): */
   verified?: boolean | null;
-  featuredTier?: "basic" | "gold" | "diamond" | string | null;
+  featuredTier?: FeaturedTier | string | null;
 
-  /** Seller/account flags for public UI (alias names from some APIs/callers) */
+  /** Legacy/alias inputs (fallback only if canonical not provided): */
   sellerVerified?: boolean | null;
-  sellerFeaturedTier?: "basic" | "gold" | "diamond" | string | null;
+  sellerFeaturedTier?: FeaturedTier | string | null;
+
+  /** Preferred consolidated badges from API (authoritative if the key exists). */
+  sellerBadges?: SellerBadgesWire;
+
+  /** Optional emailVerified-like value if passed by a caller (fallback only). */
+  emailVerified?: boolean | null | string | Date;
 
   position?: number;
   prefetch?: boolean;
@@ -84,38 +100,109 @@ function track(event: string, payload?: Record<string, unknown>) {
   }
 }
 
-function SellerTextBadges({
-  verified,
-  tier,
+function normalizeTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  return t === "basic" || t === "gold" || t === "diamond"
+    ? (t as FeaturedTier)
+    : null;
+}
+
+/**
+ * Conservative resolver for emailVerified-like values:
+ * - undefined => unknown (null)
+ * - null => explicitly unverified (false)
+ * - Date / ISO string => verified (true) when parseable
+ * - boolean => as-is
+ */
+function resolveEmailVerifiedValue(v: unknown): boolean | null {
+  if (v === undefined) return null;
+  if (v === null) return false;
+
+  if (typeof v === "boolean") return v;
+
+  if (typeof v === "number") {
+    if (v === 1) return true;
+    if (v === 0) return false;
+    return null;
+  }
+
+  if (v instanceof Date) {
+    return Number.isFinite(v.getTime()) ? true : null;
+  }
+
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return null;
+    const lower = s.toLowerCase();
+    if (lower === "null" || lower === "undefined" || lower === "nan") return null;
+    if (lower === "true" || lower === "1" || lower === "yes") return true;
+    if (lower === "false" || lower === "0" || lower === "no") return false;
+
+    const d = new Date(s);
+    return Number.isFinite(d.getTime()) ? true : null;
+  }
+
+  return null;
+}
+
+/**
+ * Canonical badge renderer:
+ * - Tier is icon-only (no visible tier words) with stable testids + accessibility.
+ * - Verification uses stable testids (icon-only; screen reader text only).
+ * - If both are unknown/null, renders nothing.
+ */
+function VerifiedBadge({
+  sellerBadges,
+  className = "",
 }: {
-  verified?: boolean | null;
-  tier?: "basic" | "gold" | "diamond" | null;
+  sellerBadges?: SellerBadges | null;
+  className?: string;
 }) {
+  const verified = sellerBadges?.verified ?? null;
+  const tier = sellerBadges?.tier ?? null;
+
   const showVerified = typeof verified === "boolean";
   const showTier = tier === "basic" || tier === "gold" || tier === "diamond";
+
   if (!showVerified && !showTier) return null;
 
   const pillBase =
-    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold";
+    "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] sm:text-xs sm:px-2.5 sm:py-1.5 font-semibold leading-none shadow-sm";
+
+  const pillStrong =
+    "bg-[var(--bg-subtle)] text-[var(--text)] border-[var(--border)]";
+  const pillSoft =
+    "bg-[var(--bg-elevated)] text-[var(--text)] border-[var(--border-subtle)]";
+  const pillMuted =
+    "bg-[var(--bg-elevated)] text-[var(--text-muted)] border-[var(--border-subtle)]";
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <div
+      className={["flex flex-wrap items-center gap-1", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {showVerified ? (
         verified ? (
           <span
-            className={`${pillBase} border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200`}
+            data-testid="verified-badge"
+            aria-label="Verified"
+            title="Verified"
+            className={[pillBase, pillStrong].join(" ")}
           >
             <span aria-hidden>✓</span>
-            {" "}
-            <span>Verified</span>
+            <span className="sr-only">Verified</span>
           </span>
         ) : (
           <span
-            className={`${pillBase} border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200`}
+            data-testid="unverified-badge"
+            aria-label="Unverified"
+            title="Unverified"
+            className={[pillBase, pillMuted].join(" ")}
           >
             <span aria-hidden>!</span>
-            {" "}
-            <span>Unverified</span>
+            <span className="sr-only">Unverified</span>
           </span>
         )
       ) : null}
@@ -123,25 +210,33 @@ function SellerTextBadges({
       {showTier ? (
         tier === "gold" ? (
           <span
-            className={`${pillBase} border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100`}
+            data-testid="featured-tier-gold"
+            aria-label="Featured tier gold"
+            title="Featured gold"
+            className={[pillBase, pillStrong].join(" ")}
           >
             <span aria-hidden>★</span>
-            {" "}
-            <span>Featured Gold</span>
+            <span className="sr-only">Featured gold</span>
           </span>
         ) : tier === "diamond" ? (
           <span
-            className={`${pillBase} border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100`}
+            data-testid="featured-tier-diamond"
+            aria-label="Featured tier diamond"
+            title="Featured diamond"
+            className={[pillBase, pillStrong].join(" ")}
           >
             <span aria-hidden>💎</span>
-            {" "}
-            <span>Featured Diamond</span>
+            <span className="sr-only">Featured diamond</span>
           </span>
         ) : (
-          <span className={`${pillBase} border-border bg-muted text-foreground`}>
+          <span
+            data-testid="featured-tier-basic"
+            aria-label="Featured tier basic"
+            title="Featured basic"
+            className={[pillBase, pillSoft].join(" ")}
+          >
             <span aria-hidden>★</span>
-            {" "}
-            <span>Featured Basic</span>
+            <span className="sr-only">Featured basic</span>
           </span>
         )
       ) : null}
@@ -160,6 +255,8 @@ function ProductCardImpl({
   featuredTier,
   sellerVerified,
   sellerFeaturedTier,
+  sellerBadges,
+  emailVerified,
 
   position,
   prefetch = true,
@@ -171,6 +268,11 @@ function ProductCardImpl({
   onDeletedAction,
 }: Props) {
   const router = useRouter();
+
+  const badgesObj =
+    sellerBadges && typeof sellerBadges === "object" && !Array.isArray(sellerBadges)
+      ? sellerBadges
+      : null;
 
   // Canonical product detail URL
   const href = useMemo(() => `/product/${encodeURIComponent(id)}`, [id]);
@@ -197,24 +299,39 @@ function ProductCardImpl({
     typeof ratingCount === "number" &&
     ratingCount > 0;
 
-  const effectiveVerified: boolean | null =
-    typeof verified === "boolean"
-      ? verified
-      : typeof sellerVerified === "boolean"
-        ? sellerVerified
-        : null;
+  /**
+   * Resolver: pick the first VALID value across sources (so null/undefined in sellerBadges
+   * won't suppress a valid legacy/canonical value).
+   */
+  const tier = useMemo<FeaturedTier | null>(() => {
+    const fromBadges = normalizeTier((badgesObj as any)?.tier);
+    if (fromBadges) return fromBadges;
 
-  const featuredTierRaw = (featuredTier ?? sellerFeaturedTier ?? null) as
-    | string
-    | null;
+    const fromCanonical =
+      featuredTier !== undefined ? normalizeTier(featuredTier) : null;
+    if (fromCanonical) return fromCanonical;
 
-  const tier = useMemo(() => {
-    if (typeof featuredTierRaw === "string") {
-      const t = featuredTierRaw.trim().toLowerCase();
-      if (t === "basic" || t === "gold" || t === "diamond") return t;
-    }
-    return featured ? "basic" : null;
-  }, [featuredTierRaw, featured]);
+    const fromLegacy =
+      sellerFeaturedTier !== undefined ? normalizeTier(sellerFeaturedTier) : null;
+    return fromLegacy;
+  }, [badgesObj, featuredTier, sellerFeaturedTier]);
+
+  const effectiveVerified = useMemo<boolean | null>(() => {
+    const vb = (badgesObj as any)?.verified;
+    if (typeof vb === "boolean") return vb;
+
+    if (typeof verified === "boolean") return verified;
+    if (typeof sellerVerified === "boolean") return sellerVerified;
+
+    if (emailVerified !== undefined) return resolveEmailVerifiedValue(emailVerified);
+
+    return null; // unknown => render nothing
+  }, [badgesObj, verified, sellerVerified, emailVerified]);
+
+  const sellerBadgesResolved = useMemo<SellerBadges>(
+    () => ({ verified: effectiveVerified, tier }),
+    [effectiveVerified, tier],
+  );
 
   // Impression tracking
   useEffect(() => {
@@ -282,9 +399,9 @@ function ProductCardImpl({
   return (
     <div
       className={[
-        "group relative overflow-hidden rounded-xl border bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm transition will-change-transform",
-        "hover:-translate-y-0.5 hover:shadow-md",
+        "group relative overflow-hidden rounded-2xl border bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm transition will-change-transform",
         "border-[var(--border-subtle)]",
+        "hover:-translate-y-0.5 hover:border-[var(--border)] hover:shadow-soft",
         className,
       ].join(" ")}
       role="article"
@@ -297,12 +414,79 @@ function ProductCardImpl({
         ? { "data-rating-avg": ratingAverage, "data-rating-count": ratingCount }
         : {})}
     >
-      {/* Owner controls: separate from main link */}
+      {/* Single canonical Link → /product/[id] (rendered before ownerControls so it is the first /product/* anchor) */}
+      <Link
+        href={href}
+        prefetch={prefetch}
+        onMouseEnter={hoverPrefetch}
+        onFocus={hoverPrefetch}
+        onClick={onClick}
+        ref={anchorRef}
+        title={name ?? "Product"}
+        aria-label={name ? `View product: ${name}` : "View product"}
+        className="relative block rounded-2xl focus-visible:outline-none focus-visible:ring-2 ring-focus"
+      >
+        <div
+          className={[
+            "relative w-full overflow-hidden bg-[var(--bg-subtle)]",
+            "h-36 min-[420px]:h-40 sm:h-44",
+          ].join(" ")}
+        >
+          {/* Badge overlays must be inside the <a> for Playwright locators */}
+          <VerifiedBadge
+            sellerBadges={sellerBadgesResolved}
+            className="pointer-events-none absolute left-2 top-2 z-20"
+          />
+
+          <SmartImage
+            src={src}
+            alt={name || "Product image"}
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+            priority={priority}
+            {...blurProps}
+          />
+        </div>
+
+        <div className="p-2.5 sm:p-3">
+          <div className="line-clamp-1 text-sm sm:text-base font-semibold text-[var(--text)]">
+            {name ?? "Product"}
+          </div>
+
+          <div className="mt-1 text-sm sm:text-base font-extrabold tracking-tight text-[var(--text)]">
+            {priceText}
+          </div>
+
+          {hasRating && (
+            <div
+              className="mt-1 flex items-center gap-1.5 text-[11px] sm:text-xs text-[var(--text-muted)]"
+              aria-label={`${ratingAverage?.toFixed(1)} out of 5 stars from ${ratingCount} reviews`}
+            >
+              <ReviewStars rating={ratingAverage || 0} />
+              <span className="font-medium text-[var(--text)]">
+                {ratingAverage?.toFixed(1)}
+              </span>
+              <span className="text-[0.7rem] text-[var(--text-muted)]">
+                ({ratingCount})
+              </span>
+            </div>
+          )}
+        </div>
+      </Link>
+
+      {/* Owner controls: separate from main link (kept AFTER main Link to avoid being the "first" /product/* anchor) */}
       {ownerControls && (
-        <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
+        <div className="absolute right-2 top-2 z-30 flex items-center gap-2">
           <Link
             href={hrefEdit}
-            className="rounded border bg-subtle px-2 py-1 text-xs text-[var(--text)] hover:bg-[var(--bg-elevated)] border-[var(--border-subtle)]"
+            className={[
+              "h-9 rounded-xl border px-2 text-[11px] sm:text-xs font-semibold shadow-sm transition",
+              "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+              "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+              "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              "inline-flex items-center",
+            ].join(" ")}
             title="Edit product"
             aria-label="Edit product"
             prefetch={false}
@@ -326,80 +510,12 @@ function ProductCardImpl({
             <DeleteListingButton
               productId={id}
               label=""
-              className="px-2 py-1"
+              className="h-9 px-2 py-1"
               {...(onDeletedAction ? { onDeletedAction } : {})}
             />
           </div>
         </div>
       )}
-
-      {/* Single canonical Link → /product/[id] */}
-      <Link
-        href={href}
-        prefetch={prefetch}
-        onMouseEnter={hoverPrefetch}
-        onFocus={hoverPrefetch}
-        onClick={onClick}
-        ref={anchorRef}
-        title={name ?? "Product"}
-        aria-label={name ? `View product: ${name}` : "View product"}
-        className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#161748]/50"
-      >
-        <div className="relative aspect-square w-full overflow-hidden bg-muted">
-          <SmartImage
-            src={src}
-            alt={name || "Product image"}
-            fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            priority={priority}
-            {...blurProps}
-          />
-          {featured && (
-            <span className="absolute left-2 top-2 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
-              Featured
-            </span>
-          )}
-        </div>
-
-        <div className="p-3">
-          <div className="line-clamp-1 font-semibold text-[var(--text)]">
-            {name ?? "Product"}
-          </div>
-
-          <div className="mt-1 text-[15px] font-bold text-brandBlue">{priceText}</div>
-
-          {/* ✅ Ensure *visible* “Verified/Unverified” + tier text exists for tests */}
-          <SellerTextBadges
-            verified={effectiveVerified}
-            tier={tier as "basic" | "gold" | "diamond" | null}
-          />
-
-          {/* Keep your existing component */}
-          {(typeof effectiveVerified === "boolean" || tier) && (
-            <div className="mt-2">
-              <VerifiedBadge
-                verified={effectiveVerified}
-                featured={Boolean(featured)}
-                featuredTier={tier}
-              />
-            </div>
-          )}
-
-          {hasRating && (
-            <div
-              className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]"
-              aria-label={`${ratingAverage?.toFixed(1)} out of 5 stars from ${ratingCount} reviews`}
-            >
-              <ReviewStars rating={ratingAverage || 0} />
-              <span className="font-medium">{ratingAverage?.toFixed(1)}</span>
-              <span className="text-[0.7rem] text-muted-foreground">
-                ({ratingCount})
-              </span>
-            </div>
-          )}
-        </div>
-      </Link>
     </div>
   );
 }

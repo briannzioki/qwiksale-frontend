@@ -59,20 +59,29 @@ export default function DeleteAccountButton({ email }: Props) {
     }
   }
 
+  const btnBase = [
+    "inline-flex items-center justify-center",
+    "min-h-9 rounded-xl px-3 py-2 text-xs font-semibold sm:px-4 sm:py-2.5 sm:text-sm",
+    "border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm",
+    "transition hover:bg-[var(--bg-subtle)] active:scale-[.99]",
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+  ].join(" ");
+
   return (
     <div className="space-y-3" data-testid="delete-account">
       {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="btn-outline border-red-600 text-red-700 hover:bg-red-50 dark:text-red-400 dark:border-red-700 dark:hover:bg-red-900/20"
-        >
+        <button type="button" onClick={() => setOpen(true)} className={btnBase}>
           Delete my account
         </button>
       ) : (
-        <div className="rounded-lg border border-red-300/60 dark:border-red-800/50 p-3 space-y-3">
+        <div
+          className={[
+            "space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)] p-3 shadow-sm sm:p-4",
+            "text-[var(--text)]",
+          ].join(" ")}
+        >
           <div className="grid gap-2">
-            <label className="label text-red-700 dark:text-red-400">
+            <label className="label text-[var(--text)]">
               To confirm, type your email:
             </label>
             <input
@@ -86,7 +95,7 @@ export default function DeleteAccountButton({ email }: Props) {
             />
           </div>
 
-          <label className="inline-flex items-center gap-2 text-sm">
+          <label className="inline-flex items-center gap-2 text-xs sm:text-sm text-[var(--text)]">
             <input
               type="checkbox"
               className="checkbox"
@@ -97,16 +106,23 @@ export default function DeleteAccountButton({ email }: Props) {
             I understand this action is permanent and cannot be undone.
           </label>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={doDelete}
               disabled={!canDelete}
               aria-busy={busy}
-              className="btn-outline border-red-700 bg-red-600/10 text-red-800 hover:bg-red-600/20 disabled:opacity-50 dark:text-red-300 dark:border-red-700"
+              className={[
+                "inline-flex items-center justify-center",
+                "min-h-9 rounded-xl px-3 py-2 text-xs font-semibold sm:px-4 sm:py-2.5 sm:text-sm",
+                "border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)] shadow-sm",
+                "transition hover:bg-[var(--bg)] active:scale-[.99] disabled:opacity-50",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              ].join(" ")}
             >
               {busy ? "Deleting…" : "Permanently delete account"}
             </button>
+
             <button
               type="button"
               onClick={() => {
@@ -115,13 +131,19 @@ export default function DeleteAccountButton({ email }: Props) {
                 setAck(false);
               }}
               disabled={busy}
-              className="btn-outline"
+              className={[
+                "inline-flex items-center justify-center",
+                "min-h-9 rounded-xl px-3 py-2 text-xs font-semibold sm:px-4 sm:py-2.5 sm:text-sm",
+                "border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm",
+                "transition hover:bg-[var(--bg-subtle)] active:scale-[.99] disabled:opacity-60",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              ].join(" ")}
             >
               Cancel
             </button>
           </div>
 
-          <p className="text-xs text-gray-500 dark:text-slate-400">
+          <p className="text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
             Your listings, favorites, and related data will be removed. You can create a new
             account later, but your current data will not be recoverable.
           </p>

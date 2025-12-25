@@ -70,7 +70,7 @@ async function fetchWithTimeout(input: string, init: RequestInit, ms: number) {
 }
 
 const fmtDateKE = (iso?: string | null) => {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Intl.DateTimeFormat("en-KE", {
       dateStyle: "medium",
@@ -278,6 +278,8 @@ async function setUserEnforcementFlag(formData: FormData) {
  * - /admin/layout via requireAdmin()
  * - middleware / assertAdmin for /api/admin/users
  */
+const SectionHeaderAny = SectionHeader as any;
+
 export default async function Page({
   searchParams,
 }: {
@@ -385,27 +387,68 @@ export default async function Page({
     }
   }
 
+  const actionBtnClass =
+    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold border border-[var(--border-subtle)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const actionBtnElevatedClass =
+    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const labelClass = "text-xs font-semibold text-[var(--text-muted)]";
+  const inputClass =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const selectClass =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const pagerBtnClass = (enabled: boolean) =>
+    [
+      "inline-flex items-center justify-center rounded-xl px-3 py-1.5 font-semibold",
+      "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+      "transition focus-visible:outline-none focus-visible:ring-2 ring-focus",
+      enabled ? "hover:bg-[var(--bg-subtle)] active:scale-[.99]" : "opacity-50",
+    ].join(" ");
+
+  const pageNumClass = (current: boolean) =>
+    [
+      "inline-flex h-8 min-w-[2rem] items-center justify-center rounded-xl px-2",
+      "text-sm font-semibold border transition",
+      current
+        ? "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+        : "border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+      "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
+    ].join(" ");
+
+  const enforcementBtnClass = (tone: "neutral" | "strong") =>
+    [
+      "inline-flex items-center justify-center rounded-lg px-2 py-1",
+      "text-[11px] font-semibold",
+      "border transition",
+      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+      "active:scale-[.99] disabled:opacity-60",
+      tone === "strong"
+        ? "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+        : "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg-subtle)]",
+    ].join(" ");
+
   return (
-    <div className="space-y-6">
-      <SectionHeader
+    <div className="space-y-6 text-[var(--text)]">
+      <SectionHeaderAny
         as="h2"
         title="Admin · Users"
         subtitle={`Manage roles, verification and enforcement. Showing ${total.toLocaleString()} users.`}
         actions={
           <div className="flex gap-2">
-            <Link href="/admin" className="btn-outline text-sm" prefetch={false}>
+            <Link href="/admin" className={actionBtnClass} prefetch={false}>
               Admin home
             </Link>
             <Link
               href="/admin/listings"
-              className="btn-gradient-primary text-sm"
+              className={actionBtnElevatedClass}
               prefetch={false}
             >
               Listings
             </Link>
             <Link
               href="/admin/moderation"
-              className="btn-outline text-sm"
+              className={actionBtnClass}
               prefetch={false}
             >
               Moderation
@@ -414,7 +457,9 @@ export default async function Page({
         }
       />
 
-      <h1 className="text-2xl font-bold">All Users</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text)]">
+        All Users
+      </h1>
 
       {/* Quick stats */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-4">
@@ -427,9 +472,9 @@ export default async function Page({
       {softError && (
         <div
           role="status"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-sm shadow-soft"
         >
-          {softError}
+          <span className="text-[var(--text-muted)]">{softError}</span>
         </div>
       )}
 
@@ -437,21 +482,21 @@ export default async function Page({
       <form
         method="GET"
         action="/admin/users"
-        className="rounded-xl border border-border bg-card p-4 shadow-sm"
+        className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft"
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-8">
-            <label className="label">Search</label>
+            <label className={labelClass}>Search</label>
             <input
               name="q"
               defaultValue={q}
               placeholder="ID, email, name, username…"
-              className="input"
+              className={inputClass}
             />
           </div>
           <div className="md:col-span-4">
-            <label className="label">Role</label>
-            <select name="role" defaultValue={role} className="select">
+            <label className={labelClass}>Role</label>
+            <select name="role" defaultValue={role} className={selectClass}>
               <option value="any">Any</option>
               <option value="USER">User</option>
               <option value="MODERATOR">Moderator</option>
@@ -461,8 +506,10 @@ export default async function Page({
           </div>
           <input type="hidden" name="page" value="1" />
           <div className="md:col-span-12 flex items-end gap-2 pt-1">
-            <button className="btn-gradient-primary">Apply</button>
-            <Link href="/admin/users" className="btn-outline" prefetch={false}>
+            <button type="submit" className={actionBtnElevatedClass}>
+              Apply
+            </button>
+            <Link href="/admin/users" className={actionBtnClass} prefetch={false}>
               Clear
             </Link>
           </div>
@@ -470,16 +517,16 @@ export default async function Page({
       </form>
 
       {/* Table */}
-      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Users</h2>
-          <span className="text-xs text-muted-foreground">
+      <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft">
+        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+          <h2 className="font-semibold text-[var(--text)]">Users</h2>
+          <span className="text-xs text-[var(--text-muted)]">
             Total: {total.toLocaleString()} • Page {safePage} / {totalPages}
           </span>
         </div>
 
         {pageRows.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-muted-foreground">
+          <div className="px-4 py-6 text-sm text-[var(--text-muted)]">
             No users found.
           </div>
         ) : (
@@ -489,7 +536,7 @@ export default async function Page({
                 <caption className="sr-only">
                   Admin user list with roles, verification, status and actions
                 </caption>
-                <thead className="bg-muted text-muted-foreground">
+                <thead className="bg-[var(--bg-subtle)] text-[var(--text-muted)]">
                   <tr>
                     <Th>ID</Th>
                     <Th>Email</Th>
@@ -502,7 +549,7 @@ export default async function Page({
                     {viewerIsSuper && <Th>Actions</Th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-[var(--border-subtle)]">
                   {pageRows.map((u) => {
                     const r = (u.role ?? "USER").toUpperCase().trim() as
                       | "USER"
@@ -526,25 +573,26 @@ export default async function Page({
                         ? "Suspended"
                         : "Active";
 
-                    const rowHighlight = isBanned
-                      ? "bg-rose-50/70 dark:bg-rose-950/30"
-                      : isSuspended
-                        ? "bg-amber-50/60 dark:bg-amber-950/20"
-                        : "";
+                    const rowHighlight =
+                      isBanned || isSuspended ? "bg-[var(--bg-subtle)]" : "";
 
                     const isSelf = viewerId === u.id;
 
                     return (
                       <tr
                         key={u.id}
-                        className={`hover:bg-muted ${rowHighlight}`}
+                        className={[
+                          "transition",
+                          "hover:bg-[var(--bg-subtle)]",
+                          rowHighlight,
+                        ].join(" ")}
                       >
                         <Td className="font-mono text-xs">{u.id}</Td>
-                        <Td>{u.email ?? "—"}</Td>
+                        <Td>{u.email ?? "-"}</Td>
                         <Td>
-                          {u.name ?? "—"}
+                          {u.name ?? "-"}
                           {isSelf && (
-                            <span className="ml-1 text-[11px] text-muted-foreground">
+                            <span className="ml-1 text-[11px] text-[var(--text-muted)]">
                               (you)
                             </span>
                           )}
@@ -554,12 +602,12 @@ export default async function Page({
                             <Link
                               href={`/store/${u.username}`}
                               prefetch={false}
-                              className="underline text-[#161748] dark:text-[#39a0ca]"
+                              className="font-semibold text-[var(--text)] underline underline-offset-4 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus"
                             >
                               @{u.username}
                             </Link>
                           ) : (
-                            "—"
+                            "-"
                           )}
                         </Td>
                         <Td>
@@ -607,11 +655,9 @@ export default async function Page({
                                         ? "Unban user"
                                         : "Ban user"
                                   }
-                                  className={`rounded px-2 py-1 text-[11px] text-white transition disabled:opacity-60 ${
-                                    isBanned
-                                      ? "bg-emerald-600/90 hover:bg-emerald-600"
-                                      : "bg-red-600/90 hover:bg-red-600"
-                                  }`}
+                                  className={enforcementBtnClass(
+                                    isBanned ? "neutral" : "strong",
+                                  )}
                                 >
                                   {isBanned ? "Unban" : "Ban"}
                                 </button>
@@ -638,11 +684,9 @@ export default async function Page({
                                           ? "Unsuspend user"
                                           : "Suspend user"
                                   }
-                                  className={`rounded px-2 py-1 text-[11px] text-white transition disabled:opacity-60 ${
-                                    isSuspended
-                                      ? "bg-emerald-600/90 hover:bg-emerald-600"
-                                      : "bg-amber-600/90 hover:bg-amber-600"
-                                  }`}
+                                  className={enforcementBtnClass(
+                                    isSuspended ? "neutral" : "strong",
+                                  )}
                                 >
                                   {isSuspended ? "Unsuspend" : "Suspend"}
                                 </button>
@@ -672,7 +716,7 @@ export default async function Page({
 
             {/* Pagination */}
             <nav
-              className="flex items-center justify-between border-t border-border px-4 py-3 text-sm"
+              className="flex items-center justify-between border-t border-[var(--border-subtle)] px-4 py-3 text-sm"
               aria-label="Pagination"
             >
               <Link
@@ -682,9 +726,7 @@ export default async function Page({
                     : "#"
                 }
                 aria-disabled={safePage <= 1}
-                className={`rounded border border-border px-3 py-1 transition ${
-                  safePage > 1 ? "hover:shadow" : "opacity-50"
-                }`}
+                className={pagerBtnClass(safePage > 1)}
               >
                 ← Prev
               </Link>
@@ -710,11 +752,7 @@ export default async function Page({
                       href={keepQuery("/admin/users", sp, { page: String(p) })}
                       prefetch={false}
                       aria-current={isCurrent ? "page" : undefined}
-                      className={`rounded px-2 py-1 ${
-                        isCurrent
-                          ? "bg-[#161748] text-primary-foreground"
-                          : "hover:bg-muted"
-                      }`}
+                      className={pageNumClass(isCurrent)}
                     >
                       {p}
                     </Link>
@@ -729,9 +767,7 @@ export default async function Page({
                     : "#"
                 }
                 aria-disabled={safePage >= totalPages}
-                className={`rounded border border-border px-3 py-1 transition ${
-                  safePage < totalPages ? "hover:shadow" : "opacity-50"
-                }`}
+                className={pagerBtnClass(safePage < totalPages)}
               >
                 Next →
               </Link>
@@ -745,7 +781,7 @@ export default async function Page({
 
 function Th({ children }: { children: ReactNode }) {
   return (
-    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold">
+    <th className="whitespace-nowrap px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
       {children}
     </th>
   );
@@ -759,7 +795,12 @@ function Td({
   className?: string;
 }) {
   return (
-    <td className={`whitespace-nowrap px-4 py-2 align-middle ${className ?? ""}`}>
+    <td
+      className={[
+        "whitespace-nowrap px-4 py-2 align-middle text-sm text-[var(--text)]",
+        className ?? "",
+      ].join(" ")}
+    >
       {children}
     </td>
   );
@@ -772,16 +813,26 @@ function Badge({
   children: ReactNode;
   tone?: "slate" | "green" | "amber" | "rose" | "indigo";
 }) {
+  // Token-only styling (tone preserved for callsites/logic, but avoids legacy palette + raw Tailwind colors).
   const map: Record<string, string> = {
-    slate: "bg-muted text-muted-foreground",
-    green: "bg-green-100 text-green-800",
-    amber: "bg-amber-100 text-amber-800",
-    rose: "bg-rose-100 text-rose-800",
-    indigo: "bg-indigo-100 text-indigo-800",
+    slate:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+    green:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+    amber:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+    rose:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+    indigo:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
   };
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${map[tone]}`}
+      className={[
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+        "border",
+        map[tone],
+      ].join(" ")}
     >
       {children}
     </span>
@@ -797,19 +848,26 @@ function StatPill({
   value: number;
   tone?: "slate" | "green" | "amber" | "rose";
 }) {
-  const colors: Record<typeof tone, string> = {
-    slate: "bg-muted text-muted-foreground",
-    green: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-    amber: "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
-    rose: "bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300",
+  // Token-only styling (tone preserved; visual stays consistent across light/dark).
+  const styles: Record<typeof tone, string> = {
+    slate: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+    green: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+    amber: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+    rose: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
   } as const;
 
   return (
     <div
-      className={`flex items-center justify-between rounded-full px-3 py-1.5 text-xs ${colors[tone]}`}
+      className={[
+        "flex items-center justify-between rounded-full px-3 py-1.5",
+        "border shadow-soft",
+        styles[tone],
+      ].join(" ")}
     >
-      <span className="font-medium">{label}</span>
-      <span className="font-semibold">
+      <span className="text-xs font-semibold text-[var(--text-muted)]">
+        {label}
+      </span>
+      <span className="text-xs font-extrabold tracking-tight text-[var(--text)]">
         {Number(value || 0).toLocaleString("en-KE")}
       </span>
     </div>

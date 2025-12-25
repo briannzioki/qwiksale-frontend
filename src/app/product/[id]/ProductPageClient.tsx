@@ -20,10 +20,13 @@ import { useListingReviews } from "@/app/hooks/useListingReviews";
 import SellerInfo from "@/app/components/SellerInfo";
 
 import type { Review, ReviewListResponse, ReviewBreakdown } from "@/app/lib/reviews";
+import type { FeaturedTier } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 /* -------------------------------- Types -------------------------------- */
-
-type FeaturedTier = "basic" | "gold" | "diamond";
 
 export type ProductWire = {
   id: string;
@@ -51,6 +54,7 @@ export type ProductWire = {
   /** Seller/account flags */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
+  sellerBadges?: { verified?: boolean | null; tier?: FeaturedTier | string | null } | null;
 
   /** New-ish fields coming from API */
   sellerStoreLocationUrl?: string | null;
@@ -65,12 +69,20 @@ export type ProductWire = {
         memberSince?: string | null;
         rating?: number | null;
         sales?: number | null;
+
+        // NOTE: not authoritative for badges in UI
         verified?: boolean | null;
         storeLocationUrl?: string | null;
 
         featuredTier?: FeaturedTier | string | null;
         featured_tier?: string | null;
         tier?: string | null;
+
+        // NextAuth-ish / legacy-ish keys that may appear
+        emailVerified?: unknown;
+        email_verified?: unknown;
+        emailVerifiedAt?: unknown;
+        email_verified_at?: unknown;
       }
     | null;
   sellerUsername?: string | null;
@@ -111,21 +123,68 @@ function fmtKES(n?: number | null) {
   }
 }
 
-function pickFirstBool(...xs: unknown[]): boolean | null {
-  for (const x of xs) {
-    if (typeof x === "boolean") return x;
-  }
-  return null;
+function normalizeTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  return t === "basic" || t === "gold" || t === "diamond" ? (t as FeaturedTier) : null;
 }
 
-function coerceFeaturedTier(v: unknown): FeaturedTier | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim().toLowerCase();
-  if (!s) return null;
-  if (s.includes("diamond")) return "diamond";
-  if (s.includes("gold")) return "gold";
-  if (s.includes("basic")) return "basic";
-  return null;
+/**
+ * Seller badges must be derived via shared resolver (emailVerified-only verification),
+ * BUT we allow the API's explicit derived fields:
+ * - sellerBadges.verified
+ * - sellerVerified
+ *
+ * We do NOT trust legacy/random boolean fields on nested seller objects (e.g. seller.verified).
+ */
+function resolveSellerBadgeFieldsFromAny(raw: any) {
+  const seller =
+    raw?.seller && typeof raw.seller === "object" && !Array.isArray(raw.seller)
+      ? raw.seller
+      : null;
+
+  const base = seller ?? (raw && typeof raw === "object" ? raw : {});
+
+  // Tier can exist at multiple levels; it's NOT verification.
+  const tierHint =
+    raw?.sellerFeaturedTier ??
+    raw?.seller_featured_tier ??
+    raw?.sellerBadges?.tier ??
+    raw?.featuredTier ??
+    raw?.featured_tier ??
+    null;
+
+  // ✅ Only accept the API's explicit derived verification fields (not nested legacy booleans).
+  const verifiedHint =
+    typeof raw?.sellerBadges?.verified === "boolean"
+      ? raw.sellerBadges.verified
+      : typeof raw?.sellerVerified === "boolean"
+        ? raw.sellerVerified
+        : typeof raw?.seller_verified === "boolean"
+          ? raw.seller_verified
+          : null;
+
+  // ✅ Prevent legacy boolean fields from influencing badge resolution.
+  const baseClean: any = { ...(base as any) };
+  delete baseClean.verified;
+  delete baseClean.isVerified;
+  delete baseClean.accountVerified;
+  delete baseClean.sellerVerified;
+  delete baseClean.isSellerVerified;
+  delete baseClean.verifiedSeller;
+  delete baseClean.isAccountVerified;
+  delete baseClean.verifiedAt;
+  delete baseClean.verified_on;
+  delete baseClean.verifiedOn;
+  delete baseClean.verificationDate;
+
+  const userLike = tierHint != null ? { ...baseClean, featuredTier: tierHint } : baseClean;
+
+  const resolved = resolveSellerBadgeFieldsFromUserLike(userLike);
+
+  const finalVerified = typeof verifiedHint === "boolean" ? verifiedHint : resolved.sellerVerified;
+
+  return buildSellerBadgeFields(finalVerified, resolved.sellerFeaturedTier);
 }
 
 /**
@@ -178,55 +237,6 @@ function coerceValidUserId(raw: unknown): string | null {
 
   if (s.length > 120) return null;
   return s;
-}
-
-function SellerBadgesRow({
-  verified,
-  tier,
-}: {
-  verified?: boolean | null;
-  tier?: FeaturedTier | null;
-}) {
-  const showVerified = typeof verified === "boolean";
-  const showTier = !!tier;
-  if (!showVerified && !showTier) return null;
-
-  return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      {showVerified ? (
-        verified ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
-            <span aria-hidden>✓</span>
-            <span>Verified</span>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
-            <span aria-hidden>!</span>
-            <span>Unverified</span>
-          </span>
-        )
-      ) : null}
-
-      {tier ? (
-        tier === "gold" ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 px-2 py-0.5 text-[11px] font-semibold text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100">
-            <span aria-hidden>★</span>
-            <span>Featured Gold</span>
-          </span>
-        ) : tier === "diamond" ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 px-2 py-0.5 text-[11px] font-semibold text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100">
-            <span aria-hidden>💎</span>
-            <span>Featured Diamond</span>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground">
-            <span aria-hidden>★</span>
-            <span>Featured Basic</span>
-          </span>
-        )
-      ) : null}
-    </div>
-  );
 }
 
 /**
@@ -469,12 +479,12 @@ export default function ProductPageClient({
   if (gone) {
     return (
       <div className="mx-auto max-w-2xl">
-        <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-          <div className="mx-auto mb-3 grid h-10 w-10 place-content-center rounded-lg bg-[#161748] text-white">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 text-center text-[var(--text)] shadow-soft sm:p-6">
+          <div className="mx-auto mb-2 grid h-9 w-9 place-content-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)] sm:mb-3 sm:h-10 sm:w-10">
             404
           </div>
-          <h1 className="text-lg font-semibold">Listing unavailable</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-lg font-semibold text-[var(--text)]">Listing unavailable</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             This product was removed or isn’t available anymore.
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
@@ -492,19 +502,8 @@ export default function ProductPageClient({
 
   const displayMaybe = (fetched || product) as Detail | undefined;
 
-  const sellerVerifiedRaw =
-    typeof (displayMaybe as any)?.sellerVerified === "boolean"
-      ? (displayMaybe as any).sellerVerified
-      : typeof (displayMaybe as any)?.verified === "boolean"
-        ? (displayMaybe as any).verified
-        : undefined;
-
-  const sellerTierRaw =
-    coerceFeaturedTier((displayMaybe as any)?.sellerFeaturedTier) ??
-    coerceFeaturedTier((displayMaybe as any)?.seller_featured_tier) ??
-    coerceFeaturedTier((displayMaybe as any)?.featuredTier) ??
-    coerceFeaturedTier((displayMaybe as any)?.featured_tier) ??
-    null;
+  // ✅ seller verification from emailVerified-only resolver + explicit API derived fields
+  const sellerBadgeFields = resolveSellerBadgeFieldsFromAny(displayMaybe);
 
   const display: Detail = {
     id: displayMaybe?.id ?? (id || "unknown"),
@@ -530,14 +529,11 @@ export default function ProductPageClient({
     seller: displayMaybe?.seller ?? null,
     status: displayMaybe?.status ?? null,
 
-    // ✅ stable defaults so badges don’t disappear on partial data
-    sellerVerified: typeof sellerVerifiedRaw === "boolean" ? sellerVerifiedRaw : false,
-    sellerFeaturedTier: sellerTierRaw ?? "basic",
+    // ✅ stable consolidated badges + alias fields
+    ...sellerBadgeFields,
 
     sellerStoreLocationUrl:
-      (displayMaybe as any)?.sellerStoreLocationUrl ??
-      (displayMaybe as any)?.storeLocationUrl ??
-      null,
+      (displayMaybe as any)?.sellerStoreLocationUrl ?? (displayMaybe as any)?.storeLocationUrl ?? null,
     sellerUsername: displayMaybe?.sellerUsername ?? null,
     username: displayMaybe?.username ?? null,
   };
@@ -565,20 +561,11 @@ export default function ProductPageClient({
             ? (display as any).storeLocationUrl
             : null;
 
-    const verified =
-      pickFirstBool(
-        nested?.verified,
-        nested?.isVerified,
-        (display as any)?.sellerVerified,
-        (display as any)?.verified,
-      ) ?? false;
+    // ✅ UI must trust display.sellerVerified / display.sellerFeaturedTier (resolver-derived / API derived)
+    const uiVerified =
+      typeof (display as any)?.sellerVerified === "boolean" ? (display as any).sellerVerified : null;
 
-    const featuredTier: FeaturedTier =
-      coerceFeaturedTier(nested?.featuredTier) ??
-      coerceFeaturedTier(nested?.featured_tier) ??
-      coerceFeaturedTier(nested?.tier) ??
-      coerceFeaturedTier((display as any)?.sellerFeaturedTier) ??
-      "basic";
+    const uiTier = normalizeTier((display as any)?.sellerFeaturedTier);
 
     return {
       id: nested?.id ?? display?.sellerId ?? null,
@@ -601,8 +588,10 @@ export default function ProductPageClient({
             ? display?.sellerSales
             : null,
       storeLocationUrl,
-      verified,
-      featuredTier,
+
+      // ✅ ONLY resolver/API-derived fields reach UI badges/props
+      verified: uiVerified,
+      featuredTier: uiTier,
     };
   }, [display]);
 
@@ -681,6 +670,26 @@ export default function ProductPageClient({
 
   const sellerIdForDonate: string | null = sellerUserIdForStore;
 
+  // ✅ Tier should be shown whenever a valid tier exists; keep "basic" fallback for featured listings.
+  const listingTier: FeaturedTier | null = seller.featuredTier ?? (display.featured ? "basic" : null);
+
+  // Gallery featured overlay (icon-only + tier-colored)
+  const overlayTier: FeaturedTier | null = listingTier;
+  const overlayTestId = overlayTier ? `featured-tier-${overlayTier}` : null;
+  const overlayLabel = overlayTier ? `Featured tier ${overlayTier}` : "";
+  const overlayIcon = overlayTier === "diamond" ? "💎" : "★";
+
+  const toneTier: FeaturedTier = overlayTier ?? "basic";
+
+  const featuredOverlayClass =
+    toneTier === "diamond"
+      ? "border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]"
+      : toneTier === "gold"
+        ? "border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+        : "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]";
+
+  const featuredOverlayRing = "ring-1 ring-[var(--border-subtle)]";
+
   /* -------------------------------- Render ------------------------------ */
 
   return (
@@ -695,28 +704,40 @@ export default function ProductPageClient({
         />
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-5">
         {/* Media */}
         <div className="lg:col-span-3">
-          <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm" data-gallery-wrap>
+          <div
+            className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft"
+            data-gallery-wrap
+          >
             {/* ✅ no aspect-[…] utilities */}
             <div className="relative" style={{ aspectRatio: "16 / 10" }}>
-              {display.featured && (
-                <span className="absolute left-3 top-3 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
-                  Featured
+              {overlayTier && overlayTestId && (
+                <span
+                  data-testid={overlayTestId}
+                  aria-label={overlayLabel}
+                  title={overlayLabel}
+                  className={[
+                    "pointer-events-none absolute left-2 top-2 z-20 inline-flex items-center justify-center rounded-xl px-2 py-1 text-[11px] shadow-sm sm:left-3 sm:top-3 sm:text-xs",
+                    featuredOverlayClass,
+                    featuredOverlayRing,
+                  ].join(" ")}
+                >
+                  <span aria-hidden>{overlayIcon}</span>
                 </span>
               )}
 
               <Gallery images={apiGallery} lightbox={enableLightbox} sizes={GALLERY_SIZES} />
 
-              <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-black/5 dark:ring-white/10" />
+              <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-[var(--border-subtle)]" />
             </div>
 
             {/* Controls */}
-            <div className="absolute right-3 top-3 z-20 flex gap-2">
+            <div className="absolute right-2 top-2 z-20 flex gap-2 sm:right-3 sm:top-3">
               <button
                 onClick={copyLink}
-                className="btn-gradient-primary inline-flex items-center gap-1 px-2 py-1 text-xs"
+                className="btn-gradient-primary inline-flex h-9 items-center gap-1 px-3 text-xs"
                 title="Copy link"
                 aria-label="Copy link"
                 disabled={fetchCopying}
@@ -731,7 +752,7 @@ export default function ProductPageClient({
                     <>
                       <Link
                         href={`/product/${display.id}/edit`}
-                        className="btn-gradient-primary inline-flex items-center gap-1 px-2 py-1 text-xs"
+                        className="btn-gradient-primary inline-flex h-9 items-center gap-1 px-3 text-xs"
                         title="Edit listing"
                         aria-label="Edit listing"
                       >
@@ -755,23 +776,25 @@ export default function ProductPageClient({
         </div>
 
         {/* Content */}
-        <div className="space-y-4 lg:col-span-2">
+        <div className="space-y-3 sm:space-y-4 lg:col-span-2">
           {/* Title / meta */}
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">{display.name || "Listing"}</h1>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
+              <h1 className="text-xl font-bold text-[var(--text)] sm:text-2xl">
+                {display.name || "Listing"}
+              </h1>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-[var(--text-muted)] sm:text-sm">
                   {display.category || "General"} • {display.subcategory || "General"}
                 </span>
                 {display.featured && (
-                  <span className="whitespace-nowrap rounded-full bg-[#161748] px-3 py-1 text-xs font-medium text-white">
+                  <span className="whitespace-nowrap rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--text)] sm:px-3 sm:py-1 sm:text-xs">
                     Featured listing
                   </span>
                 )}
               </div>
               {(fetching || fetchErr) && (
-                <div className="mt-2 text-xs text-muted-foreground">
+                <div className="mt-1.5 text-[11px] text-[var(--text-muted)] sm:mt-2 sm:text-xs">
                   {fetching ? "Loading details…" : "Showing limited info"}
                 </div>
               )}
@@ -779,28 +802,43 @@ export default function ProductPageClient({
           </div>
 
           {/* Price / attributes */}
-          <div className="space-y-1 rounded-xl border border-border bg-card p-4">
-            <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">{fmtKES(display.price)}</p>
-            {display.negotiable && <p className="text-sm text-muted-foreground">Negotiable</p>}
-            {display.brand && <p className="text-sm text-muted-foreground">Brand: {display.brand}</p>}
-            {display.condition && <p className="text-sm text-muted-foreground">Condition: {display.condition}</p>}
-            {display.location && <p className="text-sm text-muted-foreground">Location: {display.location}</p>}
+          <div className="space-y-0.5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 text-[var(--text)] shadow-soft sm:space-y-1 sm:p-4">
+            <p className="text-xl font-bold text-[var(--text)] sm:text-2xl">
+              {fmtKES(display.price)}
+            </p>
+            {display.negotiable && (
+              <p className="text-xs text-[var(--text-muted)] sm:text-sm">Negotiable</p>
+            )}
+            {display.brand && (
+              <p className="text-xs text-[var(--text-muted)] sm:text-sm">Brand: {display.brand}</p>
+            )}
+            {display.condition && (
+              <p className="text-xs text-[var(--text-muted)] sm:text-sm">
+                Condition: {display.condition}
+              </p>
+            )}
+            {display.location && (
+              <p className="text-xs text-[var(--text-muted)] sm:text-sm">
+                Location: {display.location}
+              </p>
+            )}
           </div>
 
           {/* Description */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h2 className="mb-2 font-semibold">Description</h2>
-            <p className="whitespace-pre-line text-foreground">{display.description || "No description provided."}</p>
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 text-[var(--text)] shadow-soft sm:p-4">
+            <h2 className="mb-1 text-sm font-semibold text-[var(--text)] sm:mb-2 sm:text-base">
+              Description
+            </h2>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--text)] sm:text-base">
+              {display.description || "No description provided."}
+            </p>
           </div>
 
-          {/* Seller badges + Seller panel (shared) */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-sm font-semibold text-foreground">Seller</div>
+          {/* Seller panel */}
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 text-[var(--text)] shadow-soft sm:p-4">
+            <div className="text-xs font-semibold text-[var(--text)] sm:text-sm">Seller</div>
 
-            {/* ✅ always present now (defaults applied upstream) */}
-            <SellerBadgesRow verified={seller.verified} tier={seller.featuredTier} />
-
-            <div className="mt-3">
+            <div className="mt-2 sm:mt-3">
               <SellerInfo
                 label="Seller"
                 sellerId={sellerUserIdForStore}
@@ -812,9 +850,11 @@ export default function ProductPageClient({
                 memberSince={seller.memberSince ?? null}
                 rating={typeof seller.rating === "number" ? seller.rating : null}
                 salesCount={typeof seller.sales === "number" ? seller.sales : null}
-                verified={seller.verified}
                 storeHref={storeHref}
                 donateSellerId={sellerIdForDonate}
+                // ✅ single source of truth for verification + tier
+                verified={seller.verified}
+                featuredTier={listingTier}
                 contactSlot={
                   display.id ? (
                     <ContactModal
@@ -832,24 +872,26 @@ export default function ProductPageClient({
           </div>
 
           {/* Reviews */}
-          <div className="rounded-xl border border-border bg-card p-4">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 text-[var(--text)] shadow-soft sm:p-4">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-semibold">Reviews</h3>
+              <h3 className="font-semibold text-[var(--text)]">Reviews</h3>
               {reviewSummary && reviewSummary.count ? (
-                <div className="text-xs text-muted-foreground">
-                  <span className="font-medium">{(reviewSummary.average ?? 0).toFixed(1)} / 5</span>{" "}
+                <div className="text-xs text-[var(--text-muted)]">
+                  <span className="font-medium text-[var(--text)]">
+                    {(reviewSummary.average ?? 0).toFixed(1)} / 5
+                  </span>{" "}
                   · {reviewSummary.count} {reviewSummary.count === 1 ? "review" : "reviews"}
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground">No reviews yet</div>
+                <div className="text-xs text-[var(--text-muted)]">No reviews yet</div>
               )}
             </div>
 
-            <div className="mt-3 space-y-3">
-              {reviewErr && <p className="text-xs text-red-500">{reviewErr}</p>}
+            <div className="mt-2 space-y-2 sm:mt-3 sm:space-y-3">
+              {reviewErr && <p className="text-xs text-destructive">{reviewErr}</p>}
 
               {reviewLoading && reviews.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Loading reviews…</p>
+                <p className="text-xs text-[var(--text-muted)]">Loading reviews…</p>
               ) : null}
 
               <ReviewSummary
@@ -862,7 +904,11 @@ export default function ProductPageClient({
               <ReviewList reviews={reviews} />
 
               {display?.id && (
-                <AddReviewForm listingId={display.id!} listingType="product" onSubmittedAction={onReviewCreated} />
+                <AddReviewForm
+                  listingId={display.id!}
+                  listingType="product"
+                  onSubmittedAction={onReviewCreated}
+                />
               )}
             </div>
           </div>

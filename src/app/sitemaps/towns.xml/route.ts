@@ -7,12 +7,13 @@ import { NextResponse } from "next/server";
 /** Resolve a canonical absolute base URL (no trailing slash). */
 function getBaseUrl(): string {
   const raw =
-    process.env['NEXT_PUBLIC_APP_URL'] ||
-    process.env['APP_ORIGIN'] ||
+    process.env["NEXT_PUBLIC_SITE_URL"] ||
+    process.env["NEXT_PUBLIC_APP_URL"] ||
+    process.env["APP_ORIGIN"] ||
     process.env["NEXTAUTH_URL"] ||
-    "https://qwiksale.co";
+    "https://qwiksale.sale";
   const trimmed = String(raw).trim().replace(/\/+$/, "");
-  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.co";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "https://qwiksale.sale";
 }
 
 /** Minimal XML escaper for <loc> contents. */
@@ -40,16 +41,23 @@ function buildMinimal(): string {
 }
 
 function hasValidDbUrl(): boolean {
-  const u = process.env['DATABASE_URL'] ?? "";
+  const u = process.env["DATABASE_URL"] ?? "";
   return /^postgres(ql)?:\/\//i.test(u);
 }
 
 function shouldSkipDb(): boolean {
-  return process.env['SKIP_SITEMAP_DB'] === "1";
+  return process.env["SKIP_SITEMAP_DB"] === "1";
+}
+
+// IMPORTANT:
+// Only enable town URLs if you actually have a real /town/* route to serve them.
+// Otherwise, submitting these URLs will create 404/soft-404 indexing issues.
+function townUrlsEnabled(): boolean {
+  return process.env["SITEMAP_ENABLE_TOWN_URLS"] === "1";
 }
 
 export async function GET() {
-  if (!hasValidDbUrl() || shouldSkipDb()) {
+  if (!hasValidDbUrl() || shouldSkipDb() || !townUrlsEnabled()) {
     return new NextResponse(buildMinimal(), {
       headers: {
         "Content-Type": "application/xml; charset=utf-8",

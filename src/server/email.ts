@@ -9,7 +9,7 @@ const DEFAULT_FROM = process.env["EMAIL_FROM"] || "QwikSale <noreply@qwiksale.sa
 export type Attachment = {
   filename: string;
   content: string | Buffer; // base64 or utf8 is fine
-  path?: string;            // if you prefer to let Resend fetch a URL
+  path?: string; // if you prefer to let Resend fetch a URL
   contentType?: string;
 };
 
@@ -19,17 +19,17 @@ export type MailOptions = {
   subject: string;
   html?: string;
   text?: string;
-  from?: string;                // override default sender
+  from?: string; // override default sender
   cc?: string | string[];
   bcc?: string | string[];
   replyTo?: string | string[];
   tags?: { name: string; value: string }[];
   attachments?: Attachment[];
-  /** When true, don’t hit the API — just log the payload (useful in dev/tests). */
+  /** When true, don't hit the API - just log the payload (useful in dev/tests). */
   dryRun?: boolean;
 };
 
-/** Minimal HTML→text fallback (keeps it dependency-free). */
+/** Minimal HTML->text fallback (keeps it dependency-free). */
 function htmlToText(html?: string): string | undefined {
   if (!html) return undefined;
   // Remove scripts/styles & decode a few entities; collapse whitespace
@@ -85,16 +85,18 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
 export async function sendMail(
   to: string,
   subject: string,
-  html: string
+  html: string,
 ): Promise<{ id?: string; simulated?: boolean }>;
 
 /** Overload with full options. */
-export async function sendMail(options: MailOptions): Promise<{ id?: string; simulated?: boolean }>;
+export async function sendMail(
+  options: MailOptions,
+): Promise<{ id?: string; simulated?: boolean }>;
 
 export async function sendMail(
   a: string | MailOptions,
   b?: string,
-  c?: string
+  c?: string,
 ): Promise<{ id?: string; simulated?: boolean }> {
   // IMPORTANT: do not include html when it's undefined
   const opts: MailOptions =
@@ -112,7 +114,9 @@ export async function sendMail(
     cc: opts.cc ? (Array.isArray(opts.cc) ? opts.cc : [opts.cc]) : undefined,
     bcc: opts.bcc ? (Array.isArray(opts.bcc) ? opts.bcc : [opts.bcc]) : undefined,
     reply_to: opts.replyTo
-      ? (Array.isArray(opts.replyTo) ? opts.replyTo : [opts.replyTo])
+      ? Array.isArray(opts.replyTo)
+        ? opts.replyTo
+        : [opts.replyTo]
       : undefined,
     subject: opts.subject,
     ...(opts.html !== undefined ? { html: opts.html } : {}),
@@ -126,7 +130,7 @@ export async function sendMail(
     // eslint-disable-next-line no-console
     console.info(
       "[email:drawing-board]",
-      JSON.stringify({ env: ENV, using: "noop", payload }, null, 2)
+      JSON.stringify({ env: ENV, using: "noop", payload }, null, 2),
     );
     return { simulated: true };
   }
@@ -146,42 +150,59 @@ export function renderBasicTemplate(args: {
   footer?: string;
 }) {
   const { title, body, cta, footer } = args;
+
+  // NOTE: We keep email styles dependency-free and centralized via inline-safe CSS vars.
+  // We avoid hex literals in source by using rgb() tokens.
+  const vars = `
+    --bg: rgb(246 248 250);
+    --bg-elevated: rgb(255 255 255);
+    --border-subtle: rgb(229 231 235);
+    --text: rgb(17 24 39);
+    --text-muted: rgb(55 65 81);
+    --text-muted-2: rgb(107 114 128);
+    --text-faint: rgb(156 163 175);
+    --brand-start: rgb(22 23 72);
+  `.trim();
+
   return `<!doctype html>
 <html>
   <head>
     <meta charSet="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>${escapeHtml(title)}</title>
+    <style>
+      :root { ${vars} }
+    </style>
   </head>
-  <body style="margin:0;background:#f6f8fa;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <body style="margin:0;background: rgb(246 248 250); background: var(--bg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;">
+          <table role="presentation" width="100%" style="max-width:560px;background: rgb(255 255 255); background: var(--bg-elevated); border:1px solid rgb(229 231 235); border-color: var(--border-subtle); border-radius:12px;padding:24px;">
             <tr>
               <td>
-                <h1 style="margin:0 0 8px 0;color:#111827;font-size:20px;">${escapeHtml(
-                  title
+                <h1 style="margin:0 0 8px 0;color: rgb(17 24 39); color: var(--text); font-size:20px;">${escapeHtml(
+                  title,
                 )}</h1>
-                <p style="margin:0 0 16px 0;color:#374151;font-size:14px;line-height:1.5;">${body}</p>
+                <p style="margin:0 0 16px 0;color: rgb(55 65 81); color: var(--text-muted); font-size:14px;line-height:1.5;">${body}</p>
                 ${
                   cta
                     ? `<p style="margin:16px 0;">
-                        <a href="${cta.href}" style="display:inline-block;background:#161748;color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600;">${escapeHtml(
-                          cta.label
+                        <a href="${cta.href}" style="display:inline-block;background: rgb(22 23 72); background: var(--brand-start); color: rgb(255 255 255); text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600;">${escapeHtml(
+                          cta.label,
                         )}</a>
                       </p>`
                     : ""
                 }
                 ${
                   footer
-                    ? `<p style="margin-top:24px;color:#6b7280;font-size:12px;">${footer}</p>`
+                    ? `<p style="margin-top:24px;color: rgb(107 114 128); color: var(--text-muted-2); font-size:12px;">${footer}</p>`
                     : ""
                 }
               </td>
             </tr>
           </table>
-          <p style="color:#9ca3af;font-size:12px;margin-top:12px;">© ${new Date().getFullYear()} QwikSale</p>
+          <p style="color: rgb(156 163 175); color: var(--text-faint); font-size:12px;margin-top:12px;">© ${new Date().getFullYear()} QwikSale</p>
         </td>
       </tr>
     </table>

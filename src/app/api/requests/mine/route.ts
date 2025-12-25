@@ -48,7 +48,7 @@ export async function GET() {
       }),
       requestModel?.findMany?.({
         where: { ownerId: meId },
-        orderBy: [{ createdAt: "desc" }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: 200,
         select: {
           id: true,
@@ -97,7 +97,7 @@ export async function GET() {
       // next reset = oldest request within window + 24h
       const oldest = await requestModel?.findFirst?.({
         where: { ownerId: meId, createdAt: { gt: start } },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: { createdAt: true },
       });
       if (oldest?.createdAt) {

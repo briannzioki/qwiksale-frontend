@@ -1,16 +1,9 @@
-// src/app/components/Gallery.tsx
 "use client";
 
 import type React from "react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useCallback,
-  useId,
-} from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, useId } from "react";
 import LightboxModal from "@/app/components/LightboxModal.client";
+import { cx, pillClass, pillIconClass, pillGroupClass } from "@/app/components/ui/pill";
 
 type Props = {
   images?: string[] | null;
@@ -21,7 +14,16 @@ type Props = {
   aspect?: string;
   fit?: "cover" | "contain";
   onIndexChangeAction?: (nextIndex: number) => void;
+
+  /**
+   * ✅ NEW:
+   * When images is empty, Gallery still must render a visible <img> so
+   * detail pages/tests always have a stable DOM contract.
+   */
+  emptySrc?: string;
 };
+
+const DEFAULT_EMPTY_SRC = "/placeholder/default.jpg";
 
 export default function Gallery({
   images = [],
@@ -32,6 +34,7 @@ export default function Gallery({
   aspect = "aspect-[4/3] sm:aspect-[16/10]",
   fit = "cover",
   onIndexChangeAction,
+  emptySrc = DEFAULT_EMPTY_SRC,
 }: Props) {
   const safeImages = useMemo(
     () =>
@@ -43,7 +46,6 @@ export default function Gallery({
     [images],
   );
 
-  // No internal placeholder: callers must decide what to pass.
   const imgs = safeImages;
   const total = imgs.length;
 
@@ -58,17 +60,10 @@ export default function Gallery({
       return;
     }
 
-    const clampedInitial = Math.min(
-      Math.max(0, initialIndex),
-      len - 1,
-    );
+    const clampedInitial = Math.min(Math.max(0, initialIndex), len - 1);
 
     setIdx((cur) => {
-      if (
-        !Number.isFinite(cur) ||
-        cur < 0 ||
-        cur >= len
-      ) {
+      if (!Number.isFinite(cur) || cur < 0 || cur >= len) {
         return clampedInitial;
       }
       return cur;
@@ -92,8 +87,7 @@ export default function Gallery({
     b.src = imgs[next]!;
   }, [idx, imgs, total]);
 
-  const fitCls =
-    fit === "contain" ? "object-contain" : "object-cover";
+  const fitCls = fit === "contain" ? "object-contain" : "object-cover";
 
   const goClamp = useCallback(
     (n: number) => {
@@ -131,10 +125,7 @@ export default function Gallery({
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         goNext();
-      } else if (
-        (e.key === "Enter" || e.key === " ") &&
-        lightbox
-      ) {
+      } else if ((e.key === "Enter" || e.key === " ") && lightbox) {
         e.preventDefault();
         setOpen(true);
       }
@@ -143,13 +134,9 @@ export default function Gallery({
   );
 
   const touchStartX = useRef<number | null>(null);
-  const onTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      touchStartX.current =
-        e.changedTouches[0]?.clientX ?? null;
-    },
-    [],
-  );
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.changedTouches[0]?.clientX ?? null;
+  }, []);
   const onTouchEnd = useCallback(
     (e: React.TouchEvent) => {
       const start = touchStartX.current;
@@ -165,9 +152,7 @@ export default function Gallery({
     [goPrev, goNext],
   );
 
-  const thumbRefs = useRef<
-    Record<number, HTMLButtonElement | null>
-  >({});
+  const thumbRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   useEffect(() => {
     const node = thumbRefs.current[idx];
     node?.scrollIntoView({
@@ -179,8 +164,15 @@ export default function Gallery({
 
   const heroId = useId();
 
-  // If no images, still render the shell but no <img> / thumbs / shadow list.
+  /**
+   * ✅ IMPORTANT FIX:
+   * If no images, still render a placeholder <img> inside [data-gallery-wrap].
+   * This matches your product/service “always show at least one image” contract
+   * and makes `[data-gallery-wrap] img` selectors reliable.
+   */
   if (!total) {
+    const fallback = String(emptySrc ?? "").trim() || DEFAULT_EMPTY_SRC;
+
     return (
       <div
         className={["w-full", className].join(" ")}
@@ -192,15 +184,32 @@ export default function Gallery({
         data-gallery-open="false"
       >
         <div
-          className={`relative ${aspect} w-full overflow-hidden rounded-xl bg-muted min-h-[180px] sm:min-h-[220px]`}
+          className={[
+            "relative w-full overflow-hidden rounded-2xl",
+            "min-h-[160px] min-[420px]:min-h-[176px] sm:min-h-[220px]",
+            aspect,
+            "bg-[var(--bg-subtle)] border border-[var(--border-subtle)]",
+          ].join(" ")}
           style={{ position: "relative" }}
           data-gallery-wrap
           data-gallery-hero
         >
-          <span
-            id={`${heroId}-desc`}
-            className="sr-only"
-          >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={fallback}
+            alt="Image placeholder"
+            decoding="async"
+            draggable={false}
+            loading="eager"
+            fetchPriority="high"
+            className={`absolute inset-0 h-full w-full ${fitCls} select-none`}
+            data-gallery-image
+            data-gallery-hero-img
+            sizes={sizes}
+            data-sizes={sizes}
+          />
+
+          <span id={`${heroId}-desc`} className="sr-only">
             No images available.
           </span>
         </div>
@@ -220,14 +229,28 @@ export default function Gallery({
     >
       {/* Hero */}
       <div
-        className={`relative ${aspect} w-full overflow-hidden rounded-xl bg-muted min-h-[180px] sm:min-h-[220px]`}
+        className={[
+          "relative w-full overflow-hidden rounded-2xl",
+          "min-h-[160px] min-[420px]:min-h-[176px] sm:min-h-[220px]",
+          aspect,
+          "bg-[var(--bg-subtle)] border border-[var(--border-subtle)]",
+        ].join(" ")}
         style={{ position: "relative" }}
         data-gallery-wrap
         data-gallery-hero
       >
         <button
           type="button"
-          className="absolute right-2 top-2 z-[3] rounded-md bg-black/60 px-2 py-1 text-xs text-white"
+          className={pillIconClass({
+            active: false,
+            className: cx(
+              "absolute right-2 top-2 z-[3]",
+              "inline-flex h-9 w-9 items-center justify-center",
+              "rounded-full p-0 text-sm font-semibold",
+              "bg-[var(--bg-elevated)] text-[var(--text)]",
+              "border border-[var(--border-subtle)] shadow-sm",
+            ),
+          })}
           onClick={() => lightbox && setOpen(true)}
           aria-hidden="true"
           tabIndex={-1}
@@ -255,12 +278,11 @@ export default function Gallery({
         {/* Keyboard + touch overlay */}
         <button
           type="button"
-          className="absolute inset-0 z-[2] focus:outline-none focus:ring-2 focus:ring-[#39a0ca]/60"
-          aria-label={
-            lightbox
-              ? "Open image in fullscreen"
-              : "Select image"
-          }
+          className={[
+            "absolute inset-0 z-[2]",
+            "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+          ].join(" ")}
+          aria-label={lightbox ? "Open image in fullscreen" : "Select image"}
           aria-describedby={`${heroId}-desc`}
           onClick={() => lightbox && setOpen(true)}
           onKeyDown={onHeroKeyDown}
@@ -273,9 +295,7 @@ export default function Gallery({
 
         <span id={`${heroId}-desc`} className="sr-only">
           Use left and right arrow keys to change image.
-          {lightbox
-            ? " Press Enter to view fullscreen."
-            : ""}
+          {lightbox ? " Press Enter to view fullscreen." : ""}
         </span>
 
         {total > 1 && (
@@ -283,7 +303,7 @@ export default function Gallery({
             <button
               type="button"
               onClick={goPrev}
-              className="btn-outline absolute left-3 top-1/2 z-[3] -translate-y-1/2 px-2 py-1 text-xs"
+              className="btn-outline absolute left-2 top-1/2 z-[3] -translate-y-1/2 h-9 w-9 p-0 text-lg leading-none"
               aria-label="Previous image"
               title="Previous"
             >
@@ -292,7 +312,7 @@ export default function Gallery({
             <button
               type="button"
               onClick={goNext}
-              className="btn-outline absolute right-3 top-1/2 z-[3] -translate-y-1/2 px-2 py-1 text-xs"
+              className="btn-outline absolute right-2 top-1/2 z-[3] -translate-y-1/2 h-9 w-9 p-0 text-lg leading-none"
               aria-label="Next image"
               title="Next"
             >
@@ -303,7 +323,12 @@ export default function Gallery({
 
         {total > 1 && !open && (
           <div
-            className="absolute left-3 bottom-3 z-[3] rounded-md bg-black/60 px-2 py-0.5 text-xs text-white"
+            className={[
+              "absolute left-2 bottom-2 z-[3]",
+              "rounded-xl px-2 py-0.5 text-[11px] font-semibold",
+              "bg-[var(--bg-elevated)] text-[var(--text)]",
+              "border border-[var(--border-subtle)] shadow-sm",
+            ].join(" ")}
             data-gallery-index-badge
           >
             {idx + 1} / {total}
@@ -314,32 +339,25 @@ export default function Gallery({
       {/* Thumbnails */}
       {total > 1 && (
         <div
-          className="mt-2 border-t border-border/60 pt-2"
+          className="mt-1.5 sm:mt-2 border-t border-[var(--border-subtle)] pt-1.5 sm:pt-2"
           data-gallery-thumbs
         >
           <ul
-            className="no-scrollbar flex gap-2 overflow-x-auto p-1"
+            className={pillGroupClass("no-scrollbar w-full max-w-full overflow-x-auto")}
             role="tablist"
             aria-label="Thumbnails"
-            onWheel={(
-              e: React.WheelEvent<HTMLUListElement>,
-            ) => {
+            onWheel={(e: React.WheelEvent<HTMLUListElement>) => {
               const el = e.currentTarget;
-              if (
-                Math.abs(e.deltaY) >
-                Math.abs(e.deltaX)
-              ) {
+              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
                 el.scrollLeft += e.deltaY;
               }
             }}
           >
             {imgs.map((src, i) => {
               const selected = i === idx;
+
               return (
-                <li
-                  key={`${src}:${i}`}
-                  className="relative"
-                >
+                <li key={`${src}:${i}`} className="relative">
                   <button
                     ref={(el) => {
                       thumbRefs.current[i] = el;
@@ -348,53 +366,44 @@ export default function Gallery({
                     role="tab"
                     aria-selected={selected}
                     aria-controls={heroId}
-                    className={[
-                      "relative block h-16 w-24 overflow-hidden rounded-lg border bg-card",
-                      selected
-                        ? "border-transparent ring-2 ring-[#39a0ca]"
-                        : "border-border hover:ring-1 hover:ring-[#39a0ca]/60",
-                    ].join(" ")}
+                    className={pillClass({
+                      active: selected,
+                      size: "sm",
+                      className: cx(
+                        "ring-focus transition",
+                        "relative block overflow-hidden",
+                        "h-14 w-20 sm:h-16 sm:w-24",
+                        "bg-[var(--bg-elevated)]",
+                        "p-0",
+                        selected
+                          ? "border-[var(--border)] ring-2"
+                          : "border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)] hover:ring-1 hover:ring-focus",
+                      ),
+                    })}
                     aria-label={`Show image ${i + 1} of ${total}`}
-                    title={
-                      selected
-                        ? "Current image"
-                        : `Image ${i + 1}`
-                    }
+                    title={selected ? "Current image" : `Image ${i + 1}`}
                     onClick={() => setIdx(i)}
                     onKeyDown={(e) => {
                       if (e.key === "ArrowLeft") {
                         e.preventDefault();
                         const prev = Math.max(0, i - 1);
                         (
-                          e.currentTarget.parentElement?.querySelectorAll(
-                            "button",
-                          )?.[prev] as
-                            | HTMLButtonElement
-                            | undefined
+                          e.currentTarget.parentElement?.querySelectorAll("button")?.[
+                            prev
+                          ] as HTMLButtonElement | undefined
                         )?.focus();
-                      } else if (
-                        e.key === "ArrowRight"
-                      ) {
+                      } else if (e.key === "ArrowRight") {
                         e.preventDefault();
-                        const next = Math.min(
-                          total - 1,
-                          i + 1,
-                        );
+                        const next = Math.min(total - 1, i + 1);
                         (
-                          e.currentTarget.parentElement?.querySelectorAll(
-                            "button",
-                          )?.[next] as
-                            | HTMLButtonElement
-                            | undefined
+                          e.currentTarget.parentElement?.querySelectorAll("button")?.[
+                            next
+                          ] as HTMLButtonElement | undefined
                         )?.focus();
-                      } else if (
-                        e.key === "Enter" ||
-                        e.key === " "
-                      ) {
+                      } else if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         setIdx(i);
-                        if (lightbox)
-                          setOpen(true);
+                        if (lightbox) setOpen(true);
                       }
                     }}
                     data-gallery-thumb
@@ -420,11 +429,7 @@ export default function Gallery({
 
       {/* Shadow list for tests (one source of truth) */}
       {total > 0 && (
-        <div
-          className="hidden"
-          aria-hidden="true"
-          data-gallery-shadow
-        >
+        <div className="hidden" aria-hidden="true" data-gallery-shadow>
           {imgs.map((src, i) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img

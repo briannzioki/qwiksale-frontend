@@ -146,18 +146,26 @@ export default function RoleActions({
     title: string;
   }) => {
     const active = optimisticRole === role;
+
     const base =
-      "inline-flex items-center rounded border px-2 py-1 text-xs transition disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
+      "inline-flex items-center rounded-xl border px-2.5 py-1.5 text-xs transition " +
+      "focus-visible:outline-none focus-visible:ring-2 ring-focus " +
+      "active:scale-[.99] disabled:opacity-60";
+
+    // Keep the prop for API stability; styling is now token-based (no palette colors).
     const palette: Record<typeof tone, string> = {
       slate:
-        "border-slate-300 text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800 focus-visible:ring-slate-400 dark:focus-visible:ring-slate-600",
+        "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
       green:
-        "border-green-300 text-green-800 hover:bg-green-50 dark:border-green-800 dark:text-green-200 dark:hover:bg-green-950/40 focus-visible:ring-green-400 dark:focus-visible:ring-green-700",
+        "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
       amber:
-        "border-amber-300 text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/40 focus-visible:ring-amber-400 dark:focus-visible:ring-amber-700",
+        "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
       indigo:
-        "border-indigo-300 text-indigo-800 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-200 dark:hover:bg-indigo-950/40 focus-visible:ring-indigo-400 dark:focus-visible:ring-indigo-700",
+        "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
     };
+
+    const activeCls =
+      "font-semibold border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)] shadow-sm";
 
     return (
       <button
@@ -165,9 +173,7 @@ export default function RoleActions({
         title={title}
         aria-pressed={active}
         aria-label={active ? `${role} (current)` : `Set role to ${role}`}
-        className={`${base} ${palette[tone]} ${
-          active ? "font-semibold ring-1 ring-current" : ""
-        }`}
+        className={`${base} ${palette[tone]} ${active ? activeCls : ""}`}
         onClick={() => setRole(role)}
         disabled={pending || active}
       >
@@ -180,27 +186,17 @@ export default function RoleActions({
     <>
       <div className="flex flex-wrap items-center gap-1.5" aria-busy={pending}>
         <Btn role="USER" tone="slate" title="Set role to USER" />
-        <Btn
-          role="MODERATOR"
-          tone="amber"
-          title="Set role to MODERATOR"
-        />
+        <Btn role="MODERATOR" tone="amber" title="Set role to MODERATOR" />
         <Btn role="ADMIN" tone="green" title="Set role to ADMIN" />
-        <Btn
-          role="SUPERADMIN"
-          tone="indigo"
-          title="Set role to SUPERADMIN"
-        />
+        <Btn role="SUPERADMIN" tone="indigo" title="Set role to SUPERADMIN" />
       </div>
 
       {toast && (
         <div
           role="status"
           aria-live="polite"
-          className={`fixed bottom-4 right-4 z-[2000] max-w-sm rounded-lg px-3 py-2 text-sm shadow-lg ${
-            toast.type === "success"
-              ? "bg-green-600 text-white"
-              : "bg-rose-600 text-white"
+          className={`fixed bottom-4 right-4 z-[2000] max-w-sm rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text)] shadow-soft ${
+            toast.type === "success" ? "" : ""
           }`}
         >
           {toast.message}

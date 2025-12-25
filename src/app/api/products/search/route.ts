@@ -5,10 +5,14 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/app/lib/prisma";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
+import type { FeaturedTier } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 /* ---------------------------- helpers ---------------------------- */
 function json(json: unknown, init?: ResponseInit) {
@@ -59,76 +63,76 @@ function isSafeToCache(req: NextRequest, page: number, pageSize: number) {
 
 /* ------------------------ seller badge helpers ------------------------ */
 
-type SellerTier = "basic" | "gold" | "diamond";
-type SellerBadgeInfo = { verified: boolean; tier: SellerTier };
+type SellerBadgesObj = { verified: boolean | null; tier: FeaturedTier | null };
 
-function normalizeTier(v: unknown): SellerTier {
-  const t = String(v ?? "").trim().toLowerCase();
-  if (t.includes("diamond")) return "diamond";
-  if (t.includes("gold")) return "gold";
-  return "basic";
-}
+type SellerBadgePayload = {
+  sellerVerified: boolean | null;
+  sellerFeaturedTier: FeaturedTier | null;
+  sellerBadges: SellerBadgesObj;
+  [k: string]: unknown;
+};
 
-function pickVerifiedFromUserJson(u: any): boolean | null {
-  if (!u || typeof u !== "object") return null;
-  const keys = [
-    "verified",
-    "isVerified",
-    "accountVerified",
-    "sellerVerified",
-    "isSellerVerified",
-    "verifiedSeller",
-    "isAccountVerified",
-  ];
-  for (const k of keys) {
-    const v = (u as any)[k];
-    if (typeof v === "boolean") return v;
-    if (typeof v === "number") return v === 1;
-    if (typeof v === "string") {
-      const s = v.trim().toLowerCase();
-      if (["1", "true", "yes", "verified"].includes(s)) return true;
-      if (["0", "false", "no", "unverified"].includes(s)) return false;
-    }
-  }
+function toNullableBool(v: unknown): boolean | null {
+  if (v === true) return true;
+  if (v === false) return false;
   return null;
 }
 
-function tierFromRow(row: any): SellerTier {
-  const v = row?.seller?.subscription ?? row?.seller?.tier ?? row?.seller?.plan;
-  return normalizeTier(v);
+function toNullableTier(v: unknown): FeaturedTier | null {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("diamond")) return "diamond";
+  if (t.includes("gold")) return "gold";
+  if (t.includes("basic")) return "basic";
+  return null;
 }
 
-async function fetchSellerBadgeMap(ids: string[]) {
-  const out = new Map<string, SellerBadgeInfo>();
-  const uniq = Array.from(new Set(ids.filter(Boolean)));
-  if (!uniq.length) return out;
+function canonicalizeSellerBadges(raw: any): SellerBadgePayload {
+  const sellerVerified = toNullableBool(raw?.sellerVerified ?? raw?.sellerBadges?.verified);
+  const sellerFeaturedTier = toNullableTier(raw?.sellerFeaturedTier ?? raw?.sellerBadges?.tier);
 
+  let base: any = {};
   try {
-    const rows = (await prisma.$queryRaw<{ id: string; u: any }[]>`
-      SELECT u.id, row_to_json(u) as u
-      FROM "User" u
-      WHERE u.id IN (${Prisma.join(uniq)})
-    `) as { id: string; u: any }[];
-
-    for (const r of rows) {
-      const id = String(r?.id ?? "");
-      if (!id) continue;
-      const u = r?.u;
-      const verified = pickVerifiedFromUserJson(u);
-      const tier = normalizeTier(
-        (u as any)?.featuredTier ??
-          (u as any)?.subscriptionTier ??
-          (u as any)?.subscription ??
-          (u as any)?.plan ??
-          (u as any)?.tier,
-      );
-      out.set(id, { verified: verified ?? false, tier });
-    }
+    base = (buildSellerBadgeFields(sellerVerified, sellerFeaturedTier) as any) ?? {};
   } catch {
-    // ignore: defaults applied by caller
+    base = {};
   }
 
-  return out;
+  base.sellerVerified = sellerVerified;
+  base.sellerFeaturedTier = sellerFeaturedTier;
+
+  const rawBadges = raw?.sellerBadges;
+  if (rawBadges && typeof rawBadges === "object" && !Array.isArray(rawBadges)) {
+    base.sellerBadges = {
+      verified: toNullableBool((rawBadges as any).verified),
+      tier: toNullableTier((rawBadges as any).tier),
+    } satisfies SellerBadgesObj;
+  } else {
+    base.sellerBadges = { verified: sellerVerified, tier: sellerFeaturedTier } satisfies SellerBadgesObj;
+  }
+
+  return base as SellerBadgePayload;
+}
+
+function resolveBadgesFromUserLike(u: any): SellerBadgePayload {
+  try {
+    const resolved = resolveSellerBadgeFieldsFromUserLike(u);
+    return canonicalizeSellerBadges(resolved);
+  } catch {
+    return canonicalizeSellerBadges(null);
+  }
+}
+
+function sanitizeSellerForResponse(seller: any) {
+  if (!seller || typeof seller !== "object") return null;
+  // Preserve the previous public shape (do not expose emailVerified).
+  return {
+    id: (seller as any).id ?? null,
+    name: (seller as any).name ?? null,
+    image: (seller as any).image ?? null,
+    subscription: (seller as any).subscription ?? null,
+    username: (seller as any).username ?? null,
+  };
 }
 
 /* ----------------------------- safety caps ------------------------------ */
@@ -146,6 +150,7 @@ const baseSelect = {
   condition: true,
   price: true,
   image: true,
+  gallery: true, // ✅ keep gallery for deterministic media + alias fields
   location: true,
   negotiable: true,
   featured: true,
@@ -163,6 +168,7 @@ const baseSelect = {
       image: true,
       subscription: true,
       username: true,
+      emailVerified: true, // used ONLY for badge resolution; stripped from response
     },
   },
 } as const;
@@ -171,9 +177,7 @@ function shape(row: any) {
   return {
     ...row,
     createdAt:
-      row?.createdAt instanceof Date
-        ? row.createdAt.toISOString()
-        : String(row?.createdAt ?? ""),
+      row?.createdAt instanceof Date ? row.createdAt.toISOString() : String(row?.createdAt ?? ""),
   };
 }
 
@@ -205,8 +209,7 @@ function buildTokenizedWhere(q?: string) {
 /* ------------------------------ GET ------------------------------ */
 export async function GET(req: NextRequest) {
   const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+    (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
   try {
     // Per-IP throttle
@@ -216,10 +219,7 @@ export async function GET(req: NextRequest) {
       windowMs: 60_000,
     });
     if (!rl.ok) {
-      return addReqId(
-        tooMany("You’re searching too fast. Please slow down.", rl.retryAfterSec),
-        reqId,
-      );
+      return addReqId(tooMany("You’re searching too fast. Please slow down.", rl.retryAfterSec), reqId);
     }
 
     const url = new URL(req.url);
@@ -235,11 +235,7 @@ export async function GET(req: NextRequest) {
     const includeNoPrice = b(url.searchParams.get("includeNoPrice")) === true; // default false
     const verifiedOnly = b(url.searchParams.get("verifiedOnly"));
     const negotiable = b(url.searchParams.get("negotiable"));
-    const sort = (s(url.searchParams.get("sort")) || "top") as
-      | "top"
-      | "new"
-      | "price_asc"
-      | "price_desc";
+    const sort = (s(url.searchParams.get("sort")) || "top") as "top" | "new" | "price_asc" | "price_desc";
 
     // pagination: prefer cursor; otherwise page/skip
     const cursor = s(url.searchParams.get("cursor"));
@@ -251,11 +247,7 @@ export async function GET(req: NextRequest) {
         : DEFAULT_PAGE_SIZE;
 
     // Fix reversed price range (if user passed min>max)
-    if (
-      Number.isFinite(minPrice) &&
-      Number.isFinite(maxPrice) &&
-      (minPrice as number) > (maxPrice as number)
-    ) {
+    if (Number.isFinite(minPrice) && Number.isFinite(maxPrice) && minPrice! > maxPrice!) {
       const tmp = minPrice!;
       minPrice = maxPrice!;
       maxPrice = tmp;
@@ -271,7 +263,11 @@ export async function GET(req: NextRequest) {
     if (brand) and.push({ brand: { equals: brand, mode: "insensitive" } });
     if (condition) and.push({ condition: { equals: condition, mode: "insensitive" } });
     if (typeof negotiable === "boolean") and.push({ negotiable });
-    if (verifiedOnly === true) and.push({ featured: true });
+
+    // ✅ verifiedOnly means seller has emailVerified (NOT a "featured" shortcut)
+    if (verifiedOnly === true) {
+      and.push({ seller: { is: { emailVerified: { not: null } } } });
+    }
 
     // Price range: AND bounds; optionally include nulls
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
@@ -360,24 +356,28 @@ export async function GET(req: NextRequest) {
     const rows = await prisma.product.findMany(listArgs);
     const hasMore = rows.length > pageSize;
     const data = hasMore ? rows.slice(0, pageSize) : rows;
-    const nextCursor = hasMore ? (data[data.length - 1]?.id ?? null) : null;
-
-    const sellerIds = Array.from(
-      new Set(data.map((r: any) => r?.sellerId).filter(Boolean)),
-    ) as string[];
-    const badgeMap = await fetchSellerBadgeMap(sellerIds);
+    const nextCursor = hasMore ? data[data.length - 1]?.id ?? null : null;
 
     const items = data.map((r: any) => {
       const base = shape(r);
-      const sid = String(r?.sellerId ?? "");
-      const bmap = sid ? badgeMap.get(sid) : undefined;
-      const verified = bmap?.verified ?? false;
-      const tier = bmap?.tier ?? tierFromRow(r);
+
+      const gallery = Array.isArray(r?.gallery) ? r.gallery.filter(Boolean) : [];
+      const image = (r?.image ?? gallery[0] ?? null) as string | null;
+
+      const sellerObj = r?.seller as any;
+      const seller = sanitizeSellerForResponse(sellerObj);
+      const badges = resolveBadgesFromUserLike(sellerObj);
+
       return {
         ...base,
-        sellerVerified: verified,
-        sellerFeaturedTier: tier,
-        sellerBadges: { verified, tier },
+        image,
+        gallery,
+        imageUrls: gallery,
+        images: gallery,
+        photos: gallery,
+        seller,
+        // ✅ canonical badge keys (always present; nulls when unknown)
+        ...badges,
       };
     });
 

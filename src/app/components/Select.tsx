@@ -5,10 +5,7 @@ import * as React from "react";
 
 type FieldSize = "sm" | "md" | "lg"; // (alias to avoid confusion with native 'size')
 
-export type SelectProps = Omit<
-  React.SelectHTMLAttributes<HTMLSelectElement>,
-  "size"
-> & {
+export type SelectProps = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "size"> & {
   size?: FieldSize; // our sizing tokens
   invalid?: boolean;
   message?: string;
@@ -24,23 +21,23 @@ function cn(...xs: Array<string | undefined | false | null>) {
   return xs.filter(Boolean).join(" ");
 }
 
-const sizeMap: Record<
-  FieldSize,
-  { select: string; label: string; chevron: string }
-> = {
+const sizeMap: Record<FieldSize, { select: string; label: string; chevron: string }> = {
   sm: {
+    // already phone-friendly
     select: "h-9 text-sm rounded-lg pl-3 pr-8",
     label: "text-xs",
     chevron: "right-2.5",
   },
   md: {
-    select: "h-10 text-[0.95rem] rounded-xl pl-3.5 pr-9",
-    label: "text-sm",
+    // phone-first: smaller default; restore on sm+
+    select: "h-9 text-sm rounded-xl pl-3.5 pr-9 sm:h-10 sm:text-[0.95rem]",
+    label: "text-xs sm:text-sm",
     chevron: "right-3",
   },
   lg: {
-    select: "h-12 text-base rounded-2xl pl-4 pr-11",
-    label: "text-sm",
+    // phone-first: avoid oversized fields on xs; restore on sm+
+    select: "h-10 text-sm rounded-2xl pl-4 pr-11 sm:h-12 sm:text-base",
+    label: "text-xs sm:text-sm",
     chevron: "right-3.5",
   },
 };
@@ -80,9 +77,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             )}
           >
             {label}
-            {requiredMark ? (
-              <span className="ml-0.5 text-rose-600">*</span>
-            ) : null}
+            {requiredMark ? <span className="ml-0.5 text-[var(--danger)]">*</span> : null}
           </label>
         ) : null}
 
@@ -96,11 +91,13 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             className={cn(
               "w-full appearance-none",
               "bg-[var(--bg-elevated)] text-[var(--text)]",
-              "border border-[var(--border)]",
-              "shadow-inner",
-              "focus:outline-none focus:ring-2 ring-focus",
-              "disabled:opacity-60 disabled:cursor-not-allowed",
+              "border border-[var(--border-subtle)]",
+              "shadow-sm",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              "disabled:cursor-not-allowed disabled:opacity-60",
               "transition",
+              "hover:bg-[var(--bg-subtle)]",
+              "active:scale-[.99]",
               sz.select,
               className,
               invalid && "border-[var(--danger)]",
@@ -124,10 +121,8 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           <p
             id={describedBy}
             className={cn(
-              "mt-1 text-xs",
-              invalid
-                ? "text-[var(--danger)]"
-                : "text-[var(--text-muted)]",
+              "mt-1 text-xs leading-relaxed",
+              invalid ? "text-[var(--danger)]" : "text-[var(--text-muted)]",
             )}
           >
             {message}

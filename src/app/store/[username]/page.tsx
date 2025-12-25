@@ -1,5 +1,4 @@
 // src/app/store/[username]/page.tsx
-
 import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/app/lib/prisma";
@@ -7,6 +6,7 @@ import UserAvatar from "@/app/components/UserAvatar";
 import SmartImage from "@/app/components/SmartImage";
 import ReviewSummary from "@/app/components/ReviewSummary";
 import ReviewStars from "@/app/components/ReviewStars";
+import VerifiedBadge from "@/app/components/VerifiedBadge";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -176,49 +176,133 @@ function safeIso(d: any): string | null {
 
 /* ------------------------ seller badge helpers ------------------------ */
 
-type SellerTier = "basic" | "gold" | "diamond";
-type SellerBadgeInfo = { verified: boolean; tier: SellerTier };
+type FeaturedTier = "basic" | "gold" | "diamond";
+type SellerBadgeInfo = { verified: boolean | null; tier: FeaturedTier | null };
 
-function normalizeTier(v: unknown): SellerTier {
-  const t = String(v ?? "").trim().toLowerCase();
-  if (t.includes("diamond")) return "diamond";
-  if (t.includes("gold")) return "gold";
-  return "basic";
-}
+function normalizeTier(v: unknown): FeaturedTier | null {
+  if (v == null) return null;
+  const s = String(v).trim().toLowerCase();
+  if (!s) return null;
 
-function pickVerifiedFromUserJson(u: any): boolean | null {
-  if (!u || typeof u !== "object") return null;
-  const keys = [
-    "verified",
-    "isVerified",
-    "accountVerified",
-    "sellerVerified",
-    "isSellerVerified",
-    "verifiedSeller",
-    "isAccountVerified",
-  ];
-  for (const k of keys) {
-    const v = (u as any)[k];
-    if (typeof v === "boolean") return v;
-    if (typeof v === "number") return v === 1;
-    if (typeof v === "string") {
-      const s = v.trim().toLowerCase();
-      if (["1", "true", "yes", "verified"].includes(s)) return true;
-      if (["0", "false", "no", "unverified"].includes(s)) return false;
-    }
-  }
+  // allow common forms while staying in union
+  if (/\bdiamond\b/.test(s)) return "diamond";
+  if (/\bgold\b/.test(s)) return "gold";
+  if (/\bbasic\b/.test(s)) return "basic";
+
   return null;
 }
 
-function pickTierFromUserJson(u: any): SellerTier {
-  if (!u || typeof u !== "object") return "basic";
-  const v =
-    (u as any).featuredTier ??
-    (u as any).subscriptionTier ??
-    (u as any).subscription ??
-    (u as any).plan ??
-    (u as any).tier;
-  return normalizeTier(v);
+function isValidDateLike(v: unknown): boolean {
+  if (v instanceof Date) return Number.isFinite(v.getTime());
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return false;
+    const lower = s.toLowerCase();
+    if (lower === "null" || lower === "undefined" || lower === "nan") return false;
+    const d = new Date(s);
+    return Number.isFinite(d.getTime());
+  }
+  if (typeof v === "number") {
+    if (!Number.isFinite(v) || v <= 0) return false;
+    const d = new Date(v);
+    return Number.isFinite(d.getTime());
+  }
+  return false;
+}
+
+/**
+ * ✅ Verification must be derived ONLY from emailVerified (or equivalent),
+ * not from legacy boolean keys.
+ *
+ * - If the key exists but is null/empty => unverified (false)
+ * - If the key does not exist at all => unknown (null)
+ */
+function pickVerifiedFromUserJson(u: any): boolean | null {
+  if (!u || typeof u !== "object") return null;
+
+  const keys = ["emailVerified", "email_verified", "emailVerifiedAt", "email_verified_at"];
+
+  let sawAnyKey = false;
+
+  for (const k of keys) {
+    if (!Object.prototype.hasOwnProperty.call(u, k)) continue;
+    sawAnyKey = true;
+
+    const v = (u as any)[k];
+
+    if (v == null) return false;
+
+    if (typeof v === "boolean") return v;
+
+    if (typeof v === "number") {
+      if (v === 1) return true;
+      if (v === 0) return false;
+      return isValidDateLike(v);
+    }
+
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      if (!s || s === "null" || s === "undefined" || s === "nan") return false;
+      if (["1", "true", "yes"].includes(s)) return true;
+      if (["0", "false", "no"].includes(s)) return false;
+      if (isValidDateLike(v)) return true;
+      return false;
+    }
+
+    if (v instanceof Date) {
+      return Number.isFinite(v.getTime());
+    }
+
+    return false;
+  }
+
+  return sawAnyKey ? false : null;
+}
+
+function pickTierFromUserJson(u: any): FeaturedTier | null {
+  if (!u || typeof u !== "object") return null;
+
+  const candidates: unknown[] = [
+    // preferred: consolidated badges
+    (u as any).sellerBadges?.tier,
+
+    (u as any).featuredTier,
+    (u as any).featured_tier,
+    (u as any).sellerFeaturedTier,
+    (u as any).seller_featured_tier,
+    (u as any).accountFeaturedTier,
+    (u as any).account_featured_tier,
+
+    (u as any).subscriptionTier,
+    (u as any).subscription_tier,
+    (u as any).subscription,
+    (u as any).plan,
+    (u as any).tier,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === "string" || typeof c === "number") {
+      const t = normalizeTier(c);
+      if (t) return t;
+    }
+
+    if (c && typeof c === "object") {
+      const inner =
+        (c as any).featuredTier ??
+        (c as any).featured_tier ??
+        (c as any).subscriptionTier ??
+        (c as any).subscription_tier ??
+        (c as any).tier ??
+        (c as any).plan ??
+        (c as any).name;
+      if (typeof inner === "string" || typeof inner === "number") {
+        const t = normalizeTier(inner);
+        if (t) return t;
+      }
+    }
+  }
+
+  return null;
 }
 
 async function fetchSellerBadgeInfo(userId: string): Promise<SellerBadgeInfo> {
@@ -230,83 +314,108 @@ async function fetchSellerBadgeInfo(userId: string): Promise<SellerBadgeInfo> {
       LIMIT 1
     `;
     const u = rows?.[0]?.u;
-    const verified = pickVerifiedFromUserJson(u);
-    const tier = pickTierFromUserJson(u);
-    return { verified: verified ?? false, tier };
+
+    // Prefer DB-provided consolidated badges if present, otherwise derive via rules.
+    const consolidated =
+      u?.sellerBadges && typeof u.sellerBadges === "object" ? u.sellerBadges : null;
+
+    const consolidatedVerified =
+      consolidated && typeof consolidated.verified === "boolean"
+        ? consolidated.verified
+        : null;
+
+    const consolidatedTier =
+      consolidated && (typeof consolidated.tier === "string" || typeof consolidated.tier === "number")
+        ? normalizeTier(consolidated.tier)
+        : null;
+
+    const verified = consolidatedVerified ?? pickVerifiedFromUserJson(u) ?? false;
+    const tier = consolidatedTier ?? pickTierFromUserJson(u) ?? "basic";
+
+    // Keep stable output for UI/tests on store pages.
+    return { verified, tier };
   } catch {
     return { verified: false, tier: "basic" };
   }
 }
 
-function VerifiedPill({ verified }: { verified: boolean }) {
+function SellerBadges({
+  info,
+  showTier,
+}: {
+  info: SellerBadgeInfo;
+  showTier: boolean;
+}) {
+  const verifiedProp =
+    typeof info.verified === "boolean" ? { verified: info.verified } : {};
+  const tierProp =
+    showTier && info.tier ? { featuredTier: info.tier } : {};
+
+  return (
+    <VerifiedBadge
+      {...verifiedProp}
+      {...tierProp}
+      // critical: do NOT let the component derive tier from legacy booleans
+      featured={false}
+    />
+  );
+}
+
+/* ------------------------ NEW: listing pills (test-friendly) ------------------------ */
+
+function ListingVerifiedPill({ verified }: { verified: boolean }) {
   return (
     <span
+      data-testid={verified ? "verified-badge" : "unverified-badge"}
+      aria-label={verified ? "Verified seller" : "Unverified seller"}
       className={[
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        "sm:px-2.5 sm:py-1 sm:text-xs",
+        "border-[var(--border-subtle)]",
         verified
-          ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200"
-          : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200",
+          ? "bg-[var(--bg-subtle)] text-[var(--text)]"
+          : "bg-[var(--bg)] text-[var(--text-muted)]",
       ].join(" ")}
-      aria-label={verified ? "Verified seller" : "Unverified seller"}
     >
       <span className="text-[10px]" aria-hidden="true">
-        {verified ? "✓" : "!"}
+        {verified ? "✓" : "✕"}
       </span>
       <span>{verified ? "Verified" : "Unverified"}</span>
     </span>
   );
 }
 
-function TierPill({ tier }: { tier: SellerTier }) {
-  const base =
-    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold";
-
-  if (tier === "gold") {
-    return (
-      <span
-        className={`${base} border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100`}
-        aria-label="Featured tier gold"
-      >
-        <span className="text-[10px]" aria-hidden="true">
-          ★
-        </span>
-        <span>Featured Gold</span>
-      </span>
-    );
-  }
-
-  if (tier === "diamond") {
-    return (
-      <span
-        className={`${base} border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100`}
-        aria-label="Featured tier diamond"
-      >
-        <span className="text-[10px]" aria-hidden="true">
-          💎
-        </span>
-        <span>Featured Diamond</span>
-      </span>
-    );
-  }
-
+function ListingTierPill({ tier }: { tier: FeaturedTier }) {
   return (
     <span
-      className={`${base} border-border bg-muted text-foreground`}
-      aria-label="Featured tier basic"
+      data-testid={`featured-tier-${tier}`}
+      aria-label={`Featured ${tier}`}
+      className={[
+        "inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]",
+        "sm:px-2.5 sm:py-1 sm:text-xs",
+      ].join(" ")}
     >
       <span className="text-[10px]" aria-hidden="true">
         ★
       </span>
-      <span>Featured Basic</span>
+      <span>{tier}</span>
     </span>
   );
 }
 
-function SellerBadgesInline({ info }: { info: SellerBadgeInfo }) {
+function ListingBadgeRow({ info }: { info: SellerBadgeInfo }) {
+  const verified =
+    typeof info.verified === "boolean" ? info.verified : null;
+  const tier = info.tier ?? null;
+
+  // Tests expect these to exist inside the <a>.
+  // We keep output stable (your page defaults already make these non-null).
+  if (verified == null && !tier) return null;
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <VerifiedPill verified={info.verified} />
-      <TierPill tier={info.tier} />
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      {verified != null ? <ListingVerifiedPill verified={verified} /> : null}
+      {tier ? <ListingTierPill tier={tier} /> : null}
     </div>
   );
 }
@@ -487,8 +596,8 @@ async function resolveSellerIdFromSnapshots(
 }
 
 /**
- * NEW: Resolve sellerId from store-code-ish tokens (e.g. "Sto-83535") by scanning
- * Product/Service rows via JSON keys — avoids schema assumptions because missing keys just return NULL.
+ * NEW: Resolve sellerId from store-code-ish tokens (e.g. "Sto-xxxxx") by scanning
+ * Product/Service rows via JSON keys - avoids schema assumptions because missing keys just return NULL.
  */
 async function resolveSellerIdFromListingTokenKeys(
   tokenCandidates: string[],
@@ -877,8 +986,6 @@ export default async function StorePage({
       sellerId: s.sellerId != null ? String(s.sellerId) : null,
     }));
 
-    // If we still couldn’t resolve a sellerId, but listings returned with sellerId populated,
-    // lock the page to that sellerId (this also enables badges).
     if (!resolvedUserId) {
       const sid =
         products.find((x) => x.sellerId)?.sellerId ||
@@ -899,7 +1006,6 @@ export default async function StorePage({
     ? await fetchSellerBadgeInfo(String(resolvedUserId))
     : null;
 
-  // Last fallback for badges if we have a sellerId on any row
   if (!sellerBadges) {
     const sid =
       products.find((x) => x.sellerId)?.sellerId ||
@@ -907,6 +1013,12 @@ export default async function StorePage({
       null;
     if (sid) sellerBadges = await fetchSellerBadgeInfo(String(sid));
   }
+
+  // Stable display: if we can’t resolve, default to Unverified + Featured basic
+  const sellerBadgesFinal: SellerBadgeInfo = sellerBadges ?? {
+    verified: false,
+    tier: "basic",
+  };
 
   const storeRating: RatingSummary = shouldFetchListings
     ? aggregateListingRatings(products, services)
@@ -932,109 +1044,111 @@ export default async function StorePage({
           ? `u-${sellerIdFromUrl}`
           : slug || "unknown");
 
+  // Overlay tier (never derived from listing.featured; only controls *visibility*)
+  const sellerTierForOverlay: FeaturedTier =
+    (sellerBadgesFinal.tier ?? "basic") as FeaturedTier;
+
   return (
     <main
       id="main"
-      className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
+      className="min-h-[calc(100vh-4rem)] bg-[var(--bg)] px-4 py-4 text-[var(--text)] sm:py-6 md:px-8 lg:px-12 xl:px-16"
     >
-      <section className="mx-auto flex max-w-6xl flex-col gap-6">
+      <section className="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-6">
         {/* Store hero (Dashboard-style) */}
         <header
           aria-label="Store header"
-          className="relative overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-[#161748] via-[#1b244f] to-[#39a0ca] p-6 text-primary-foreground shadow-xl shadow-black/40"
+          className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft"
         >
-          {/* soft spotlight overlay (same vibe as dashboard) */}
+          {/* soft spotlight overlay */}
           <div
             className="pointer-events-none absolute inset-0 opacity-60 mix-blend-soft-light"
             aria-hidden="true"
           >
-            <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.16),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(71,133,89,0.3),_transparent_55%)]" />
+            <div className="h-full w-full bg-[var(--bg-subtle)]" />
           </div>
 
-          <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4">
-              <UserAvatar
-                src={user.image}
-                alt={`${displayHandle} avatar`}
-                size={56}
-                ring
-                fallbackText={(user.name || displayHandle || "U")
-                  .slice(0, 1)
-                  .toUpperCase()}
-              />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-200/80">
-                  Storefront
-                </p>
+          <div className="container-page py-5 text-white sm:py-8">
+            <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <UserAvatar
+                  src={user.image}
+                  alt={`${displayHandle} avatar`}
+                  size={56}
+                  ring
+                  fallbackText={(user.name || displayHandle || "U")
+                    .slice(0, 1)
+                    .toUpperCase()}
+                />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70 sm:text-xs sm:tracking-[0.25em]">
+                    Storefront
+                  </p>
 
-                <h1 className="mt-1 text-2xl font-bold tracking-tight md:text-3xl">
-                  Store:{" "}
-                  <span className="bg-gradient-to-r from-sky-300 to-emerald-300 bg-clip-text text-transparent">
-                    @{displayHandle}
-                  </span>
-                </h1>
+                  <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+                    Store: <span className="text-white/95">@{displayHandle}</span>
+                  </h1>
 
-                <p className="mt-1 text-sm text-slate-100/80">
-                  {user.name ? `${user.name}` : "Store profile"}
-                  {memberSinceYear ? ` • Member since ${memberSinceYear}` : ""}
-                  {user.city || user.country
-                    ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}`
-                    : ""}
-                </p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-white/80 sm:text-sm">
+                    {user.name ? `${user.name}` : "Store profile"}
+                    {memberSinceYear ? ` • Member since ${memberSinceYear}` : ""}
+                    {user.city || user.country
+                      ? ` • ${[user.city, user.country].filter(Boolean).join(", ")}`
+                      : ""}
+                  </p>
 
-                {sellerBadges && (
-                  <div className="mt-3">
-                    <SellerBadgesInline info={sellerBadges} />
+                  {/* ✅ Canonical: a single badge component in the store header */}
+                  <div className="mt-2 sm:mt-3">
+                    <SellerBadges info={sellerBadgesFinal} showTier />
                   </div>
-                )}
 
-                {resolvedUserId != null && hasStoreRating && (
-                  <div className="mt-3 flex items-center gap-3 text-xs">
-                    <ReviewSummary
-                      listingId={String(resolvedUserId)}
-                      listingType="seller"
-                      average={storeRating.average}
-                      count={storeRating.count}
-                      size="sm"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex w-full flex-col items-start gap-3 md:w-auto md:items-end">
-              {totalListings > 0 && (
-                <div className="inline-flex flex-wrap items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-medium text-slate-50 backdrop-blur-sm">
-                  <span>
-                    {totalListings.toLocaleString()}{" "}
-                    {totalListings === 1 ? "listing" : "listings"}
-                  </span>
-                  {totalProducts > 0 && (
-                    <span className="inline-flex items-center rounded-full bg-black/20 px-2 py-0.5">
-                      {totalProducts} products
-                    </span>
-                  )}
-                  {totalServices > 0 && (
-                    <span className="inline-flex items-center rounded-full bg-black/20 px-2 py-0.5">
-                      {totalServices} services
-                    </span>
+                  {resolvedUserId != null && hasStoreRating && (
+                    <div className="mt-2 flex items-center gap-3 text-[11px] text-white/80 sm:mt-3 sm:text-xs">
+                      <ReviewSummary
+                        listingId={String(resolvedUserId)}
+                        listingType="seller"
+                        average={storeRating.average}
+                        count={storeRating.count}
+                        size="sm"
+                      />
+                    </div>
                   )}
                 </div>
-              )}
+              </div>
 
-              <Link
-                href="/"
-                prefetch={false}
-                className="btn-outline bg-black/20 text-primary-foreground hover:bg-black/30"
-              >
-                Back to Home
-              </Link>
+              <div className="flex w-full flex-col items-start gap-2 md:w-auto md:items-end md:gap-3">
+                {totalListings > 0 && (
+                  <div className="inline-flex flex-wrap items-center gap-2 rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/90 backdrop-blur-sm sm:px-3 sm:py-1 sm:text-xs">
+                    <span>
+                      {totalListings.toLocaleString()}{" "}
+                      {totalListings === 1 ? "listing" : "listings"}
+                    </span>
+                    {totalProducts > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5">
+                        {totalProducts} products
+                      </span>
+                    )}
+                    {totalServices > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5">
+                        {totalServices} services
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <Link
+                  href="/"
+                  prefetch={false}
+                  className="btn-outline bg-white/10 text-xs text-white hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
+                >
+                  Back to Home
+                </Link>
+              </div>
             </div>
           </div>
         </header>
 
         {shouldFetchListings && (!prodOk || !svcOk) && (
-          <div className="rounded-3xl border border-amber-300/60 bg-amber-50/70 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50 md:p-5">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm text-[var(--text)] shadow-sm sm:p-4 md:p-5">
             <p className="font-semibold">Some listings couldn’t be loaded.</p>
             <p className="mt-1 opacity-80">
               {!prodOk && "Product listings are temporarily unavailable. "}
@@ -1045,17 +1159,21 @@ export default async function StorePage({
         )}
 
         {!hasAny && (
-          <div className="rounded-3xl border border-dashed border-border/60 bg-muted/40 p-8 text-center shadow-sm">
-            <p className="text-lg font-semibold text-foreground">
+          <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-6 text-center shadow-sm sm:p-8">
+            <p className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">
               No listings yet
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)]">
               {shouldFetchListings
                 ? "This store hasn’t posted any products or services yet."
                 : "This store profile isn’t set up yet."}
             </p>
-            <div className="mt-4">
-              <Link href="/" prefetch={false} className="btn-outline">
+            <div className="mt-3 sm:mt-4">
+              <Link
+                href="/"
+                prefetch={false}
+                className="btn-outline active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus"
+              >
                 Browse Home
               </Link>
             </div>
@@ -1063,22 +1181,22 @@ export default async function StorePage({
         )}
 
         {products.length > 0 && (
-          <section className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6">
+          <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-sm sm:p-4 md:p-6">
             <div className="flex items-end justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-foreground">
+                <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">
                   Products
                 </h2>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
                   Browse what this store is selling right now.
                 </p>
               </div>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-xs text-[var(--text-muted)] sm:text-sm">
                 {totalProducts.toLocaleString()} items
               </span>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-3 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:mt-4 sm:gap-4 md:grid-cols-3 md:gap-6 xl:grid-cols-4">
               {products.map((p) => {
                 const hasRating =
                   typeof p.ratingAverage === "number" &&
@@ -1091,11 +1209,11 @@ export default async function StorePage({
                     key={p.id}
                     href={`/product/${encodeURIComponent(p.id)}`}
                     prefetch={false}
-                    className="group"
+                    className="group rounded-2xl focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
                     aria-label={p.name || "Product"}
                   >
                     <div
-                      className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                      className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft"
                       data-listing-id={p.id}
                       data-listing-kind="product"
                       {...(hasRating
@@ -1105,13 +1223,17 @@ export default async function StorePage({
                           }
                         : {})}
                     >
+                      {/* ✅ Featured overlay: single canonical badge component (tier only) */}
                       {p.featured && (
-                        <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748]/90 px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
-                          Featured
-                        </span>
+                        <div className="absolute left-1.5 top-1.5 z-10 sm:left-2 sm:top-2">
+                          <VerifiedBadge
+                            featured={false}
+                            featuredTier={sellerTierForOverlay}
+                          />
+                        </div>
                       )}
 
-                      <div className="relative h-40 w-full bg-muted">
+                      <div className="relative h-36 w-full bg-[var(--bg-subtle)] sm:h-44">
                         <SmartImage
                           src={p.image || undefined}
                           alt={p.name || "Product image"}
@@ -1121,32 +1243,29 @@ export default async function StorePage({
                         />
                       </div>
 
-                      <div className="p-4">
-                        <h3 className="line-clamp-1 font-semibold text-foreground">
+                      <div className="p-2.5 sm:p-3 md:p-4">
+                        <h3 className="line-clamp-1 text-sm font-semibold text-[var(--text)] sm:text-base">
                           {p.name || "Unnamed item"}
                         </h3>
-                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                        <p className="line-clamp-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
                           {[p.category, p.subcategory].filter(Boolean).join(" • ") ||
-                            "—"}
+                            "-"}
                         </p>
 
-                        {sellerBadges && (
-                          <div className="mt-2">
-                            <SellerBadgesInline info={sellerBadges} />
-                          </div>
-                        )}
+                        {/* ✅ TEST REQUIREMENT: badges must be INSIDE the <a> */}
+                        <ListingBadgeRow info={sellerBadgesFinal} />
 
-                        <p className="mt-2 text-sm font-semibold text-[#39a0ca]">
+                        <p className="mt-1.5 text-sm font-extrabold text-[var(--text)] sm:mt-2 sm:text-base sm:font-semibold">
                           {fmtKES(p.price)}
                         </p>
 
                         {hasRating && (
-                          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
                             <ReviewStars rating={p.ratingAverage || 0} />
-                            <span className="font-medium">
+                            <span className="font-medium text-[var(--text)]">
                               {p.ratingAverage?.toFixed(1)}
                             </span>
-                            <span className="text-[0.7rem] text-muted-foreground">
+                            <span className="text-[0.7rem] text-[var(--text-muted)]">
                               ({p.ratingCount})
                             </span>
                           </div>
@@ -1161,22 +1280,22 @@ export default async function StorePage({
         )}
 
         {services.length > 0 && (
-          <section className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6">
+          <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-sm sm:p-4 md:p-6">
             <div className="flex items-end justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-foreground">
+                <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">
                   Services
                 </h2>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
                   Browse what this store offers as a service.
                 </p>
               </div>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-xs text-[var(--text-muted)] sm:text-sm">
                 {totalServices.toLocaleString()} items
               </span>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-3 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:mt-4 sm:gap-4 md:grid-cols-3 md:gap-6 xl:grid-cols-4">
               {services.map((s) => {
                 const hasRating =
                   typeof s.ratingAverage === "number" &&
@@ -1189,11 +1308,11 @@ export default async function StorePage({
                     key={s.id}
                     href={`/service/${encodeURIComponent(s.id)}`}
                     prefetch={false}
-                    className="group"
+                    className="group rounded-2xl focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
                     aria-label={s.name || "Service"}
                   >
                     <div
-                      className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                      className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft"
                       data-listing-id={s.id}
                       data-listing-kind="service"
                       {...(hasRating
@@ -1203,13 +1322,17 @@ export default async function StorePage({
                           }
                         : {})}
                     >
+                      {/* ✅ Featured overlay: single canonical badge component (tier only) */}
                       {s.featured && (
-                        <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748]/90 px-2 py-1 text-xs font-semibold text-primary-foreground shadow">
-                          Featured
-                        </span>
+                        <div className="absolute left-1.5 top-1.5 z-10 sm:left-2 sm:top-2">
+                          <VerifiedBadge
+                            featured={false}
+                            featuredTier={sellerTierForOverlay}
+                          />
+                        </div>
                       )}
 
-                      <div className="relative h-40 w-full bg-muted">
+                      <div className="relative h-36 w-full bg-[var(--bg-subtle)] sm:h-44">
                         <SmartImage
                           src={s.image || undefined}
                           alt={s.name || "Service image"}
@@ -1219,32 +1342,29 @@ export default async function StorePage({
                         />
                       </div>
 
-                      <div className="p-4">
-                        <h3 className="line-clamp-1 font-semibold text-foreground">
+                      <div className="p-2.5 sm:p-3 md:p-4">
+                        <h3 className="line-clamp-1 text-sm font-semibold text-[var(--text)] sm:text-base">
                           {s.name || "Unnamed service"}
                         </h3>
-                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                        <p className="line-clamp-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
                           {[s.category, s.subcategory].filter(Boolean).join(" • ") ||
-                            "—"}
+                            "-"}
                         </p>
 
-                        {sellerBadges && (
-                          <div className="mt-2">
-                            <SellerBadgesInline info={sellerBadges} />
-                          </div>
-                        )}
+                        {/* ✅ TEST REQUIREMENT: badges must be INSIDE the <a> */}
+                        <ListingBadgeRow info={sellerBadgesFinal} />
 
-                        <p className="mt-2 text-sm font-semibold text-[#39a0ca]">
+                        <p className="mt-1.5 text-sm font-extrabold text-[var(--text)] sm:mt-2 sm:text-base sm:font-semibold">
                           {fmtServiceKES(s.price)}
                         </p>
 
                         {hasRating && (
-                          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
                             <ReviewStars rating={s.ratingAverage || 0} />
-                            <span className="font-medium">
+                            <span className="font-medium text-[var(--text)]">
                               {s.ratingAverage?.toFixed(1)}
                             </span>
-                            <span className="text-[0.7rem] text-muted-foreground">
+                            <span className="text-[0.7rem] text-[var(--text-muted)]">
                               ({s.ratingCount})
                             </span>
                           </div>

@@ -103,7 +103,7 @@ export function CredsFormClient({
       onSubmit={onSubmit}
       action={action}
       method="post"
-      className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-sm sm:p-5"
       noValidate
     >
       {/* Hard fallback fields for native POST if JS is disabled */}
@@ -114,7 +114,7 @@ export function CredsFormClient({
 
       <div className="space-y-3">
         <div>
-          <label htmlFor="email" className="label font-semibold">
+          <label htmlFor="email" className="label text-xs font-semibold sm:text-sm">
             Email
           </label>
           <input
@@ -133,7 +133,10 @@ export function CredsFormClient({
         </div>
 
         <div>
-          <label htmlFor="password" className="label font-semibold">
+          <label
+            htmlFor="password"
+            className="label text-xs font-semibold sm:text-sm"
+          >
             Password
           </label>
           <input
@@ -148,7 +151,7 @@ export function CredsFormClient({
             aria-required="true"
             disabled={loading}
           />
-          <p className="mt-1 text-xs text-gray-600 dark:text-slate-400">
+          <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
             Minimum 6 characters.
           </p>
         </div>
@@ -156,7 +159,7 @@ export function CredsFormClient({
         {error ? (
           <div
             role="alert"
-            className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200"
+            className="rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-sm font-medium text-[var(--text)] shadow-sm"
           >
             {error}
           </div>
@@ -164,7 +167,7 @@ export function CredsFormClient({
 
         <button
           type="submit"
-          className="btn-gradient-primary mt-2 w-full"
+          className="btn-gradient-primary mt-2 w-full text-sm sm:text-base"
           disabled={loading}
           aria-busy={loading ? "true" : "false"}
           aria-disabled={loading ? "true" : "false"}
@@ -172,13 +175,13 @@ export function CredsFormClient({
           {loading ? "Signing in…" : "Sign in"}
         </button>
 
-        <div className="flex items-center justify-between text-xs text-gray-600 dark:text-slate-400">
+        <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
           <span>
             New here?{" "}
             <Link
               href="/signup"
               prefetch={false}
-              className="underline underline-offset-2"
+              className="text-[var(--text)] underline underline-offset-2"
             >
               Create an account
             </Link>
@@ -186,7 +189,7 @@ export function CredsFormClient({
           <Link
             href="/reset-password"
             prefetch={false}
-            className="underline underline-offset-2"
+            className="text-[var(--text)] underline underline-offset-2"
           >
             Forgot password?
           </Link>

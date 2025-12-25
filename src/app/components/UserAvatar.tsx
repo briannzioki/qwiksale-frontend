@@ -9,11 +9,11 @@ export type UserAvatarProps = {
   // ✅ allow undefined explicitly for exactOptionalPropertyTypes
   src?: string | null | undefined;
   alt?: string;
-  size?: SizeOption;        // px number or semantic size
+  size?: SizeOption; // px number or semantic size
   className?: string;
-  fallbackText?: string;    // initial(s)
-  ring?: boolean;           // show subtle ring
-  title?: string;           // optional tooltip
+  fallbackText?: string; // initial(s)
+  ring?: boolean; // show subtle ring
+  title?: string; // optional tooltip
   loading?: "eager" | "lazy";
 };
 
@@ -44,7 +44,7 @@ export default function UserAvatar({
   // Derive fallback initial(s)
   const fallback = (fallbackText || (alt || "U").trim()[0] || "U").toUpperCase();
 
-  const ringClasses = ring ? "ring-2 ring-black/10 dark:ring-white/20" : "";
+  const ringClasses = ring ? "ring-1 ring-inset ring-[var(--border-subtle)]" : "";
 
   // Fallback (no src or load error)
   if (!src || errored) {
@@ -54,11 +54,13 @@ export default function UserAvatar({
         aria-label={alt}
         title={title}
         className={`inline-flex select-none items-center justify-center rounded-full
-                    bg-gray-200 text-gray-700 dark:bg-slate-700 dark:text-slate-100
+                    bg-[var(--bg-subtle)] text-[var(--text)]
                     ${ringClasses} ${className}`}
         style={dim}
       >
-        <span style={{ fontSize }}>{fallback}</span>
+        <span className="font-semibold leading-none" style={{ fontSize }}>
+          {fallback}
+        </span>
       </div>
     );
   }
@@ -74,7 +76,7 @@ export default function UserAvatar({
       loading={loading}
       decoding="async"
       onError={() => setErrored(true)}
-      className={`rounded-full object-cover ${ringClasses} ${className}`}
+      className={`rounded-full object-cover bg-[var(--bg-subtle)] ${ringClasses} ${className}`}
       style={dim}
     />
   );

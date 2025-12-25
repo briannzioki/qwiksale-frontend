@@ -239,10 +239,11 @@ export default function ProfilePhotoUploader({
       {/* Preview / Drop zone */}
       <div
         className={[
-          "relative overflow-hidden bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700",
+          "relative overflow-hidden border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
           roundClass,
-          dragOver ? "ring-2 ring-[#39a0ca]" : "",
-          "cursor-pointer",
+          dragOver ? "ring-2 ring-focus border-[var(--border)] bg-[var(--bg)]" : "",
+          "cursor-pointer outline-none transition",
+          "focus-visible:outline-none focus-visible:ring-2 ring-focus",
         ].join(" ")}
         style={{ width: px, height: px }}
         onClick={() => fileInputRef.current?.click()}
@@ -273,14 +274,14 @@ export default function ProfilePhotoUploader({
             unoptimized={unoptimized}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
+          <div className="flex h-full w-full items-center justify-center text-xs text-[var(--text-muted)]">
             No photo
           </div>
         )}
 
         {/* subtle overlay hint on drag */}
         {dragOver && (
-          <div className="absolute inset-0 border-2 border-dashed border-[#39a0ca] bg-[#39a0ca]/10" />
+          <div className="absolute inset-0 border-2 border-dashed border-[var(--border)] bg-[var(--bg-subtle)] opacity-60" />
         )}
       </div>
 
@@ -290,7 +291,7 @@ export default function ProfilePhotoUploader({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="rounded-2xl px-3 py-2 text-sm font-medium shadow-sm ring-1 ring-gray-300 dark:ring-gray-600 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+            className="rounded-2xl px-3 py-2 text-sm font-semibold shadow-sm border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus disabled:opacity-50"
             disabled={isUploading}
           >
             {isUploading ? "Uploading…" : "Upload photo"}
@@ -300,7 +301,7 @@ export default function ProfilePhotoUploader({
             <button
               type="button"
               onClick={onRemove}
-              className="rounded-2xl px-3 py-2 text-sm font-medium text-red-600 shadow-sm ring-1 ring-red-300 dark:ring-red-700 bg-white dark:bg-gray-900 hover:bg-red-50/60 dark:hover:bg-red-900/20 disabled:opacity-50"
+              className="rounded-2xl px-3 py-2 text-sm font-semibold shadow-sm border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus disabled:opacity-50"
               disabled={isUploading}
             >
               Remove
@@ -321,7 +322,7 @@ export default function ProfilePhotoUploader({
                 reset(); // clear hook error state if any
                 announce("Changes discarded");
               }}
-              className="rounded-2xl px-3 py-2 text-sm shadow-sm ring-1 ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
+              className="rounded-2xl px-3 py-2 text-sm font-semibold shadow-sm border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus disabled:opacity-50"
               disabled={isUploading}
               title="Discard local changes"
             >
@@ -340,10 +341,10 @@ export default function ProfilePhotoUploader({
 
         {/* Progress */}
         {isUploading && (
-          <div className="text-xs text-gray-700 dark:text-gray-300">
+          <div className="text-xs text-[var(--text-muted)]">
             Uploading… {progress ?? 0}%
             <div
-              className="mt-1 h-2 w-56 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"
+              className="mt-1 h-2 w-56 overflow-hidden rounded-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)]"
               role="progressbar"
               aria-valuenow={progress ?? 0}
               aria-valuemin={0}
@@ -352,7 +353,7 @@ export default function ProfilePhotoUploader({
               title={`${progress ?? 0}%`}
             >
               <div
-                className="h-full bg-gray-600 dark:bg-gray-300 transition-[width] duration-300 ease-linear"
+                className="h-full bg-[var(--text)] transition-[width] duration-300 ease-linear"
                 style={{ width: `${Math.min(100, Math.max(0, progress || 0))}%` }}
               />
             </div>
@@ -363,10 +364,10 @@ export default function ProfilePhotoUploader({
         {(validationError || error) && (
           <div className="text-xs">
             {validationError && (
-              <div className="text-amber-700 dark:text-amber-400">{validationError}</div>
+              <div className="text-[var(--text-muted)]">{validationError}</div>
             )}
             {error && (
-              <div className="text-red-600 dark:text-red-400">
+              <div className="text-[var(--text)]">
                 {error}{" "}
                 <button
                   type="button"
@@ -375,7 +376,7 @@ export default function ProfilePhotoUploader({
                     setValidationError(null);
                     announce("Error state cleared");
                   }}
-                  className="ml-2 underline underline-offset-2"
+                  className="ml-2 underline underline-offset-2 text-[var(--text-muted)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
                 >
                   reset
                 </button>
@@ -385,7 +386,7 @@ export default function ProfilePhotoUploader({
         )}
 
         {/* Tiny help text */}
-        <p id={helpId} className="text-[11px] text-gray-500 dark:text-gray-400">
+        <p id={helpId} className="text-[11px] text-[var(--text-muted)] leading-relaxed">
           Accepted: JPG, PNG, WebP, AVIF, GIF. Max {Math.round(maxBytes / 1024 / 1024)}MB.
           Drag & drop and paste supported.
         </p>

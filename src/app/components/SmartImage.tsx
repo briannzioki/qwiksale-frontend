@@ -21,7 +21,10 @@ const DEFAULT_PLACEHOLDER = "/placeholder/default.jpg";
 const CLOUD_NAME = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] ?? "";
 
 /* ------------------------------ helpers ------------------------------ */
-function resolveSrc(input?: AcceptableSrc, fallback = DEFAULT_PLACEHOLDER): string | StaticImageData {
+function resolveSrc(
+  input?: AcceptableSrc,
+  fallback = DEFAULT_PLACEHOLDER,
+): string | StaticImageData {
   if (!input) return fallback;
   if (typeof input === "object" && input !== null && "src" in input) return input;
   const raw = String(input).trim();
@@ -50,17 +53,19 @@ function tinyShimmer(width = 16, height = 9) {
        xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
     <defs>
       <linearGradient id="g" x1="0" x2="1" y1="0" y2="0">
-        <stop offset="0%" stop-color="#eee"/>
-        <stop offset="50%" stop-color="#ddd"/>
-        <stop offset="100%" stop-color="#eee"/>
+        <stop offset="0%" stop-color="var(--skeleton)"/>
+        <stop offset="50%" stop-color="var(--border-subtle)"/>
+        <stop offset="100%" stop-color="var(--skeleton)"/>
       </linearGradient>
     </defs>
-    <rect width="${width}" height="${height}" fill="#eee"/>
+    <rect width="${width}" height="${height}" fill="var(--skeleton)"/>
     <rect id="r" width="${width}" height="${height}" fill="url(#g)"/>
     <animate xlink:href="#r" attributeName="x" from="-${width}" to="${width}" dur="1.2s" repeatCount="indefinite"/>
   </svg>`;
   const b64 =
-    typeof window === "undefined" ? Buffer.from(svg).toString("base64") : btoa(svg);
+    typeof window === "undefined"
+      ? Buffer.from(svg).toString("base64")
+      : btoa(svg);
   return `data:image/svg+xml;base64,${b64}`;
 }
 
@@ -81,7 +86,10 @@ export default function SmartImage({
   preserveOnError = false,
   ...rest
 }: Props) {
-  const initial = useMemo(() => resolveSrc(srcProp, fallbackSrc), [srcProp, fallbackSrc]);
+  const initial = useMemo(
+    () => resolveSrc(srcProp, fallbackSrc),
+    [srcProp, fallbackSrc],
+  );
   const [actualSrc, setActualSrc] = useState<string | StaticImageData>(initial);
 
   useEffect(() => {
@@ -109,7 +117,12 @@ export default function SmartImage({
 
   const handleLoad: NonNullable<ImageProps["onLoad"]> = (e) => {
     const imgEl = e.currentTarget as HTMLImageElement | null;
-    if (!preserveOnError && imgEl && imgEl.naturalWidth === 0 && actualSrc !== fallbackSrc) {
+    if (
+      !preserveOnError &&
+      imgEl &&
+      imgEl.naturalWidth === 0 &&
+      actualSrc !== fallbackSrc
+    ) {
       setActualSrc(fallbackSrc);
       return;
     }
@@ -119,7 +132,8 @@ export default function SmartImage({
 
   const safeAlt = alt && alt.trim().length > 0 ? alt : "image";
 
-  const isSvg = typeof actualSrc === "string" && actualSrc.toLowerCase().includes(".svg");
+  const isSvg =
+    typeof actualSrc === "string" && actualSrc.toLowerCase().includes(".svg");
   const isFill = !!(cleanRest as ImageProps).fill;
 
   // Default to unoptimized in tests; enable optimization when explicitly asked
@@ -127,7 +141,9 @@ export default function SmartImage({
 
   const sizes =
     sizesProp ??
-    (isFill ? "(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px" : undefined);
+    (isFill
+      ? "(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px"
+      : undefined);
 
   const w = toNumber((cleanRest as ImageProps).width);
   const h = toNumber((cleanRest as ImageProps).height);
@@ -140,7 +156,12 @@ export default function SmartImage({
 
   const extra: Partial<ImageProps> = {};
 
-  if (autoBlurPlaceholder && !isSvg && !hasExplicitPlaceholder && !hasExplicitBlurData) {
+  if (
+    autoBlurPlaceholder &&
+    !isSvg &&
+    !hasExplicitPlaceholder &&
+    !hasExplicitBlurData
+  ) {
     extra.placeholder = "blur";
     extra.blurDataURL = tinyShimmer(24, 16);
   } else {
@@ -152,13 +173,22 @@ export default function SmartImage({
   extra.decoding = decodingProp ?? "async";
   extra.referrerPolicy = referrerPolicyProp ?? "strict-origin-when-cross-origin";
 
-  const rawSrcStr = typeof actualSrc === "string" ? actualSrc : (actualSrc as StaticImageData).src;
+  const rawSrcStr =
+    typeof actualSrc === "string"
+      ? actualSrc
+      : (actualSrc as StaticImageData).src;
 
   const imgEl = (
     <Image
       {...(cleanRest as Omit<
         ImageProps,
-        "src" | "alt" | "placeholder" | "blurDataURL" | "fetchPriority" | "decoding" | "referrerPolicy"
+        | "src"
+        | "alt"
+        | "placeholder"
+        | "blurDataURL"
+        | "fetchPriority"
+        | "decoding"
+        | "referrerPolicy"
       >)}
       {...extra}
       alt={safeAlt}
@@ -176,7 +206,10 @@ export default function SmartImage({
   );
 
   return isFill ? (
-    <span className={["relative block h-full w-full", wrapperClassName].join(" ")} aria-hidden={false}>
+    <span
+      className={["relative block h-full w-full", wrapperClassName].join(" ")}
+      aria-hidden={false}
+    >
       {imgEl}
     </span>
   ) : (

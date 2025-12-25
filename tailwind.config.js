@@ -11,6 +11,7 @@ const tailwindAnimate = require("tailwindcss-animate");
 
 /** @type {import('tailwindcss').Config} */
 const config = {
+  // Confirmed mechanism: class-based dark mode (matches next-themes attribute="class")
   darkMode: "class",
 
   content: [
@@ -39,12 +40,14 @@ const config = {
 
     extend: {
       fontFamily: {
+        // Keep aligned with your next/font vars
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
 
       /* ------------------------- Color System ------------------------- */
       colors: {
+        // Keep standard ramps available, but do not introduce brand* tokens here.
         slate: colors.slate,
         gray: colors.gray,
         stone: colors.stone,
@@ -63,57 +66,19 @@ const config = {
           900: colors.slate[900],
         },
 
-        brandNavy: {
-          50: "#f3f4fb",
-          100: "#e6e7f6",
-          200: "#c7c9ea",
-          300: "#a4a6dd",
-          400: "#6f73c7",
-          500: "#3f45a9",
-          600: "#161748",
-          700: "#11123a",
-          800: "#0c0d2c",
-          900: "#080a22",
-          DEFAULT: "#161748",
-        },
-        brandGreen: {
-          50: "#edf7f0",
-          100: "#d6efde",
-          200: "#aedad0",
-          300: "#83c2b0",
-          400: "#61a88e",
-          500: "#4e9474",
-          600: "#478559",
-          700: "#3a6b47",
-          800: "#2d5236",
-          900: "#213b28",
-          DEFAULT: "#478559",
-        },
-        brandBlue: {
-          50: "#ebf7fc",
-          100: "#d1eef9",
-          200: "#a5dff1",
-          300: "#72cbe6",
-          400: "#4db4d7",
-          500: "#3aa1c8",
-          600: "#39a0ca",
-          700: "#2f83a6",
-          800: "#276a86",
-          900: "#1f5368",
-          DEFAULT: "#39a0ca",
-        },
+        // Keep accent as a semantic ramp (no hex literals).
         accent: {
-          50: "#fff1f6",
-          100: "#ffe4ee",
-          200: "#ffc0d7",
-          300: "#ff97bd",
-          400: "#ff6aa4",
-          500: "#ff488f",
-          600: "#f95d9b",
-          700: "#d2357d",
-          800: "#aa2b65",
-          900: "#87234f",
-          DEFAULT: "#f95d9b",
+          50: colors.yellow[50],
+          100: colors.yellow[100],
+          200: colors.yellow[200],
+          300: colors.yellow[300],
+          400: colors.yellow[400],
+          500: colors.yellow[500],
+          600: colors.yellow[600],
+          700: colors.yellow[700],
+          800: colors.yellow[800],
+          900: colors.yellow[900],
+          DEFAULT: colors.yellow[500],
         },
       },
 
@@ -133,21 +98,10 @@ const config = {
         elev2: "0 4px 10px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.05)",
         elev3: "0 8px 24px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)",
         elev4: "0 12px 32px rgba(0,0,0,0.16), 0 6px 16px rgba(0,0,0,0.08)",
-        glow: "0 0 0 6px rgba(57,160,202,0.12)",
-        focus: "0 0 0 3px rgba(57,160,202,0.35)",
-      },
-
-      /* ------------------------- Gradients ------------------------- */
-      backgroundImage: {
-        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
-        "gradient-conic":
-          "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
-        "brand-hero":
-          "linear-gradient(90deg, var(--brand-start) 0%, var(--brand-mid) 50%, var(--brand-end) 100%)",
-        "brand-accent":
-          "linear-gradient(90deg, theme(colors.brandGreen.600) 0%, theme(colors.brandBlue.600) 100%)",
-        "brand-navy":
-          "linear-gradient(90deg, theme(colors.brandNavy.600) 0%, theme(colors.brandBlue.600) 100%)",
+        // Keep as-is for compatibility. If you later define a CSS var for focus rings,
+        // this can be swapped to var(--ring-focus) without changing call sites.
+        glow: "0 0 0 6px rgba(0,0,0,0.06)",
+        focus: "0 0 0 3px rgba(0,0,0,0.18)",
       },
 
       /* ------------------------- Animations ------------------------- */
@@ -215,66 +169,13 @@ const config = {
     containerQueries,
 
     /* ---------------------- Custom tokens/utilities ---------------------- */
-    plugin(function ({ addBase, addComponents, addUtilities, theme }) {
-      // Semantic CSS vars for surfaces & brand ramps (keep in sync with globals.css)
-      addBase({
-        ":root": {
-          // Surfaces
-          "--bg-app": colors.slate[50],
-          "--bg-elevated": "#ffffff",
-          "--bg-muted": colors.slate[100],
-          "--bg-subtle": colors.slate[50],
-
-          // Borders
-          "--border": colors.slate[200],
-          "--border-subtle": colors.slate[200],
-          "--border-strong": colors.slate[300],
-
-          // Text
-          "--text-strong": colors.slate[950],
-          "--text": colors.slate[900],
-          "--text-muted": colors.slate[600],
-          "--text-soft": colors.slate[500],
-
-          // Semantic palette
-          "--primary": theme("colors.brandNavy.600"),
-          "--primary-soft": theme("colors.brandNavy.50"),
-          "--accent": theme("colors.accent.DEFAULT"),
-          "--accent-soft": theme("colors.accent.50"),
-          "--danger": colors.rose[600],
-          "--danger-soft": colors.rose[50],
-
-          "--brand-start": theme("colors.brandNavy.600"),
-          "--brand-mid": theme("colors.brandGreen.600"),
-          "--brand-end": theme("colors.brandBlue.600"),
-        },
-        ".dark": {
-          "--bg-app": colors.slate[950],
-          "--bg-elevated": "#0b1220",
-          "--bg-muted": colors.slate[900],
-          "--bg-subtle": "#020617",
-
-          "--border": colors.slate[700],
-          "--border-subtle": colors.slate[800],
-          "--border-strong": colors.slate[600],
-
-          "--text-strong": "#f9fafb",
-          "--text": colors.slate[100],
-          "--text-muted": colors.slate[400],
-          "--text-soft": colors.slate[500],
-
-          "--primary": theme("colors.brandNavy.300"),
-          "--primary-soft": "rgba(15,23,42,0.7)",
-          "--accent": theme("colors.accent.300"),
-          "--accent-soft": "rgba(248,113,166,0.24)",
-          "--danger": colors.rose[500],
-          "--danger-soft": "rgba(248,113,113,0.27)",
-
-          "--brand-start": theme("colors.brandNavy.500"),
-          "--brand-mid": theme("colors.brandGreen.500"),
-          "--brand-end": theme("colors.brandBlue.500"),
-        },
-      });
+    plugin(function ({ addComponents, addUtilities, theme }) {
+      /**
+       * IMPORTANT ALIGNMENT NOTE
+       * globals.css is the source of truth for semantic tokens:
+       *   --bg, --bg-elevated, --bg-subtle, --border-*, --text-*
+       * We do not redefine those here (prevents silent drift).
+       */
 
       const btnBase = {
         display: "inline-flex",
@@ -284,7 +185,6 @@ const config = {
         borderRadius: theme("borderRadius.2xl"),
         padding: "0.5rem 1rem",
         fontWeight: "700",
-        color: "#fff",
         cursor: "pointer",
         userSelect: "none",
         outline: "none",
@@ -302,55 +202,64 @@ const config = {
           paddingLeft: theme("spacing.4"),
           paddingRight: theme("spacing.4"),
         },
+
+        // Safe defaults - globals.css can (and will) refine them.
         ".hero-surface": {
           borderRadius: theme("borderRadius.3xl"),
-          color: "#fff",
-          backgroundImage: theme("backgroundImage.brand-navy"),
+          backgroundColor: "var(--bg-elevated)",
+          border: "1px solid var(--border-subtle)",
+          color: "var(--text)",
           boxShadow: theme("boxShadow.elev4"),
         },
+
         ".card-surface": {
           borderRadius: theme("borderRadius.2xl"),
           backgroundColor: "var(--bg-elevated)",
           border: "1px solid var(--border-subtle)",
           boxShadow: theme("boxShadow.card"),
         },
+
         ".shadow-soft": { boxShadow: theme("boxShadow.soft") },
 
+        // Keep class names for compatibility, but remove gradients (brand strip is handled in markup only).
         ".btn-gradient-primary": {
           ...btnBase,
-          backgroundImage: theme("backgroundImage.brand-hero"),
+          backgroundColor: "var(--bg-elevated)",
+          border: "1px solid var(--border-subtle)",
+          color: "var(--text)",
         },
         ".btn-gradient-accent": {
           ...btnBase,
-          backgroundImage: theme("backgroundImage.brand-accent"),
+          backgroundColor: "var(--bg-elevated)",
+          border: "1px solid var(--border-subtle)",
+          color: "var(--text)",
         },
         ".btn-gradient-hero": {
           ...btnBase,
           padding: "0.75rem 1.25rem",
-          backgroundImage: theme("backgroundImage.brand-navy"),
+          backgroundColor: "var(--bg-elevated)",
+          border: "1px solid var(--border-subtle)",
+          color: "var(--text)",
         },
       });
 
-      // Utilities – including token-based helpers
+      // Utilities - token-driven primitives (these must exist and stay stable)
       addUtilities({
-        ".text-gradient": {
-          backgroundImage: theme("backgroundImage.brand-hero"),
-          WebkitBackgroundClip: "text",
-          backgroundClip: "text",
-          color: "transparent",
-        },
         ".ring-focus": { boxShadow: theme("boxShadow.focus") },
         ".glow": { boxShadow: theme("boxShadow.glow") },
         ".rounded-inherit": { borderRadius: "inherit" },
 
-        // Token-powered helpers
-        ".bg-app": { backgroundColor: "var(--bg-app)" },
+        // Core primitives (aligned to your CSS-var token system)
+        ".bg-app": { backgroundColor: "var(--bg)" },
         ".bg-surface": { backgroundColor: "var(--bg-elevated)" },
-        ".bg-subtle": { backgroundColor: "var(--bg-muted)" },
-        ".border-subtle": { borderColor: "var(--border-subtle)" },
-        ".border-strong": { borderColor: "var(--border-strong)" },
+        ".bg-subtle": { backgroundColor: "var(--bg-subtle)" },
+
         ".text-strong": { color: "var(--text)" },
-        ".text-muted-token": { color: "var(--text-muted)" },
+        ".text-muted": { color: "var(--text-muted)" },
+
+        ".border-subtle": { borderColor: "var(--border-subtle)" },
+        ".border-strong": { borderColor: "var(--border)" },
+
         ".surface-card": {
           backgroundColor: "var(--bg-elevated)",
           borderRadius: theme("borderRadius.2xl"),
@@ -365,5 +274,3 @@ const config = {
 };
 
 module.exports = config;
-
-

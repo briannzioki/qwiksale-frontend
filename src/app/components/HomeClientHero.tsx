@@ -32,8 +32,7 @@ const isCategory = (x: unknown): x is Category =>
   !!x && typeof (x as any).name === "string";
 
 /* --------------------------- helpers ---------------------------------- */
-const categoryHref = (value: string) =>
-  `/?category=${encodeURIComponent(value)}`;
+const categoryHref = (value: string) => `/?category=${encodeURIComponent(value)}`;
 
 function pickTopCategoryNames(max = 10) {
   const names: string[] = [];
@@ -126,52 +125,44 @@ export default function HomeClientHero({
     <section
       aria-label="Welcome hero"
       className={[
-        "relative overflow-hidden rounded-2xl border border-border/60",
-        "bg-gradient-to-br from-[#e6f6fd] via-[#eaf7f0] to-[#f0effa] dark:from-slate-900 dark:via-slate-900 dark:to-slate-950",
-        "p-5 md:p-6",
+        "relative overflow-hidden rounded-2xl border border-[var(--border-subtle)]",
+        "bg-[var(--bg-elevated)]",
+        "p-4 sm:p-5 md:p-6",
         "shadow-soft",
         className,
       ].join(" ")}
     >
-      {/* Decorative blobs */}
+      {/* Subtle brand strip (approved gradient only) */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full opacity-40 md:blur-3xl"
-        style={{
-          background:
-            "radial-gradient(closest-side, #39a0ca 0%, transparent 60%), radial-gradient(closest-side, #478559 0%, transparent 60%)",
-          willChange: "transform, opacity",
-        }}
+        className="pointer-events-none absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]"
       />
+      {/* Soft vignette for readability */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -left-20 -bottom-20 h-48 w-48 rounded-full opacity-30 md:blur-3xl"
-        style={{
-          background:
-            "radial-gradient(closest-side, #161748 0%, transparent 60%), radial-gradient(closest-side, #f95d9b 0%, transparent 60%)",
-          willChange: "transform, opacity",
-        }}
+        className="pointer-events-none absolute inset-0 bg-[var(--bg-elevated)] opacity-[0.65] dark:opacity-[0.75]"
       />
 
-      <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+      <div className="relative z-10 grid gap-3 sm:gap-4 md:grid-cols-[1fr_auto] md:items-center">
         <div>
           <h1
-            className="mt-1 text-xl font-extrabold tracking-tight text-[#161748] dark:text-white text-balance"
+            className="mt-0.5 text-balance text-lg font-extrabold tracking-tight text-[var(--text-strong)] sm:text-xl"
             aria-live="polite"
           >
-            {greeting} — buy &amp; sell, faster.
+            {greeting} - buy &amp; sell, faster.
           </h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Browse fresh deals across Kenya. Post your own listing in seconds
-            and reach local buyers.
+
+          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
+            Browse fresh deals across Kenya. Post your own listing in seconds and reach local
+            buyers.
           </p>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 sm:gap-2">
             <Link
               href="/sell"
               prefetch
               onClick={() => track("hero_sell_click")}
-              className="btn-gradient-hero"
+              className="btn-gradient-hero px-3 py-2 text-sm sm:px-4 sm:py-2"
             >
               + Post a listing
             </Link>
@@ -180,19 +171,28 @@ export default function HomeClientHero({
               href="/search"
               prefetch
               onClick={() => track("hero_browse_click")}
-              className="btn-outline"
+              className="btn-outline px-3 py-2 text-sm sm:px-4 sm:py-2"
             >
               Browse all
             </Link>
 
             {isAppAuthed ? (
               <>
+                {/* Hide extra hero actions on xs to maximize feed space */}
                 <Link
                   href="/saved"
                   prefetch
                   onClick={() => track("hero_saved_click")}
                   aria-label="Favorites"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card/80 text-pink-600 transition hover:bg-card"
+                  className={[
+                    "hidden sm:inline-flex",
+                    "h-9 w-9 items-center justify-center rounded-xl",
+                    "border border-[var(--border-subtle)] bg-[var(--bg-subtle)]",
+                    "text-[var(--text)] transition",
+                    "hover:bg-[var(--bg-elevated)]",
+                    "active:scale-[.99]",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  ].join(" ")}
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -209,7 +209,7 @@ export default function HomeClientHero({
                   href="/dashboard"
                   prefetch
                   onClick={() => track("hero_dashboard_click")}
-                  className="contents"
+                  className="hidden sm:contents"
                 >
                   <IconButton
                     icon="settings"
@@ -224,7 +224,15 @@ export default function HomeClientHero({
                     href="/account/complete-profile"
                     prefetch
                     onClick={() => track("hero_complete_profile_click")}
-                    className="inline-flex items-center rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+                    className={[
+                      "hidden sm:inline-flex",
+                      "items-center rounded-xl",
+                      "border border-[var(--border)] bg-[var(--bg-subtle)]",
+                      "px-3 py-2 text-sm font-semibold text-[var(--text)]",
+                      "transition hover:bg-[var(--bg-elevated)]",
+                      "active:scale-[.99]",
+                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    ].join(" ")}
                     title="Set your username & profile details"
                   >
                     Complete profile
@@ -238,7 +246,7 @@ export default function HomeClientHero({
                   prefetch
                   aria-label="Sign in to QwikSale"
                   onClick={() => track("hero_signin_click")}
-                  className="btn-outline"
+                  className="btn-outline px-3 py-2 text-sm sm:px-4 sm:py-2"
                 >
                   Sign in to QwikSale
                 </Link>
@@ -246,7 +254,7 @@ export default function HomeClientHero({
                   href="/signup"
                   prefetch
                   onClick={() => track("hero_join_click")}
-                  className="btn-outline"
+                  className="btn-outline px-3 py-2 text-sm sm:px-4 sm:py-2"
                 >
                   Join
                 </Link>
@@ -254,7 +262,8 @@ export default function HomeClientHero({
             )}
           </div>
 
-          <ul className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          {/* Hide on xs to maximize feed viewport; keep from sm+ */}
+          <ul className="mt-3 hidden flex-wrap items-center gap-3 text-xs text-[var(--text-muted)] sm:flex">
             <li className="inline-flex items-center gap-1">
               <ShieldIcon /> Buyer safety
             </li>
@@ -268,19 +277,26 @@ export default function HomeClientHero({
         </div>
 
         <nav aria-label="Popular categories" className="md:justify-self-end">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:text-xs">
             Popular now
           </div>
-          <ul className="mt-2 flex max-w-[36rem] flex-wrap gap-2">
+
+          {/* Phone: single-row horizontal scroll; Desktop: wraps normally */}
+          <ul
+            className={[
+              "mt-2 flex gap-2",
+              "flex-nowrap overflow-x-auto overscroll-x-contain",
+              "pb-1 pr-1 [-webkit-overflow-scrolling:touch]",
+              "md:max-w-[36rem] md:flex-wrap md:overflow-visible md:pb-0 md:pr-0",
+            ].join(" ")}
+          >
             {topCats.map((name) => (
-              <li key={name}>
+              <li key={name} className="shrink-0">
                 <Link
                   href={categoryHref(name)}
                   prefetch
-                  onClick={() =>
-                    track("hero_category_click", { category: name })
-                  }
-                  className="chip-outline"
+                  onClick={() => track("hero_category_click", { category: name })}
+                  className="chip-outline whitespace-nowrap"
                 >
                   {name}
                 </Link>
@@ -309,11 +325,7 @@ function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
         stroke="currentColor"
         strokeWidth="1.8"
       />
-      <path
-        d="M9 12l2 2 4-4"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
+      <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
 }

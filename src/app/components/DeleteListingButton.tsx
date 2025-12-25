@@ -1,4 +1,3 @@
-// src/app/components/DeleteListingButton.tsx
 "use client";
 
 import * as React from "react";
@@ -12,7 +11,7 @@ type Kind = "product" | "service";
 type LegacyType = Kind;
 
 type RenderButton = (
-  buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>
+  buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>,
 ) => React.ReactNode;
 
 type BaseProps = {
@@ -58,13 +57,19 @@ export default function DeleteListingButton(props: Props) {
 
   const inferredKind: Kind =
     explicitKind ??
-    ("serviceId" in props && typeof props.serviceId === "string" ? "service" : "product");
+    ("serviceId" in props && typeof props.serviceId === "string"
+      ? "service"
+      : "product");
 
   const targetId: string | undefined =
     id ??
     (inferredKind === "service"
-      ? ("serviceId" in props ? props.serviceId : undefined)
-      : ("productId" in props ? props.productId : undefined));
+      ? "serviceId" in props
+        ? props.serviceId
+        : undefined
+      : "productId" in props
+        ? props.productId
+        : undefined);
 
   const targetMissing = !targetId;
 
@@ -162,9 +167,7 @@ export default function DeleteListingButton(props: Props) {
         await onDeletedAction();
       }
 
-      toast.success(
-        inferredKind === "service" ? "Service deleted." : "Listing deleted."
-      );
+      toast.success(inferredKind === "service" ? "Service deleted." : "Listing deleted.");
 
       // Analytics is best-effort.
       try {
@@ -235,10 +238,17 @@ export default function DeleteListingButton(props: Props) {
   );
 
   return (
-    <span className={cn("relative inline-flex", className)}>
+    <span
+      className={cn(
+        // ✅ phone-first: match the rest of the UI (rounded-xl), keep compact inline sizing
+        "relative inline-flex overflow-hidden rounded-xl align-middle",
+        className,
+      )}
+    >
       <span
-        className="pointer-events-none absolute left-0 top-0 h-full bg-rose-500/15"
-        style={{ width: `${Math.round(progress * 100)}%`, borderRadius: "9999px" }}
+        // ✅ inherits radius, looks cleaner in tight card toolbars on phones
+        className="pointer-events-none absolute inset-y-0 left-0 rounded-[inherit] bg-[color:var(--danger-soft)] opacity-60"
+        style={{ width: `${Math.round(progress * 100)}%` }}
         aria-hidden
       />
       {renderedButton}

@@ -33,12 +33,12 @@ async function getPreferredCategory(meId: string): Promise<string | null> {
     const [p, s] = await Promise.all([
       prisma.product.findFirst({
         where: { sellerId: meId },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: { category: true, createdAt: true },
       }),
       prisma.service.findFirst({
         where: { sellerId: meId },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: { category: true, createdAt: true },
       }),
     ]);
@@ -90,7 +90,7 @@ export async function GET(_req: NextRequest) {
           expiresAt: { gt: now },
         },
         select: safeSelect(),
-        orderBy: [{ createdAt: "desc" }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: 50,
       })) ?? [];
 
@@ -122,7 +122,9 @@ export async function GET(_req: NextRequest) {
         if (ap !== bp) return bp - ap; // preferred category first (signed-in only)
       }
 
-      return createdMs(b.createdAt) - createdMs(a.createdAt); // newest
+      const dt = createdMs(b.createdAt) - createdMs(a.createdAt); // newest
+       if (dt !== 0) return dt;
+       return String(b.id).localeCompare(String(a.id)); // tie-breaker (desc)
     });
 
     return noStore({ ok: true, items: items.slice(0, 30) });

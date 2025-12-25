@@ -29,12 +29,12 @@ export default function DashboardError({
 
   return (
     <div
-      className="container-page py-6"
+      className="container-page py-4 text-[var(--text)] sm:py-6"
       data-testid="soft-error"
       data-soft-error="dashboard"
     >
       {/* Headline that the guardrail test searches for */}
-      <div className="mb-2 text-base font-semibold">
+      <div className="mb-2 text-sm font-semibold sm:text-base">
         We hit a dashboard error
       </div>
 
@@ -45,23 +45,26 @@ export default function DashboardError({
           variant="error"
           onRetryAction={onRetry}
           retryLabel="Retry"
-          className="mb-4"
+          className="mb-3 sm:mb-4"
         />
 
         <div
-          className="rounded-2xl border border-border bg-card p-6 shadow-sm"
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6"
           role="region"
           aria-labelledby="dash-error-title"
         >
-          <h2 id="dash-error-title" className="text-lg font-semibold">
+          <h2
+            id="dash-error-title"
+            className="text-base font-semibold text-[var(--text)] sm:text-lg"
+          >
             Let’s try that again
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            If the problem keeps happening, please contact support — it helps us
+          <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
+            If the problem keeps happening, please contact support - it helps us
             fix things faster.
           </p>
 
-          <div className="mt-4 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2 sm:mt-4">
             <button
               type="button"
               onClick={onRetry}
@@ -74,14 +77,14 @@ export default function DashboardError({
             </a>
             <a
               href="/help"
-              className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
             >
               Help Center
             </a>
           </div>
 
           {SHOW_DEV_DETAILS && (
-            <details className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-100">
+            <details className="mt-5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm text-[var(--text)] shadow-soft sm:mt-6 sm:p-4">
               <summary className="cursor-pointer select-none font-semibold">
                 Error details (dev)
               </summary>
@@ -99,7 +102,7 @@ export default function DashboardError({
                   </p>
                 ) : null}
                 {error?.stack ? (
-                  <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
+                  <pre className="overflow-auto rounded-md border border-[var(--border-subtle)] bg-[var(--bg)] p-3 text-xs text-[var(--text)]">
                     {error.stack}
                   </pre>
                 ) : null}

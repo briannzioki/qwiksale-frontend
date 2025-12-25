@@ -1,12 +1,7 @@
 "use client";
 
 import type React from "react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useCallback,
-} from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 
 type Props = {
   images: string[];
@@ -72,7 +67,7 @@ export default function LightboxModal({
       if (e.key !== "Tab") return;
 
       const focusable = node.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
       );
       if (focusable.length === 0) return;
 
@@ -119,9 +114,7 @@ export default function LightboxModal({
       const delta = magX > magY ? e.deltaX : e.deltaY;
       if (Math.abs(delta) < 10) return;
       const next =
-        delta > 0
-          ? (safeIndex + 1) % len
-          : (safeIndex - 1 + len) % len;
+        delta > 0 ? (safeIndex + 1) % len : (safeIndex - 1 + len) % len;
       onIndexAction(next);
     };
 
@@ -166,9 +159,7 @@ export default function LightboxModal({
       const dy = e.clientY - downY;
       if (Math.abs(dx) > Math.max(40, Math.abs(dy) * 1.2)) {
         const next =
-          dx < 0
-            ? (safeIndex + 1) % len
-            : (safeIndex - 1 + len) % len;
+          dx < 0 ? (safeIndex + 1) % len : (safeIndex - 1 + len) % len;
         onIndexAction(next);
       }
     };
@@ -208,22 +199,17 @@ export default function LightboxModal({
     onIndexAction((safeIndex + 1) % len);
   }, [safeIndex, len, onIndexAction]);
 
-  const dots = useMemo(
-    () => Array.from({ length: len }, (_, i) => i),
-    [len]
-  );
+  const dots = useMemo(() => Array.from({ length: len }, (_, i) => i), [len]);
 
-  const stopClick = useCallback(
-    (e: React.MouseEvent) => e.stopPropagation(),
-    []
-  );
+  const stopClick = useCallback((e: React.MouseEvent) => e.stopPropagation(), []);
 
   return (
     <div
       ref={rootRef}
       className={[
         "fixed inset-0 z-[100] flex items-center justify-center",
-        "bg-black/70 backdrop-blur-sm",
+        // token-friendly scrim without hardcoded palette colors
+        "bg-[color:color-mix(in_oklab,var(--text)_72%,transparent)] backdrop-blur-sm",
         "transition-opacity duration-200",
         "opacity-100",
       ].join(" ")}
@@ -235,11 +221,7 @@ export default function LightboxModal({
       data-gallery-overlay="true"
     >
       {/* SR announcer */}
-      <span
-        ref={liveRef}
-        className="sr-only"
-        aria-live="polite"
-      />
+      <span ref={liveRef} className="sr-only" aria-live="polite" />
 
       {/* Backdrop click → close (not tabbable) */}
       <button
@@ -248,24 +230,34 @@ export default function LightboxModal({
         aria-label="Close"
         onClick={onCloseAction}
         tabIndex={-1}
-        style={{
-          background: "transparent",
-        }}
+        style={{ background: "transparent" }}
       />
 
       {/* Header: index + Close */}
-      <div className="absolute left-0 right-0 top-0 z-[101] flex items-center justify-between px-4 py-3">
+      <div className="absolute left-0 right-0 top-0 z-[101] flex items-center justify-between px-3 py-2 sm:px-4 sm:py-3">
         <div
-          className="rounded bg-black/30 px-2 py-1 text-xs font-medium text-white/90"
+          className={[
+            "rounded-xl border border-[var(--border-subtle)]",
+            "bg-[var(--bg-elevated)]",
+            "px-2 py-0.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-[var(--text)]",
+            "shadow-sm",
+          ].join(" ")}
           data-gallery-index-badge
           data-e2e="product-lightbox-index"
         >
           {len ? `${safeIndex + 1} / ${len}` : "0 / 0"}
         </div>
+
         <button
           ref={closeBtnRef}
           type="button"
-          className="inline-flex items-center rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/70"
+          className={[
+            "inline-flex items-center rounded-xl border border-[var(--border)]",
+            "bg-[var(--bg-elevated)] px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-[var(--text)]",
+            "transition hover:bg-[var(--bg-subtle)]",
+            "active:scale-[.99]",
+            "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+          ].join(" ")}
           onClick={onCloseAction}
           aria-label="Close"
         >
@@ -278,9 +270,11 @@ export default function LightboxModal({
         ref={wrapRef}
         onClick={stopClick}
         className={[
-          "relative z-[101] max-h-[92vh] max-w-[92vw]",
-          "rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10",
-          "bg-black/40 p-2 md:p-3",
+          "relative z-[101] max-h-[94svh] max-w-[94vw]",
+          "rounded-2xl overflow-hidden",
+          "border border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+          "p-2.5 sm:p-3",
+          "shadow-soft",
           "transition-transform duration-200",
           "scale-100",
         ].join(" ")}
@@ -290,7 +284,7 @@ export default function LightboxModal({
           <img
             src={src}
             alt=""
-            className="max-h-[86vh] max-w-[86vw] select-none object-contain"
+            className="max-h-[86svh] max-w-[90vw] sm:max-w-[86vw] select-none object-contain"
             draggable={false}
             loading="eager"
             decoding="async"
@@ -298,7 +292,7 @@ export default function LightboxModal({
             data-gallery-image
           />
         ) : (
-          <div className="flex h-[60vh] w-[70vw] items-center justify-center text-white/70">
+          <div className="flex h-[60svh] w-[70vw] items-center justify-center text-[var(--text-muted)]">
             No image
           </div>
         )}
@@ -309,7 +303,16 @@ export default function LightboxModal({
         <>
           <button
             type="button"
-            className="absolute left-2 top-1/2 z-[101] -translate-y-1/2 rounded-full px-3 py-1.5 text-3xl text-white/90 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/70 md:left-6"
+            className={[
+              "absolute left-1.5 top-1/2 z-[101] -translate-y-1/2 sm:left-2 md:left-6",
+              "inline-flex items-center justify-center",
+              "h-10 w-10 sm:h-11 sm:w-11",
+              "rounded-xl border border-[var(--border-subtle)]",
+              "bg-[var(--bg-elevated)] text-2xl sm:text-3xl text-[var(--text)]",
+              "transition hover:bg-[var(--bg-subtle)]",
+              "active:scale-[.99]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
             onClick={goPrev}
             aria-label="Previous image"
           >
@@ -317,7 +320,16 @@ export default function LightboxModal({
           </button>
           <button
             type="button"
-            className="absolute right-2 top-1/2 z-[101] -translate-y-1/2 rounded-full px-3 py-1.5 text-3xl text-white/90 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/70 md:right-6"
+            className={[
+              "absolute right-1.5 top-1/2 z-[101] -translate-y-1/2 sm:right-2 md:right-6",
+              "inline-flex items-center justify-center",
+              "h-10 w-10 sm:h-11 sm:w-11",
+              "rounded-xl border border-[var(--border-subtle)]",
+              "bg-[var(--bg-elevated)] text-2xl sm:text-3xl text-[var(--text)]",
+              "transition hover:bg-[var(--bg-subtle)]",
+              "active:scale-[.99]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
             onClick={goNext}
             aria-label="Next image"
           >
@@ -328,7 +340,7 @@ export default function LightboxModal({
 
       {/* Index dots */}
       {len > 1 && (
-        <div className="absolute bottom-3 left-1/2 z-[101] -translate-x-1/2 flex items-center gap-2">
+        <div className="absolute bottom-2 sm:bottom-3 left-1/2 z-[101] -translate-x-1/2 flex items-center gap-1.5 sm:gap-2">
           {dots.map((i) => (
             <button
               key={i}
@@ -336,10 +348,11 @@ export default function LightboxModal({
               aria-label={`Go to image ${i + 1}`}
               onClick={() => onIndexAction(i)}
               className={[
-                "h-2.5 w-2.5 rounded-full border border-white/40 transition",
+                "h-2.5 w-2.5 rounded-full border transition",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
                 i === safeIndex
-                  ? "bg-white"
-                  : "bg-white/20 hover:bg-white/40",
+                  ? "border-[var(--border)] bg-[var(--bg-elevated)] shadow-sm"
+                  : "border-[var(--border-subtle)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-elevated)]",
               ].join(" ")}
             />
           ))}

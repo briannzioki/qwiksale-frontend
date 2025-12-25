@@ -44,6 +44,16 @@ export default async function MessagesPage() {
     );
   });
 
+  const heroClass =
+    "rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft";
+
+  // phone-first padding; restore on sm+
+  const panelClass =
+    "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3.5 shadow-soft sm:p-6";
+
+  const ctaButtonClass =
+    "inline-flex min-h-9 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-4 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-elevated)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm";
+
   // --------------------- Unauthenticated / limbo states --------------------- //
   if (!hasSessionIdentity) {
     // True guest / unauthenticated: show explicit Sign in CTA.
@@ -51,33 +61,37 @@ export default async function MessagesPage() {
       return (
         <main
           id="main"
-          className="container-page py-10 space-y-4"
+          className="space-y-3 bg-[var(--bg)] py-4 sm:space-y-4 sm:py-6"
         >
-          <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
-            <h1 className="text-2xl md:text-3xl font-extrabold">
-              Messages
-            </h1>
-            <p className="text-white/90">
-              Chat with buyers and sellers in real-time.
-            </p>
+          <div className={heroClass}>
+            <div className="container-page py-6 text-white sm:py-8">
+              <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+                Messages
+              </h1>
+              <p className="mt-1 text-xs text-white/80 sm:text-sm">
+                Chat with buyers and sellers in real-time.
+              </p>
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80">
-            <h2 className="text-xl font-semibold">
-              You’re not signed in
-            </h2>
-            <p className="mt-2 text-gray-600 dark:text-slate-300">
-              Please sign in to view your messages.
-            </p>
-            <div className="mt-4">
-              <Link
-                href={`/signin?callbackUrl=${encodeURIComponent("/messages")}`}
-                prefetch={false}
-                className="btn-gradient-primary inline-block"
-                aria-label="View your messages (login required)"
-              >
-                Sign in to view your messages
-              </Link>
+          <div className="container-page">
+            <div className={panelClass}>
+              <h2 className="text-lg font-extrabold tracking-tight text-[var(--text)] sm:text-xl">
+                You’re not signed in
+              </h2>
+              <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)] sm:mt-2">
+                Please sign in to view your messages.
+              </p>
+              <div className="mt-3 sm:mt-4">
+                <Link
+                  href={`/signin?callbackUrl=${encodeURIComponent("/messages")}`}
+                  prefetch={false}
+                  className={ctaButtonClass}
+                  aria-label="View your messages (login required)"
+                >
+                  Sign in to view your messages
+                </Link>
+              </div>
             </div>
           </div>
         </main>
@@ -89,31 +103,34 @@ export default async function MessagesPage() {
     return (
       <main
         id="main"
-        className="container-page py-10 space-y-4"
+        className="space-y-3 bg-[var(--bg)] py-4 sm:space-y-4 sm:py-6"
       >
-        <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
-          <h1 className="text-2xl md:text-3xl font-extrabold">
-            Messages
-          </h1>
-          <p className="text-white/90">
-            Chat with buyers and sellers in real-time.
-          </p>
+        <div className={heroClass}>
+          <div className="container-page py-6 text-white sm:py-8">
+            <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+              Messages
+            </h1>
+            <p className="mt-1 text-xs text-white/80 sm:text-sm">
+              Chat with buyers and sellers in real-time.
+            </p>
+          </div>
         </div>
 
-        <div
-          className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
-          data-soft-error="messages"
-          data-e2e="messages-soft-error"
-        >
-          <h2 className="text-xl font-semibold">
-            We couldn’t load your inbox
-          </h2>
-          <p className="mt-2 text-sm text-gray-600 dark:text-slate-300">
-            Your session appears to be active, but we couldn&apos;t load
-            things right now. Please refresh this page or navigate to
-            another section. Your account menu in the header should remain
-            available.
-          </p>
+        <div className="container-page">
+          <div
+            className={panelClass}
+            data-soft-error="messages"
+            data-e2e="messages-soft-error"
+          >
+            <h2 className="text-lg font-extrabold tracking-tight text-[var(--text)] sm:text-xl">
+              We couldn’t load your inbox
+            </h2>
+            <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)] sm:mt-2">
+              Your session appears to be active, but we couldn&apos;t load things
+              right now. Please refresh this page or navigate to another section.
+              Your account menu in the header should remain available.
+            </p>
+          </div>
         </div>
       </main>
     );
@@ -125,37 +142,32 @@ export default async function MessagesPage() {
   return (
     <main
       id="main"
-      className="container-page py-6 space-y-4"
+      className="space-y-3 bg-[var(--bg)] py-4 sm:space-y-4 sm:py-6"
     >
-      <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
-        <h1 className="text-2xl md:text-3xl font-extrabold">
-          Messages
-        </h1>
-        <p className="text-white/90">
-          Chat with buyers and sellers in real-time.
-        </p>
-      </div>
-
-      <section
-        className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
-        aria-label="Conversations"
-      >
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <p className="text-sm font-medium text-gray-900 dark:text-slate-100">
-            Inbox
-          </p>
-          <p className="text-xs text-gray-500 dark:text-slate-400">
-            Your active chats will appear here. Start a conversation from
-            any listing.
+      <div className={heroClass}>
+        <div className="container-page py-6 text-white sm:py-8">
+          <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+            Messages
+          </h1>
+          <p className="mt-1 text-xs text-white/80 sm:text-sm">
+            Chat with buyers and sellers in real-time.
           </p>
         </div>
+      </div>
 
-        {meId ? (
-          <MessagesClient meId={meId} />
-        ) : (
-          <MessagesClient />
-        )}
-      </section>
+      <div className="container-page">
+        <section className={panelClass} aria-label="Conversations">
+          <div className="mb-3 flex flex-col gap-1 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+            <p className="text-sm font-semibold text-[var(--text)]">Inbox</p>
+            <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+              Your active chats will appear here. Start a conversation from any
+              listing.
+            </p>
+          </div>
+
+          {meId ? <MessagesClient meId={meId} /> : <MessagesClient />}
+        </section>
+      </div>
     </main>
   );
 }

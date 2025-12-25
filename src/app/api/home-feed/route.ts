@@ -9,6 +9,11 @@ import type { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/app/lib/prisma";
 import { jsonPublic } from "@/app/api/_lib/responses";
+import type { SellerBadgeFields } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 /**
  * Home feed API
@@ -94,12 +99,7 @@ function attach(h: Headers) {
   h.set("Vary", "Authorization, Cookie, Accept-Encoding");
 }
 
-function toInt(
-  v: string | null | undefined,
-  d: number,
-  min: number,
-  max: number,
-) {
+function toInt(v: string | null | undefined, d: number, min: number, max: number) {
   if (v == null || v.trim() === "") return d;
   const n = Number(v);
   if (!Number.isFinite(n)) return d;
@@ -132,8 +132,7 @@ function toSort(v: string | null): SortKey {
 
 function toStatus(v: string | null): StatusParam {
   const t = (v || "").trim().toLowerCase();
-  if (t === "active" || t === "hidden" || t === "draft" || t === "sold")
-    return t;
+  if (t === "active" || t === "hidden" || t === "draft" || t === "sold") return t;
   return "any";
 }
 
@@ -151,55 +150,13 @@ function toIso(x: unknown): string {
 
 /* ------------------------ seller badge helpers ------------------------ */
 
-type SellerTier = "basic" | "gold" | "diamond";
-type SellerBadgeInfo = { verified: boolean; tier: SellerTier };
-
-function normalizeTier(v: unknown): SellerTier {
-  const t = String(v ?? "").trim().toLowerCase();
-  if (t.includes("diamond")) return "diamond";
-  if (t.includes("gold")) return "gold";
-  return "basic";
-}
-
-function pickVerifiedFromUserJson(u: any): boolean | null {
-  if (!u || typeof u !== "object") return null;
-  const keys = [
-    "verified",
-    "isVerified",
-    "accountVerified",
-    "sellerVerified",
-    "isSellerVerified",
-    "verifiedSeller",
-    "isAccountVerified",
-  ];
-  for (const k of keys) {
-    const v = (u as any)[k];
-    if (typeof v === "boolean") return v;
-    if (typeof v === "number") return v === 1;
-    if (typeof v === "string") {
-      const s = v.trim().toLowerCase();
-      if (["1", "true", "yes", "verified"].includes(s)) return true;
-      if (["0", "false", "no", "unverified"].includes(s)) return false;
-    }
-  }
-  return null;
-}
-
-function pickTierFromUserJson(u: any): SellerTier {
-  if (!u || typeof u !== "object") return "basic";
-  const v =
-    (u as any).featuredTier ??
-    (u as any).subscriptionTier ??
-    (u as any).subscription ??
-    (u as any).plan ??
-    (u as any).tier;
-  return normalizeTier(v);
-}
-
 async function fetchSellerBadgeMap(ids: string[]) {
-  const out = new Map<string, SellerBadgeInfo>();
+  const out = new Map<string, SellerBadgeFields>();
   const uniq = Array.from(new Set(ids.filter(Boolean)));
   if (!uniq.length) return out;
+
+  // Canonical empty badges (unknown stays null)
+  const NULL_BADGES = buildSellerBadgeFields(null, null);
 
   try {
     const rows = await Promise.race([
@@ -214,13 +171,16 @@ async function fetchSellerBadgeMap(ids: string[]) {
     for (const r of rows as any[]) {
       const id = String(r?.id ?? "");
       if (!id) continue;
+
       const u = r?.u;
-      const verified = pickVerifiedFromUserJson(u);
-      const tier = pickTierFromUserJson(u);
-      out.set(id, { verified: verified ?? false, tier });
+      const badges = u
+        ? (resolveSellerBadgeFieldsFromUserLike(u) as SellerBadgeFields)
+        : NULL_BADGES;
+
+      out.set(id, badges);
     }
   } catch {
-    // ignore: return empty map (defaults applied by caller)
+    // ignore: return empty map (caller will attach nulls)
   }
 
   return out;
@@ -232,13 +192,8 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
 
   // mode
-  const tRaw = (
-    url.searchParams.get("t") ||
-    url.searchParams.get("tab") ||
-    "all"
-  ).toLowerCase();
-  const mode: Mode =
-    tRaw === "products" || tRaw === "services" ? (tRaw as Mode) : "all";
+  const tRaw = (url.searchParams.get("t") || url.searchParams.get("tab") || "all").toLowerCase();
+  const mode: Mode = tRaw === "products" || tRaw === "services" ? (tRaw as Mode) : "all";
 
   // search & filters
   const q = (url.searchParams.get("q") || "").trim().slice(0, 64);
@@ -271,12 +226,7 @@ export async function GET(req: NextRequest) {
     1,
     MAX_PAGE_SIZE,
   );
-  const limit = toInt(
-    url.searchParams.get("limit"),
-    fallbackPageSize,
-    1,
-    MAX_PAGE_SIZE,
-  );
+  const limit = toInt(url.searchParams.get("limit"), fallbackPageSize, 1, MAX_PAGE_SIZE);
 
   // sort
   const sort = toSort(url.searchParams.get("sort"));
@@ -293,13 +243,9 @@ export async function GET(req: NextRequest) {
     if (minPriceStr === null && maxPriceStr === null) return undefined;
 
     const min =
-      minPriceStr !== null
-        ? toInt(minPriceStr, 0, 0, 9_999_999)
-        : undefined;
+      minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
     const max =
-      maxPriceStr !== null
-        ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999)
-        : undefined;
+      maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
 
     const clause: { gte?: number; lte?: number } = {};
     if (typeof min === "number") clause.gte = min;
@@ -324,35 +270,26 @@ export async function GET(req: NextRequest) {
 
     if (tokens.length) {
       for (const t of tokens)
-        AND.push(
-          makeSearchOR(["name", "brand", "category", "subcategory"], t),
-        );
+        AND.push(makeSearchOR(["name", "brand", "category", "subcategory"], t));
     } else if (q) {
       AND.push(makeSearchOR(["name", "brand", "category", "subcategory"], q));
     }
 
-    if (category)
-      AND.push({ category: { equals: category, mode: "insensitive" } });
+    if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory)
-      AND.push({
-        subcategory: { equals: subcategory, mode: "insensitive" },
-      });
+      AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (brand) AND.push({ brand: { contains: brand, mode: "insensitive" } });
-    if (condition)
-      AND.push({ condition: { equals: condition, mode: "insensitive" } });
+    if (condition) AND.push({ condition: { equals: condition, mode: "insensitive" } });
     if (typeof featured === "boolean") AND.push({ featured });
 
     const p = priceClause();
     if (p) {
       AND.push(
-        p.includeNulls
-          ? { OR: [{ price: null }, { price: p.clause }] }
-          : { price: p.clause },
+        p.includeNulls ? { OR: [{ price: null }, { price: p.clause }] } : { price: p.clause },
       );
     }
 
-    if (sort === "price_asc" || sort === "price_desc")
-      AND.push({ price: { not: null } });
+    if (sort === "price_asc" || sort === "price_desc") AND.push({ price: { not: null } });
 
     return AND.length ? { AND } : {};
   };
@@ -364,48 +301,35 @@ export async function GET(req: NextRequest) {
 
     if (tokens.length) {
       for (const t of tokens)
-        AND.push(
-          makeSearchOR(["name", "description", "category", "subcategory"], t),
-        );
+        AND.push(makeSearchOR(["name", "description", "category", "subcategory"], t));
     } else if (q) {
-      AND.push(
-        makeSearchOR(["name", "description", "category", "subcategory"], q),
-      );
+      AND.push(makeSearchOR(["name", "description", "category", "subcategory"], q));
     }
 
-    if (category)
-      AND.push({ category: { equals: category, mode: "insensitive" } });
+    if (category) AND.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory)
-      AND.push({
-        subcategory: { equals: subcategory, mode: "insensitive" },
-      });
+      AND.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (typeof featured === "boolean") AND.push({ featured });
 
     const p = priceClause();
     if (p) {
       AND.push(
-        p.includeNulls
-          ? { OR: [{ price: null }, { price: p.clause }] }
-          : { price: p.clause },
+        p.includeNulls ? { OR: [{ price: null }, { price: p.clause }] } : { price: p.clause },
       );
     }
 
-    if (sort === "price_asc" || sort === "price_desc")
-      AND.push({ price: { not: null } });
+    if (sort === "price_asc" || sort === "price_desc") AND.push({ price: { not: null } });
 
     return AND.length ? { AND } : {};
   };
 
   const orderFor = (kind: "product" | "service"): any[] => {
-    if (sort === "price_asc")
-      return [{ price: "asc" }, { createdAt: "desc" }, { id: "desc" }];
-    if (sort === "price_desc")
-      return [{ price: "desc" }, { createdAt: "desc" }, { id: "desc" }];
+    if (sort === "price_asc") return [{ price: "asc" }, { createdAt: "desc" }, { id: "desc" }];
+    if (sort === "price_desc") return [{ price: "desc" }, { createdAt: "desc" }, { id: "desc" }];
     if (sort === "featured")
       return [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }];
 
-    const isSearchLike =
-      !!q || !!category || !!subcategory || (kind === "product" && !!brand);
+    const isSearchLike = !!q || !!category || !!subcategory || (kind === "product" && !!brand);
     return isSearchLike
       ? [{ featured: "desc" }, { createdAt: "desc" }, { id: "desc" }]
       : [{ createdAt: "desc" }, { id: "desc" }];
@@ -491,16 +415,14 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit;
 
     if (mode === "products") {
-      productsArr = await Promise.race([
-        doProducts(limit, skip),
-        rejectingTimeout(SOFT_TIMEOUT_MS),
-      ]).catch(() => []);
+      productsArr = await Promise.race([doProducts(limit, skip), rejectingTimeout(SOFT_TIMEOUT_MS)]).catch(
+        () => [],
+      );
       items = productsArr;
     } else if (mode === "services") {
-      servicesArr = await Promise.race([
-        doServices(limit, skip),
-        rejectingTimeout(SOFT_TIMEOUT_MS),
-      ]).catch(() => []);
+      servicesArr = await Promise.race([doServices(limit, skip), rejectingTimeout(SOFT_TIMEOUT_MS)]).catch(
+        () => [],
+      );
       items = servicesArr;
     } else {
       // t=all → ensure BOTH kinds show up:
@@ -509,14 +431,12 @@ export async function GET(req: NextRequest) {
       const takeProducts = half + over; // slight bias to products if odd
       const takeServices = half;
 
-      const p = Promise.race([
-        doProducts(takeProducts + 2, skip),
-        rejectingTimeout(SOFT_TIMEOUT_MS),
-      ]).catch(() => []);
-      const s = Promise.race([
-        doServices(takeServices + 2, skip),
-        rejectingTimeout(SOFT_TIMEOUT_MS),
-      ]).catch(() => []);
+      const p = Promise.race([doProducts(takeProducts + 2, skip), rejectingTimeout(SOFT_TIMEOUT_MS)]).catch(
+        () => [],
+      );
+      const s = Promise.race([doServices(takeServices + 2, skip), rejectingTimeout(SOFT_TIMEOUT_MS)]).catch(
+        () => [],
+      );
 
       const [a, b] = await Promise.all([p, s]);
 
@@ -545,29 +465,27 @@ export async function GET(req: NextRequest) {
           .filter(Boolean),
       ),
     ) as string[];
+
     const badgeMap = await fetchSellerBadgeMap(allSellerIds);
+    const NULL_BADGES = buildSellerBadgeFields(null, null);
 
     const applyBadges = (arr: any[]) =>
       arr.map((x: any) => {
         const sid = String(x?.sellerId ?? "");
         const b = sid ? badgeMap.get(sid) : undefined;
-        const verified = b?.verified ?? false;
-        const tier = b?.tier ?? "basic";
+        const badges = b ?? NULL_BADGES;
+
         return {
           ...x,
-          sellerVerified: verified,
-          sellerFeaturedTier: tier,
-          sellerBadges: { verified, tier },
+          sellerVerified: badges.sellerVerified,
+          sellerFeaturedTier: badges.sellerFeaturedTier,
+          sellerBadges: badges.sellerBadges,
         };
       });
 
     const itemsWithBadges = applyBadges(items);
-    const productsWithBadges = applyBadges(
-      productsArr.slice(0, Math.min(productsArr.length, limit)),
-    );
-    const servicesWithBadges = applyBadges(
-      servicesArr.slice(0, Math.min(servicesArr.length, limit)),
-    );
+    const productsWithBadges = applyBadges(productsArr.slice(0, Math.min(productsArr.length, limit)));
+    const servicesWithBadges = applyBadges(servicesArr.slice(0, Math.min(servicesArr.length, limit)));
 
     const payload = {
       mode,

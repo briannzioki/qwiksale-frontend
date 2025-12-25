@@ -51,7 +51,9 @@ function withTimeout<T>(
     new Promise<T>((resolve) =>
       setTimeout(
         () =>
-          resolve(typeof fallback === "function" ? (fallback as any)() : fallback),
+          resolve(
+            typeof fallback === "function" ? (fallback as any)() : fallback,
+          ),
         ms,
       ),
     ),
@@ -73,7 +75,7 @@ async function fetchWithTimeout(input: string, init: RequestInit, ms: number) {
 
 function fmtKES(n?: number | null) {
   if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) {
-    return "—";
+    return "-";
   }
   try {
     return `KES ${new Intl.NumberFormat("en-KE").format(n)}`;
@@ -83,7 +85,7 @@ function fmtKES(n?: number | null) {
 }
 
 const fmtDateKE = (iso?: string | null) => {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Intl.DateTimeFormat("en-KE", {
       dateStyle: "medium",
@@ -155,7 +157,8 @@ function normalizeListingsPayload(payload: unknown): Listing[] {
 
 function statusToSuspended(row: any): boolean | null {
   if (typeof row?.suspended === "boolean") return row.suspended;
-  const s = typeof row?.status === "string" ? row.status.trim().toUpperCase() : "";
+  const s =
+    typeof row?.status === "string" ? row.status.trim().toUpperCase() : "";
   if (!s) return null;
   return s === "HIDDEN";
 }
@@ -196,7 +199,8 @@ async function fetchListingsFallback(opts: {
   const wantsProduct = type === "any" || type === "product";
   const wantsService = type === "any" || type === "service";
 
-  const split = wantsProduct && wantsService ? Math.max(1, Math.floor(limit / 2)) : limit;
+  const split =
+    wantsProduct && wantsService ? Math.max(1, Math.floor(limit / 2)) : limit;
   const takeProducts = wantsProduct ? split : 0;
   const takeServices = wantsService ? limit - takeProducts : 0;
 
@@ -262,8 +266,12 @@ async function fetchListingsFallback(opts: {
   }
 
   const [productRows, serviceRows] = await Promise.all([
-    wantsProduct ? safeFindMany(anyPrisma.product ?? prisma.product, takeProducts) : Promise.resolve([] as any[]),
-    wantsService ? safeFindMany(serviceModel, takeServices) : Promise.resolve([] as any[]),
+    wantsProduct
+      ? safeFindMany(anyPrisma.product ?? prisma.product, takeProducts)
+      : Promise.resolve([] as any[]),
+    wantsService
+      ? safeFindMany(serviceModel, takeServices)
+      : Promise.resolve([] as any[]),
   ]);
 
   const mapped: Listing[] = [
@@ -403,23 +411,39 @@ export default async function Page({ searchParams }: PageProps) {
   const end = start + PAGE_SIZE;
   const pageRows = source.slice(start, end);
 
+  const labelClass = "text-xs font-semibold text-[var(--text-muted)]";
+  const inputClass =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const selectClass =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const actionBtnClass =
+    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold border border-[var(--border-subtle)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const actionBtnElevatedClass =
+    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const SectionHeaderAny = SectionHeader as any;
+
   return (
-    <div className="space-y-6">
-      <SectionHeader
+    <div className="space-y-6 text-[var(--text)]">
+      <SectionHeaderAny
         as="h2"
         title="Admin · Listings"
         subtitle={`Products & services across the marketplace. Showing ${total.toLocaleString()}.`}
         actions={
           <div className="flex gap-2">
-            <Link href="/admin" className="btn-outline text-sm" prefetch={false}>
+            <Link href="/admin" className={actionBtnClass} prefetch={false}>
               Admin home
             </Link>
-            <Link href="/admin/users" className="btn-outline text-sm" prefetch={false}>
+            <Link
+              href="/admin/users"
+              className={actionBtnClass}
+              prefetch={false}
+            >
               Users
             </Link>
             <Link
               href="/admin/moderation"
-              className="btn-gradient-primary text-sm"
+              className={actionBtnElevatedClass}
               prefetch={false}
             >
               Moderation
@@ -428,7 +452,9 @@ export default async function Page({ searchParams }: PageProps) {
         }
       />
 
-      <h1 className="text-2xl font-bold">All Listings</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text)]">
+        All Listings
+      </h1>
 
       {/* Quick stats */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-4">
@@ -441,9 +467,9 @@ export default async function Page({ searchParams }: PageProps) {
       {softError && (
         <div
           role="status"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text)] shadow-soft"
         >
-          {softError}
+          <span className="text-[var(--text-muted)]">{softError}</span>
         </div>
       )}
 
@@ -451,29 +477,33 @@ export default async function Page({ searchParams }: PageProps) {
       <form
         method="GET"
         action="/admin/listings"
-        className="rounded-xl border border-border bg-card p-4 shadow-sm"
+        className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft"
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-6">
-            <label className="label">Search</label>
+            <label className={labelClass}>Search</label>
             <input
               name="q"
               defaultValue={q}
               placeholder="Name, seller…"
-              className="input"
+              className={inputClass}
             />
           </div>
           <div className="md:col-span-3">
-            <label className="label">Type</label>
-            <select name="type" defaultValue={type} className="select">
+            <label className={labelClass}>Type</label>
+            <select name="type" defaultValue={type} className={selectClass}>
               <option value="any">Any</option>
               <option value="product">Product</option>
               <option value="service">Service</option>
             </select>
           </div>
           <div className="md:col-span-3">
-            <label className="label">Featured</label>
-            <select name="featured" defaultValue={featured} className="select">
+            <label className={labelClass}>Featured</label>
+            <select
+              name="featured"
+              defaultValue={featured}
+              className={selectClass}
+            >
               <option value="any">Any</option>
               <option value="yes">Yes only</option>
               <option value="no">Non-featured</option>
@@ -481,8 +511,14 @@ export default async function Page({ searchParams }: PageProps) {
           </div>
           <input type="hidden" name="page" value="1" />
           <div className="md:col-span-12 flex items-end gap-2 pt-1">
-            <button className="btn-gradient-primary">Apply</button>
-            <Link href="/admin/listings" className="btn-outline" prefetch={false}>
+            <button type="submit" className={actionBtnElevatedClass}>
+              Apply
+            </button>
+            <Link
+              href="/admin/listings"
+              className={actionBtnClass}
+              prefetch={false}
+            >
               Clear
             </Link>
           </div>
@@ -490,16 +526,16 @@ export default async function Page({ searchParams }: PageProps) {
       </form>
 
       {/* Table */}
-      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="font-semibold">Listings</h2>
-          <span className="text-xs text-muted-foreground">
+      <section className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft">
+        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+          <h2 className="font-semibold text-[var(--text)]">Listings</h2>
+          <span className="text-xs text-[var(--text-muted)]">
             Total: {total.toLocaleString()} • Page {safePage} / {totalPages}
           </span>
         </div>
 
         {pageRows.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-muted-foreground">
+          <div className="px-4 py-6 text-sm text-[var(--text-muted)]">
             No listings found.
           </div>
         ) : (
@@ -510,7 +546,8 @@ export default async function Page({ searchParams }: PageProps) {
                   Admin listing table showing products and services with seller,
                   featured and enforcement status
                 </caption>
-                <thead className="bg-muted text-muted-foreground">
+
+                <thead className="bg-[var(--bg-subtle)] text-[var(--text-muted)]">
                   <tr className="text-left">
                     <Th>Type</Th>
                     <Th>Name</Th>
@@ -522,12 +559,17 @@ export default async function Page({ searchParams }: PageProps) {
                     <Th className="text-right">Actions</Th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+
+                <tbody className="divide-y divide-[var(--border-subtle)]">
                   {pageRows.map((r) => {
                     const isDisabled = !!r.disabled;
                     const isSuspended = !!r.suspended;
 
-                    const statusTone = isSuspended ? "rose" : isDisabled ? "amber" : "green";
+                    const statusTone = isSuspended
+                      ? "rose"
+                      : isDisabled
+                        ? "amber"
+                        : "green";
 
                     const statusLabel = isSuspended
                       ? "Suspended"
@@ -535,61 +577,110 @@ export default async function Page({ searchParams }: PageProps) {
                         ? "Disabled"
                         : "Active";
 
-                    const rowHighlight = isSuspended
-                      ? "bg-rose-50/70 dark:bg-rose-950/30"
-                      : isDisabled
-                        ? "bg-amber-50/60 dark:bg-amber-950/20"
-                        : "";
+                    const rowHighlight =
+                      isSuspended || isDisabled ? "bg-[var(--bg-subtle)]" : "";
 
                     return (
-                      <tr key={`${r.kind}:${r.id}`} className={`hover:bg-muted ${rowHighlight}`}>
+                      <tr
+                        key={`${r.kind}:${r.id}`}
+                        className={[
+                          "transition",
+                          "hover:bg-[var(--bg-subtle)]",
+                          rowHighlight,
+                        ].join(" ")}
+                      >
                         <Td>
-                          <Badge tone={r.kind === "product" ? "indigo" : "green"}>
+                          <Badge
+                            tone={r.kind === "product" ? "indigo" : "green"}
+                          >
                             {r.kind === "product" ? "Product" : "Service"}
                           </Badge>
                         </Td>
+
                         <Td className="max-w-[320px]">
                           <Link
-                            href={r.kind === "product" ? `/product/${r.id}` : `/service/${r.id}`}
+                            href={
+                              r.kind === "product"
+                                ? `/product/${r.id}`
+                                : `/service/${r.id}`
+                            }
                             prefetch={false}
-                            className="underline text-[#161748] dark:text-[#39a0ca]"
+                            className="font-semibold text-[var(--text)] underline underline-offset-4 hover:opacity-90"
                           >
                             <span className="line-clamp-1">{r.name}</span>
                           </Link>
                         </Td>
+
                         <Td>{fmtKES(r.price)}</Td>
+
                         <Td>
-                          {r.featured ? <Badge tone="indigo">Featured</Badge> : <Badge>—</Badge>}
+                          {r.featured ? (
+                            <Badge tone="indigo">Featured</Badge>
+                          ) : (
+                            <Badge>-</Badge>
+                          )}
                         </Td>
+
                         <Td>
                           <Badge tone={statusTone}>{statusLabel}</Badge>
                         </Td>
+
                         <Td>
-                          {r.sellerName ?? "—"}{" "}
+                          {r.sellerName ?? "-"}{" "}
                           {r.sellerId && (
-                            <span className="font-mono text-[11px] opacity-70">
+                            <span className="font-mono text-[11px] text-[var(--text-muted)]">
                               ({r.sellerId})
                             </span>
                           )}
                         </Td>
+
                         <Td>{fmtDateKE(r.createdAt)}</Td>
+
                         <Td>
                           <div className="flex items-center justify-end gap-2">
                             <Link
-                              href={r.kind === "product" ? `/product/${r.id}/edit` : `/service/${r.id}/edit`}
+                              href={
+                                r.kind === "product"
+                                  ? `/product/${r.id}/edit`
+                                  : `/service/${r.id}/edit`
+                              }
                               prefetch={false}
-                              className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
+                              className={[
+                                "inline-flex items-center justify-center",
+                                "rounded-xl px-2.5 py-1.5 text-xs font-semibold",
+                                "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                                "transition hover:bg-[var(--bg-subtle)]",
+                                "active:scale-[.99]",
+                                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                              ].join(" ")}
                             >
                               Edit
                             </Link>
+
                             <Link
-                              href={r.kind === "product" ? `/product/${r.id}` : `/service/${r.id}`}
+                              href={
+                                r.kind === "product"
+                                  ? `/product/${r.id}`
+                                  : `/service/${r.id}`
+                              }
                               prefetch={false}
-                              className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
+                              className={[
+                                "inline-flex items-center justify-center",
+                                "rounded-xl px-2.5 py-1.5 text-xs font-semibold",
+                                "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                                "transition hover:bg-[var(--bg-subtle)]",
+                                "active:scale-[.99]",
+                                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                              ].join(" ")}
                             >
                               View
                             </Link>
-                            <ListingActions id={r.id} kind={r.kind} suspended={!!r.suspended} />
+
+                            <ListingActions
+                              id={r.id}
+                              kind={r.kind}
+                              suspended={!!r.suspended}
+                            />
                           </div>
                         </Td>
                       </tr>
@@ -601,20 +692,29 @@ export default async function Page({ searchParams }: PageProps) {
 
             {/* Pagination */}
             <nav
-              className="flex items-center justify-between border-t border-border px-4 py-3 text-sm"
+              className="flex items-center justify-between border-t border-[var(--border-subtle)] px-4 py-3 text-sm"
               aria-label="Pagination"
             >
               <Link
                 href={
                   safePage > 1
-                    ? keepQuery("/admin/listings", sp, { page: String(safePage - 1) })
+                    ? keepQuery("/admin/listings", sp, {
+                        page: String(safePage - 1),
+                      })
                     : "#"
                 }
                 prefetch={false}
                 aria-disabled={safePage <= 1}
-                className={`rounded border border-border px-3 py-1 transition ${
-                  safePage > 1 ? "hover:shadow" : "opacity-50"
-                }`}
+                className={[
+                  "inline-flex items-center justify-center",
+                  "rounded-xl px-3 py-1.5 font-semibold",
+                  "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                  "transition",
+                  safePage > 1
+                    ? "hover:bg-[var(--bg-subtle)] active:scale-[.99]"
+                    : "opacity-50",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                ].join(" ")}
               >
                 ← Prev
               </Link>
@@ -624,7 +724,10 @@ export default async function Page({ searchParams }: PageProps) {
                   const half = 3;
                   let p = i + 1;
                   if (totalPages > 7) {
-                    const start = Math.max(1, Math.min(safePage - half, totalPages - 6));
+                    const start = Math.max(
+                      1,
+                      Math.min(safePage - half, totalPages - 6),
+                    );
                     p = start + i;
                   }
                   const isCurrent = p === safePage;
@@ -635,11 +738,16 @@ export default async function Page({ searchParams }: PageProps) {
                       href={keepQuery("/admin/listings", sp, { page: String(p) })}
                       prefetch={false}
                       aria-current={isCurrent ? "page" : undefined}
-                      className={`rounded px-2 py-1 ${
+                      className={[
+                        "inline-flex h-8 min-w-[2rem] items-center justify-center",
+                        "rounded-xl px-2 text-sm font-semibold",
+                        "border transition",
                         isCurrent
-                          ? "bg-[#161748] text-primary-foreground"
-                          : "hover:bg-muted"
-                      }`}
+                          ? "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+                          : "border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+                        "active:scale-[.99]",
+                        "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                      ].join(" ")}
                     >
                       {p}
                     </Link>
@@ -650,14 +758,23 @@ export default async function Page({ searchParams }: PageProps) {
               <Link
                 href={
                   safePage < totalPages
-                    ? keepQuery("/admin/listings", sp, { page: String(safePage + 1) })
+                    ? keepQuery("/admin/listings", sp, {
+                        page: String(safePage + 1),
+                      })
                     : "#"
                 }
                 prefetch={false}
                 aria-disabled={safePage >= totalPages}
-                className={`rounded border border-border px-3 py-1 transition ${
-                  safePage < totalPages ? "hover:shadow" : "opacity-50"
-                }`}
+                className={[
+                  "inline-flex items-center justify-center",
+                  "rounded-xl px-3 py-1.5 font-semibold",
+                  "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                  "transition",
+                  safePage < totalPages
+                    ? "hover:bg-[var(--bg-subtle)] active:scale-[.99]"
+                    : "opacity-50",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                ].join(" ")}
               >
                 Next →
               </Link>
@@ -678,7 +795,11 @@ function Th({
 }) {
   return (
     <th
-      className={`whitespace-nowrap px-4 py-2 text-left font-semibold ${className ?? ""}`}
+      className={[
+        "whitespace-nowrap px-4 py-2 text-left",
+        "text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]",
+        className ?? "",
+      ].join(" ")}
     >
       {children}
     </th>
@@ -693,7 +814,13 @@ function Td({
   className?: string;
 }) {
   return (
-    <td className={`whitespace-nowrap px-4 py-2 align-middle ${className ?? ""}`}>
+    <td
+      className={[
+        "whitespace-nowrap px-4 py-2 align-middle",
+        "text-sm text-[var(--text)]",
+        className ?? "",
+      ].join(" ")}
+    >
       {children}
     </td>
   );
@@ -706,16 +833,27 @@ function Badge({
   children: ReactNode;
   tone?: "slate" | "green" | "amber" | "rose" | "indigo";
 }) {
+  // Token-only styling (keeps tone param for logic/usage, but avoids hardcoded palette colors).
   const map: Record<string, string> = {
-    slate: "bg-muted text-muted-foreground",
-    green: "bg-green-100 text-green-800",
-    amber: "bg-amber-100 text-amber-800",
-    rose: "bg-rose-100 text-rose-800",
-    indigo: "bg-indigo-100 text-indigo-800",
+    slate:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+    green:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+    amber:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+    rose:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+    indigo:
+      "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
   };
+
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${map[tone]}`}
+      className={[
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+        "border",
+        map[tone],
+      ].join(" ")}
     >
       {children}
     </span>
@@ -733,17 +871,26 @@ function StatPill({
   value: number;
   tone?: StatTone;
 }) {
-  const colors: Record<StatTone, string> = {
-    slate: "bg-muted text-muted-foreground dark:bg-muted/40 dark:text-muted-foreground",
-    indigo: "bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300",
-    amber: "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
-    rose: "bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300",
+  // Token-only styling (tone kept so callsites don’t change).
+  const styles: Record<StatTone, string> = {
+    slate: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+    indigo: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+    amber: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+    rose: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
   };
 
   return (
-    <div className={`flex items-center justify-between rounded-full px-3 py-1.5 text-xs ${colors[tone]}`}>
-      <span className="font-medium">{label}</span>
-      <span className="font-semibold">
+    <div
+      className={[
+        "flex items-center justify-between rounded-full px-3 py-1.5",
+        "border shadow-soft",
+        styles[tone],
+      ].join(" ")}
+    >
+      <span className="text-xs font-semibold text-[var(--text-muted)]">
+        {label}
+      </span>
+      <span className="text-xs font-extrabold tracking-tight text-[var(--text)]">
         {Number(value || 0).toLocaleString("en-KE")}
       </span>
     </div>

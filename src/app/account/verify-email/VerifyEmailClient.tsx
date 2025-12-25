@@ -54,7 +54,9 @@ export default function VerifyEmailClient() {
   const loadAbort = useRef<AbortController | null>(null);
 
   const signinHref = useMemo(() => {
-    const callbackUrl = `/account/verify-email?next=${encodeURIComponent(nextHref)}${autoSend ? "&auto=1" : ""}`;
+    const callbackUrl = `/account/verify-email?next=${encodeURIComponent(nextHref)}${
+      autoSend ? "&auto=1" : ""
+    }`;
     return `/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
   }, [nextHref, autoSend]);
 
@@ -218,14 +220,22 @@ export default function VerifyEmailClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, unauth, autoSend, verified]);
 
+  const shellPad = "container-page py-4 sm:py-6 md:py-10";
+  const shellMax = "mx-auto max-w-2xl";
+  const stack = "space-y-4 sm:space-y-6";
+  const cardPad = "p-3 sm:p-5";
+  const alertPad = "px-3 py-2.5 sm:px-4 sm:py-3";
+  const titleClass = "text-base sm:text-lg font-extrabold tracking-tight text-[var(--text)]";
+  const bodyClass = "mt-1 text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]";
+
   if (loading) {
     return (
-      <div className="container-page py-8 md:py-10">
-        <div className="mx-auto max-w-2xl">
-          <div className="card-surface p-4 sm:p-6">
-            <div className="h-5 w-48 rounded bg-[var(--skeleton)]" />
-            <div className="mt-4 h-10 w-full rounded bg-[var(--skeleton)]" />
-            <div className="mt-3 h-9 w-36 rounded bg-[var(--skeleton)]" />
+      <div className={shellPad}>
+        <div className={shellMax}>
+          <div className={`card-surface ${cardPad}`}>
+            <div className="h-5 w-44 sm:w-48 rounded bg-[var(--skeleton)]" />
+            <div className="mt-3 sm:mt-4 h-10 w-full rounded bg-[var(--skeleton)]" />
+            <div className="mt-2.5 sm:mt-3 h-9 w-36 rounded bg-[var(--skeleton)]" />
           </div>
         </div>
       </div>
@@ -234,25 +244,28 @@ export default function VerifyEmailClient() {
 
   if (unauth) {
     return (
-      <div className="container-page py-8 md:py-10">
-        <div className="mx-auto max-w-2xl space-y-4">
+      <div className={shellPad}>
+        <div className={`${shellMax} ${stack}`}>
           <div
             role="alert"
-            className="card-surface border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50"
+            className={`card-surface border border-[var(--border)] bg-[var(--bg-subtle)] ${alertPad} text-xs sm:text-sm text-[var(--text)]`}
           >
             Please{" "}
-            <Link className="underline" href={signinHref}>
+            <Link
+              className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
+              href={signinHref}
+            >
               sign in
             </Link>{" "}
             to verify your email.
           </div>
 
-          <div className="card-surface p-4 sm:p-6">
-            <h2 className="text-lg font-semibold text-[var(--text-strong)]">Verify your email</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
+          <div className={`card-surface ${cardPad}`}>
+            <h2 className={titleClass}>Verify your email</h2>
+            <p className={bodyClass}>
               You need to be signed in to receive a verification code.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-3 sm:mt-4 flex flex-wrap gap-2">
               <Button asChild size="sm" variant="primary">
                 <Link href={signinHref}>Sign in</Link>
               </Button>
@@ -268,17 +281,18 @@ export default function VerifyEmailClient() {
 
   if (verified) {
     return (
-      <div className="container-page py-8 md:py-10">
-        <div className="mx-auto max-w-2xl space-y-4">
+      <div className={shellPad}>
+        <div className={`${shellMax} ${stack}`}>
           <div
             data-testid="verify-email-success"
-            className="card-surface border border-emerald-300/70 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-50"
+            className={`card-surface border border-[var(--border)] bg-[var(--bg-subtle)] ${alertPad} text-xs sm:text-sm text-[var(--text)]`}
           >
-            <div className="font-semibold">Email verified</div>
-            <div className="mt-0.5 text-xs text-emerald-950/80 dark:text-emerald-50/80">
+            <div className="font-semibold text-[var(--text)]">Email verified</div>
+            <div className="mt-0.5 text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
               {email ? (
                 <>
-                  You’re verified on <span className="font-medium">{email}</span>.
+                  You’re verified on{" "}
+                  <span className="font-semibold text-[var(--text)]">{email}</span>.
                 </>
               ) : (
                 "Your email is verified."
@@ -286,10 +300,10 @@ export default function VerifyEmailClient() {
             </div>
           </div>
 
-          <div className="card-surface p-4 sm:p-6">
-            <h2 className="text-lg font-semibold text-[var(--text-strong)]">You’re all set</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">Continue back to where you were.</p>
-            <div className="mt-4 flex flex-wrap gap-2">
+          <div className={`card-surface ${cardPad}`}>
+            <h2 className={titleClass}>You’re all set</h2>
+            <p className={bodyClass}>Continue back to where you were.</p>
+            <div className="mt-3 sm:mt-4 flex flex-wrap gap-2">
               <Button asChild size="sm" variant="primary">
                 <Link href={nextHref}>Continue</Link>
               </Button>
@@ -304,17 +318,19 @@ export default function VerifyEmailClient() {
   }
 
   return (
-    <div className="container-page py-8 md:py-10">
-      <div className="mx-auto max-w-2xl space-y-4">
-        <div className="card-surface p-4 sm:p-6">
-          <h2 className="text-lg font-semibold text-[var(--text-strong)]">Enter your verification code</h2>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">
+    <div className={shellPad}>
+      <div className={`${shellMax} ${stack}`}>
+        <div className={`card-surface ${cardPad}`}>
+          <h2 className={titleClass}>Enter your verification code</h2>
+          <p className={bodyClass}>
             We’ll send a one-time code to{" "}
-            <span className="font-medium text-[var(--text-strong)]">{email || "your email"}</span>. The code expires
-            after a short time.
+            <span className="font-semibold text-[var(--text)]">
+              {email || "your email"}
+            </span>
+            . The code expires after a short time.
           </p>
 
-          <div className="mt-5 grid gap-3">
+          <div className="mt-4 sm:mt-5 grid gap-3">
             <div>
               <label htmlFor="code" className="label">
                 Verification code
@@ -333,10 +349,14 @@ export default function VerifyEmailClient() {
                     void confirmCode();
                   }
                 }}
-                aria-invalid={code.length > 0 && normalizeCode(code).length < 4 ? true : undefined}
+                aria-invalid={
+                  code.length > 0 && normalizeCode(code).length < 4 ? true : undefined
+                }
                 data-testid="verify-email-code"
               />
-              <p className="mt-1 text-xs text-[var(--text-muted)]">Tip: You can paste the code directly.</p>
+              <p className="mt-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
+                Tip: You can paste the code directly.
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-2" data-testid="verify-email-request">
@@ -372,14 +392,23 @@ export default function VerifyEmailClient() {
                       : "Send code"}
               </Button>
 
-              <Button asChild type="button" size="sm" variant="outline" disabled={confirming || sending}>
+              <Button
+                asChild
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={confirming || sending}
+              >
                 <Link href={nextHref}>Cancel</Link>
               </Button>
             </div>
 
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-soft)] px-4 py-3 text-xs text-[var(--text-muted)]">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2.5 sm:px-4 sm:py-3 text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
               If you typed the wrong email, update it from{" "}
-              <Link className="underline" href="/account/profile">
+              <Link
+                className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
+                href="/account/profile"
+              >
                 your profile
               </Link>{" "}
               then request a new code.

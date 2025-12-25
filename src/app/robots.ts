@@ -26,11 +26,15 @@ export default function robots(): MetadataRoute.Robots {
           "/dashboard",
           "/messages",
           "/profile",
+          "/admin",
+          "/settings",
+          "/saved",
+          "/sell",
           "/_next/",
           "/static/",
         ],
       },
     ],
-    sitemap: `${base}/sitemap.xml`,
+    sitemap: `${base}/sitemaps/index.xml`,
   };
 }

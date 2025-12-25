@@ -1,20 +1,28 @@
-﻿// src/app/not-found.tsx
-export const dynamic = "force-static";
+﻿export const dynamic = "force-static";
 
+import type { Metadata } from "next";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
+  },
+};
 
 export default function NotFound() {
   return (
-    <div className="pb-10">
+    <div className="bg-[var(--bg)] pb-10 text-[var(--text)]">
       <header
-        className="bg-spotlight bg-noise text-white"
+        className="bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white"
         style={{
           WebkitMaskImage:
             "linear-gradient(to bottom, black 80%, transparent)",
         }}
       >
         <div className="container-page pt-12 pb-8 md:pt-14 md:pb-10">
-          <p className="text-sm/5 opacity-90">404 — Not found</p>
+          <p className="text-sm/5 opacity-90">404 - Not found</p>
           <h1 className="mt-1 text-balance text-3xl font-extrabold tracking-tight sm:text-4xl">
             We can’t find that page
           </h1>
@@ -25,11 +33,7 @@ export default function NotFound() {
             <Link href="/" prefetch={false} className="chip chip--light">
               Home
             </Link>
-            <Link
-              href="/search"
-              prefetch={false}
-              className="chip chip--light"
-            >
+            <Link href="/search" prefetch={false} className="chip chip--light">
               Browse listings
             </Link>
             <Link href="/sell" prefetch={false} className="chip chip--light">
@@ -40,25 +44,21 @@ export default function NotFound() {
       </header>
 
       <div className="container-page mt-6">
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-xl font-bold tracking-tight">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-6 shadow-sm">
+          <h2 className="text-xl font-bold tracking-tight text-[var(--text)]">
             Try one of these
           </h2>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link href="/" prefetch={false} className="btn-outline">
               Go home
             </Link>
-            <Link
-              href="/search"
-              prefetch={false}
-              className="btn-gradient-primary"
-            >
+            <Link href="/search" prefetch={false} className="btn-gradient-primary">
               Search QwikSale
             </Link>
             <Link
               href="/help"
               prefetch={false}
-              className="rounded-lg border border-border px-3 py-1.5 text-sm"
+              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-1.5 text-sm text-[var(--text)] transition hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
             >
               Help Center
             </Link>

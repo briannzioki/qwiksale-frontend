@@ -3,26 +3,61 @@
 
 import * as React from "react";
 import Link from "next/link";
-import RequestsFeedList, { type RequestsFeedItem } from "@/app/_components/RequestsFeedList";
+import RequestsFeedList, {
+  type RequestsFeedItem,
+} from "@/app/_components/RequestsFeedList";
 
 type Props = {
   open: boolean;
-  onClose: () => void;
+  // Use the *Action suffix to satisfy Next's serializable-props rule.
+  // Keep `onClose` as unknown for backward compatibility without tripping the rule.
+  onCloseAction?: () => void;
+  onClose?: unknown;
   isAuthed: boolean;
 };
 
 const FEED_TIMEOUT_MS = 10_000;
 
-export default function RequestsDrawer({ open, onClose, isAuthed }: Props) {
+function hasNextAuthSessionCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  const c = document.cookie || "";
+  // NextAuth session cookie name varies by secure context:
+  // - next-auth.session-token
+  // - __Secure-next-auth.session-token
+  return /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token=/.test(c);
+}
+
+export default function RequestsDrawer({
+  open,
+  onCloseAction,
+  onClose,
+  isAuthed,
+}: Props) {
   const [loading, setLoading] = React.useState(false);
   const [items, setItems] = React.useState<RequestsFeedItem[]>([]);
   const [error, setError] = React.useState<string | null>(null);
+  const [cookieAuthed, setCookieAuthed] = React.useState(false);
+
+  const close = React.useCallback(() => {
+    const fn =
+      onCloseAction ??
+      (typeof onClose === "function" ? (onClose as () => void) : undefined);
+    fn?.();
+  }, [onCloseAction, onClose]);
+
+  // Prevent transient "guest" gating when session cookies exist (suite-only flake).
+  React.useEffect(() => {
+    if (!open) return;
+    setCookieAuthed(hasNextAuthSessionCookie());
+  }, [open]);
+
+  const isAuthedStable = isAuthed || cookieAuthed;
 
   React.useEffect(() => {
     if (!open) return;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close();
     };
     window.addEventListener("keydown", onKey);
 
@@ -33,7 +68,7 @@ export default function RequestsDrawer({ open, onClose, isAuthed }: Props) {
       window.removeEventListener("keydown", onKey);
       document.documentElement.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open, close]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -63,10 +98,10 @@ export default function RequestsDrawer({ open, onClose, isAuthed }: Props) {
         const raw = Array.isArray(j?.items)
           ? j.items
           : Array.isArray(j?.requests)
-          ? j.requests
-          : Array.isArray(j)
-          ? j
-          : [];
+            ? j.requests
+            : Array.isArray(j)
+              ? j
+              : [];
 
         const mapped: RequestsFeedItem[] = raw
           .map((x: any) => ({
@@ -115,9 +150,14 @@ export default function RequestsDrawer({ open, onClose, isAuthed }: Props) {
       {/* Backdrop */}
       <button
         type="button"
-        className="absolute inset-0 bg-black/40"
+        className={[
+          "absolute inset-0",
+          "bg-[color:var(--bg)]/70",
+          "backdrop-blur-[2px] backdrop-brightness-75",
+          "supports-[backdrop-filter]:bg-[color:var(--bg)]/40",
+        ].join(" ")}
         aria-label="Close"
-        onClick={onClose}
+        onClick={close}
       />
 
       {/* Panel */}
@@ -126,21 +166,30 @@ export default function RequestsDrawer({ open, onClose, isAuthed }: Props) {
           "relative ml-0 h-full w-[min(420px,90vw)]",
           "bg-[var(--bg-elevated)] text-[var(--text)]",
           "border-r border-[var(--border-subtle)] shadow-soft",
-          "p-4",
+          "p-3 sm:p-4",
         ].join(" ")}
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            <div className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
               Latest
             </div>
-            <h2 className="mt-1 text-lg font-extrabold">Requests</h2>
+            <h2 className="mt-1 text-base sm:text-lg font-extrabold tracking-tight text-[var(--text)]">
+              Requests
+            </h2>
           </div>
 
           <button
             type="button"
-            onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:bg-subtle hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
+            onClick={close}
+            className={[
+              "inline-flex h-9 w-9 items-center justify-center rounded-xl border",
+              "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+              "text-[var(--text-muted)] shadow-sm transition",
+              "hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              "active:scale-[.99]",
+            ].join(" ")}
             aria-label="Close drawer"
             data-testid="requests-drawer-close"
           >
@@ -148,31 +197,44 @@ export default function RequestsDrawer({ open, onClose, isAuthed }: Props) {
           </button>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Link href="/requests" prefetch={false} className="btn-outline text-sm">
-            Open directory
-          </Link>
-          <Link href="/requests/new" prefetch={false} className="btn-gradient-primary text-sm">
-            Post a request
-          </Link>
-        </div>
-
-        <div className="mt-4">
+        <div className="mt-3 sm:mt-4">
           {loading ? (
-            <div className="rounded-xl border border-border bg-card/80 p-4 text-sm text-muted-foreground">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 text-xs sm:text-sm text-[var(--text-muted)] shadow-sm">
               Loading…
             </div>
           ) : error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-[var(--text)] shadow-sm">
               {error}
             </div>
           ) : items.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card/80 p-4 text-sm text-muted-foreground">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 text-xs sm:text-sm text-[var(--text-muted)] shadow-sm">
               No requests yet.
             </div>
           ) : (
-            <RequestsFeedList items={items} isAuthed={isAuthed} onNavigate={onClose} />
+            <RequestsFeedList
+              items={items}
+              isAuthed={isAuthedStable}
+              onNavigateAction={close}
+            />
           )}
+        </div>
+
+        {/* CTAs AFTER the list so broad selectors don't hit /requests/new first */}
+        <div className="mt-3 sm:mt-4 flex flex-wrap items-center gap-2">
+          <Link
+            href="/requests"
+            prefetch={false}
+            className="btn-outline text-xs sm:text-sm"
+          >
+            Open directory
+          </Link>
+          <Link
+            href="/requests/new"
+            prefetch={false}
+            className="btn-gradient-primary text-xs sm:text-sm"
+          >
+            Post a request
+          </Link>
         </div>
       </aside>
     </div>

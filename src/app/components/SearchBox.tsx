@@ -1,5 +1,4 @@
 "use client";
-// src/app/components/SearchBox.tsx
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
@@ -51,7 +50,9 @@ export default function SearchBox(props: Props) {
   useEffect(() => {
     if (!isInline || !inlineOpen) return;
     const t = setTimeout(() => {
-      const input = wrapRef.current?.querySelector<HTMLInputElement>('input[type="search"]');
+      const input = wrapRef.current?.querySelector<HTMLInputElement>(
+        'input[type="search"]',
+      );
       input?.focus();
       input?.select?.();
     }, autoFocus ? 10 : 30);
@@ -70,7 +71,7 @@ export default function SearchBox(props: Props) {
 
   const hint = useMemo(
     () => (!q.trim() ? "Try: Samsung, SUVs, Mama Fua…" : ""),
-    [q]
+    [q],
   );
 
   const formAction = "/search";
@@ -78,14 +79,24 @@ export default function SearchBox(props: Props) {
   // Default variant → full search bar
   if (!isInline) {
     return (
-      <div className={classNames("relative w-full max-w-2xl", className)} ref={wrapRef}>
+      <div
+        className={classNames("relative w-full max-w-2xl", className)}
+        ref={wrapRef}
+      >
         <form
           method="GET"
           action={formAction}
           aria-label="Search products, brands, categories or services"
-          className="flex items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm transition focus-within:ring-2 focus-within:ring-primary"
+          className={[
+            "flex items-center gap-2 rounded-2xl border px-3 py-2 shadow-sm transition",
+            "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+            "focus-within:ring-2 focus-within:ring-focus",
+          ].join(" ")}
         >
-          <SearchIcon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          <SearchIcon
+            className="h-5 w-5 text-[var(--text-muted)]"
+            aria-hidden="true"
+          />
 
           <input
             id="searchbox-input"
@@ -95,7 +106,7 @@ export default function SearchBox(props: Props) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={placeholder}
-            className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--text-muted)]"
             autoFocus={autoFocus}
             aria-label="Search query"
           />
@@ -103,7 +114,12 @@ export default function SearchBox(props: Props) {
           {q && (
             <button
               type="button"
-              className="rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+              className={[
+                "inline-flex h-9 items-center rounded-xl px-2.5 text-xs font-semibold transition",
+                "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+                "active:scale-[.99]",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              ].join(" ")}
               onClick={() => setQ("")}
               aria-label="Clear search"
             >
@@ -113,7 +129,13 @@ export default function SearchBox(props: Props) {
 
           <button
             type="submit"
-            className="rounded-lg bg-brandNavy px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+            className={[
+              "inline-flex h-9 items-center rounded-xl border px-3 text-xs font-semibold shadow-sm transition sm:text-sm",
+              "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+              "hover:bg-[var(--bg-elevated)] hover:border-[var(--border)]",
+              "active:scale-[.99]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
             aria-label="Search"
           >
             Search
@@ -121,7 +143,10 @@ export default function SearchBox(props: Props) {
         </form>
 
         {hint && (
-          <div className="mt-1 text-xs text-muted-foreground" aria-live="polite">
+          <div
+            className="mt-0.5 text-[11px] text-[var(--text-muted)] sm:mt-1 sm:text-xs"
+            aria-live="polite"
+          >
             {hint}
           </div>
         )}
@@ -134,15 +159,23 @@ export default function SearchBox(props: Props) {
     <div
       ref={wrapRef}
       className={classNames(
-        "relative overflow-hidden rounded-xl border border-border bg-card transition-all duration-200",
-        inlineOpen ? "w-72 opacity-100 px-2 py-1.5" : "w-0 opacity-0 px-0 py-0",
-        className
+        "relative overflow-hidden rounded-xl border transition-all duration-200",
+        "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+        inlineOpen
+          ? "w-[min(18rem,calc(100vw-5rem))] opacity-100 px-2 py-1.5 sm:w-72"
+          : "w-0 opacity-0 px-0 py-0",
+        className,
       )}
       style={{ willChange: "width, opacity, padding" }}
       aria-hidden={inlineOpen ? "false" : "true"}
     >
       {inlineOpen && (
-        <form method="GET" action={formAction} aria-label="Quick search" className="flex items-center gap-1">
+        <form
+          method="GET"
+          action={formAction}
+          aria-label="Quick search"
+          className="flex items-center gap-1.5"
+        >
           <input
             id="inline-searchbox-input"
             type="search"
@@ -151,7 +184,7 @@ export default function SearchBox(props: Props) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={placeholder}
-            className="w-full bg-transparent outline-none placeholder:text-muted-foreground"
+            className="w-full bg-transparent text-sm outline-none placeholder:text-[var(--text-muted)]"
             aria-label="Search query"
           />
 
@@ -159,11 +192,22 @@ export default function SearchBox(props: Props) {
             <button
               type="button"
               aria-label="Clear search"
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+              className={[
+                "inline-flex h-9 w-9 items-center justify-center rounded-xl transition",
+                "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+                "active:scale-[.99]",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              ].join(" ")}
               onClick={() => setQ("")}
               title="Clear"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden
+              >
                 <path d="M18.3 5.71L12 12.01l-6.3-6.3-1.4 1.41 6.29 6.3-6.3 6.3 1.41 1.41 6.3-6.29 6.29 6.29 1.41-1.41-6.29-6.3 6.29-6.29z" />
               </svg>
             </button>
@@ -172,10 +216,21 @@ export default function SearchBox(props: Props) {
           <button
             type="submit"
             aria-label="Search"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+            className={[
+              "inline-flex h-9 w-9 items-center justify-center rounded-xl transition",
+              "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+              "active:scale-[.99]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
             title="Search"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden
+            >
               <path d="M21 20l-5.2-5.2a7 7 0 10-1.4 1.4L20 21l1-1zM5 11a6 6 0 1112 0A6 6 0 015 11z" />
             </svg>
           </button>

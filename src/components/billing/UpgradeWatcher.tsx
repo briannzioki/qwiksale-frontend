@@ -31,7 +31,7 @@ export default function UpgradeWatcher({
   if (!paymentId) {
     return (
       <div
-        className={`text-sm text-gray-600 dark:text-slate-300 ${className}`}
+        className={`text-sm text-[var(--text-muted)] ${className}`}
         role="status"
         aria-live="polite"
       >
@@ -48,7 +48,7 @@ export default function UpgradeWatcher({
       doneRef.current = true;
       onDoneAction?.(final);
     },
-    [onDoneAction]
+    [onDoneAction],
   );
 
   const { status, isPolling, attempts, error } = usePaymentStatusPoll(paymentId, {
@@ -70,15 +70,22 @@ export default function UpgradeWatcher({
     status === "PENDING"
       ? "Waiting for confirmation…"
       : status === "PROCESSING"
-      ? "Processing payment…"
-      : status === "SUCCESS"
-      ? "Payment successful"
+        ? "Processing payment…"
+        : status === "SUCCESS"
+          ? "Payment successful"
+          : status === "FAILED"
+            ? "Payment failed"
+            : status || "Pending";
+
+  const statusClass =
+    status === "SUCCESS"
+      ? "font-semibold text-[color:var(--success,var(--text))]"
       : status === "FAILED"
-      ? "Payment failed"
-      : status || "Pending";
+        ? "font-semibold text-[var(--danger)]"
+        : "font-medium text-[var(--text)]";
 
   return (
-    <div className={`text-sm text-gray-700 dark:text-slate-200 ${className}`}>
+    <div className={`text-sm text-[var(--text)] ${className}`}>
       {/* SR live updates */}
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {friendly}
@@ -88,26 +95,15 @@ export default function UpgradeWatcher({
         {isPolling && <Spinner ariaLabel="Checking payment status" />}
         <div>
           <div>
-            Status:{" "}
-            <span
-              className={
-                status === "SUCCESS"
-                  ? "font-semibold text-emerald-600"
-                  : status === "FAILED"
-                  ? "font-semibold text-red-600"
-                  : "font-medium"
-              }
-            >
-              {friendly}
-            </span>
+            Status: <span className={statusClass}>{friendly}</span>
           </div>
-          <div className="text-xs text-gray-500 dark:text-slate-400">
+          <div className="text-xs text-[var(--text-muted)]">
             Checks: {attempts}
             {poll.maxAttempts ? ` / ${poll.maxAttempts}` : null}
             {isPolling ? " • Updating…" : null}
           </div>
           {error ? (
-            <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+            <div className="mt-1 text-xs text-[var(--danger)]">
               Note: {String(error)}
             </div>
           ) : null}

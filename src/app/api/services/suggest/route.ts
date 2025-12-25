@@ -96,7 +96,7 @@ export async function GET(request: Request) {
         const rows = await Service.findMany({
           where: { status: "ACTIVE", name: { not: null } }, // <-- fixed
           select: { name: true },
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: 250,
         });
         for (const r of rows) {

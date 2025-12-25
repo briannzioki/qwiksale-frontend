@@ -2,7 +2,7 @@
 import { Inter, JetBrains_Mono } from "next/font/google";
 
 /**
- * Primary UI font — Inter (variable)
+ * Primary UI font - Inter (variable)
  * - CSS var: --font-inter
  * - Preloaded for above-the-fold text
  * - Metric-adjusted fallbacks to minimize CLS
@@ -28,7 +28,7 @@ export const inter = Inter({
 });
 
 /**
- * Monospace for code/ids — JetBrains Mono (variable)
+ * Monospace for code/ids - JetBrains Mono (variable)
  * - CSS var: --font-mono
  * - Not preloaded (smaller initial payload)
  */

@@ -6,9 +6,15 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import type { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { jsonPublic, jsonPrivate } from "@/app/api/_lib/responses";
+import type { FeaturedTier } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 /* ----------------------------- debug ----------------------------- */
 const SERVICES_VER = "vDEBUG-SERVICES-012";
@@ -52,6 +58,29 @@ function optStr(v: string | null): string | undefined {
   if (l === "any" || l === "all" || l === "*") return undefined;
   return t;
 }
+
+/**
+ * Supports: ?ids=a,b,c  OR  ?ids=a&ids=b  OR  ?id=a
+ * (Used by /service/[id]/page.tsx fallback: /api/services?ids=<id>)
+ */
+function parseIdsParam(sp: URLSearchParams): string[] {
+  const parts = [...sp.getAll("ids"), ...sp.getAll("ids[]"), ...sp.getAll("id")]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean);
+
+  if (!parts.length) return [];
+
+  const bad = new Set(["undefined", "null", "nan"]);
+  const raw = parts.join(",");
+  const ids = raw
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter((s) => s && !bad.has(s.toLowerCase()))
+    .slice(0, 50);
+
+  return Array.from(new Set(ids));
+}
+
 function rejectingTimeout<T = never>(ms: number): Promise<T> {
   return new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms));
 }
@@ -87,60 +116,88 @@ function getServiceModel() {
 }
 
 /* ---------------- seller/account badge helpers ---------------- */
-type FeaturedTier = "basic" | "gold" | "diamond";
+type SellerBadgesObj = { verified: boolean | null; tier: FeaturedTier | null };
 
-function normalizeFeaturedTier(v: unknown): FeaturedTier | null {
-  const pick = (x: unknown): string => {
-    if (typeof x === "string") return x;
-    if (x && typeof x === "object") {
-      const any = x as any;
-      const cand =
-        any?.tier ??
-        any?.plan ??
-        any?.level ??
-        any?.name ??
-        any?.type ??
-        any?.subscription ??
-        any?.value ??
-        "";
-      if (typeof cand === "string") return cand;
-    }
-    return "";
-  };
+type SellerBadgePayload = {
+  sellerVerified: boolean | null;
+  sellerFeaturedTier: FeaturedTier | null;
+  sellerBadges: SellerBadgesObj;
+  [k: string]: unknown;
+};
 
-  const raw = pick(v).trim();
-  if (!raw) return null;
-
-  const s = raw.toLowerCase();
-  if (s.includes("diamond")) return "diamond";
-  if (s.includes("gold")) return "gold";
-  if (s.includes("basic")) return "basic";
+function toNullableBool(v: unknown): boolean | null {
+  if (v === true) return true;
+  if (v === false) return false;
   return null;
 }
 
-function normalizeSellerVerified(u: any): boolean | null {
-  if (!u) return null;
-
-  const direct =
-    u?.verified ??
-    u?.isVerified ??
-    u?.accountVerified ??
-    u?.sellerVerified ??
-    null;
-
-  if (typeof direct === "boolean") return direct;
-
-  const at =
-    u?.verifiedAt ??
-    u?.verified_on ??
-    u?.verifiedOn ??
-    u?.verificationDate ??
-    null;
-
-  if (typeof at === "string" && at.trim()) return true;
-  if (at instanceof Date) return true;
-
+function toNullableTier(v: unknown): FeaturedTier | null {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("diamond")) return "diamond";
+  if (t.includes("gold")) return "gold";
+  if (t.includes("basic")) return "basic";
   return null;
+}
+
+/**
+ * Canonical badge shaper (single source of truth):
+ * - aligns aliases with sellerBadges (no dropping tier into nested-only shape)
+ * - never forces defaults when unknown (nulls stay null)
+ */
+function canonicalizeSellerBadges(raw: any): SellerBadgePayload {
+  const rawBadges =
+    raw?.sellerBadges && typeof raw.sellerBadges === "object" && !Array.isArray(raw.sellerBadges)
+      ? (raw.sellerBadges as any)
+      : null;
+
+  const verifiedPrimary = toNullableBool(raw?.sellerVerified);
+  const verifiedFallback = rawBadges ? toNullableBool(rawBadges.verified) : null;
+  const sellerVerified = verifiedPrimary !== null ? verifiedPrimary : verifiedFallback;
+
+  const tierPrimary = toNullableTier(raw?.sellerFeaturedTier);
+  const tierFallback = rawBadges ? toNullableTier(rawBadges.tier) : null;
+  const sellerFeaturedTier = tierPrimary ?? tierFallback;
+
+  let base: any = {};
+  try {
+    base = (buildSellerBadgeFields(sellerVerified, sellerFeaturedTier) as any) ?? {};
+  } catch {
+    base = {};
+  }
+
+  base.sellerVerified = sellerVerified;
+  base.sellerFeaturedTier = sellerFeaturedTier;
+  base.sellerBadges = { verified: sellerVerified, tier: sellerFeaturedTier } as SellerBadgesObj;
+
+  return base as SellerBadgePayload;
+}
+
+async function fetchSellerBadgeMap(ids: string[]) {
+  const out = new Map<string, SellerBadgePayload>();
+  const uniq = Array.from(new Set(ids.filter(Boolean)));
+  if (!uniq.length) return out;
+
+  try {
+    const rows = (await prisma.$queryRaw<{ id: string; u: any }[]>`
+      SELECT u.id, row_to_json(u) as u
+      FROM "User" u
+      WHERE u.id IN (${Prisma.join(uniq)})
+    `) as { id: string; u: any }[];
+
+    for (const r of rows) {
+      const id = String((r as any)?.id ?? "");
+      if (!id) continue;
+      const u = (r as any)?.u ?? null;
+
+      const resolved = resolveSellerBadgeFieldsFromUserLike(u);
+      out.set(id, canonicalizeSellerBadges(resolved));
+    }
+  } catch {
+    // ignore: caller will emit canonical nulls (no forced defaults)
+  }
+
+  return out;
 }
 
 /* ------------------------------ caps ----------------------------------- */
@@ -256,9 +313,13 @@ export async function GET(req: NextRequest) {
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
 
+    // ✅ id lookup helper (used by /service/[id]/page.tsx fallback)
+    const ids = parseIdsParam(url.searchParams);
+
     // Ownership filters
     const mine = toBool(url.searchParams.get("mine")) === true;
-    let sellerId = optStr(url.searchParams.get("sellerId")) || optStr(url.searchParams.get("userId"));
+    let sellerId =
+      optStr(url.searchParams.get("sellerId")) || optStr(url.searchParams.get("userId"));
     const sellerUsername = optStr(url.searchParams.get("seller")) || optStr(url.searchParams.get("user"));
 
     if (mine) {
@@ -293,7 +354,7 @@ export async function GET(req: NextRequest) {
     }
 
     const featured = toBool(url.searchParams.get("featured"));
-    const verifiedOnly = toBool(url.searchParams.get("verifiedOnly"));
+    const verifiedOnly = toBool(url.searchParams.get("verifiedOnly")) === true;
 
     const minPriceStr = url.searchParams.get("minPrice");
     const maxPriceStr = url.searchParams.get("maxPrice");
@@ -319,10 +380,12 @@ export async function GET(req: NextRequest) {
         subcategory: { equals: subcategory, mode: "insensitive" },
       });
     if (sellerId) ANDExtra.push({ sellerId });
+    if (verifiedOnly) ANDExtra.push({ seller: { is: { emailVerified: { not: null } } } });
 
-    if (verifiedOnly === true) {
-      ANDExtra.push({ featured: true });
-    } else if (typeof featured === "boolean") {
+    // ✅ ids filter (string IDs; supports /api/services?ids=<id>)
+    if (ids.length) ANDExtra.push({ id: { in: ids } });
+
+    if (typeof featured === "boolean") {
       ANDExtra.push({ featured });
     }
 
@@ -331,9 +394,7 @@ export async function GET(req: NextRequest) {
       const minPrice =
         minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
       const maxPrice =
-        maxPriceStr !== null
-          ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999)
-          : undefined;
+        maxPriceStr !== null ? toInt(maxPriceStr, 9_999_999, 0, 9_999_999) : undefined;
 
       const priceClause: { gte?: number; lte?: number } = {};
       if (typeof minPrice === "number") priceClause.gte = minPrice;
@@ -386,35 +447,19 @@ export async function GET(req: NextRequest) {
       chosenWhere = candidate;
     }
 
-    const isSearchLike = !!rawQ || !!category || !!subcategory;
+    const isSearchLike = !!rawQ || !!category || !!subcategory || ids.length > 0;
 
     // Primary orderBy
     let primaryOrder: any;
     if (sort === "price_asc")
-      primaryOrder = [
-        { price: "asc" as const },
-        { createdAt: "desc" as const },
-        { id: "desc" as const },
-      ];
+      primaryOrder = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
     else if (sort === "price_desc")
-      primaryOrder = [
-        { price: "desc" as const },
-        { createdAt: "desc" as const },
-        { id: "desc" as const },
-      ];
+      primaryOrder = [{ price: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
     else if (sort === "featured")
-      primaryOrder = [
-        { featured: "desc" as const },
-        { createdAt: "desc" as const },
-        { id: "desc" as const },
-      ];
+      primaryOrder = [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
     else
       primaryOrder = isSearchLike
-        ? [
-            { featured: "desc" as const },
-            { createdAt: "desc" as const },
-            { id: "desc" as const },
-          ]
+        ? [{ featured: "desc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }]
         : [{ createdAt: "desc" as const }, { id: "desc" as const }];
 
     const orderByCandidates = [
@@ -434,6 +479,10 @@ export async function GET(req: NextRequest) {
       if (chosenFields.length) {
         // eslint-disable-next-line no-console
         console.log("[/api/services SEARCH FIELDS]", chosenFields.join(", "));
+      }
+      if (ids.length) {
+        // eslint-disable-next-line no-console
+        console.log("[/api/services IDS]", ids.join(","));
       }
       if (rawRequestedPageSize != null && rawRequestedPageSize > MAX_PAGE_SIZE) {
         // eslint-disable-next-line no-console
@@ -647,9 +696,25 @@ export async function GET(req: NextRequest) {
         const data = hasMore ? rowsRaw.slice(0, pageSize) : rowsRaw;
         const nextCursor = hasMore && data.length ? data[data.length - 1]!.id : null;
 
+        const sellerIds = Array.from(
+          new Set(
+            (data as any[])
+              .map((x: any) => (x?.sellerId ? String(x.sellerId) : ""))
+              .filter(Boolean),
+          ),
+        );
+        const badgeMap = await fetchSellerBadgeMap(sellerIds);
+
         const items = (data as any[]).map((s) => {
           const gallery = Array.isArray(s.gallery) ? s.gallery.filter(Boolean) : [];
           const sellerObj = s?.seller as any;
+
+          const sid = s?.sellerId ? String(s.sellerId) : "";
+          const resolvedBadges = sid ? badgeMap.get(sid) : undefined;
+
+          // ✅ canonical badge shape; no forced defaults when unknown
+          const badges = resolvedBadges ?? canonicalizeSellerBadges(null);
+
           return {
             id: String(s.id),
             name: String(s.name ?? "Service"),
@@ -669,12 +734,11 @@ export async function GET(req: NextRequest) {
               s?.createdAt instanceof Date
                 ? s.createdAt.toISOString()
                 : typeof s?.createdAt === "string"
-                ? s.createdAt
-                : "",
+                  ? s.createdAt
+                  : "",
             sellerId: s?.sellerId ? String(s.sellerId) : undefined,
             sellerUsername: sellerObj?.username ?? null,
-            sellerVerified: normalizeSellerVerified(sellerObj),
-            sellerFeaturedTier: normalizeFeaturedTier(sellerObj?.subscription ?? null),
+            ...badges,
           };
         });
 

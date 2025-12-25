@@ -18,17 +18,34 @@ function noStore(json: unknown, init?: ResponseInit) {
 
 function toIso(v: any) {
   try {
-    return v ? new Date(v).toISOString() : null;
+    if (!v) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    const t = d.getTime();
+    if (!Number.isFinite(t)) return null;
+    return d.toISOString();
   } catch {
     return null;
   }
 }
 
+function isPrismaValidationError(err: unknown) {
+  const e = err as any;
+  const name = typeof e?.name === "string" ? e.name : "";
+  const msg = typeof e?.message === "string" ? e.message : "";
+  return (
+    name === "PrismaClientValidationError" ||
+    msg.includes("PrismaClientValidationError") ||
+    msg.includes("Invalid value for argument") ||
+    msg.includes("Unknown argument")
+  );
+}
+
+// IMPORTANT: Next.js' generated RouteContext expects params to be Promise-based here.
 type RouteParams = { id: string };
 type RouteCtx = { params: Promise<RouteParams> };
 
 /**
- * GET /api/requests/[id]
+ * GET /api/requests/:id
  * Full details (auth required); never returns contact numbers directly.
  */
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
@@ -37,45 +54,74 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     const meId = (session as any)?.user?.id as string | undefined;
     if (!meId) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    // Next.js 15 RouteContext params are Promise-based in generated types.
-    const p = await ctx.params;
-    const id = String(p?.id || "").trim();
+    // At runtime Next may provide a plain object; awaiting still works.
+    const p = await (ctx?.params as any);
+    const id = String((p as any)?.id || "").trim();
     if (!id) return noStore({ error: "Missing id" }, { status: 400 });
 
     const requestModel = (prisma as any).request;
 
-    const r = await requestModel?.findUnique?.({
-      where: { id },
-      select: {
-        id: true,
-        kind: true,
-        title: true,
-        description: true,
-        location: true,
-        category: true,
-        tags: true,
-        createdAt: true,
-        expiresAt: true,
-        status: true,
-        boostUntil: true,
-        contactEnabled: true,
-        contactMode: true,
-        ownerId: true,
-        owner: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            image: true,
-            verified: true,
-            location: true,
-            city: true,
-            country: true,
-            createdAt: true,
+    // Try the full select first (your existing contract).
+    // If schema drift happens, fallback to a minimal safe select so we still return title for e2e.
+    let r: any = null;
+
+    try {
+      r = await requestModel?.findUnique?.({
+        where: { id },
+        select: {
+          id: true,
+          kind: true,
+          title: true,
+          description: true,
+          location: true,
+          category: true,
+          tags: true,
+          createdAt: true,
+          expiresAt: true,
+          status: true,
+          boostUntil: true,
+          contactEnabled: true,
+          contactMode: true,
+          ownerId: true,
+          owner: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              image: true,
+              verified: true,
+              location: true,
+              city: true,
+              country: true,
+              createdAt: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("[/api/requests/[id] GET] findUnique error (will fallback):", e);
+
+      if (!isPrismaValidationError(e)) throw e;
+
+      r = await requestModel?.findUnique?.({
+        where: { id },
+        select: {
+          id: true,
+          kind: true,
+          title: true,
+          description: true,
+          location: true,
+          category: true,
+          tags: true,
+          createdAt: true,
+          expiresAt: true,
+          status: true,
+          boostUntil: true,
+          ownerId: true,
+        },
+      });
+    }
 
     if (!r) return noStore({ error: "Not found" }, { status: 404 });
 
@@ -91,7 +137,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
               ...r.owner,
               createdAt: toIso((r.owner as any)?.createdAt),
             }
-          : null,
+          : r?.owner === null
+            ? null
+            : undefined,
       },
     });
   } catch (e) {

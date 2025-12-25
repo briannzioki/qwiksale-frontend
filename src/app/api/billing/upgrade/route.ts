@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       if ((prisma as any).payment?.findFirst) {
         existingPending = await (prisma as any).payment.findFirst({
           where: { userId: user.id, status: "PENDING" },
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         });
       }
     } catch {

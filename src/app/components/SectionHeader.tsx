@@ -42,20 +42,13 @@ function cn(...xs: Array<string | false | null | undefined>) {
 }
 
 /**
- * Gradient hero card variants.
- *
- * These all lean on design tokens from Tailwind:
- * - `bg-brand-navy`   → navy → blue band
- * - `bg-brand-accent` → blue/green band
- * - `shadow-soft`     → soft drop shadow
+ * Hero strip variants.
+ * Only the approved brand gradient is used for strip backgrounds.
  */
 const stripByGradient: Record<Exclude<Gradient, "none">, string> = {
-  // Primary brand hero – same feel as dashboard hero card
-  brand: "bg-brand-navy text-white shadow-soft",
-  // Deep navy band
-  navy: "bg-brand-navy text-white shadow-soft",
-  // Blue/green accent band
-  blue: "bg-brand-accent text-white shadow-soft",
+  brand: "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] shadow-soft",
+  navy: "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] shadow-soft",
+  blue: "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] shadow-soft",
 };
 
 export default function SectionHeader({
@@ -74,9 +67,7 @@ export default function SectionHeader({
   level,
   ...rest
 }: SectionHeaderProps) {
-  const [portalEl, setPortalEl] = React.useState<HTMLElement | null>(
-    null,
-  );
+  const [portalEl, setPortalEl] = React.useState<HTMLElement | null>(null);
 
   React.useEffect(() => {
     if (!portalActionsToLayout) return;
@@ -89,53 +80,29 @@ export default function SectionHeader({
   const ariaLevel =
     as === "div"
       ? (level ?? 1)
-      : ((Number(String(as).slice(1)) as
-            | 1
-            | 2
-            | 3
-            | 4
-            | 5
-            | 6) || 1);
+      : ((Number(String(as).slice(1)) as 1 | 2 | 3 | 4 | 5 | 6) || 1);
 
   const headingRoleProps =
     as === "div" && semanticHeading
       ? ({ role: "heading", "aria-level": ariaLevel } as const)
       : ({} as const);
 
-  const headingTitleAttr =
-    typeof title === "string" ? title : undefined;
+  const headingTitleAttr = typeof title === "string" ? title : undefined;
 
   const actionsArray = React.Children.toArray(actions);
 
-  // Special-case: home hero “Welcome / QwikSale” → brighter gradient text
-  const isHomeHero =
-    kicker === "Welcome" &&
-    typeof title === "string" &&
-    title.trim().toLowerCase() === "qwiksale";
+  // ✅ Strip needs guaranteed contrast (brand gradient is dark in BOTH themes)
+  const baseColorClass = useStrip ? "text-white" : "text-[var(--text)]";
+  const kickerColorClass = useStrip ? "text-white/80" : "text-[var(--text-muted)]";
+  const subtitleColorClass = useStrip ? "text-white/80" : "text-[var(--text-muted)]";
 
-  const baseColorClass = useStrip
-    ? "text-white"
-    : "text-foreground";
-
-  const titleColorClass = isHomeHero
-    ? "bg-gradient-to-r from-[#f9fafb] via-[#7dd3fc] to-[#6ee7b7] bg-clip-text text-transparent"
-    : baseColorClass;
-
-  const kickerColorClass = useStrip
-    ? "text-white/90"
-    : "text-muted-foreground";
-
-  const subtitleColorClass = useStrip
-    ? "text-white/80"
-    : "text-muted-foreground";
-
+  // Phone-first: reduce top/bottom whitespace so content stays above the fold.
   const verticalPadding = dense
-    ? "pt-4 pb-6 md:pt-5 md:pb-7"
-    : "pt-8 pb-12 md:pt-10 md:pb-14";
+    ? "py-4 sm:py-6 md:pt-5 md:pb-7"
+    : "py-4 sm:py-8 md:pt-10 md:pb-14";
 
-  const cardPadding = dense
-    ? "px-4 py-5 md:px-6 md:py-6"
-    : "px-5 py-7 md:px-8 md:py-8";
+  // Phone-first: tighter hero card padding; restore on larger screens.
+  const cardPadding = dense ? "p-3 sm:p-4 md:px-6 md:py-6" : "p-3.5 sm:p-5 md:px-8 md:py-8";
 
   const alignmentClasses =
     align === "center"
@@ -143,21 +110,19 @@ export default function SectionHeader({
       : "";
 
   const inner = (
-    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="flex flex-col gap-2.5 md:flex-row md:items-end md:justify-between md:gap-3">
       {/* Left: title block */}
       <div className={cn("min-w-0", alignmentClasses)}>
         {(kicker || icon) && (
           <div
             className={cn(
-              "flex items-center gap-2 text-xs md:text-sm",
+              "flex items-center gap-2 text-[11px] sm:text-xs md:text-sm",
               kickerColorClass,
               align === "center" ? "justify-center" : "",
             )}
           >
             {icon ? <span aria-hidden>{icon}</span> : null}
-            {kicker ? (
-              <span className="truncate">{kicker}</span>
-            ) : null}
+            {kicker ? <span className="truncate">{kicker}</span> : null}
           </div>
         )}
 
@@ -166,9 +131,8 @@ export default function SectionHeader({
           {...headingRoleProps}
           className={cn(
             "text-balance font-extrabold tracking-tight",
-            dense ? "text-xl md:text-2xl" : "text-2xl md:text-3xl",
-            titleColorClass,
-            !useStrip && !isHomeHero && "text-gradient",
+            dense ? "text-xl sm:text-2xl" : "text-xl min-[420px]:text-2xl md:text-3xl",
+            baseColorClass,
           )}
           title={headingTitleAttr}
         >
@@ -178,7 +142,7 @@ export default function SectionHeader({
         {subtitle ? (
           <p
             className={cn(
-              "mt-1 max-w-2xl text-sm md:text-base",
+              "mt-0.5 max-w-2xl text-[13px] leading-relaxed sm:mt-1 sm:text-sm md:text-base",
               subtitleColorClass,
               align === "center" ? "mx-auto" : "",
             )}
@@ -189,42 +153,27 @@ export default function SectionHeader({
       </div>
 
       {/* Right: actions */}
-      <div
-        className={cn(
-          "mt-2 md:mt-0",
-          align === "center" ? "md:mx-auto" : "",
-        )}
-      >
+      <div className={cn("mt-1 md:mt-0", align === "center" ? "md:mx-auto" : "")}>
         {portalActionsToLayout && portalEl ? (
-          createPortal(
-            <div className="flex items-center gap-2">
-              {actionsArray}
-            </div>,
-            portalEl,
-          )
+          createPortal(<div className="flex items-center gap-1.5 sm:gap-2">{actionsArray}</div>, portalEl)
         ) : (
-          <div className="flex items-center gap-2">
-            {actionsArray}
-          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2">{actionsArray}</div>
         )}
       </div>
     </div>
   );
 
   return (
-    <header
-      {...rest}
-      className={cn(className)}
-    >
+    <header {...rest} className={cn(className)}>
       <div className={verticalPadding}>
         <div className="container-page">
           {useStrip ? (
             <div
               className={cn(
-                "relative overflow-hidden rounded-3xl border border-border/60 shadow-soft",
-                stripByGradient[
-                  gradient as Exclude<Gradient, "none">
-                ] ?? stripByGradient.brand,
+                "relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] shadow-soft",
+                "bg-[var(--bg-elevated)]",
+                "text-white",
+                stripByGradient[gradient as Exclude<Gradient, "none">] ?? stripByGradient.brand,
                 cardPadding,
               )}
             >

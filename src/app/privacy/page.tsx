@@ -2,7 +2,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — QwikSale",
+  title: "Privacy Policy - QwikSale",
   description:
     "How QwikSale collects, uses, shares, and protects your information, plus your choices and rights (GDPR, CPRA, Kenya DPA).",
   robots: { index: true, follow: true },
@@ -12,19 +12,21 @@ const LAST_UPDATED = "05 Sep 2025"; // Update on every material change
 
 export default function PrivacyPage() {
   return (
-    <div className="container-page py-10">
+    <div className="container-page bg-[var(--bg)] py-10 text-[var(--text)]">
       {/* Hero */}
-      <div className="rounded-2xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-6 text-white shadow-soft">
-        <h1 className="text-2xl font-extrabold md:text-3xl">
-          Privacy Policy
-        </h1>
-        <p className="text-white/90">
-          We’re committed to privacy by design. This policy explains what we
-          collect, how we use it, who we share it with, and your rights.
-        </p>
-        <p className="mt-1 text-sm text-white/70">
-          Last updated: {LAST_UPDATED}
-        </p>
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft">
+        <div className="container-page py-8 text-white">
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl text-white">
+            Privacy Policy
+          </h1>
+          <p className="mt-1 text-sm text-white/80">
+            We’re committed to privacy by design. This policy explains what we
+            collect, how we use it, who we share it with, and your rights.
+          </p>
+          <p className="mt-1 text-sm text-white/60">
+            Last updated: {LAST_UPDATED}
+          </p>
+        </div>
       </div>
 
       <div className="mt-8 prose max-w-3xl dark:prose-invert">
@@ -45,14 +47,11 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Contact:</strong>{" "}
-            <a href="mailto:privacy@qwiksale.sale">
-              privacy@qwiksale.sale
-            </a>{" "}
+            <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a>{" "}
             (preferred) or <a href="/contact">/contact</a>.
           </li>
           <li>
-            <strong>Data Protection Lead (DPL):</strong>{" "}
-            privacy@qwiksale.sale
+            <strong>Data Protection Lead (DPL):</strong> privacy@qwiksale.sale
           </li>
           <li>
             <strong>Registered address:</strong> (Add your legal/registered
@@ -100,8 +99,8 @@ export default function PrivacyPage() {
         <h3>2.3 From third parties</h3>
         <ul>
           <li>
-            <strong>Auth providers (e.g., Google):</strong> name, email,
-            avatar—if you choose to sign in with them.
+            <strong>Auth providers (e.g., Google):</strong> name, email, avatar
+            - if you choose to sign in with them.
           </li>
           <li>
             <strong>Safety &amp; fraud partners:</strong> signals that help
@@ -190,7 +189,7 @@ export default function PrivacyPage() {
           </li>
           <li>
             Payment records: retained per tax/accounting obligations (typically
-            5–7 years, depending on jurisdiction).
+            5-7 years, depending on jurisdiction).
           </li>
           <li>
             Security logs: short to medium periods to detect and investigate
@@ -213,9 +212,7 @@ export default function PrivacyPage() {
             Access, correction, deletion of your data (subject to lawful
             exceptions).
           </li>
-          <li>
-            Object to or restrict certain processing, where applicable.
-          </li>
+          <li>Object to or restrict certain processing, where applicable.</li>
           <li>
             Data portability (structured, commonly used format) where
             applicable.
@@ -227,17 +224,13 @@ export default function PrivacyPage() {
         </ul>
         <p>
           To exercise rights, use <a href="/contact">/contact</a> or email{" "}
-          <a href="mailto:privacy@qwiksale.sale">
-            privacy@qwiksale.sale
-          </a>
-          . We may need to verify your identity.
+          <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a>. We
+          may need to verify your identity.
         </p>
 
         <h3>7.2 EEA/UK (GDPR/UK GDPR)</h3>
         <ul>
-          <li>
-            You may lodge a complaint with your local Supervisory Authority.
-          </li>
+          <li>You may lodge a complaint with your local Supervisory Authority.</li>
           <li>
             We rely on Contract performance, Legitimate interests, Consent, and
             Legal obligations.
@@ -265,11 +258,7 @@ export default function PrivacyPage() {
           <li>
             We don’t sell personal information for money. If we ever use
             targeted advertising that constitutes “sharing,” you can opt out
-            here:{" "}
-            <a href="/privacy/do-not-sell-or-share">
-              Do Not Sell or Share
-            </a>
-            .
+            here: <a href="/privacy/do-not-sell-or-share">Do Not Sell or Share</a>.
           </li>
         </ul>
 
@@ -316,7 +305,7 @@ export default function PrivacyPage() {
         <p>
           We use administrative, technical, and organizational measures
           appropriate to the risk (e.g., encryption in transit, hardened
-          infrastructure, least-privilege access). No system is 100% secure—
+          infrastructure, least-privilege access). No system is 100% secure -
           please use a strong, unique password and enable available protections.
         </p>
 
@@ -333,21 +322,15 @@ export default function PrivacyPage() {
           data from a child, we’ll take reasonable steps to delete it.
         </p>
 
-        <h2 id="account">
-          14) Account deletion &amp; data portability
-        </h2>
+        <h2 id="account">14) Account deletion &amp; data portability</h2>
         <ul>
           <li>
-            You can delete your account in{" "}
-            <a href="/settings">Settings</a> or ask us at{" "}
-            <a href="mailto:privacy@qwiksale.sale">
-              privacy@qwiksale.sale
-            </a>
-            .
+            You can delete your account in <a href="/settings">Settings</a> or
+            ask us at <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a>.
           </li>
           <li>
-            Some records (e.g., fraud prevention, tax/financial) may be
-            retained as permitted by law.
+            Some records (e.g., fraud prevention, tax/financial) may be retained
+            as permitted by law.
           </li>
           <li>
             To request an export of your data, contact us. We’ll provide a
@@ -376,15 +359,10 @@ export default function PrivacyPage() {
           additional notice.
         </p>
 
-        <h2 id="contact">
-          18) Contact, appeals &amp; complaints
-        </h2>
+        <h2 id="contact">18) Contact, appeals &amp; complaints</h2>
         <ul>
           <li>
-            Email:{" "}
-            <a href="mailto:privacy@qwiksale.sale">
-              privacy@qwiksale.sale
-            </a>
+            Email: <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a>
           </li>
           <li>
             Web: <a href="/contact">/contact</a>

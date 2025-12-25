@@ -8,7 +8,10 @@ export type ProfileCompletion = {
   missingFields: ProfileMissingField[];
 };
 
-const FIELD_LABEL: Record<ProfileMissingField, { title: string; hint: string }> = {
+const FIELD_LABEL: Record<
+  ProfileMissingField,
+  { title: string; hint: string }
+> = {
   username: {
     title: "Add a username",
     hint: "A username helps buyers recognise you and appears on your listings.",
@@ -42,17 +45,17 @@ export default function ProfileCompletionCard({
     <section
       aria-label="Profile completion"
       role="region"
-      className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6"
+      className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft backdrop-blur-sm sm:p-4 md:p-6"
       data-testid="dashboard-profile-completion-card"
     >
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold">
+          <h2 className="text-base font-semibold text-[var(--text)]">
             {isComplete ? "Profile complete" : "Profile completion"}
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)] sm:text-sm">
             {isComplete
-              ? "You’re all set — your account is ready."
+              ? "You’re all set - your account is ready."
               : "Finish these steps to complete your profile."}
           </p>
 
@@ -61,9 +64,14 @@ export default function ProfileCompletionCard({
               {missing.map((k) => {
                 const meta = FIELD_LABEL[k];
                 return (
-                  <li key={k} className="rounded-2xl border border-border/70 bg-background/50 p-3">
-                    <div className="text-sm font-medium">{meta.title}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
+                  <li
+                    key={k}
+                    className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3"
+                  >
+                    <div className="text-sm font-medium text-[var(--text)]">
+                      {meta.title}
+                    </div>
+                    <div className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
                       {meta.hint}
                     </div>
                   </li>
@@ -74,13 +82,13 @@ export default function ProfileCompletionCard({
         </div>
 
         <div className="w-full max-w-sm">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
             <span>Progress</span>
-            <span className="font-medium text-foreground">{percent}%</span>
+            <span className="font-medium text-[var(--text)]">{percent}%</span>
           </div>
 
           <div
-            className="mt-2 h-2 w-full rounded-full bg-muted/60"
+            className="mt-2 h-2 w-full rounded-full bg-[var(--bg-subtle)]"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
@@ -88,16 +96,20 @@ export default function ProfileCompletionCard({
             aria-label="Profile completion progress"
           >
             <div
-              className="h-2 rounded-full bg-emerald-500 transition-[width] duration-300"
+              className="h-2 rounded-full bg-[var(--text)] transition-[width] duration-300"
               style={{ width: `${percent}%` }}
             />
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2 sm:mt-4">
             <Link
               href={href}
               prefetch={false}
-              className={isComplete ? "btn-outline text-xs md:text-sm" : "btn-gradient-primary text-xs md:text-sm"}
+              className={
+                isComplete
+                  ? "btn-outline text-xs md:text-sm"
+                  : "btn-gradient-primary text-xs md:text-sm"
+              }
               data-testid="dashboard-profile-completion-link"
             >
               {isComplete ? "View profile" : "Complete profile"}

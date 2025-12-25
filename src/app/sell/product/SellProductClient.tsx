@@ -13,10 +13,7 @@ import { useRouter } from "next/navigation";
 import { categories, type CategoryNode } from "@/app/data/categories";
 import { useProducts } from "@/app/lib/productsStore";
 import { toast } from "@/app/components/ToasterClient";
-import {
-  normalizeKenyanPhone,
-  validateKenyanPhone,
-} from "@/app/lib/phone";
+import { normalizeKenyanPhone, validateKenyanPhone } from "@/app/lib/phone";
 import { extractGalleryUrls } from "@/app/lib/media";
 
 type FilePreview = { file: File; url: string; key: string };
@@ -158,9 +155,7 @@ export default function SellProductClient({
     };
   }, [previews]);
 
-  const phoneValidation = phone
-    ? validateKenyanPhone(phone)
-    : { ok: true as const };
+  const phoneValidation = phone ? validateKenyanPhone(phone) : { ok: true as const };
   const normalizedPhone = phone ? normalizeKenyanPhone(phone) ?? "" : "";
   const phoneOk = !phone || phoneValidation.ok;
 
@@ -184,10 +179,9 @@ export default function SellProductClient({
 
     (async () => {
       try {
-        const r = await fetch(
-          `/api/products/${encodeURIComponent(id)}`,
-          { cache: "no-store" },
-        );
+        const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
+          cache: "no-store",
+        });
         if (!r.ok) {
           toast.error("Unable to load product for editing.");
           return;
@@ -202,9 +196,7 @@ export default function SellProductClient({
         setSubcategory(p?.subcategory ?? "");
         setBrand(p?.brand ?? "");
         setCondition(
-          (String(p?.condition || "")
-            .toLowerCase()
-            .includes("brand")
+          (String(p?.condition || "").toLowerCase().includes("brand")
             ? "brand new"
             : "pre-owned") as "brand new" | "pre-owned",
         );
@@ -215,11 +207,7 @@ export default function SellProductClient({
 
         setExistingImage(p?.image ?? null);
 
-        const normalized = extractGalleryUrls(
-          { gallery: p?.gallery },
-          undefined,
-          50,
-        );
+        const normalized = extractGalleryUrls({ gallery: p?.gallery }, undefined, 50);
         setExistingGallery(normalized);
 
         // mark successful prefill so we don't show generic "You're not signed in"
@@ -250,10 +238,7 @@ export default function SellProductClient({
         continue;
       }
       const key = `${f.name}:${f.size}:${f.lastModified}`;
-      if (
-        previews.some((p) => p.key === key) ||
-        next.some((p) => p.key === key)
-      ) {
+      if (previews.some((p) => p.key === key) || next.some((p) => p.key === key)) {
         continue;
       }
       const url = URL.createObjectURL(f);
@@ -329,9 +314,7 @@ export default function SellProductClient({
           const item = await uploadToCloudinary(p.file, {
             folder: "qwiksale/products",
             onProgress: (pct) => {
-              const overall = Math.round(
-                ((done + pct / 100) / total) * 100,
-              );
+              const overall = Math.round(((done + pct / 100) / total) * 100);
               setUploadPct(overall);
             },
           });
@@ -348,8 +331,7 @@ export default function SellProductClient({
         subcategory,
         brand: brand || undefined,
         condition,
-        price:
-          price === "" ? undefined : Math.max(0, Math.round(Number(price))),
+        price: price === "" ? undefined : Math.max(0, Math.round(Number(price))),
         location: location.trim(),
         negotiable,
         sellerPhone: normalizedPhone || undefined,
@@ -357,19 +339,15 @@ export default function SellProductClient({
 
       if (!hideMedia) {
         const computedImage =
-          uploaded[0]?.secure_url ??
-          previews[0]?.url ??
-          existingImage ??
-          undefined;
+          uploaded[0]?.secure_url ?? previews[0]?.url ?? existingImage ?? undefined;
 
-        const computedGallery: string[] =
-          uploaded.length
-            ? uploaded.map((u) => u.secure_url)
-            : previews.length
-            ? previews.map((p) => p.url)
-            : existingGallery?.length
-            ? existingGallery
-            : [];
+        const computedGallery: string[] = uploaded.length
+          ? uploaded.map((u) => u.secure_url)
+          : previews.length
+          ? previews.map((p) => p.url)
+          : existingGallery?.length
+          ? existingGallery
+          : [];
 
         if (computedImage) payload["image"] = computedImage;
         if (computedGallery && computedGallery.length > 0) {
@@ -380,20 +358,15 @@ export default function SellProductClient({
       let resultId: string | null = null;
 
       if (id) {
-        const r = await fetch(
-          `/api/products/${encodeURIComponent(id)}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            cache: "no-store",
-            body: JSON.stringify(payload),
-          },
-        );
+        const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify(payload),
+        });
         const j = await r.json().catch(() => ({} as any));
         if (!r.ok || (j as any)?.error) {
-          throw new Error(
-            (j as any)?.error || `Failed to update (${r.status})`,
-          );
+          throw new Error((j as any)?.error || `Failed to update (${r.status})`);
         }
         resultId = id;
         toast.success("Product updated!");
@@ -409,9 +382,7 @@ export default function SellProductClient({
           });
           const j = await r.json().catch(() => ({} as any));
           if (!r.ok || (j as any)?.error) {
-            throw new Error(
-              (j as any)?.error || `Failed to create (${r.status})`,
-            );
+            throw new Error((j as any)?.error || `Failed to create (${r.status})`);
           }
           created = { id: (j as any).productId };
         }
@@ -419,9 +390,7 @@ export default function SellProductClient({
         resultId =
           typeof created === "string"
             ? created
-            : created &&
-              typeof created === "object" &&
-              "id" in created
+            : created && typeof created === "object" && "id" in created
             ? String((created as any).id)
             : null;
 
@@ -436,12 +405,7 @@ export default function SellProductClient({
       }
     } catch (err: any) {
       console.error(err);
-      toast.error(
-        err?.message ||
-          (id
-            ? "Failed to update product."
-            : "Failed to post product."),
-      );
+      toast.error(err?.message || (id ? "Failed to update product." : "Failed to post product."));
     } finally {
       setSubmitting(false);
       setUploadPct(0);
@@ -453,24 +417,18 @@ export default function SellProductClient({
   const notSignedIn = !isAuthenticated && !(id && prefilled);
 
   return (
-    <div
-      className="container-page py-6"
-      data-authed={isAuthenticated ? "true" : "false"}
-    >
+    <div className="container-page py-4 text-[var(--text)] sm:py-6" data-authed={isAuthenticated ? "true" : "false"}>
       {notSignedIn && (
-        <div className="mb-4 rounded-xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">
+        <div className="mb-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:mb-4 sm:p-6">
+          <h2 className="text-lg font-extrabold tracking-tight text-[var(--text)] sm:text-xl">
             You’re not signed in
           </h2>
-          <p className="mt-2 text-muted-foreground">
-            You can sketch out your product, but you’ll need to sign in
-            before publishing.
+          <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--text-muted)] sm:mt-2 sm:text-sm">
+            You can sketch out your product, but you’ll need to sign in before publishing.
           </p>
-          <div className="mt-4">
+          <div className="mt-3 sm:mt-4">
             <a
-              href={`/signin?callbackUrl=${encodeURIComponent(
-                "/sell/product",
-              )}`}
+              href={`/signin?callbackUrl=${encodeURIComponent("/sell/product")}`}
               className="btn-gradient-primary inline-block"
             >
               Sign in
@@ -480,23 +438,18 @@ export default function SellProductClient({
       )}
 
       {/* Header card (single heading for Playwright strict mode) */}
-      <div className="rounded-xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-5 text-white shadow-soft">
-        <h1
-          id="sell-form-title"
-          className="text-2xl font-bold text-balance"
-        >
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-4 text-white shadow-soft sm:p-5">
+        <h1 id="sell-form-title" className="text-xl font-extrabold tracking-tight text-balance sm:text-2xl">
           {id ? "Edit Product" : "Post a Product"}
         </h1>
-        <p className="text-white/90">
-          {id
-            ? "Update your listing details."
-            : "List your item — it takes less than 2 minutes."}
+        <p className="mt-1 text-[13px] text-white/90 sm:text-sm">
+          {id ? "Update your listing details." : "List your item — it takes less than 2 minutes."}
         </p>
       </div>
 
       {/* Form */}
       <form
-        className="mt-6 space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
+        className="mt-4 space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-6 sm:space-y-4 sm:p-5"
         aria-labelledby="sell-form-title"
         onSubmit={onSubmit}
       >
@@ -515,7 +468,7 @@ export default function SellProductClient({
           />
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
           <div>
             <label className="label" htmlFor="pf-category">
               Category
@@ -568,19 +521,16 @@ export default function SellProductClient({
                 setPrice(v === "" ? "" : Number(v));
               }}
             />
-            <p
-              id="pf-price-help"
-              className="mt-1 text-xs text-muted-foreground"
-            >
+            <p id="pf-price-help" className="mt-1 text-xs text-[var(--text-muted)]">
               Leave blank for “Contact for price”.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 pt-6 md:pt-8">
+          <div className="flex items-center gap-2 pt-3 sm:pt-6 md:pt-8">
             <input
               type="checkbox"
               id="pf-negotiable"
-              className="h-4 w-4 rounded border border-border text-brandNavy"
+              className="h-4 w-4 rounded border border-[var(--border)] text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
               checked={negotiable}
               onChange={(e) => setNegotiable(e.target.checked)}
             />
@@ -598,11 +548,7 @@ export default function SellProductClient({
               name="condition"
               className="select mt-1"
               value={condition}
-              onChange={(e) =>
-                setCondition(
-                  e.target.value as "brand new" | "pre-owned",
-                )
-              }
+              onChange={(e) => setCondition(e.target.value as "brand new" | "pre-owned")}
             >
               <option value="brand new">Brand New</option>
               <option value="pre-owned">Pre-Owned</option>
@@ -610,7 +556,7 @@ export default function SellProductClient({
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
           <div>
             <label className="label" htmlFor="pf-brand">
               Brand (optional)
@@ -648,7 +594,7 @@ export default function SellProductClient({
             placeholder="07XXXXXXXX / 2547XXXXXXXX"
           />
           {!phoneOk && (
-            <p className="mt-1 text-xs text-red-600">
+            <p className="mt-1 text-xs font-semibold text-[var(--text)]">
               Enter a valid Kenyan phone number.
             </p>
           )}
@@ -670,78 +616,77 @@ export default function SellProductClient({
 
         {/* Media */}
         {!hideMedia && (
-          <section className="space-y-3">
+          <section className="space-y-2.5 sm:space-y-3">
             <div
-              className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground"
+              className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm text-[var(--text-muted)] shadow-sm sm:p-4"
               onDrop={onDrop}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
               }}
             >
-              <p className="font-medium">Photos</p>
-              <p className="text-xs">
-                Drag & drop up to {MAX_FILES} images ({MAX_MB}MB each), or
-                click to select.
+              <p className="font-semibold text-[var(--text)]">Photos</p>
+              <p className="mt-1 text-[11px] sm:text-xs">
+                Drag & drop up to {MAX_FILES} images ({MAX_MB}MB each), or click to select.
               </p>
               <input
                 ref={inputRef}
                 type="file"
                 accept={ACCEPTED_TYPES.join(",")}
                 multiple
-                className="mt-2 block text-xs"
+                className="mt-1.5 block text-[11px] sm:mt-2 sm:text-xs"
                 onChange={(e) => onFileInputChange(e.target.files)}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-3">
               {existingImage && existingGallery.length === 0 && (
-                <div className="rounded border border-border p-2 text-xs">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2 text-xs text-[var(--text-muted)]">
                   Existing cover image
                 </div>
               )}
               {existingGallery.map((url) => (
                 <div
                   key={url}
-                  className="rounded border border-border p-2 text-xs"
+                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2 text-xs text-[var(--text-muted)]"
                 >
                   Existing photo
                 </div>
               ))}
+
               {previews.map((p, idx) => (
                 <div
                   key={p.key}
-                  className="space-y-1 rounded border border-border p-2 text-xs"
+                  className="space-y-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2 text-xs shadow-sm"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={p.url}
-                    alt=""
-                    className="h-24 w-full rounded object-cover"
-                  />
+                  <img src={p.url} alt="" className="h-20 w-full rounded-xl object-cover sm:h-24" />
                   <div className="flex items-center justify-between gap-1">
-                    <span className="truncate">
+                    <span className="truncate text-[var(--text-muted)]">
                       {fmtKES(p.file.size / 1024)} KB
                     </span>
                     <div className="flex gap-1">
                       <button
                         type="button"
                         onClick={() => move(idx, -1)}
-                        className="rounded border border-border px-1"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)] shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
+                        aria-label="Move photo up"
                       >
                         ↑
                       </button>
                       <button
                         type="button"
                         onClick={() => move(idx, 1)}
-                        className="rounded border border-border px-1"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)] shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
+                        aria-label="Move photo down"
                       >
                         ↓
                       </button>
                       <button
                         type="button"
                         onClick={() => removeAt(idx)}
-                        className="rounded border border-border px-1 text-red-600"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)] shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
+                        aria-label="Remove photo"
                       >
                         ✕
                       </button>
@@ -751,36 +696,24 @@ export default function SellProductClient({
               ))}
             </div>
 
-            {previews.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No new files selected
-              </p>
-            )}
+            {previews.length === 0 && <p className="text-xs text-[var(--text-muted)]">No new files selected</p>}
 
             {uploadPct > 0 && submitting && (
-              <div className="text-xs text-muted-foreground">
-                Uploading photos… {uploadPct}%
-              </div>
+              <div className="text-xs text-[var(--text-muted)]">Uploading photos… {uploadPct}%</div>
             )}
           </section>
         )}
 
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex flex-col items-start gap-2 pt-1.5 sm:flex-row sm:items-center sm:gap-3 sm:pt-2">
           <button
             type="submit"
             disabled={submitting || !canSubmit}
             className="btn-gradient-primary"
             data-testid="product-form-submit"
           >
-            {submitting
-              ? id
-                ? "Updating…"
-                : "Posting…"
-              : id
-              ? "Update listing"
-              : "Post listing"}
+            {submitting ? (id ? "Updating…" : "Posting…") : id ? "Update listing" : "Post listing"}
           </button>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[var(--text-muted)]">
             You can edit this listing later from your dashboard.
           </p>
         </div>

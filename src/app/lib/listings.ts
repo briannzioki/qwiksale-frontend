@@ -298,17 +298,17 @@ export async function getProductsPage(input: ListingQuery): Promise<PageResponse
       categories: cats
         .filter((x) => !!x.category)
         .map<FacetEntry>((x) => ({ value: x.category as string, count: x._count.category }))
-        .sort((a, b) => b.count - a.count)
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
         .slice(0, 20),
       brands: brands
         .filter((x) => !!x.brand)
         .map<FacetEntry>((x) => ({ value: x.brand as string, count: x._count.brand }))
-        .sort((a, b) => b.count - a.count)
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
         .slice(0, 20),
       conditions: conds
         .filter((x) => !!x.condition)
         .map<FacetEntry>((x) => ({ value: x.condition as string, count: x._count.condition }))
-        .sort((a, b) => b.count - a.count)
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
         .slice(0, 5),
     };
   }
@@ -452,12 +452,12 @@ export async function getServicesPage(input: ListingQuery): Promise<PageResponse
       categories: cats
         .filter((x) => !!x.category)
         .map<FacetEntry>((x) => ({ value: x.category as string, count: x._count.category }))
-        .sort((a, b) => b.count - a.count)
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
         .slice(0, 20),
       subcategories: subs
         .filter((x) => !!x.subcategory)
         .map<FacetEntry>((x) => ({ value: x.subcategory as string, count: x._count.subcategory }))
-        .sort((a, b) => b.count - a.count)
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
         .slice(0, 20),
     };
   }

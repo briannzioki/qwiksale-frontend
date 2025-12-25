@@ -14,69 +14,73 @@ export const metadata: Metadata = {
 
 export default function PostLandingPage() {
   return (
-    <main className="container-page py-10">
+    <main className="container-page bg-[var(--bg)] py-4 sm:py-6">
       {/* HERO */}
       <section className="mx-auto max-w-4xl text-center">
-        <div className="rounded-2xl bg-gradient-to-br from-brandNavy via-brandGreen to-brandBlue p-8 text-white shadow-soft md:p-10 dark:shadow-none">
-          <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">
-            Create a listing in minutes
-          </h1>
-          <p className="mt-3 text-pretty text-white/90">
-            Products or services — beautiful posts that buyers trust. Add
-            photos, set a price, and go.
-          </p>
+        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft">
+          <div className="container-page py-6 text-white sm:py-8">
+            <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
+              Create a listing in minutes
+            </h1>
+            <p className="mt-1 text-sm text-white/80">
+              Products or services - beautiful posts that buyers trust. Add
+              photos, set a price, and go.
+            </p>
 
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/sell/product"
-              prefetch={false}
-              className="btn-gradient-primary"
-              aria-label="Post a product"
-              data-testid="post-cta-product"
-            >
-              Post a product
-            </Link>
-            <Link
-              href="/sell/service"
-              prefetch={false}
-              className="btn-outline"
-              aria-label="Post a service"
-              data-testid="post-cta-service"
-            >
-              Post a service
-            </Link>
-          </div>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:mt-6 sm:gap-3">
+              <Link
+                href="/sell/product"
+                prefetch={false}
+                className="btn-gradient-primary text-xs sm:text-sm"
+                aria-label="Post a product"
+                data-testid="post-cta-product"
+              >
+                Post a product
+              </Link>
+              <Link
+                href="/sell/service"
+                prefetch={false}
+                className="btn-outline text-xs sm:text-sm"
+                aria-label="Post a service"
+                data-testid="post-cta-service"
+              >
+                Post a service
+              </Link>
+            </div>
 
-          {/* Trust chips */}
-          <div className="mt-5 grid grid-cols-1 gap-2 text-xs text-white/90 sm:grid-cols-3">
-            <div className="rounded-lg bg-white/10 px-3 py-2">
-              Free to post
-            </div>
-            <div className="rounded-lg bg-white/10 px-3 py-2">
-              No commissions
-            </div>
-            <div className="rounded-lg bg-white/10 px-3 py-2">
-              Direct WhatsApp &amp; Calls
+            {/* Trust chips */}
+            <div className="mt-4 flex gap-2 overflow-x-auto [-webkit-overflow-scrolling:touch] sm:mt-5 sm:grid sm:grid-cols-3 sm:overflow-visible">
+              <div className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/20 px-3 py-1.5 text-xs text-white/90 shadow-sm backdrop-blur-sm sm:py-2">
+                Free to post
+              </div>
+              <div className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/20 px-3 py-1.5 text-xs text-white/90 shadow-sm backdrop-blur-sm sm:py-2">
+                No commissions
+              </div>
+              <div className="shrink-0 whitespace-nowrap rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/20 px-3 py-1.5 text-xs text-white/90 shadow-sm backdrop-blur-sm sm:py-2">
+                Direct WhatsApp &amp; Calls
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* CHOOSER: Two-panel with gradient CTAs + icon bullets */}
-      <section className="mx-auto mt-8 grid max-w-5xl grid-cols-1 gap-5 md:grid-cols-2">
+      {/* CHOOSER: Two-panel with CTAs + icon bullets */}
+      <section className="mx-auto mt-6 grid max-w-5xl grid-cols-1 gap-4 sm:mt-8 sm:gap-5 md:grid-cols-2">
         {/* Product */}
-        <article className="card flex flex-col justify-between p-6 md:p-7">
+        <article className="flex flex-col justify-between rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6 md:p-7">
           <div>
             <div className="flex items-center gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brandBlue/10 text-brandBlue">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]">
                 📦
               </span>
-              <h2 className="text-xl font-semibold">Sell a Product</h2>
+              <h2 className="text-lg font-extrabold tracking-tight text-[var(--text)] sm:text-xl">
+                Sell a Product
+              </h2>
             </div>
-            <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">
-              Phones, electronics, fashion, furniture, autos — anything legit.
+            <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)] sm:mt-2">
+              Phones, electronics, fashion, furniture, autos - anything legit.
             </p>
-            <ul className="mt-4 space-y-2 text-sm text-gray-700 dark:text-slate-200">
+            <ul className="mt-3 space-y-2 text-sm leading-relaxed text-[var(--text)] sm:mt-4">
               <li className="flex items-start gap-2">
                 <span aria-hidden>🖼️</span>
                 <span>Add up to 6 photos with instant previews</span>
@@ -93,11 +97,11 @@ export default function PostLandingPage() {
               </li>
             </ul>
           </div>
-          <div className="mt-6">
+          <div className="mt-4 sm:mt-6">
             <Link
               href="/sell/product"
               prefetch={false}
-              className="relative block w-full rounded-xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue px-4 py-2.5 text-center text-sm font-semibold text-white shadow transition hover:opacity-95"
+              className="btn-gradient-primary block w-full text-center text-xs sm:text-sm"
               aria-label="Start a product listing"
             >
               Start product listing
@@ -106,19 +110,21 @@ export default function PostLandingPage() {
         </article>
 
         {/* Service */}
-        <article className="card flex flex-col justify-between p-6 md:p-7">
+        <article className="flex flex-col justify-between rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6 md:p-7">
           <div>
             <div className="flex items-center gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brandGreen/10 text-brandGreen">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]">
                 🧰
               </span>
-              <h2 className="text-xl font-semibold">Offer a Service</h2>
+              <h2 className="text-lg font-extrabold tracking-tight text-[var(--text)] sm:text-xl">
+                Offer a Service
+              </h2>
             </div>
-            <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">
-              Cleaning, repairs, beauty, events, transport, tech — get
+            <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)] sm:mt-2">
+              Cleaning, repairs, beauty, events, transport, tech - get
               discovered.
             </p>
-            <ul className="mt-4 space-y-2 text-sm text-gray-700 dark:text-slate-200">
+            <ul className="mt-3 space-y-2 text-sm leading-relaxed text-[var(--text)] sm:mt-4">
               <li className="flex items-start gap-2">
                 <span aria-hidden>⏱️</span>
                 <span>Fixed price or hourly/day rates</span>
@@ -135,11 +141,11 @@ export default function PostLandingPage() {
               </li>
             </ul>
           </div>
-          <div className="mt-6">
+          <div className="mt-4 sm:mt-6">
             <Link
               href="/sell/service"
               prefetch={false}
-              className="btn-outline block w-full text-center"
+              className="btn-outline block w-full text-center text-xs sm:text-sm"
               aria-label="Start a service listing"
             >
               Start service listing
@@ -149,18 +155,22 @@ export default function PostLandingPage() {
       </section>
 
       {/* Compare strip */}
-      <section className="mx-auto mt-6 max-w-5xl">
-        <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-4 text-sm shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80">
+      <section className="mx-auto mt-5 max-w-5xl sm:mt-6">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-sm shadow-soft sm:p-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-lg bg-black/[0.03] p-3 dark:bg-white/[0.04]">
-              <p className="font-semibold">Best for Products</p>
-              <p className="text-gray-600 dark:text-slate-300">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3">
+              <p className="font-semibold text-[var(--text)]">
+                Best for Products
+              </p>
+              <p className="mt-1 text-[var(--text-muted)]">
                 Tangible items with photos, condition, brand and price.
               </p>
             </div>
-            <div className="rounded-lg bg-black/[0.03] p-3 dark:bg-white/[0.04]">
-              <p className="font-semibold">Best for Services</p>
-              <p className="text-gray-600 dark:text-slate-300">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3">
+              <p className="font-semibold text-[var(--text)]">
+                Best for Services
+              </p>
+              <p className="mt-1 text-[var(--text-muted)]">
                 Skills or labor where you set a rate and coverage area.
               </p>
             </div>
@@ -169,39 +179,54 @@ export default function PostLandingPage() {
       </section>
 
       {/* How it works */}
-      <section className="mx-auto mt-10 max-w-5xl">
-        <div className="card p-6 md:p-7">
-          <h3 className="text-lg font-semibold">How it works</h3>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <div className="text-2xl" aria-hidden>
+      <section className="mx-auto mt-6 max-w-5xl sm:mt-10">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6 md:p-7">
+          <h3 className="text-lg font-extrabold tracking-tight text-[var(--text)]">
+            How it works
+          </h3>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:mt-4 sm:grid-cols-3 sm:gap-4">
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 sm:p-4">
+              <div
+                className="text-2xl font-extrabold tracking-tight text-[var(--text)]"
+                aria-hidden
+              >
                 1
               </div>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)] sm:mt-2">
                 Create a listing with clear photos and details.
               </p>
             </div>
-            <div className="rounded-xl border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <div className="text-2xl" aria-hidden>
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 sm:p-4">
+              <div
+                className="text-2xl font-extrabold tracking-tight text-[var(--text)]"
+                aria-hidden
+              >
                 2
               </div>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)] sm:mt-2">
                 Buyers contact you directly via call or WhatsApp.
               </p>
             </div>
-            <div className="rounded-xl border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <div className="text-2xl" aria-hidden>
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 sm:p-4">
+              <div
+                className="text-2xl font-extrabold tracking-tight text-[var(--text)]"
+                aria-hidden
+              >
                 3
               </div>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)] sm:mt-2">
                 Meet safely, close the deal, and get paid.
               </p>
             </div>
           </div>
 
-          <p className="mt-4 text-xs text-gray-500 dark:text-slate-400">
+          <p className="mt-3 text-xs leading-relaxed text-[var(--text-muted)] sm:mt-4">
             New to selling? See tips and safety guidelines in{" "}
-            <Link href="/help" prefetch={false} className="underline underline-offset-2">
+            <Link
+              href="/help"
+              prefetch={false}
+              className="underline underline-offset-2"
+            >
               Help
             </Link>
             .
@@ -210,33 +235,37 @@ export default function PostLandingPage() {
       </section>
 
       {/* FAQ */}
-      <section className="mx-auto mt-8 max-w-5xl">
-        <div className="card p-6 md:p-7">
-          <h3 className="text-lg font-semibold">Common questions</h3>
-          <div className="mt-4 space-y-3">
-            <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <summary className="cursor-pointer font-medium">
+      <section className="mx-auto mt-6 max-w-5xl sm:mt-8">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6 md:p-7">
+          <h3 className="text-lg font-extrabold tracking-tight text-[var(--text)]">
+            Common questions
+          </h3>
+          <div className="mt-3 space-y-3 sm:mt-4">
+            <details className="group rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 sm:p-4">
+              <summary className="cursor-pointer font-medium text-[var(--text)]">
                 Do I pay to post?
               </summary>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
                 Posting is free. We may add optional boosts later for extra
                 visibility.
               </p>
             </details>
-            <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <summary className="cursor-pointer font-medium">
+
+            <details className="group rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 sm:p-4">
+              <summary className="cursor-pointer font-medium text-[var(--text)]">
                 How do buyers contact me?
               </summary>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
                 Through the number you provide (calls/WhatsApp). You can keep
                 chats in-app if you prefer.
               </p>
             </details>
-            <details className="group rounded-lg border border-gray-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/80">
-              <summary className="cursor-pointer font-medium">
+
+            <details className="group rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 sm:p-4">
+              <summary className="cursor-pointer font-medium text-[var(--text)]">
                 Any safety tips?
               </summary>
-              <p className="mt-2 text-sm text-gray-700 dark:text-slate-200">
+              <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
                 Meet in public places, verify payments (M-Pesa SMS vs app), and
                 don’t share sensitive info.
               </p>
@@ -246,16 +275,16 @@ export default function PostLandingPage() {
       </section>
 
       {/* Secondary CTAs */}
-      <section className="mx-auto mt-8 max-w-4xl text-center">
-        <div className="card p-6 md:p-7">
-          <p className="text-sm text-gray-700 dark:text-slate-200">
+      <section className="mx-auto mt-6 max-w-4xl text-center sm:mt-8">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6 md:p-7">
+          <p className="text-sm leading-relaxed text-[var(--text-muted)]">
             Ready? Choose what you want to post:
           </p>
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:gap-3">
             <Link
               href="/sell/product"
               prefetch={false}
-              className="btn-gradient-primary"
+              className="btn-gradient-primary text-xs sm:text-sm"
               aria-label="Post a product"
             >
               Post a product
@@ -263,7 +292,7 @@ export default function PostLandingPage() {
             <Link
               href="/sell/service"
               prefetch={false}
-              className="btn-outline"
+              className="btn-outline text-xs sm:text-sm"
               aria-label="Post a service"
             >
               Post a service

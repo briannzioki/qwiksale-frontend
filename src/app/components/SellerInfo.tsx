@@ -1,12 +1,19 @@
-// src/app/components/SellerInfo.tsx
 "use client";
 
 import * as React from "react";
 import Link from "next/link";
 import VerifiedBadge from "@/app/components/VerifiedBadge";
 import DonateButton from "@/app/components/DonateButton";
+import {
+  normalizeFeaturedTier,
+  sellerVerifiedFromEmailVerified,
+  type FeaturedTier,
+} from "@/app/lib/sellerVerification";
 
-type FeaturedTier = "basic" | "gold" | "diamond";
+type SellerBadgesWire = {
+  verified?: boolean | null;
+  tier?: FeaturedTier | string | null;
+} | null;
 
 type SellerInfoProps = {
   label?: string;
@@ -23,8 +30,22 @@ type SellerInfoProps = {
   rating?: number | null;
   salesCount?: number | null;
 
-  verified?: boolean | null;
-  featuredTier?: FeaturedTier | null;
+  /**
+   * Canonical preferred: boolean | null.
+   * Back-compat: callers may pass emailVerified-like values here (Date / ISO string / etc).
+   */
+  verified?: boolean | null | string | number | Date;
+
+  /**
+   * Canonical preferred: "basic" | "gold" | "diamond" | null.
+   */
+  featuredTier?: FeaturedTier | null | string;
+
+  /**
+   * Preferred consolidated badges from API/callers.
+   * If provided, treated as authoritative (even if null fields).
+   */
+  sellerBadges?: SellerBadgesWire;
 
   storeHref?: string | null;
   donateSellerId?: string | null;
@@ -208,42 +229,6 @@ function fallbackAvatarLetter(name?: string | null) {
   return t[0]!.toUpperCase();
 }
 
-function FeaturedTierPill({ tier }: { tier: FeaturedTier }) {
-  if (tier === "gold") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 px-2 py-0.5 text-[11px] font-semibold text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100">
-        <span aria-hidden>★</span>
-        <span>Featured Gold</span>
-      </span>
-    );
-  }
-
-  if (tier === "diamond") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 px-2 py-0.5 text-[11px] font-semibold text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100">
-        <span aria-hidden>💎</span>
-        <span>Featured Diamond</span>
-      </span>
-    );
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground">
-      <span aria-hidden>★</span>
-      <span>Featured Basic</span>
-    </span>
-  );
-}
-
-function UnverifiedPill() {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
-      <span aria-hidden>!</span>
-      <span>Unverified</span>
-    </span>
-  );
-}
-
 export default function SellerInfo({
   label = "Seller",
   sellerId,
@@ -257,6 +242,7 @@ export default function SellerInfo({
   salesCount,
   verified,
   featuredTier,
+  sellerBadges,
   storeHref,
   donateSellerId,
   contactSlot,
@@ -267,6 +253,42 @@ export default function SellerInfo({
   const safeDonateId = React.useMemo(() => cleanSellerId(donateSellerId ?? null), [donateSellerId]);
 
   const safeName = (name?.trim() || safeUsername || "Seller").trim();
+
+  const { verifiedCanon, tierCanon } = React.useMemo(() => {
+    const wire =
+      sellerBadges && typeof sellerBadges === "object" && !Array.isArray(sellerBadges)
+        ? sellerBadges
+        : null;
+
+    const hasWireVerified = !!wire && "verified" in (wire as object);
+    const hasWireTier = !!wire && "tier" in (wire as object);
+
+    const resolvedTier: FeaturedTier | null = (() => {
+      // If wire exists (even null), treat it as authoritative.
+      if (hasWireTier) return normalizeFeaturedTier((wire as any)?.tier);
+
+      return normalizeFeaturedTier(featuredTier);
+    })();
+
+    const resolvedVerified: boolean | null = (() => {
+      // If wire exists (even null), treat it as authoritative.
+      if (hasWireVerified) {
+        const v = (wire as any)?.verified;
+        return typeof v === "boolean" ? v : null;
+      }
+
+      // Canonical: boolean/null means already resolved.
+      if (typeof verified === "boolean") return verified;
+      if (verified === null) return null;
+
+      // Back-compat: emailVerified-like value -> resolve via canonical helper.
+      if (verified !== undefined) return sellerVerifiedFromEmailVerified(verified);
+
+      return null;
+    })();
+
+    return { verifiedCanon: resolvedVerified, tierCanon: resolvedTier };
+  }, [verified, featuredTier, sellerBadges]);
 
   const showMetaRow =
     (typeof rating === "number" && rating > 0) ||
@@ -292,13 +314,25 @@ export default function SellerInfo({
 
   return (
     <section
-      className={cn("rounded-xl border border-border bg-card p-4", className)}
+      className={cn(
+        "rounded-xl border bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-sm sm:p-4",
+        "border-[var(--border-subtle)]",
+        className,
+      )}
       data-seller-id={safeSellerId ? stripLeadingUPrefixes(safeSellerId) : undefined}
     >
-      <h3 className="mb-3 font-semibold text-foreground">{label}</h3>
+      <h3 className="mb-2 text-xs font-extrabold tracking-tight text-[var(--text)] sm:mb-3 sm:text-sm">
+        {label}
+      </h3>
 
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted text-sm font-semibold text-foreground ring-2 ring-background/80 ring-offset-2 ring-offset-white dark:ring-offset-slate-900">
+        <div
+          className={cn(
+            "mt-0.5 h-10 w-10 shrink-0 overflow-hidden rounded-full",
+            "bg-[var(--bg-subtle)] text-sm font-semibold text-[var(--text)]",
+            "ring-1 ring-[var(--border-subtle)] ring-offset-2 ring-offset-[var(--bg-elevated)]",
+          )}
+        >
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -309,51 +343,48 @@ export default function SellerInfo({
           )}
         </div>
 
-        <div className="flex-1 space-y-2 text-sm text-foreground">
+        <div className="flex-1 space-y-1.5 text-sm text-[var(--text)] sm:space-y-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium">{safeName}</span>
+            <span className="font-semibold text-[var(--text)]">{safeName}</span>
 
             {safeUsername ? (
-              <span className="text-xs text-muted-foreground">@{safeUsername}</span>
+              <span className="text-[11px] text-[var(--text-muted)] sm:text-xs">@{safeUsername}</span>
             ) : null}
 
-            {typeof verified === "boolean" ? (
-              verified ? (
-                <VerifiedBadge className="inline-flex" />
-              ) : (
-                <UnverifiedPill />
-              )
-            ) : null}
-
-            {featuredTier ? <FeaturedTierPill tier={featuredTier} /> : null}
+            {/* ✅ single canonical badge model passed down (no re-resolve in child) */}
+            <VerifiedBadge
+              className="inline-flex"
+              verified={verifiedCanon}
+              featuredTier={tierCanon}
+            />
           </div>
 
           {locationLabel ? (
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium">Location:</span> {locationLabel}
+            <p className="text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
+              <span className="font-medium text-[var(--text)]">Location:</span> {locationLabel}
             </p>
           ) : null}
 
           {showMetaRow ? (
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[0.75rem] text-muted-foreground">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)] sm:text-xs">
               {typeof rating === "number" && rating > 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 leading-none sm:py-0.5">
                   <span aria-hidden>⭐</span>
-                  <span className="font-medium">{rating.toFixed(1)}</span>
+                  <span className="font-medium text-[var(--text)]">{rating.toFixed(1)}</span>
                   <span>rating</span>
                 </span>
               ) : null}
 
               {typeof salesCount === "number" && salesCount > 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 leading-none sm:py-0.5">
                   <span aria-hidden>✓</span>
-                  <span className="font-medium">{salesCount}</span>
+                  <span className="font-medium text-[var(--text)]">{salesCount}</span>
                   <span>sales</span>
                 </span>
               ) : null}
 
               {memberSince ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 leading-none sm:py-0.5">
                   <span aria-hidden>📅</span>
                   <span>Since {memberSince}</span>
                 </span>
@@ -367,7 +398,13 @@ export default function SellerInfo({
                 href={storeLocationUrl!}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-medium text-brandBlue hover:underline"
+                className={cn(
+                  "inline-flex h-9 items-center gap-1 rounded-xl border px-3 text-xs font-semibold",
+                  "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                  "hover:bg-[var(--bg-subtle)]",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  "active:scale-[.99]",
+                )}
                 data-testid="seller-map-link"
               >
                 <span aria-hidden>📍</span>
@@ -376,16 +413,22 @@ export default function SellerInfo({
             </div>
           ) : null}
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2 sm:mt-4">
             {contactSlot}
 
             {safeStoreHref ? (
               <Link
                 href={safeStoreHref}
                 prefetch={false}
-                className="btn-outline"
                 aria-label="Visit store"
                 data-testid="visit-store-link"
+                className={cn(
+                  "inline-flex h-9 items-center justify-center rounded-xl border px-3 text-xs font-semibold shadow-sm transition sm:text-sm",
+                  "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                  "hover:bg-[var(--bg-subtle)]",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  "active:scale-[.99]",
+                )}
               >
                 Visit Store
               </Link>
@@ -394,7 +437,7 @@ export default function SellerInfo({
             {hasDonate ? <AnyDonateButton sellerId={stripLeadingUPrefixes(safeDonateId!)} /> : null}
           </div>
 
-          <p className="mt-3 text-[0.7rem] leading-relaxed text-muted-foreground">
+          <p className="mt-2 text-[0.7rem] leading-relaxed text-[var(--text-muted)] sm:mt-3">
             Stay safe: meet in public places, verify details before paying, and report suspicious
             activity.
           </p>

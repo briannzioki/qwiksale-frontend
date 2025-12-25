@@ -1,4 +1,3 @@
-// src/app/service/[id]/edit/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,7 +9,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
 import ServiceMediaManager from "./ServiceMediaManager";
-import SectionHeader from "@/app/components/SectionHeader";
 import CommitBinder from "./CommitBinder";
 import SellServiceClient from "@/app/sell/service/SellServiceClient";
 
@@ -22,11 +20,8 @@ export const metadata: Metadata = {
 /* -------------------------- Model compat -------------------------- */
 function getServiceModel() {
   const any = prisma as any;
-  const candidate =
-    any.service ?? any.services ?? any.Service ?? any.Services ?? null;
-  return candidate && typeof candidate.findUnique === "function"
-    ? candidate
-    : null;
+  const candidate = any.service ?? any.services ?? any.Service ?? any.Services ?? null;
+  return candidate && typeof candidate.findUnique === "function" ? candidate : null;
 }
 
 /* ------------------------------ Helpers ------------------------------ */
@@ -60,27 +55,22 @@ function normalizeImagesFromRow(p: any): Img[] {
     if (!url || seen.has(url)) return;
     seen.add(url);
 
-    const id = String(
-      x?.id ?? x?.imageId ?? x?.publicId ?? x?.key ?? url ?? `img-${i}`,
-    );
+    const id = String(x?.id ?? x?.imageId ?? x?.publicId ?? x?.key ?? url ?? `img-${i}`);
 
     const isCover =
       Boolean(x?.isCover) ||
       Boolean(p?.coverImageId && x?.id && p.coverImageId === x.id) ||
       Boolean(typeof p?.coverImage === "string" && url === p.coverImage) ||
-      Boolean(
-        typeof p?.coverImageUrl === "string" && url === p.coverImageUrl,
-      ) ||
+      Boolean(typeof p?.coverImageUrl === "string" && url === p.coverImageUrl) ||
       Boolean(typeof p?.image === "string" && url === p.image);
 
-    const sort =
-      Number.isFinite(x?.sortOrder)
-        ? Number(x.sortOrder)
-        : Number.isFinite(x?.sort)
+    const sort = Number.isFinite(x?.sortOrder)
+      ? Number(x.sortOrder)
+      : Number.isFinite(x?.sort)
         ? Number(x.sort)
         : Number.isFinite(x?.position)
-        ? Number(x.position)
-        : i;
+          ? Number(x.position)
+          : i;
 
     out.push({ id, url, isCover, sort });
   };
@@ -88,14 +78,14 @@ function normalizeImagesFromRow(p: any): Img[] {
   const arrays = Array.isArray(p?.images)
     ? p.images
     : Array.isArray(p?.photos)
-    ? p.photos
-    : Array.isArray(p?.media)
-    ? p.media
-    : Array.isArray(p?.gallery)
-    ? p.gallery
-    : Array.isArray(p?.imageUrls)
-    ? p.imageUrls
-    : [];
+      ? p.photos
+      : Array.isArray(p?.media)
+        ? p.media
+        : Array.isArray(p?.gallery)
+          ? p.gallery
+          : Array.isArray(p?.imageUrls)
+            ? p.imageUrls
+            : [];
 
   arrays.forEach((x: any, i: number) => push(x, i));
 
@@ -116,26 +106,17 @@ function normalizeImagesFromRow(p: any): Img[] {
   }
 
   return out
-    .sort(
-      (a, b) =>
-        (a.sort ?? 0) - (b.sort ?? 0) ||
-        a.id.localeCompare(b.id),
-    )
+    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id))
     .slice(0, 50);
 }
 
 /** single service-image model, quiet via serviceId */
 function getServiceImageModel() {
   const any = prisma as any;
-  const candidates = [
-    any.serviceImage,
-    any.serviceImages,
-    any.ServiceImage,
-    any.ServiceImages,
-  ].filter(Boolean);
-  return candidates.find(
-    (m: any) => typeof m?.findMany === "function",
-  ) || null;
+  const candidates = [any.serviceImage, any.serviceImages, any.ServiceImage, any.ServiceImages].filter(
+    Boolean,
+  );
+  return candidates.find((m: any) => typeof m?.findMany === "function") || null;
 }
 
 async function fetchRelatedImageRows(serviceId: string): Promise<any[]> {
@@ -158,32 +139,24 @@ function rowsToImgs(rows: any[], parent: any): Img[] {
   for (const x of rows) {
     const url = toUrlish(x);
     if (!url) continue;
-    const id = String(
-      x?.id ?? x?.imageId ?? x?.key ?? url ?? `rimg-${i++}`,
-    );
+    const id = String(x?.id ?? x?.imageId ?? x?.key ?? url ?? `rimg-${i++}`);
+
     const isCover =
       Boolean(x?.isCover) ||
       Boolean(parent?.coverImageId && x?.id && parent.coverImageId === x.id) ||
       Boolean(typeof parent?.image === "string" && url === parent.image) ||
-      Boolean(
-        typeof parent?.coverImage === "string" &&
-          url === parent.coverImage,
-      ) ||
-      Boolean(
-        typeof parent?.coverImageUrl === "string" &&
-          url === parent.coverImageUrl,
-      );
+      Boolean(typeof parent?.coverImage === "string" && url === parent.coverImage) ||
+      Boolean(typeof parent?.coverImageUrl === "string" && url === parent.coverImageUrl);
 
-    const sort =
-      Number.isFinite(x?.sortOrder)
-        ? Number(x.sortOrder)
-        : Number.isFinite(x?.sort)
+    const sort = Number.isFinite(x?.sortOrder)
+      ? Number(x.sortOrder)
+      : Number.isFinite(x?.sort)
         ? Number(x.sort)
         : Number.isFinite(x?.position)
-        ? Number(x.position)
-        : Number.isFinite(x?.order)
-        ? Number(x.order)
-        : i;
+          ? Number(x.position)
+          : Number.isFinite(x?.order)
+            ? Number(x.order)
+            : i;
 
     out.push({ id, url, isCover, sort });
   }
@@ -216,23 +189,16 @@ function mergeImgs(a: Img[], b: Img[], parent: any): Img[] {
   if (!list.some((x) => x.isCover) && list.length > 0) {
     const preferred =
       (typeof parent?.image === "string" && parent.image) ||
-      (typeof parent?.coverImage === "string" &&
-        parent.coverImage) ||
-      (typeof parent?.coverImageUrl === "string" &&
-        parent.coverImageUrl) ||
+      (typeof parent?.coverImage === "string" && parent.coverImage) ||
+      (typeof parent?.coverImageUrl === "string" && parent.coverImageUrl) ||
       (list[0] ? list[0].url : undefined);
+
     const idx = list.findIndex((x) => x.url === preferred);
-    if (list.length > 0) {
-      list[idx >= 0 ? idx : 0]!.isCover = true;
-    }
+    if (list.length > 0) list[idx >= 0 ? idx : 0]!.isCover = true;
   }
 
   list = list
-    .sort(
-      (x, y) =>
-        (x.sort ?? 0) - (y.sort ?? 0) ||
-        x.id.localeCompare(y.id),
-    )
+    .sort((x, y) => (x.sort ?? 0) - (y.sort ?? 0) || x.id.localeCompare(y.id))
     .slice(0, 50);
 
   return list;
@@ -243,17 +209,14 @@ function briefStatus(p: any): string {
   if (["ACTIVE", "DRAFT", "PAUSED", "ARCHIVED"].includes(s)) return s;
   if (p?.published === true) return "ACTIVE";
   if (p?.published === false) return "DRAFT";
-  return "—";
+  return "-";
 }
 
 function fmtDate(d?: Date | string | null) {
-  if (!d) return "—";
+  if (!d) return "-";
   const dd = typeof d === "string" ? new Date(d) : d;
-  if (!(dd instanceof Date) || isNaN(dd.getTime())) return "—";
-  return dd.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  if (!(dd instanceof Date) || isNaN(dd.getTime())) return "-";
+  return dd.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 /* -------------------------------- Page -------------------------------- */
@@ -296,45 +259,42 @@ export default async function EditServicePage({
     relationRows = [];
   }
 
-  const images = mergeImgs(
-    normalizeImagesFromRow(service),
-    rowsToImgs(relationRows, service),
-    service,
-  );
+  const images = mergeImgs(normalizeImagesFromRow(service), rowsToImgs(relationRows, service), service);
 
   const lastUpdated = service?.updatedAt ?? service?.createdAt ?? null;
   const serviceName = service?.name ?? service?.title ?? "Service";
   const canDelete = isOwner || isAdmin;
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-6">
-      <SectionHeader
-        title={`Editing: ${serviceName}`}
-        subtitle={
-          <>
-            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white/95">
-              Service Editor
-            </span>
-            <span className="mx-2 hidden text-white/70 md:inline">
-              •
-            </span>
-            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/95">
-              Status:{" "}
-              <span className="ml-1 font-semibold">
-                {briefStatus(service)}
-              </span>
-            </span>
-            <span className="mx-2 hidden text-white/70 md:inline">
-              •
-            </span>
-            <span className="text-white/90">
-              ID <span className="font-mono">{service.id}</span> ·
-              Updated {fmtDate(lastUpdated)}
-            </span>
-          </>
-        }
-        actions={
-          <div className="flex flex-wrap gap-2">
+    <main className="container-page py-4 sm:py-6">
+      <header className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-soft">
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]" />
+
+        <div className="flex flex-col gap-3 p-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3 sm:p-5">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold leading-tight tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
+              Editing: {serviceName}
+            </h1>
+
+            <div className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]">
+                  Service editor
+                </span>
+
+                <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] text-[var(--text)]">
+                  Status: <span className="ml-1 font-semibold">{briefStatus(service)}</span>
+                </span>
+
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  ID <span className="font-mono text-[var(--text)]">{service.id}</span> • Updated{" "}
+                  <span className="text-[var(--text)]">{fmtDate(lastUpdated)}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
             <Link
               href="/dashboard"
               prefetch={false}
@@ -360,17 +320,17 @@ export default async function EditServicePage({
               />
             )}
           </div>
-        }
-      />
+        </div>
+      </header>
 
-      <section className="mt-6 card p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Photos</h2>
-          <div className="text-sm text-gray-500 dark:text-slate-400">
-            {images.length} photo
-            {images.length === 1 ? "" : "s"}
+      <section className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:mt-6 sm:p-5">
+        <div className="mb-2 flex items-center justify-between sm:mb-3">
+          <h2 className="text-base font-semibold text-[var(--text)] sm:text-lg">Photos</h2>
+          <div className="text-xs text-[var(--text-muted)] sm:text-sm">
+            {images.length} photo{images.length === 1 ? "" : "s"}
           </div>
         </div>
+
         <ServiceMediaManager
           serviceId={service.id}
           initial={
@@ -378,25 +338,15 @@ export default async function EditServicePage({
               ? images.map((img) => ({
                   ...img,
                   isCover: !!img.isCover,
-                  sort:
-                    typeof img.sort === "number"
-                      ? img.sort
-                      : 0,
+                  sort: typeof img.sort === "number" ? img.sort : 0,
                 }))
-              : [
-                  {
-                    id: "placeholder",
-                    url: PLACEHOLDER,
-                    isCover: true,
-                    sort: 0,
-                  },
-                ]
+              : [{ id: "placeholder", url: PLACEHOLDER, isCover: true, sort: 0 }]
           }
           max={6}
         />
       </section>
 
-      <section className="mt-6 card p-5">
+      <section className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:mt-6 sm:p-5">
         <CommitBinder serviceId={service.id} />
         <div id="sell-form-host">
           <SellServiceClient editId={service.id} hideMedia />

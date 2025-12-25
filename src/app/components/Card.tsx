@@ -1,4 +1,3 @@
-// src/app/components/Card.tsx
 "use client";
 // src/app/components/Card.tsx
 
@@ -29,16 +28,25 @@ function cn(...xs: Array<string | false | null | undefined>) {
 
 /** Surface classes per variant, tuned to our global tokens */
 const surface: Record<Variant, string> = {
-  solid:
-    "bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-card",
-  subtle: "bg-subtle border border-[var(--border-subtle)] shadow-sm",
+  solid: "bg-[var(--bg-elevated)] border border-[var(--border-subtle)] shadow-soft",
+  subtle: "bg-[var(--bg-subtle)] border border-[var(--border-subtle)] shadow-soft",
   ghost: "bg-transparent border border-[var(--border-subtle)] shadow-none",
   glass:
     // uses globals: .glass gives blur + light border; keep our rounding/shadow too
-    "glass shadow-sm",
+    "glass shadow-soft",
 };
 
 const base = "rounded-2xl transition will-change-transform text-[var(--text)]";
+
+const bodyPadding: Record<Padding, string> = {
+  none: "",
+  // ✅ phone-first: tighter on xs, restore on sm+
+  sm: "p-2.5 sm:p-3",
+  // ✅ default cards: p-2.5 on phones, restore spacing on sm/md for desktop/tablet
+  md: "p-2.5 sm:p-4 md:p-5",
+  // ✅ detail cards: still tighter on phones
+  lg: "p-4 sm:p-6 md:p-8",
+};
 
 /** Outer wrapper */
 const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
@@ -59,8 +67,7 @@ const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
     ref,
   ) => {
     const Comp: any = as;
-    const isInteractive =
-      clickable || as === "a" || as === "button" || !!onClick;
+    const isInteractive = clickable || as === "a" || as === "button" || !!onClick;
     const lift = hover ?? isInteractive;
 
     return (
@@ -75,7 +82,12 @@ const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
           // lift when interactive
           lift && "hover:-translate-y-[1px] hover:shadow-soft",
           isInteractive &&
-            "cursor-pointer focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900 focus-visible:ring-2 ring-focus",
+            [
+              "cursor-pointer",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              "focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]",
+              "active:scale-[.99]",
+            ].join(" "),
           disabled && "opacity-60 pointer-events-none",
           className,
         )}
@@ -93,13 +105,6 @@ const CardRoot = React.forwardRef<HTMLElement, BaseProps>(
 );
 CardRoot.displayName = "Card";
 
-const bodyPadding: Record<Padding, string> = {
-  none: "",
-  sm: "p-3",
-  md: "p-4 md:p-5",
-  lg: "p-6 md:p-8",
-};
-
 /** Header / Body / Footer to compose neatly */
 type SectionProps = React.HTMLAttributes<HTMLDivElement> & {
   padding?: Padding;
@@ -110,7 +115,7 @@ const CardHeader = React.forwardRef<HTMLDivElement, SectionProps>(
     <div
       ref={ref}
       className={cn(
-        "flex items-center gap-3 border-b border-[var(--border-subtle)]",
+        "flex items-center gap-2 sm:gap-3 border-b border-[var(--border-subtle)]",
         bodyPadding[padding],
         className,
       )}
@@ -132,7 +137,7 @@ const CardFooter = React.forwardRef<HTMLDivElement, SectionProps>(
     <div
       ref={ref}
       className={cn(
-        "flex items-center gap-3 border-t border-[var(--border-subtle)]",
+        "flex items-center gap-2 sm:gap-3 border-t border-[var(--border-subtle)]",
         bodyPadding[padding],
         className,
       )}
@@ -156,29 +161,20 @@ function normalizeAspect(aspect?: string) {
   return a;
 }
 
-const CardMedia = React.forwardRef<HTMLImageElement, MediaProps>(
-  ({ className, aspect, ...props }, ref) => {
-    const ar = normalizeAspect(aspect);
+const CardMedia = React.forwardRef<HTMLImageElement, MediaProps>(({ className, aspect, ...props }, ref) => {
+  const ar = normalizeAspect(aspect);
 
-    return (
-      <div
-        className={cn("overflow-hidden rounded-2xl")}
-        {...(ar ? { style: { aspectRatio: ar } as React.CSSProperties } : {})}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={ref}
-          className={cn(
-            "w-full object-cover",
-            ar ? "h-full" : "h-auto",
-            className,
-          )}
-          {...props}
-        />
-      </div>
-    );
-  },
-);
+  return (
+    <div className={cn("overflow-hidden rounded-2xl")} {...(ar ? { style: { aspectRatio: ar } as React.CSSProperties } : {})}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        ref={ref}
+        className={cn("w-full object-cover", ar ? "h-full" : "h-auto", className)}
+        {...props}
+      />
+    </div>
+  );
+});
 CardMedia.displayName = "Card.Media";
 
 const Card = Object.assign(CardRoot, {

@@ -28,17 +28,40 @@ export default async function Head() {
     },
   };
 
-  const prod = process.env["NODE_ENV"] === "production" && process.env["NEXT_PUBLIC_E2E"] !== "1";
+  const prod =
+    process.env["NODE_ENV"] === "production" &&
+    process.env["NEXT_PUBLIC_E2E"] !== "1";
 
   return (
     <>
+      {/* Keep native widgets aligned with theme */}
       <meta name="color-scheme" content="light dark" />
+
+      {/* Browser UI tint (address bar / tabs) matches our app shell */}
+      <meta
+        name="theme-color"
+        media="(prefers-color-scheme: light)"
+        content="rgb(246 248 253)"
+      />
+      <meta
+        name="theme-color"
+        media="(prefers-color-scheme: dark)"
+        content="rgb(2 6 23)"
+      />
 
       {prod ? (
         <>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-          <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+          <link
+            rel="preconnect"
+            href="https://fonts.gstatic.com"
+            crossOrigin="anonymous"
+          />
+          <link
+            rel="preconnect"
+            href="https://res.cloudinary.com"
+            crossOrigin="anonymous"
+          />
           <link rel="dns-prefetch" href="//res.cloudinary.com" />
         </>
       ) : null}
@@ -59,10 +82,20 @@ export default async function Head() {
 })();`}</Script>
 
       {/* Structured data */}
-      <Script id="ld-org" type="application/ld+json" nonce={nonce} strategy="afterInteractive">
+      <Script
+        id="ld-org"
+        type="application/ld+json"
+        nonce={nonce}
+        strategy="afterInteractive"
+      >
         {JSON.stringify(orgJsonLd)}
       </Script>
-      <Script id="ld-site" type="application/ld+json" nonce={nonce} strategy="afterInteractive">
+      <Script
+        id="ld-site"
+        type="application/ld+json"
+        nonce={nonce}
+        strategy="afterInteractive"
+      >
         {JSON.stringify(siteJsonLd)}
       </Script>
     </>

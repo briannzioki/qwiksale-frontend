@@ -7,58 +7,68 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Respect system color-scheme for native widgets */
-:root { color-scheme: light dark; }
+/* Native widgets follow the active theme */
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
 
 /* =========================
    Brand & Semantic Tokens
    ========================= */
 :root {
-  /* Brand (hex) */
+  /* Brand */
   --brand-navy: #161748;
   --brand-green: #478559;
   --brand-blue: #39a0ca;
-  --accent: #f95d9b;
 
-  /* Brand (RGB triplets) for alpha usage */
+  /* ✅ NEW bright complement (sparingly): Mustard Gold */
+  --accent: #eab308; /* mustard/gold */
+  --accent-rgb: 234 179 8;
+
+  /* Brand RGB triplets (for alpha usage) */
   --brand-navy-rgb: 22 23 72;
   --brand-green-rgb: 71 133 89;
   --brand-blue-rgb: 57 160 202;
-  --accent-rgb: 249 93 155;
 
-  /* Semantic Surfaces / Text (light) */
-  --bg-app: #f8fafc;        /* slate-50 */
-  --bg-elevated: #ffffff;
-  --bg-muted: #f1f5f9;      /* slate-100 */
-  --bg-subtle: #f9fafb;     /* slate-50 tweak */
+  /* Semantic Surfaces / Text (LIGHT) — richer, slightly cool-tinted */
+  --bg-app: #f6f8fd;        /* premium cool off-white */
+  --bg-elevated: #ffffff;   /* cards/panels */
+  --bg-muted: #eef3fa;      /* subtle section tint */
+  --bg-subtle: #f9fbff;     /* very light lift */
 
-  --border-subtle: #e2e8f0; /* slate-200 */
-  --border-strong: #cbd5e1; /* slate-300 */
+  --border-subtle: #dfe7f1; /* soft, not gray-flat */
+  --border-strong: #c9d6e6;
   --border: var(--border-subtle);
 
-  --text-strong: #020617;   /* slate-950 */
-  --text: #0f172a;          /* slate-900 */
-  --text-muted: #475569;    /* slate-600 */
-  --text-soft: #64748b;     /* slate-500 */
+  --text-strong: #0b1220;
+  --text: #142033;
+  --text-muted: #526170;
+  --text-soft: #6b7b8c;
 
   /* Semantic palette */
   --primary: var(--brand-navy);
-  --primary-soft: #f3f4fb;  /* brandNavy-50 */
-  --accent-soft: #fff1f6;   /* accent-50 */
-  --danger: #e11d48;        /* rose-600 */
-  --danger-soft: #fee2e2;   /* rose-100 */
-  --success: #16a34a;       /* emerald-600 */
-  --success-soft: #dcfce7;  /* emerald-100 */
+  --primary-soft: rgba(var(--brand-navy-rgb) / 0.06);
+
+  /* Mustard soft tint */
+  --accent-soft: rgba(var(--accent-rgb) / 0.14);
+
+  --danger: #e11d48;
+  --danger-soft: rgba(225 29 72 / 0.12);
+
+  --success: #16a34a;
+  --success-soft: rgba(22 163 74 / 0.12);
 
   /* Badges / chips */
-  --badge-bg: rgba(255 255 255 / 0.9);
+  --badge-bg: rgba(255 255 255 / 0.92);
   --badge-border: rgba(15 23 42 / 0.08);
   --badge-text: var(--text);
 
-  /* Spotlight / noise intensity */
+  /* Texture controls (used by global overlays + utilities) */
   --spotlight-size: 900px;
-  --spotlight-alpha: 0.14;
-  --noise-alpha: 0.035; /* light mode base (kept subtle) */
+  --spotlight-alpha: 0.14;  /* light: subtle */
+  --noise-alpha: 0.032;     /* light: subtle, not dusty */
+
+  /* Shadow control */
+  --shadow-rgb: 2 8 23;     /* deep navy-ish shadow base */
 
   /* Z-index tokens */
   --z-header: 40;
@@ -70,30 +80,39 @@
 }
 
 .dark {
-  --bg-app: #020617;         /* slate-950 */
-  --bg-elevated: #0b1220;    /* near slate-900 with a hint of blue */
-  --bg-muted: #0f172a;       /* slate-900 */
+  /* DARK — keep the vibe, only light tuning */
+  --bg-app: #020617;
+  --bg-elevated: #0b1220;
+  --bg-muted: #0f172a;
   --bg-subtle: #020617;
 
-  --border-subtle: #1f2937;  /* slate-800-ish */
-  --border-strong: #475569;  /* slate-600 */
+  --border-subtle: #20324a;
+  --border-strong: #2a3f5c;
   --border: var(--border-subtle);
 
-  --text-strong: #f9fafb;
-  --text: #e2e8f0;           /* slate-200 */
-  --text-muted: #94a3b8;     /* slate-400 */
-  --text-soft: #64748b;      /* slate-500 */
+  --text-strong: #eaf2fb;
+  --text: #dbe7f5;
+  --text-muted: #9bb0c7;
+  --text-soft: #6f88a6;
 
-  --primary: #3f45a9;        /* brandNavy-500/300 mix */
-  --primary-soft: rgba(15 23 42 / 0.7);
-  --accent-soft: rgba(248 113 166 / 0.24);
-  --danger: #f43f5e;         /* rose-500 */
-  --danger-soft: rgba(248 113 113 / 0.27);
-  --success: #22c55e;        /* emerald-500 */
-  --success-soft: rgba(34 197 94 / 0.18);
+  /* Keep your existing dark primary behavior */
+  --primary: #3f45a9;
+  --primary-soft: rgba(15 23 42 / 0.70);
 
-  --spotlight-alpha: 0.22;
-  --noise-alpha: 0.06;       /* dark mode target */
+  /* Mustard reads brighter on dark; soften a bit */
+  --accent: #fbbf24;
+  --accent-rgb: 251 191 36;
+  --accent-soft: rgba(var(--accent-rgb) / 0.18);
+
+  --danger: #f43f5e;
+  --danger-soft: rgba(244 63 94 / 0.20);
+
+  --success: #22c55e;
+  --success-soft: rgba(34 197 94 / 0.16);
+
+  --spotlight-alpha: 0.10;  /* dark: keep it quiet */
+  --noise-alpha: 0.045;     /* dark: avoid “dusty screen” */
+  --shadow-rgb: 0 0 0;
 }
 
 /* Small utility */
@@ -115,29 +134,105 @@
     -moz-osx-font-smoothing: grayscale;
     background: var(--bg-app);
     color: var(--text);
+
+    /* ✅ Prevent iOS Safari from auto “text bumping” */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+
+    /* ✅ Kill horizontal scroll bleed */
+    overflow-x: hidden;
   }
 
+  /* Global background depth + texture (controlled by vars) */
   body {
-    background:
-      /* subtle noise on top */
-      radial-gradient(circle at 10% 10%, rgba(255 255 255 / 0.02), transparent 40%),
-      var(--bg-app);
+    position: relative;
     min-height: 100%;
+    min-height: 100dvh; /* ✅ better on mobile address-bar resizing */
+
+    background: var(--bg-app);
+    color: var(--text);
+
+    /* ✅ Kill horizontal scroll bleed */
+    overflow-x: hidden;
+
+    /* ✅ Safe-area padding for notch / standalone webviews (usually 0 on normal browsers) */
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
   }
 
-  /* Headings default to strong text token (overridden by per-component gradients) */
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    color: var(--text-strong);
+  /* Keep all app content above overlays */
+  body > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Soft spotlights (brand-tinted), behind everything */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(
+        circle var(--spotlight-size) at 12% -10%,
+        rgb(var(--brand-blue-rgb) / var(--spotlight-alpha)),
+        transparent 60%
+      ),
+      radial-gradient(
+        circle calc(var(--spotlight-size) * 0.95) at 92% 0%,
+        rgb(var(--brand-green-rgb) / calc(var(--spotlight-alpha) * 0.75)),
+        transparent 62%
+      ),
+      radial-gradient(
+        circle calc(var(--spotlight-size) * 0.85) at 50% 115%,
+        rgb(var(--accent-rgb) / calc(var(--spotlight-alpha) * 0.60)),
+        transparent 65%
+      );
+    mix-blend-mode: normal;
+  }
+
+  /* Subtle noise overlay (texture), behind everything */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: var(--noise-alpha);
+    mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>\
+<filter id='n'>\
+<feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/>\
+<feColorMatrix type='saturate' values='0'/>\
+</filter>\
+<rect width='100%25' height='100%25' filter='url(%23n)'/>\
+</svg>");
+    background-size: 220px 220px;
+    background-repeat: repeat;
+  }
+
+  /* ✅ Fix: headings must not override intentional surfaces (heroes/strips set their own text color) */
+  h1, h2, h3, h4, h5, h6 {
+    color: inherit;
+  }
+
+  /* ✅ Fix: hero surfaces control their own text color; headings must inherit */
+  .hero-surface h1,
+  .hero-surface h2,
+  .hero-surface h3,
+  .hero-surface h4,
+  .hero-surface h5,
+  .hero-surface h6 {
+    color: inherit;
   }
 
   /* Text selection */
   ::selection {
-    background: color-mix(in oklab, rgb(var(--brand-blue-rgb)) 22%, transparent);
+    background: rgb(var(--brand-blue-rgb) / 0.22);
     color: inherit;
   }
 
@@ -167,14 +262,13 @@
   }
   .dark input::placeholder,
   .dark textarea::placeholder {
-    color: var(--text-muted);
     opacity: 0.9;
   }
 
-  /* Accessible focus ring (fallback + utility-friendly) */
+  /* Accessible focus ring (global fallback) */
   :focus-visible {
     outline: 0;
-    box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
+    box-shadow: 0 0 0 3px rgb(var(--brand-blue-rgb) / 0.35);
   }
 
   /* Reduced motion */
@@ -204,14 +298,14 @@
 @layer components {
   /* Glass / blur surfaces */
   .glass {
-    background: rgba(255 255 255 / 0.7);
+    background: rgba(255 255 255 / 0.72);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(0 0 0 / 0.06);
     @apply rounded-2xl shadow-sm dark:bg-white/5 dark:border-white/10;
   }
   .glass-strong {
-    background: rgba(255 255 255 / 0.55);
+    background: rgba(255 255 255 / 0.58);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
     border: 1px solid rgba(0 0 0 / 0.08);
@@ -222,31 +316,50 @@
   .hero-surface {
     @apply p-6 md:p-8 rounded-3xl shadow;
     background:
-      linear-gradient(90deg, rgba(var(--brand-navy-rgb) / .85), rgba(var(--brand-blue-rgb) / .85)),
-      radial-gradient(1200px circle at 10% -10%, rgba(255 255 255 / .12), transparent 50%);
+      linear-gradient(
+        90deg,
+        rgb(var(--brand-navy-rgb) / .90),
+        rgb(var(--brand-green-rgb) / .86),
+        rgb(var(--brand-blue-rgb) / .88)
+      ),
+      radial-gradient(1200px circle at 10% -10%, rgba(255 255 255 / .12), transparent 55%);
     color: #fff;
-    border: 1px solid rgba(255 255 255 / .08);
+    border: 1px solid rgba(255 255 255 / .10);
     backdrop-filter: blur(6px);
   }
 
   /* Solid cards / panels */
   .card {
-    @apply rounded-2xl shadow-sm border;
+    @apply rounded-2xl border;
     background: var(--bg-elevated);
     border-color: var(--border-subtle);
     color: var(--text);
+    box-shadow:
+      0 10px 26px rgba(var(--shadow-rgb) / 0.10),
+      0 2px 10px rgba(var(--shadow-rgb) / 0.06);
+  }
+  .dark .card {
+    box-shadow:
+      0 14px 32px rgba(0 0 0 / 0.35),
+      0 2px 10px rgba(0 0 0 / 0.22);
   }
 
   /* Translucent cards */
   .card-surface {
-    @apply rounded-2xl shadow-sm;
-    background: rgba(255 255 255 / 0.86);
+    @apply rounded-2xl;
+    background: rgba(255 255 255 / 0.90);
     border: 1px solid rgba(0 0 0 / 0.06);
     backdrop-filter: blur(10px);
+    box-shadow:
+      0 10px 24px rgba(var(--shadow-rgb) / 0.08),
+      0 2px 10px rgba(var(--shadow-rgb) / 0.05);
   }
   .dark .card-surface {
-    background: rgba(15 23 42 / 0.92);
+    background: rgba(15 23 42 / 0.90);
     border: 1px solid rgba(255 255 255 / 0.10);
+    box-shadow:
+      0 18px 40px rgba(0 0 0 / 0.40),
+      0 2px 12px rgba(0 0 0 / 0.22);
   }
 
   /* Inputs / selects / textareas (classed variants) */
@@ -255,54 +368,55 @@
   .textarea {
     @apply w-full rounded-xl px-3 py-2 focus:outline-none;
     box-shadow: 0 0 0 0 transparent;
+    border-color: var(--border);
+    background-color: var(--bg-elevated);
   }
   .input:focus,
   .select:focus,
   .textarea:focus {
-    box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
-    border-color: color-mix(
-      in oklab,
-      rgb(var(--brand-blue-rgb)) 60%,
-      var(--border)
-    );
+    border-color: rgba(var(--brand-blue-rgb) / 0.60);
+    box-shadow: 0 0 0 3px rgb(var(--brand-blue-rgb) / 0.35);
   }
 
   .label {
     @apply block text-sm font-medium mb-1;
     color: var(--text);
-    opacity: 0.9;
+    opacity: 0.92;
   }
 
   /* Buttons */
   .btn-outline {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-semibold
            focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900
-           focus:ring-2 disabled:opacity-60 disabled:cursor-not-allowed;
+           disabled:opacity-60 disabled:cursor-not-allowed;
     background-color: var(--bg-elevated);
-    border-width: 1px;
-    border-style: solid;
-    border-color: var(--border-subtle);
+    border: 1px solid var(--border-subtle);
     color: var(--text);
+    box-shadow: 0 1px 0 rgba(255 255 255 / 0.7) inset;
   }
   .btn-outline:hover {
     background-color: var(--bg-muted);
   }
+  .dark .btn-outline:hover {
+    background-color: rgba(255 255 255 / 0.06);
+  }
   .btn-outline:focus-visible {
-    box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
+    box-shadow:
+      0 1px 0 rgba(255 255 255 / 0.7) inset,
+      0 0 0 3px rgb(var(--brand-blue-rgb) / 0.35);
   }
 
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-sm
-           focus:outline-none focus:ring-2
-           disabled:opacity-60 disabled:cursor-not-allowed;
+           focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed;
     background-color: var(--danger);
     color: #fff;
   }
   .btn-danger:hover {
-    background-color: color-mix(in oklab, var(--danger) 92%, black);
+    filter: brightness(0.98);
   }
   .btn-danger:focus-visible {
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 40%, transparent);
+    box-shadow: 0 0 0 3px rgba(244 63 94 / 0.28);
   }
 
   /* Brand gradient primary button */
@@ -311,27 +425,26 @@
            rounded-xl px-4 py-2 font-semibold text-white
            disabled:opacity-60 disabled:cursor-not-allowed
            ring-offset-2 ring-offset-white dark:ring-offset-slate-900
-           focus:outline-none focus:ring-2;
+           focus:outline-none;
 
-    /* Brand gradient + subtle gloss */
     background:
       linear-gradient(180deg, rgba(255 255 255 / .18), rgba(255 255 255 / 0)) 0 0 / 100% 100% no-repeat,
       linear-gradient(
         90deg,
-        rgba(var(--brand-navy-rgb) / 1),
-        rgba(var(--brand-green-rgb) / 1),
-        rgba(var(--brand-blue-rgb) / 1)
+        rgb(var(--brand-navy-rgb)),
+        rgb(var(--brand-green-rgb)),
+        rgb(var(--brand-blue-rgb))
       );
     box-shadow:
-      0 6px 20px rgba(var(--brand-blue-rgb) / .22),
-      inset 0 0 0 1px rgba(255 255 255 / .12);
+      0 10px 28px rgba(var(--brand-blue-rgb) / .22),
+      inset 0 0 0 1px rgba(255 255 255 / .14);
     border: 1px solid rgba(0 0 0 / .06);
   }
   .btn-gradient-primary:hover {
     filter: brightness(1.03);
     box-shadow:
-      0 10px 28px rgba(var(--brand-blue-rgb) / .28),
-      inset 0 0 0 1px rgba(255 255 255 / .16);
+      0 14px 34px rgba(var(--brand-blue-rgb) / .26),
+      inset 0 0 0 1px rgba(255 255 255 / .18);
   }
   .btn-gradient-primary:active {
     transform: translateY(0.5px);
@@ -339,9 +452,9 @@
   }
   .btn-gradient-primary:focus-visible {
     box-shadow:
-      0 10px 28px rgba(var(--brand-blue-rgb) / .28),
-      inset 0 0 0 1px rgba(255 255 255 / .16),
-      0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
+      0 14px 34px rgba(var(--brand-blue-rgb) / .26),
+      inset 0 0 0 1px rgba(255 255 255 / .18),
+      0 0 0 3px rgb(var(--brand-blue-rgb) / 0.35);
   }
 
   /* Badges */
@@ -356,20 +469,27 @@
     color: #fff;
     background: linear-gradient(
       90deg,
-      rgba(var(--brand-navy-rgb) / 1),
-      rgba(var(--brand-blue-rgb) / 1)
+      rgb(var(--brand-navy-rgb)),
+      rgb(var(--brand-blue-rgb))
     );
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs;
   }
 
-  /* Chips (base + variants) */
+  /* A tiny mustard accent badge (use sparingly) */
+  .badge-accent {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs border;
+    background: var(--accent-soft);
+    border-color: rgba(var(--accent-rgb) / 0.35);
+    color: color-mix(in oklab, var(--text-strong) 86%, rgb(var(--accent-rgb)) 14%);
+  }
+
+  /* Chips */
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition
            focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900
            focus-visible:ring-2;
   }
 
-  /* Subtle outlined chip for plain surfaces */
   .chip-outline {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium border transition;
     background-color: var(--bg-elevated);
@@ -380,10 +500,9 @@
     background-color: var(--bg-muted);
   }
   .dark .chip-outline:hover {
-    background-color: rgba(255 255 255 / 0.10);
+    background-color: rgba(255 255 255 / 0.08);
   }
 
-  /* Light-on-gradient chip (used in 404/error hero) */
   .chip--light {
     @apply text-white;
     background: rgba(255 255 255 / 0.15);
@@ -393,21 +512,21 @@
   .chip--light:hover { background: rgba(255 255 255 / 0.25); }
   .chip--light:active { background: rgba(255 255 255 / 0.30); }
 
-  /* Neutral chip for plain backgrounds */
   .chip--neutral {
-    @apply border shadow-sm;
+    @apply border;
     background-color: var(--bg-elevated);
     border-color: var(--border-subtle);
     color: var(--text);
+    box-shadow: 0 6px 18px rgba(var(--shadow-rgb) / 0.08);
   }
 
   .chip:focus-visible {
-    box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35);
+    box-shadow: 0 0 0 3px rgb(var(--brand-blue-rgb) / 0.35);
   }
   button.chip { @apply cursor-pointer select-none; }
   button.chip:disabled { @apply opacity-60 cursor-not-allowed; }
 
-  /* Skeleton (no default pulse—use shimmer util below) */
+  /* Skeleton */
   .skeleton {
     @apply bg-gray-200/70 dark:bg-slate-700/40;
     background-image: linear-gradient(
@@ -420,16 +539,28 @@
     background-position: 200% 0;
   }
 
-  .shadow-soft { box-shadow: 0 12px 32px rgba(0 0 0 / 0.12); }
+  .shadow-soft {
+    box-shadow:
+      0 14px 36px rgba(var(--shadow-rgb) / 0.12),
+      0 2px 10px rgba(var(--shadow-rgb) / 0.08);
+  }
+  .dark .shadow-soft {
+    box-shadow:
+      0 18px 44px rgba(0 0 0 / 0.40),
+      0 2px 12px rgba(0 0 0 / 0.22);
+  }
 
   .link {
     color: var(--brand-navy);
     transition: color .15s ease, text-decoration-color .15s ease;
   }
+  .dark .link {
+    color: rgb(var(--brand-blue-rgb));
+  }
   .link:hover {
     color: var(--accent);
     text-decoration: underline;
-    text-decoration-color: rgba(var(--accent-rgb) / .6);
+    text-decoration-color: rgba(var(--accent-rgb) / .65);
   }
 
   /* Container wrapper (piggybacks Tailwind container) */
@@ -440,33 +571,27 @@
    Utilities layer
    ========================= */
 @layer utilities {
-  /* Gradient text using brand ramp (aligns with tailwind plugin tokens) */
   .text-gradient {
     background-image: linear-gradient(
       90deg,
-      rgba(var(--brand-navy-rgb) / 1) 0%,
-      rgba(var(--brand-green-rgb) / 1) 50%,
-      rgba(var(--brand-blue-rgb) / 1) 100%
+      rgb(var(--brand-navy-rgb)) 0%,
+      rgb(var(--brand-green-rgb)) 50%,
+      rgb(var(--brand-blue-rgb)) 100%
     );
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
 
-  /* Focus ring utility if you want explicit class usage */
-  .ring-focus { box-shadow: 0 0 0 3px rgba(var(--brand-blue-rgb) / 0.35); }
+  .ring-focus { box-shadow: 0 0 0 3px rgb(var(--brand-blue-rgb) / 0.35); }
+  .glow { box-shadow: 0 0 0 6px rgb(var(--brand-blue-rgb) / 0.12); }
 
-  /* Soft glow (e.g., on hover) */
-  .glow { box-shadow: 0 0 0 6px rgba(var(--brand-blue-rgb) / 0.12); }
-
-  /* Noise texture overlay (uses /brand/noise.png) */
+  /* (Optional) asset-based textures if you have them */
   .brand-noise {
     background-image: url("/brand/noise.png");
     background-size: 256px 256px;
     background-repeat: repeat;
   }
-
-  /* Spotlights overlay (uses /brand/spots.svg) */
   .brand-spots {
     background-image: url("/brand/spots.svg");
     background-size: cover;
@@ -475,8 +600,6 @@
     mix-blend-mode: soft-light;
     opacity: .6;
   }
-
-  /* Lightweight grid overlay (uses /brand/grid.svg) */
   .bg-grid {
     background-image: url("/brand/grid.svg");
     background-size: 40px 40px;
@@ -485,17 +608,17 @@
     opacity: .55;
   }
 
-  /* Noise texture overlay as a utility (pointer-events: none so it can sit atop) */
+  /* Utility noise overlay (uses tokens; safe on sections/cards) */
   .bg-noise {
     position: relative;
+    isolation: isolate;
   }
   .bg-noise::after {
     content: "";
     pointer-events: none;
     position: absolute;
     inset: 0;
-    /* Lowered, subtle presence everywhere */
-    opacity: .06; /* was var(--noise-alpha); now fixed to .06 per spec */
+    opacity: var(--noise-alpha);
     mix-blend-mode: soft-light;
     background-image: url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>\
@@ -503,11 +626,14 @@
 <feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/>\
 <feColorMatrix type='saturate' values='0'/>\
 </filter>\
-<rect width='100%' height='100%' filter='url(%23n)'/>\
+<rect width='100%25' height='100%25' filter='url(%23n)'/>\
 </svg>");
+    background-size: 220px 220px;
+    background-repeat: repeat;
+    border-radius: inherit;
   }
 
-  /* Radial spotlight (centered, attach to sections/headers) */
+  /* Spotlight helper for specific sections */
   .bg-spotlight {
     position: relative;
     isolation: isolate;
@@ -516,15 +642,15 @@
     content: "";
     position: absolute;
     inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background: radial-gradient(
       circle var(--spotlight-size) at 50% -10%,
-      rgba(var(--brand-blue-rgb) / var(--spotlight-alpha)),
+      rgb(var(--brand-blue-rgb) / var(--spotlight-alpha)),
       transparent 60%
     );
-    z-index: -1;
   }
 
-  /* Line clamp (if not using plugin) */
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -535,12 +661,10 @@
 
   .break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
 
-  /* Prose tweaks (with @tailwind/typography) */
   .prose :where(code):not(:where([class~="not-prose"] *)) {
     @apply rounded-md bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 text-[0.85em];
   }
 
-  /* Shimmer variant for skeletons */
   @keyframes skeleton-shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
@@ -556,14 +680,11 @@
     animation: skeleton-shimmer 1.2s linear infinite;
   }
 
-  /* Spinner speed used by <Button> */
   @keyframes spin { to { transform: rotate(360deg); } }
   .animate-spin-slow { animation: spin 1.2s linear infinite; }
 
-  /* Rounded inherits (used by Button loading overlay) */
   .rounded-inherit { border-radius: inherit; }
 
-  /* Semantic z-index helpers */
   .z-header   { z-index: var(--z-header); }
   .z-backdrop { z-index: var(--z-backdrop); }
   .z-popover  { z-index: var(--z-popover); }
@@ -571,7 +692,7 @@
   .z-toast    { z-index: var(--z-toast); }
   .z-modal    { z-index: var(--z-modal); }
 
-  /* ---------- Tiny guard: hide inline index badge when lightbox is open ---------- */
+  /* Guard: hide inline index badge when lightbox is open */
   [data-gallery-open="true"] [data-gallery-index-badge]:not([data-e2e="product-lightbox-index"]) {
     display: none !important;
   }

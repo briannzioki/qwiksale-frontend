@@ -14,9 +14,24 @@ type BaseProps = {
   className?: string;
 };
 
-type ProductProps = BaseProps & { productId: string | number; serviceId?: never; id?: never; type?: never };
-type ServiceProps = BaseProps & { serviceId: string | number; productId?: never; id?: never; type?: never };
-type GenericProps = BaseProps & { id: string | number; type?: Kind; productId?: never; serviceId?: never };
+type ProductProps = BaseProps & {
+  productId: string | number;
+  serviceId?: never;
+  id?: never;
+  type?: never;
+};
+type ServiceProps = BaseProps & {
+  serviceId: string | number;
+  productId?: never;
+  id?: never;
+  type?: never;
+};
+type GenericProps = BaseProps & {
+  id: string | number;
+  type?: Kind;
+  productId?: never;
+  serviceId?: never;
+};
 type Props = ProductProps | ServiceProps | GenericProps;
 
 /* ------------------------ tiny client analytics ------------------------ */
@@ -25,7 +40,9 @@ function trackClient(event: string, payload?: Record<string, unknown>) {
     // eslint-disable-next-line no-console
     console.log("[qs:track]", event, payload);
     if (typeof window !== "undefined" && "CustomEvent" in window) {
-      window.dispatchEvent(new CustomEvent("qs:track", { detail: { event, payload } }));
+      window.dispatchEvent(
+        new CustomEvent("qs:track", { detail: { event, payload } }),
+      );
     }
   } catch {}
 }
@@ -33,8 +50,10 @@ function trackClient(event: string, payload?: Record<string, unknown>) {
 export default function FavoriteButton(props: Props) {
   // Resolve id + type
   const targetId = useMemo(() => {
-    if ("productId" in props && props.productId != null) return String(props.productId);
-    if ("serviceId" in props && props.serviceId != null) return String(props.serviceId);
+    if ("productId" in props && props.productId != null)
+      return String(props.productId);
+    if ("serviceId" in props && props.serviceId != null)
+      return String(props.serviceId);
     if ("id" in props && props.id != null) return String(props.id);
     return "";
   }, [props]);
@@ -62,10 +81,10 @@ export default function FavoriteButton(props: Props) {
           typeof store?.isFavourite === "function"
             ? store.isFavourite
             : typeof store?.isFavorite === "function"
-            ? store.isFavorite
-            : typeof store?.isFav === "function"
-            ? store.isFav
-            : null;
+              ? store.isFavorite
+              : typeof store?.isFav === "function"
+                ? store.isFav
+                : null;
 
         if (fn) {
           // Prefer (id, type) if supported; extra args are ignored otherwise.
@@ -90,7 +109,7 @@ export default function FavoriteButton(props: Props) {
       }
       return false;
     },
-    [store, targetType]
+    [store, targetType],
   );
 
   const callToggle = useCallback(
@@ -99,10 +118,10 @@ export default function FavoriteButton(props: Props) {
         typeof store?.toggle === "function"
           ? store.toggle
           : typeof store?.toggleFavourite === "function"
-          ? store.toggleFavourite
-          : typeof store?.toggleFavorite === "function"
-          ? store.toggleFavorite
-          : null;
+            ? store.toggleFavourite
+            : typeof store?.toggleFavorite === "function"
+              ? store.toggleFavorite
+              : null;
 
       if (!fn) throw new Error("Favorites not available");
 
@@ -116,7 +135,7 @@ export default function FavoriteButton(props: Props) {
         return callIsFav(id);
       }
     },
-    [store, targetType, callIsFav]
+    [store, targetType, callIsFav],
   );
 
   // Local state mirrors store with optimistic updates
@@ -147,7 +166,9 @@ export default function FavoriteButton(props: Props) {
 
   // Subscribe to store changes if your store exposes a subscribe API (Zustand-like)
   useEffect(() => {
-    const api = (useFavourites as unknown) as { subscribe?: (listener: () => void) => () => void };
+    const api = (useFavourites as unknown) as {
+      subscribe?: (listener: () => void) => () => void;
+    };
     if (api?.subscribe) {
       const unsub = api.subscribe(() => setFav(callIsFav(targetId)));
       return () => {
@@ -181,7 +202,13 @@ export default function FavoriteButton(props: Props) {
   const aria = fav ? "Unfavorite" : "Favorite";
   const title = `${aria} ${labelPrefix}`;
 
-  const HeartIcon = ({ filled, size = 18 }: { filled: boolean; size?: number }) => (
+  const HeartIcon = ({
+    filled,
+    size = 18,
+  }: {
+    filled: boolean;
+    size?: number;
+  }) => (
     <svg
       width={size}
       height={size}
@@ -214,6 +241,7 @@ export default function FavoriteButton(props: Props) {
         <span className="sr-only" aria-live="polite" aria-atomic="true">
           {live}
         </span>
+
         <button
           type="button"
           onClick={async (e) => {
@@ -260,9 +288,15 @@ export default function FavoriteButton(props: Props) {
           title={title}
           data-state={fav ? "on" : "off"}
           className={[
-            "btn-outline p-2 rounded-full inline-flex items-center justify-center",
-            fav ? "text-[#f95d9b] border-[#f95d9b]" : "",
-            pending ? "cursor-wait opacity-75" : "",
+            "inline-flex h-9 w-9 items-center justify-center rounded-full",
+            "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+            "shadow-sm transition",
+            "hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+            "active:scale-[.99]",
+            "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            "disabled:opacity-75",
+            fav ? "border-[color:var(--accent)] text-[color:var(--accent)]" : "",
+            pending ? "cursor-wait" : "",
             className,
           ].join(" ")}
         >
@@ -272,12 +306,13 @@ export default function FavoriteButton(props: Props) {
     );
   }
 
-  // Non-compact = pill with label (matches btn-outline everywhere else)
+  // Non-compact = pill with label
   return (
     <>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {live}
       </span>
+
       <button
         type="button"
         onClick={async (e) => {
@@ -324,13 +359,19 @@ export default function FavoriteButton(props: Props) {
         title={title}
         data-state={fav ? "on" : "off"}
         className={[
-          "btn-outline inline-flex items-center gap-2",
-          fav ? "text-[#f95d9b] border-[#f95d9b]" : "",
-          pending ? "opacity-75 cursor-wait" : "",
+          "inline-flex min-h-9 items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold sm:py-2 sm:text-sm",
+          "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+          "shadow-sm transition",
+          "hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+          "active:scale-[.99]",
+          "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+          "disabled:opacity-75",
+          fav ? "border-[color:var(--accent)] text-[color:var(--accent)]" : "",
+          pending ? "cursor-wait" : "",
           className,
         ].join(" ")}
       >
-        <HeartIcon filled={fav} size={20} />
+        <HeartIcon filled={fav} size={18} />
         {fav ? "Favorited" : "Favorite"}
       </button>
     </>

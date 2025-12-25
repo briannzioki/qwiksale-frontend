@@ -30,7 +30,7 @@ function isSafePath(p?: string | null): p is string {
   return !!p && /^\/(?!\/)/.test(p);
 }
 
-// 3–24; letters/digits/._; no leading/trailing sep; no doubles
+// 3-24; letters/digits/._; no leading/trailing sep; no doubles
 const USERNAME_RE = /^(?![._])(?!.*[._]$)(?!.*[._]{2})[a-zA-Z0-9._]{3,24}$/;
 const canonicalUsername = (raw: string) => raw.trim().toLowerCase();
 
@@ -66,6 +66,27 @@ function OnboardingPageInner() {
   const [unameMsg, setUnameMsg] = useState<string>("");
   const unameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unameAbort = useRef<AbortController | null>(null);
+
+  const heroClass =
+    "rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft";
+
+  // phone-first: tighter padding, restore on sm+
+  const panelClass =
+    "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3.5 shadow-soft sm:p-5";
+
+  const fieldLabelClass =
+    "mb-1 block text-sm font-semibold text-[var(--text)]";
+
+  const helperTextClass =
+    "mt-1 text-xs leading-relaxed text-[var(--text-muted)]";
+
+  const inputClass =
+    "w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const primaryBtnClass =
+    "btn-gradient-primary min-h-9 text-xs sm:text-sm disabled:opacity-60 disabled:pointer-events-none";
+
+  const secondaryBtnClass = "btn-outline min-h-9 text-xs sm:text-sm";
 
   // Initial profile load (skip entirely unless authenticated)
   useEffect(() => {
@@ -148,7 +169,7 @@ function OnboardingPageInner() {
     if (!USERNAME_RE.test(u)) {
       setUnameStatus("invalid");
       setUnameMsg(
-        "3–24 chars; letters, numbers, . or _ (no .., no leading/trailing . or _).",
+        "3-24 chars; letters, numbers, . or _ (no .., no leading/trailing . or _).",
       );
       return;
     }
@@ -255,7 +276,7 @@ function OnboardingPageInner() {
         return;
       }
       toast.success("Profile saved!");
-      setSaved(true); // no auto-redirect – allow explicit continue
+      setSaved(true); // no auto-redirect - allow explicit continue
     } catch {
       toast.error("Network error. Please try again.");
     } finally {
@@ -265,79 +286,84 @@ function OnboardingPageInner() {
 
   if (status === "loading" || loading) {
     return (
-      <div className="container-page py-8">
+      <div className="container-page bg-[var(--bg)] py-4 sm:py-6">
         <div className="mx-auto max-w-xl">
-          <div className="rounded-2xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-6 text-white shadow-soft dark:shadow-none">
-            <h1 className="text-2xl font-extrabold md:text-3xl">
-              Finish your profile
-            </h1>
-            <p className="mt-1 text-white/85">Loading…</p>
+          <div className={heroClass}>
+            <div className="container-page py-6 text-white sm:py-8">
+              <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+                Finish your profile
+              </h1>
+              <p className="mt-1 text-xs text-white/80 sm:text-sm">Loading…</p>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  const unameHintColor =
+  const unameHintClass =
     unameStatus === "ok"
-      ? "text-emerald-600"
+      ? "text-[var(--text)]"
       : unameStatus === "taken" || unameStatus === "invalid"
-      ? "text-red-600"
-      : "text-gray-500";
+        ? "text-[var(--text)]"
+        : "text-[var(--text-muted)]";
 
   return (
-    <div className="container-page py-8">
+    <div className="container-page bg-[var(--bg)] py-4 sm:py-6">
       <div className="mx-auto max-w-xl">
-        <div className="rounded-2xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-6 text-white shadow-soft dark:shadow-none">
-          <h1 className="text-2xl font-extrabold md:text-3xl">
-            Finish your profile
-          </h1>
-          <p className="mt-1 text-white/90">
-            Only <b>username</b> is required now. You can add the rest later in{" "}
-            <Link href="/account/profile" className="underline">
-              Profile
-            </Link>
-            .
-          </p>
+        <div className={heroClass}>
+          <div className="container-page py-6 text-white sm:py-8">
+            <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+              Finish your profile
+            </h1>
+            <p className="mt-1 text-xs text-white/80 sm:text-sm">
+              Only <b>username</b> is required now. You can add the rest later in{" "}
+              <Link href="/account/profile" className="underline">
+                Profile
+              </Link>
+              .
+            </p>
+          </div>
         </div>
 
         {unauthorized ? (
-          <div
-            role="alert"
-            className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
-          >
-            Please{" "}
-            <Link className="underline" href={signInHref}>
-              sign in
-            </Link>{" "}
-            to finish onboarding.
+          <div role="alert" className={`mt-3 sm:mt-4 ${panelClass}`}>
+            <p className="text-sm leading-relaxed text-[var(--text)]">
+              Please{" "}
+              <Link className="underline" href={signInHref}>
+                sign in
+              </Link>{" "}
+              to finish onboarding.
+            </p>
           </div>
         ) : null}
 
         {saved ? (
-          <div className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
-            Profile saved.{" "}
-            <Link href={returnTo} className="underline">
-              Continue
-            </Link>
+          <div className={`mt-3 sm:mt-4 ${panelClass}`}>
+            <p className="text-sm leading-relaxed text-[var(--text)]">
+              Profile saved.{" "}
+              <Link href={returnTo} className="underline">
+                Continue
+              </Link>
+            </p>
           </div>
         ) : null}
 
         {/* Form is always visible so guests see the username field */}
         <form
           onSubmit={onSubmit}
-          className="mt-6 space-y-4 rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
+          className={`mt-4 space-y-4 sm:mt-6 ${panelClass}`}
           noValidate
         >
           {/* Username */}
           <div>
-            <label htmlFor="username" className="mb-1 block text-sm font-semibold">
-              Username <span className="text-red-500">*</span>
+            <label htmlFor="username" className={fieldLabelClass}>
+              Username <span className="text-[var(--text-muted)]">*</span>
             </label>
             <div className="relative">
               <input
                 id="username"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pr-24 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                className={`${inputClass} pr-20 sm:pr-24`}
                 placeholder="e.g. brian254"
                 value={form.username}
                 onChange={(e) => onUsernameChange(e.target.value)}
@@ -347,29 +373,29 @@ function OnboardingPageInner() {
                 maxLength={24}
                 required
               />
-              <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs">
+              <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-[var(--text-muted)] sm:text-xs">
                 {unameStatus === "checking" ? "Checking…" : null}
               </div>
             </div>
-            <p className={`mt-1 text-xs ${unameHintColor}`}>
+            <p className={`mt-1 text-xs leading-relaxed ${unameHintClass}`}>
               {unameStatus === "invalid"
-                ? "3–24 letters/numbers, . or _ (no .., no leading/trailing . or _)."
+                ? "3-24 letters/numbers, . or _ (no .., no leading/trailing . or _)."
                 : unameStatus === "taken"
-                ? unameMsg || "Username already taken."
-                : unameStatus === "ok"
-                ? unameMsg || "Available ✓"
-                : "This will be visible on your listings and profile."}
+                  ? unameMsg || "Username already taken."
+                  : unameStatus === "ok"
+                    ? unameMsg || "Available ✓"
+                    : "This will be visible on your listings and profile."}
             </p>
           </div>
 
           {/* WhatsApp */}
           <div>
-            <label htmlFor="whatsapp" className="mb-1 block text-sm font-semibold">
+            <label htmlFor="whatsapp" className={fieldLabelClass}>
               WhatsApp (optional)
             </label>
             <input
               id="whatsapp"
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+              className={inputClass}
               placeholder="07XXXXXXXX or +2547XXXXXXX"
               value={form.whatsapp}
               onChange={(e) =>
@@ -379,16 +405,20 @@ function OnboardingPageInner() {
               inputMode="tel"
             />
             {form.whatsapp ? (
-              <p className="mt-1 text-xs">
+              <p className={helperTextClass}>
                 Normalized:{" "}
                 {normalizedWa ? (
-                  <span className="text-emerald-600">+{normalizedWa}</span>
+                  <span className="inline-flex items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]">
+                    +{normalizedWa}
+                  </span>
                 ) : (
-                  <span className="text-red-600">Invalid</span>
+                  <span className="inline-flex items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]">
+                    Invalid
+                  </span>
                 )}
               </p>
             ) : (
-              <p className="mt-1 text-xs text-gray-500">
+              <p className={helperTextClass}>
                 Buyers can reach you faster if you add WhatsApp.
               </p>
             )}
@@ -397,24 +427,26 @@ function OnboardingPageInner() {
           {/* City/Country */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="city" className="mb-1 block text-sm font-semibold">
+              <label htmlFor="city" className={fieldLabelClass}>
                 City (optional)
               </label>
               <input
                 id="city"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                className={inputClass}
                 placeholder="Nairobi"
                 value={form.city}
-                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, city: e.target.value }))
+                }
               />
             </div>
             <div>
-              <label htmlFor="country" className="mb-1 block text-sm font-semibold">
+              <label htmlFor="country" className={fieldLabelClass}>
                 Country (optional)
               </label>
               <input
                 id="country"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                className={inputClass}
                 placeholder="Kenya"
                 value={form.country}
                 onChange={(e) =>
@@ -427,12 +459,12 @@ function OnboardingPageInner() {
           {/* Postal/Address */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="postal" className="mb-1 block text-sm font-semibold">
+              <label htmlFor="postal" className={fieldLabelClass}>
                 Postal code (optional)
               </label>
               <input
                 id="postal"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                className={inputClass}
                 placeholder="00100"
                 value={form.postalCode}
                 onChange={(e) =>
@@ -442,12 +474,12 @@ function OnboardingPageInner() {
               />
             </div>
             <div>
-              <label htmlFor="address" className="mb-1 block text-sm font-semibold">
+              <label htmlFor="address" className={fieldLabelClass}>
                 Address (optional)
               </label>
               <input
                 id="address"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                className={inputClass}
                 placeholder="Street, building, etc."
                 value={form.address}
                 onChange={(e) =>
@@ -458,7 +490,7 @@ function OnboardingPageInner() {
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="submit"
               disabled={
@@ -468,19 +500,17 @@ function OnboardingPageInner() {
                 unameStatus === "invalid" ||
                 unameStatus === "taken"
               }
-              className="rounded-xl bg-[#161748] px-4 py-2 font-semibold text-white hover:opacity-95 disabled:opacity-60"
+              className={primaryBtnClass}
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            <Link
-              href={returnTo}
-              className="rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
-            >
+
+            <Link href={returnTo} className={secondaryBtnClass}>
               Skip for now
             </Link>
           </div>
 
-          <p className="text-[11px] text-gray-500 dark:text-slate-400">
+          <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
             By continuing you agree to QwikSale’s{" "}
             <Link href="/terms" className="underline">
               Terms

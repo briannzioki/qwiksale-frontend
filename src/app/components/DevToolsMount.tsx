@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 
 /**
- * Dev tools toggle — strictly passive (no URL/history mutations).
+ * Dev tools toggle - strictly passive (no URL/history mutations).
  */
 function computeInitialShow(): boolean {
   if (typeof window === "undefined") return false;
@@ -78,7 +78,8 @@ export default function DevToolsMount() {
       toggle();
     }
     window.addEventListener("qs:devtools:toggle", onToggle as EventListener);
-    return () => window.removeEventListener("qs:devtools:toggle", onToggle as EventListener);
+    return () =>
+      window.removeEventListener("qs:devtools:toggle", onToggle as EventListener);
   }, [toggle]);
 
   const Ribbon = useMemo(
@@ -88,7 +89,14 @@ export default function DevToolsMount() {
           type="button"
           onClick={toggle}
           title="Hide dev tools (Ctrl/⌘+Shift+D)"
-          className="fixed bottom-4 right-4 z-[9998] rounded-full border px-3 py-2 text-xs font-semibold bg-white/90 text-gray-900 dark:bg-zinc-900/90 dark:text-zinc-100 border-gray-200 dark:border-zinc-800 shadow-md backdrop-blur hover:bg-white dark:hover:bg-zinc-800 transition"
+          className={[
+            "fixed bottom-4 right-4 z-[9998] rounded-full border px-3 py-2 text-xs font-semibold",
+            "bg-[var(--bg-elevated)] text-[var(--text)] border-[var(--border-subtle)]",
+            "shadow-soft backdrop-blur transition",
+            "hover:bg-[var(--bg-subtle)]",
+            "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            "active:scale-[.99]",
+          ].join(" ")}
         >
           Dev tools ON
         </button>
@@ -97,12 +105,19 @@ export default function DevToolsMount() {
           type="button"
           onClick={toggle}
           title="Show dev tools (Ctrl/⌘+Shift+D)"
-          className="fixed bottom-4 right-4 z-[9998] rounded-full border px-3 py-2 text-xs bg-white/70 text-gray-700 dark:bg-zinc-900/70 dark:text-zinc-300 border-gray-200 dark:border-zinc-800 shadow-sm backdrop-blur hover:bg-white dark:hover:bg-zinc-800 transition"
+          className={[
+            "fixed bottom-4 right-4 z-[9998] rounded-full border px-3 py-2 text-xs",
+            "bg-[var(--bg-elevated)] text-[var(--text-muted)] border-[var(--border-subtle)]",
+            "shadow-sm backdrop-blur transition",
+            "hover:bg-[var(--bg-subtle)]",
+            "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            "active:scale-[.99]",
+          ].join(" ")}
         >
           Dev tools OFF
         </button>
       ),
-    [show, toggle]
+    [show, toggle],
   );
 
   if (!mounted) return null;

@@ -134,12 +134,15 @@ export function AdminNav({ items, className = "" }: Props) {
     >
       {mergedItems.map(({ href, label, icon }) => {
         const active = isActive(pathname, href);
+
         const base =
-          "group flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500";
+          "group flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
         const inactive =
-          "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";
+          "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]";
+
         const activeCls =
-          "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200/60 dark:bg-indigo-950/40 dark:text-indigo-200 dark:ring-indigo-800/50";
+          "border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]";
 
         return (
           <Link

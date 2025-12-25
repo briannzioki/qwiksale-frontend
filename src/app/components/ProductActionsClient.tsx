@@ -1,7 +1,7 @@
 // src/app/components/ProductActionsClient.tsx
-'use client';
+"use client";
 
-import { useCallback } from 'react';
+import { useCallback } from "react";
 
 type BaseClientProps = {
   id: string;
@@ -13,8 +13,8 @@ type BaseClientProps = {
 };
 
 export type ClientProps =
-  | (BaseClientProps & { kind: 'product' })
-  | (BaseClientProps & { kind: 'service' });
+  | (BaseClientProps & { kind: "product" })
+  | (BaseClientProps & { kind: "service" });
 
 export default function ProductActionsClient({
   kind,
@@ -25,7 +25,7 @@ export default function ProductActionsClient({
   const onMessage = useCallback(() => {
     // Keep behavior minimal & side-effect free:
     // if you have a real dialog, listen for this event elsewhere
-    const eventName = isAuthed ? 'qs:message:open' : 'qs:auth:prompt';
+    const eventName = isAuthed ? "qs:message:open" : "qs:auth:prompt";
     window.dispatchEvent(new CustomEvent(eventName, { detail: { kind, id } }));
   }, [kind, id, isAuthed]);
 
@@ -33,15 +33,17 @@ export default function ProductActionsClient({
     <button
       type="button"
       onClick={onMessage}
-      data-testid={kind === 'product' ? 'message-seller' : 'message-provider'}
-      aria-label={kind === 'product' ? 'Message seller' : 'Message provider'}
+      data-testid={kind === "product" ? "message-seller" : "message-provider"}
+      aria-label={kind === "product" ? "Message seller" : "Message provider"}
       className={[
-        'rounded-lg border px-3 py-2 text-sm hover:bg-gray-50',
-        'dark:border-slate-700 dark:hover:bg-slate-800',
-        className || '',
-      ].join(' ')}
+        "rounded-xl border px-3 py-2 text-sm font-semibold shadow-sm transition",
+        "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+        "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+        "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
+        className || "",
+      ].join(" ")}
     >
-      {kind === 'product' ? 'Message seller' : 'Message provider'}
+      {kind === "product" ? "Message seller" : "Message provider"}
     </button>
   );
 }

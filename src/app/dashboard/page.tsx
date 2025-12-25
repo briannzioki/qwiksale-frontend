@@ -80,8 +80,7 @@ function computeProfileCompletion(input: {
 }): ProfileCompletion {
   const missingFields: Array<"username" | "emailVerified"> = [];
 
-  const u =
-    typeof input.username === "string" ? input.username.trim() : "";
+  const u = typeof input.username === "string" ? input.username.trim() : "";
   if (!u) missingFields.push("username");
 
   if (!isVerifiedEmail(input.emailVerified)) missingFields.push("emailVerified");
@@ -102,7 +101,7 @@ export default async function DashboardPage({
     const rawSp = (await searchParams) ?? {};
     const sp = rawSp as Record<string, string | string[] | undefined>;
 
-    // E2E flag detection – be generous about how the flag is passed
+    // E2E flag detection - be generous about how the flag is passed
     const directFlag =
       (Array.isArray(sp["__e2e"]) ? sp["__e2e"][0] : sp["__e2e"]) ??
       (Array.isArray(sp["e2e_dashboard_error"])
@@ -132,29 +131,34 @@ export default async function DashboardPage({
       lowerValues.includes("dashboard_error") ||
       lowerValues.includes("dashboard-error");
 
+    const btnBase =
+      "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm";
+
     if (e2eFlag) {
       // Explicit soft-error surface for guardrail tests
       return (
         <main
           id="main"
-          className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
+          className="min-h-[calc(100vh-4rem)] bg-[var(--bg)] px-4 py-4 text-[var(--text)] sm:py-6 md:px-8 lg:px-12 xl:px-16"
           data-soft-error="dashboard"
           data-e2e="dashboard-soft-error"
         >
           <div className="mx-auto max-w-6xl">
-            <h1 className="text-xl font-semibold">We hit a dashboard error</h1>
-            <p className="mt-2 text-sm opacity-80">
+            <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
+              We hit a dashboard error
+            </h1>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
               This is a simulated soft error for guardrail testing. You can
               refresh or navigate away.
             </p>
-            <div className="mt-3 flex gap-2">
-              <Link href="/dashboard" prefetch={false} className="btn-outline">
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href="/dashboard" prefetch={false} className={btnBase}>
                 Retry
               </Link>
-              <Link href="/" prefetch={false} className="btn-outline">
+              <Link href="/" prefetch={false} className={btnBase}>
                 Home
               </Link>
-              <Link href="/help" prefetch={false} className="btn-outline">
+              <Link href="/help" prefetch={false} className={btnBase}>
                 Help Center
               </Link>
             </div>
@@ -163,7 +167,7 @@ export default async function DashboardPage({
       );
     }
 
-    // Cookie heuristics – detect presence of any NextAuth session cookie.
+    // Cookie heuristics - detect presence of any NextAuth session cookie.
     const cookieStore = await cookies();
     const hasAuthCookie = cookieStore.getAll().some((c: { name?: string }) => {
       const name = (c.name ?? "").toLowerCase();
@@ -175,7 +179,7 @@ export default async function DashboardPage({
       );
     });
 
-    // Canonical auth check – rely on the session.
+    // Canonical auth check - rely on the session.
     const viewer = await getSessionUser();
     const viewerAny = (viewer ?? {}) as any;
 
@@ -186,7 +190,7 @@ export default async function DashboardPage({
 
     const hasSessionIdentity = Boolean(sessionId || sessionEmail);
 
-    // No session identity – distinguish between *true guest* and *limbo*.
+    // No session identity - distinguish between *true guest* and *limbo*.
     if (!hasSessionIdentity) {
       // Limbo: we see an auth cookie but no session identity.
       // For guardrail / "no auto-logout" semantics, do NOT show a Sign in CTA here.
@@ -194,17 +198,19 @@ export default async function DashboardPage({
         return (
           <main
             id="main"
-            className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
+            className="min-h-[calc(100vh-4rem)] bg-[var(--bg)] px-4 py-4 text-[var(--text)] sm:py-6 md:px-8 lg:px-12 xl:px-16"
             data-soft-error="dashboard"
             data-e2e="dashboard-soft-error"
           >
             <div className="mx-auto max-w-6xl">
-              <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-              <div className="mt-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
-                <h2 className="text-lg font-semibold">
+              <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
+                Dashboard
+              </h1>
+              <div className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-4 sm:p-5">
+                <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">
                   We couldn&apos;t load your dashboard
                 </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
+                <p className="mt-2 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
                   Your session appears to be active, but we couldn&apos;t load
                   your dashboard right now. Please refresh this page or navigate
                   to another section. Your account menu in the header should
@@ -220,20 +226,22 @@ export default async function DashboardPage({
       return (
         <main
           id="main"
-          className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
+          className="min-h-[calc(100vh-4rem)] bg-[var(--bg)] px-4 py-4 text-[var(--text)] sm:py-6 md:px-8 lg:px-12 xl:px-16"
         >
           <div
             className="mx-auto flex max-w-6xl flex-col gap-4"
             data-e2e="dashboard-guest"
           >
-            <h1 className="text-2xl font-bold md:text-3xl">Dashboard</h1>
-            <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-              <p className="text-sm">
+            <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
+              Dashboard
+            </h1>
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-5">
+              <p className="text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
                 You&apos;re not signed in or your session has expired.{" "}
                 <Link
                   href="/signin?callbackUrl=/dashboard"
                   prefetch={false}
-                  className="underline"
+                  className="font-semibold text-[var(--text)] underline underline-offset-4 decoration-[var(--border)] hover:decoration-[var(--text)]"
                 >
                   Sign in to view your dashboard
                 </Link>
@@ -253,8 +261,12 @@ export default async function DashboardPage({
       email: sessionEmail,
       image: typeof viewerAny?.image === "string" ? viewerAny.image : null,
       subscription: null,
-      username: typeof viewerAny?.username === "string" ? viewerAny.username : null,
-      emailVerified: typeof viewerAny?.emailVerified === "string" ? viewerAny.emailVerified : null,
+      username:
+        typeof viewerAny?.username === "string" ? viewerAny.username : null,
+      emailVerified:
+        typeof viewerAny?.emailVerified === "string"
+          ? viewerAny.emailVerified
+          : null,
     };
 
     // User row fetch with timeout + safe fallback. Try by id first, then email.
@@ -335,7 +347,8 @@ export default async function DashboardPage({
 
     const metrics = summary?.metrics ?? emptySummary.metrics;
     const inboxSummary = summary?.inbox ?? emptySummary.inbox;
-    const recentListings = summary?.recentListings ?? emptySummary.recentListings;
+    const recentListings =
+      summary?.recentListings ?? emptySummary.recentListings;
 
     const myListingsCount = metrics.myListingsCount ?? 0;
     const favoritesCount = metrics.favoritesCount ?? 0;
@@ -401,83 +414,73 @@ export default async function DashboardPage({
     return (
       <main
         id="main"
-        className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
+        className="min-h-[calc(100vh-4rem)] bg-[var(--bg)] px-4 py-4 text-[var(--text)] sm:py-6 md:px-8 lg:px-12 xl:px-16"
       >
         <section
-          className="mx-auto flex max-w-6xl flex-col gap-6"
+          className="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-6"
           data-e2e="dashboard-auth"
         >
           {/* Page title + hero */}
-          <header className="flex flex-col gap-4">
+          <header className="flex flex-col gap-3 sm:gap-4">
             <div className="flex items-center justify-between gap-2">
-              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+              <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
                 Dashboard
               </h1>
-              <span className="hidden text-xs font-medium uppercase tracking-[0.25em] text-muted-foreground/80 md:inline">
+              <span className="hidden text-xs font-semibold uppercase tracking-[0.25em] text-[var(--text-muted)] md:inline">
                 Overview
               </span>
             </div>
 
             <section
               aria-label="Account overview"
-              className="relative overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-[#161748] via-[#1b244f] to-[#39a0ca] p-6 text-primary-foreground shadow-xl shadow-black/40"
+              className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-4 text-white shadow-soft sm:p-6"
             >
-              {/* soft spotlight overlay */}
-              <div
-                className="pointer-events-none absolute inset-0 opacity-60 mix-blend-soft-light"
-                aria-hidden="true"
-              >
-                <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.16),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(71,133,89,0.3),_transparent_55%)]" />
-              </div>
-
-              <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-center gap-4">
+              <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
+                <div className="flex items-center gap-3 sm:gap-4">
                   <UserAvatar
                     src={me.image ?? undefined}
                     alt={me.name || me.email || "You"}
                     size={56}
                   />
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-200/80">
+                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/75">
                       Welcome back
                     </p>
-                    <p className="mt-1 text-xl font-semibold md:text-2xl">
-                      Hey,{" "}
-                      <span className="bg-gradient-to-r from-sky-300 to-emerald-300 bg-clip-text text-transparent">
-                        {displayName}
-                      </span>
-                      .
+                    <p className="mt-1 text-lg font-extrabold tracking-tight sm:text-xl md:text-2xl">
+                      Hey, <span className="text-white">{displayName}</span>.
                     </p>
-                    <p className="mt-1 text-sm text-slate-100/80">
-                      Quick snapshot of your listings, favorites, and messages on
-                      QwikSale.
+                    <p className="mt-1 text-[11px] leading-relaxed text-white/85 sm:text-sm">
+                      Quick snapshot of your listings, favorites, and messages
+                      on QwikSale.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex flex-col items-start gap-2 md:items-end">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1 text-xs font-medium text-slate-50 backdrop-blur-sm">
+                <div className="flex flex-col items-start gap-1.5 md:items-end md:gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
                     <span
-                      className="h-2 w-2 rounded-full bg-emerald-400"
+                      className="h-2 w-2 rounded-full bg-white/80"
                       aria-hidden="true"
                     />
                     <span>Plan:</span>
-                    <span className="font-semibold">{subLabel}</span>
+                    <span className="font-extrabold">{subLabel}</span>
                   </span>
+
                   <div className="flex flex-wrap gap-2">
                     <Link
                       href="/account/profile"
                       prefetch={false}
-                      className="btn-gradient-primary text-xs md:text-sm"
+                      className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus md:text-sm"
                       title="Edit account"
                     >
                       Edit Account
                     </Link>
+
                     {subLabel === "FREE" && (
                       <Link
                         href="/settings/billing"
                         prefetch={false}
-                        className="btn-gradient-accent text-xs md:text-sm"
+                        className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus md:text-sm"
                       >
                         Upgrade
                       </Link>
@@ -487,31 +490,31 @@ export default async function DashboardPage({
               </div>
 
               {/* Hero primary actions */}
-              <div className="relative mt-5 flex flex-wrap gap-3 text-sm">
+              <div className="relative mt-3 flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pb-1 [-webkit-overflow-scrolling:touch] sm:mt-5 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:pb-0">
                 <Link
                   href="/sell"
                   prefetch={false}
-                  className="btn-outline bg-black/20 text-primary-foreground hover:bg-black/30"
+                  className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
                 >
                   + Post a Listing
                 </Link>
                 <Link
                   href="/saved"
                   prefetch={false}
-                  className="btn-outline bg-black/10 text-primary-foreground hover:bg-black/20"
+                  className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
                 >
                   View Saved
                 </Link>
                 <Link
                   href="/settings/billing"
                   prefetch={false}
-                  className="btn-outline bg-black/10 text-primary-foreground hover:bg-black/20"
+                  className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
                 >
                   Billing &amp; Subscription
                 </Link>
                 <a
                   href="/api/auth/signout"
-                  className="btn-outline ml-auto bg-black/25 text-primary-foreground hover:bg-black/35"
+                  className="sm:ml-auto inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
                   rel="nofollow"
                 >
                   Sign out
@@ -519,22 +522,24 @@ export default async function DashboardPage({
               </div>
 
               {/* High-level snapshot chips */}
-              <div className="relative mt-4 flex flex-wrap gap-3 text-xs text-slate-100/85">
-                <div className="inline-flex items-center gap-2 rounded-full bg-black/25 px-3 py-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+              <div className="relative mt-3 flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pb-1 text-[11px] text-white/85 [-webkit-overflow-scrolling:touch] sm:mt-4 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:pb-0 sm:text-xs">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/75" />
                   <span>{fmtInt(myListingsCount)} active listing(s)</span>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/75" />
                   <span>{fmtInt(favoritesCount)} item(s) in favorites</span>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/75" />
                   <span>{fmtInt(newLast7Days)} new in the last 7 days</span>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-pink-300" />
-                  <span>{fmtInt(likesOnMyListings)} like(s) on your listings</span>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/75" />
+                  <span>
+                    {fmtInt(likesOnMyListings)} like(s) on your listings
+                  </span>
                 </div>
               </div>
             </section>
@@ -543,21 +548,24 @@ export default async function DashboardPage({
             {profileCompletion.missingFields.length > 0 && (
               <div
                 role="alert"
-                className="rounded-3xl border border-amber-300/60 bg-amber-50/70 p-4 text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50 md:p-5"
+                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-5"
                 data-testid="dashboard-complete-profile-banner"
               >
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <div className="text-sm font-semibold">Complete profile</div>
-                    <div className="mt-1 text-sm opacity-90">
-                      Finish setting up your account to get the best experience on QwikSale.
+                    <div className="text-sm font-extrabold tracking-tight text-[var(--text)] sm:text-base">
+                      Complete profile
+                    </div>
+                    <div className="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)] sm:text-sm">
+                      Finish setting up your account to get the best experience
+                      on QwikSale.
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Link
                       href={completeProfileHref}
                       prefetch={false}
-                      className="btn-gradient-primary text-xs md:text-sm"
+                      className="inline-flex items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-elevated)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus md:text-sm"
                       data-testid="dashboard-complete-profile-cta"
                     >
                       Complete profile
@@ -565,7 +573,7 @@ export default async function DashboardPage({
                     <Link
                       href="/account/profile"
                       prefetch={false}
-                      className="btn-outline text-xs md:text-sm"
+                      className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus md:text-sm"
                     >
                       Edit Account
                     </Link>
@@ -582,19 +590,19 @@ export default async function DashboardPage({
           </header>
 
           {/* Main dashboard content */}
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 sm:gap-5">
             {/* Dashboard summary / metrics */}
-            <section className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6">
+            <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6">
               {/* The only ARIA region named "Dashboard summary" is inside DashboardMetrics */}
               <DashboardMetrics metrics={metrics} />
             </section>
 
             {/* Messages + charts split */}
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,2.6fr)]">
+            <div className="grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,2.6fr)]">
               <section
                 aria-label="Messages snapshot"
                 role="region"
-                className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6"
+                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6"
               >
                 <DashboardMessagesPreview inbox={inboxSummary} />
               </section>
@@ -602,7 +610,7 @@ export default async function DashboardPage({
               <section
                 aria-label="Activity charts"
                 role="region"
-                className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6"
+                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6"
               >
                 <DashboardCharts data={chartPoints} />
               </section>
@@ -610,47 +618,45 @@ export default async function DashboardPage({
 
             {/* Recent listings */}
             <section
-              className="rounded-3xl border border-border bg-card/80 p-4 shadow-sm backdrop-blur-sm md:p-6"
+              className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6"
               aria-label="Your recent listings"
               role="region"
             >
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-lg font-semibold">Your Recent Listings</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">
+                    Your Recent Listings
+                  </h2>
+                  <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
                     Quick access to what you&apos;ve posted most recently.
                   </p>
                 </div>
                 <Link
                   href="/sell"
                   prefetch={false}
-                  className="text-sm font-medium text-[#39a0ca] underline underline-offset-4"
+                  className="inline-flex items-center text-xs font-semibold text-[var(--text-muted)] underline underline-offset-4 decoration-[var(--border)] transition hover:text-[var(--text)] sm:text-sm"
                 >
                   Post another →
                 </Link>
               </div>
 
               {recentListings.length === 0 ? (
-                <div className="mt-6 rounded-2xl border border-dashed border-border/60 bg-muted/40 p-8 text-center">
-                  <EmptyBoxIllustration className="mx-auto h-24 w-24 opacity-90" />
-                  <p className="mt-3 text-lg font-semibold text-foreground">
+                <div className="mt-4 rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-6 text-center sm:mt-6 sm:p-8">
+                  <EmptyBoxIllustration className="mx-auto h-20 w-20 text-[var(--text-muted)] opacity-90 sm:h-24 sm:w-24" />
+                  <p className="mt-3 text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">
                     No listings yet
                   </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
                     Post your first item to get started.
                   </p>
                   <div className="mt-4">
-                    <Link
-                      href="/sell"
-                      prefetch={false}
-                      className="btn-gradient-primary"
-                    >
+                    <Link href="/sell" prefetch={false} className={btnBase}>
                       Post a Listing
                     </Link>
                   </div>
                 </div>
               ) : (
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="mt-4 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:mt-5 sm:gap-4 lg:grid-cols-3">
                   {recentListings.map((item) => (
                     <RecentListingCard
                       key={`${item.type}-${item.id}`}
@@ -671,18 +677,24 @@ export default async function DashboardPage({
     return (
       <main
         id="main"
-        className="min-h-[calc(100vh-4rem)] px-4 py-6 md:px-8 lg:px-12 xl:px-16"
+        className="min-h-[calc(100vh-4rem)] bg-[var(--bg)] px-4 py-4 text-[var(--text)] sm:py-6 md:px-8 lg:px-12 xl:px-16"
         data-soft-error="dashboard"
         data-e2e="dashboard-soft-error"
       >
         <div className="mx-auto max-w-6xl">
-          <h1 className="text-xl font-semibold">We hit a dashboard error</h1>
-          <p className="mt-2 text-sm opacity-80">
+          <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
+            We hit a dashboard error
+          </h1>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
             Something went wrong loading your dashboard. Please refresh. If this
-            continues, contact support — the error has been logged.
+            continues, contact support - the error has been logged.
           </p>
           <div className="mt-3">
-            <Link href="/dashboard" prefetch={false} className="btn-outline">
+            <Link
+              href="/dashboard"
+              prefetch={false}
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
+            >
               Retry
             </Link>
           </div>

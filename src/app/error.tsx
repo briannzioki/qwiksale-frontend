@@ -35,8 +35,7 @@ export default function ErrorPage({
 
   const digest = getDigest(error);
   const message = getMessage(error);
-  const path =
-    typeof location !== "undefined" ? location.pathname : undefined;
+  const path = typeof location !== "undefined" ? location.pathname : undefined;
 
   React.useEffect(() => {
     // Local console for quick inspection (dev only effectively)
@@ -121,9 +120,7 @@ export default function ErrorPage({
         path,
         ts: new Date().toISOString(),
       };
-      await navigator.clipboard.writeText(
-        JSON.stringify(payload, null, 2),
-      );
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
       track("page_error_copy" as any, { digest, path });
     } catch {
       // no-op
@@ -131,10 +128,10 @@ export default function ErrorPage({
   }, [message, digest, path]);
 
   return (
-    <div className="pb-10">
+    <div className="bg-[var(--bg)] pb-10 text-[var(--text)]">
       {/* Branded hero */}
       <header
-        className="bg-spotlight bg-noise text-white"
+        className="bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white"
         style={{
           WebkitMaskImage:
             "linear-gradient(to bottom, black 80%, transparent)",
@@ -186,18 +183,18 @@ export default function ErrorPage({
       {/* Body card with optional details */}
       <div className="container-page mt-6">
         <div
-          className="rounded-2xl border border-border bg-card p-6 shadow-sm"
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-6 shadow-sm"
           role="status"
           aria-live="polite"
         >
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold tracking-tight">
+              <h2 className="text-xl font-bold tracking-tight text-[var(--text)]">
                 Let’s get you back on track
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                If the problem keeps happening, please let us know — it helps
-                us fix things faster.
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                If the problem keeps happening, please let us know - it helps us
+                fix things faster.
               </p>
             </div>
           </div>
@@ -224,14 +221,14 @@ export default function ErrorPage({
               href="/contact"
               prefetch={false}
               onClick={onReport}
-              className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
+              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-1.5 text-sm text-[var(--text)] transition hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
             >
               Report this issue
             </Link>
           </div>
 
           {SHOW_DEV_DETAILS && (
-            <details className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-100">
+            <details className="mt-6 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-4 text-sm text-[var(--text)]">
               <summary className="cursor-pointer select-none font-semibold">
                 Error details (dev)
               </summary>
@@ -249,7 +246,7 @@ export default function ErrorPage({
                   </p>
                 ) : null}
                 {error?.stack ? (
-                  <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
+                  <pre className="overflow-auto rounded-md bg-[var(--bg)] p-3 text-xs text-[var(--text)]">
                     {error.stack}
                   </pre>
                 ) : null}
@@ -263,10 +260,10 @@ export default function ErrorPage({
           <Link
             href="/search"
             prefetch={false}
-            className="rounded-xl border border-border bg-card p-4 text-foreground shadow-sm hover:shadow-md"
+            className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 text-[var(--text)] shadow-sm hover:shadow-md"
           >
             <div className="text-lg font-semibold">Browse listings</div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-[var(--text-muted)]">
               Products &amp; services by category
             </div>
           </Link>
@@ -274,10 +271,10 @@ export default function ErrorPage({
           <Link
             href="/sell"
             prefetch={false}
-            className="rounded-xl border border-border bg-card p-4 text-foreground shadow-sm hover:shadow-md"
+            className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 text-[var(--text)] shadow-sm hover:shadow-md"
           >
             <div className="text-lg font-semibold">Sell an item</div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-[var(--text-muted)]">
               Post your listing
             </div>
           </Link>
@@ -285,10 +282,10 @@ export default function ErrorPage({
           <Link
             href="/help"
             prefetch={false}
-            className="rounded-xl border border-border bg-card p-4 text-foreground shadow-sm hover:shadow-md"
+            className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 text-[var(--text)] shadow-sm hover:shadow-md"
           >
             <div className="text-lg font-semibold">Help Center</div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-[var(--text-muted)]">
               Safety tips &amp; FAQs
             </div>
           </Link>

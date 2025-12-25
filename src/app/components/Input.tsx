@@ -1,5 +1,4 @@
 "use client";
-// src/app/components/Input.tsx
 
 import * as React from "react";
 
@@ -31,27 +30,34 @@ function cn(...xs: Array<string | undefined | false | null>) {
   return xs.filter(Boolean).join(" ");
 }
 
+/**
+ * Phone-first sizing:
+ * - default `md` becomes tighter on xs (h-9, text-sm), restores on sm+
+ * - keep touch target >= h-9
+ */
 const sizeMap: Record<
   Size,
   { input: string; left: string; right: string; label: string }
 > = {
   sm: {
-    input: "h-9 text-sm rounded-lg pl-8 pr-8",
+    input: "h-9 text-sm rounded-xl pl-8 pr-8",
     left: "left-2.5 text-[15px]",
     right: "right-2.5 text-[15px]",
     label: "text-xs",
   },
   md: {
-    input: "h-10 text-[0.95rem] rounded-xl pl-9 pr-9",
-    left: "left-3 text-[16px]",
-    right: "right-3 text-[16px]",
-    label: "text-sm",
+    input: "h-9 sm:h-10 text-sm sm:text-[0.95rem] rounded-xl pl-9 pr-9",
+    left: "left-2.5 sm:left-3 text-[15px] sm:text-[16px]",
+    right: "right-2.5 sm:right-3 text-[15px] sm:text-[16px]",
+    label: "text-xs sm:text-sm",
   },
   lg: {
-    input: "h-12 text-base rounded-2xl pl-11 pr-11",
-    left: "left-3.5 text-[18px]",
-    right: "right-3.5 text-[18px]",
-    label: "text-sm",
+    input:
+      "h-10 sm:h-12 text-sm sm:text-base rounded-2xl " +
+      "pl-10 sm:pl-11 pr-10 sm:pr-11",
+    left: "left-3 text-[16px] sm:text-[18px]",
+    right: "right-3 text-[16px] sm:text-[18px]",
+    label: "text-xs sm:text-sm",
   },
 };
 
@@ -93,7 +99,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           >
             {label}
             {requiredMark ? (
-              <span className="ml-0.5 text-rose-600">*</span>
+              <span className="ml-0.5 text-[var(--danger)]">*</span>
             ) : null}
           </label>
         ) : null}
@@ -124,10 +130,11 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
               "bg-[var(--bg-elevated)] text-[var(--text)]",
               "border border-[var(--border)]",
               "placeholder:text-[var(--text-muted)]",
-              "shadow-inner",
-              "focus:outline-none focus:ring-2 ring-focus",
-              "disabled:opacity-60 disabled:cursor-not-allowed",
+              "shadow-sm",
               "transition",
+              "hover:border-[var(--border)]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              "disabled:opacity-60 disabled:cursor-not-allowed",
               sz.input,
               invalid && "border-[var(--danger)]",
               readOnly && "opacity-90",
@@ -155,9 +162,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             id={describedBy}
             className={cn(
               "mt-1 text-xs",
-              invalid
-                ? "text-[var(--danger)]"
-                : "text-[var(--text-muted)]",
+              invalid ? "text-[var(--danger)]" : "text-[var(--text-muted)]",
             )}
           >
             {message}

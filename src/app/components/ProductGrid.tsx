@@ -11,6 +11,10 @@ import VerifiedBadge from "@/app/components/VerifiedBadge";
 
 type Mode = "products" | "all";
 
+type FeaturedTier = "basic" | "gold" | "diamond";
+
+type SellerBadges = { verified: boolean | null; tier: FeaturedTier | null };
+
 type BaseItem = {
   id: string;
   name: string;
@@ -18,9 +22,18 @@ type BaseItem = {
   image: string | null;
   featured?: boolean | null;
 
-  /** Seller/account flags for public UI (optional) */
+  /**
+   * Canonical / preferred:
+   * - API should send sellerBadges always
+   * - optionally aliases: sellerVerified + sellerFeaturedTier
+   */
+  sellerBadges?: SellerBadges | null;
+  sellerVerified?: boolean | null;
+  sellerFeaturedTier?: FeaturedTier | string | null;
+
+  /** Back-compat legacy inputs (fallback only): */
   verified?: boolean | null;
-  featuredTier?: "basic" | "gold" | "diamond" | string | null;
+  featuredTier?: FeaturedTier | string | null;
 
   createdAt?: string;
 };
@@ -81,10 +94,58 @@ function getBlurDataURL(width = 640, height = 360): string {
 function fmtKES(n: number | null | undefined) {
   if (typeof n !== "number" || n <= 0) return "Contact for price";
   try {
-    return `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n)}`;
+    return `KES ${new Intl.NumberFormat("en-KE", {
+      maximumFractionDigits: 0,
+    }).format(n)}`;
   } catch {
     return `KES ${n}`;
   }
+}
+
+function normalizeTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  if (t === "basic" || t === "gold" || t === "diamond") return t;
+  return null;
+}
+
+/**
+ * Canonical badge resolver (UI must not derive tier from `featured` boolean):
+ * 1) sellerBadges if present
+ * 2) sellerVerified + sellerFeaturedTier aliases
+ * 3) legacy verified + featuredTier
+ */
+function resolveSellerBadges(it: any): SellerBadges {
+  const isObj = it && typeof it === "object" && !Array.isArray(it);
+
+  // 1) sellerBadges (preferred)
+  if (
+    isObj &&
+    "sellerBadges" in it &&
+    it.sellerBadges &&
+    typeof it.sellerBadges === "object"
+  ) {
+    const sb = it.sellerBadges as any;
+    const verified =
+      typeof sb?.verified === "boolean" ? (sb.verified as boolean) : null;
+    const tier = normalizeTier(sb?.tier);
+    return { verified, tier };
+  }
+
+  // 2) aliases
+  if (isObj && ("sellerVerified" in it || "sellerFeaturedTier" in it)) {
+    const verified =
+      typeof it?.sellerVerified === "boolean"
+        ? (it.sellerVerified as boolean)
+        : null;
+    const tier = normalizeTier(it?.sellerFeaturedTier);
+    return { verified, tier };
+  }
+
+  // 3) legacy
+  const verified = typeof it?.verified === "boolean" ? (it.verified as boolean) : null;
+  const tier = normalizeTier(it?.featuredTier);
+  return { verified, tier };
 }
 
 /* -------------------------- simple mixed item tile ------------------------- */
@@ -102,70 +163,72 @@ function MixedTile({
   const url = it.image || PLACEHOLDER;
 
   const priority = index < 8;
-  const blurProps =
-    priority
-      ? ({ placeholder: "blur", blurDataURL: getBlurDataURL(640, 360) } as const)
-      : ({ placeholder: "empty" } as const);
+  const blurProps = priority
+    ? ({ placeholder: "blur", blurDataURL: getBlurDataURL(640, 360) } as const)
+    : ({ placeholder: "empty" } as const);
 
   const alt = it.name
     ? `${it.type === "service" ? "Service" : "Product"} image for ${it.name}`
     : it.type === "service"
-    ? "Service image"
-    : "Product image";
+      ? "Service image"
+      : "Product image";
 
-  const tier = (() => {
-    if (typeof it.featuredTier === "string") {
-      const t = it.featuredTier.trim().toLowerCase();
-      if (t === "basic" || t === "gold" || t === "diamond") return t;
-    }
-    return it.featured ? "basic" : null;
-  })();
+  const badges = resolveSellerBadges(it);
+  const showBadges = typeof badges.verified === "boolean" || badges.tier !== null;
 
   // Border-first card using semantic tokens
   return (
     <Link
       href={href}
       prefetch={prefetch}
-      className="group"
+      className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 ring-focus"
       aria-label={`${it.type === "service" ? "Service" : "Product"}: ${it.name ?? "Listing"}`}
       title={it.name ?? undefined}
     >
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card transition">
-        {it.featured ? (
-          <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white">
-            Featured
-          </span>
-        ) : null}
-
-        <div className="relative h-40 w-full bg-muted">
+      <div
+        className={[
+          "relative overflow-hidden rounded-2xl border bg-[var(--bg-elevated)] transition will-change-transform",
+          "border-[var(--border-subtle)] shadow-sm",
+          "group-hover:-translate-y-0.5 group-hover:border-[var(--border)] group-hover:shadow-soft",
+          "active:scale-[.99]",
+        ].join(" ")}
+      >
+        <div
+          className={[
+            "relative w-full bg-[var(--bg-subtle)]",
+            "h-36 min-[420px]:h-40 sm:h-44",
+          ].join(" ")}
+        >
           <SmartImage
             src={url}
             alt={alt}
             fill
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
             priority={priority}
             {...blurProps}
           />
         </div>
 
-        <div className="p-3">
-          <h3 className="line-clamp-1 font-semibold text-foreground">
+        <div className="p-2.5 sm:p-3">
+          <h3 className="line-clamp-1 text-sm sm:text-base font-semibold text-[var(--text)]">
             {it.name}
           </h3>
-          <p className="mt-1 font-bold text-brandBlue">
+
+          <p className="mt-1 text-sm sm:text-base font-extrabold tracking-tight text-[var(--text)]">
             {fmtKES(it.price)}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+
+          <p className="mt-0.5 text-[11px] sm:text-xs text-[var(--text-muted)]">
             {it.type === "service" ? "Service" : "Product"}
           </p>
 
-          {(typeof it.verified === "boolean" || tier) && (
+          {/* Exactly one badge component in this region (no separate tier overlays). */}
+          {showBadges && (
             <div className="mt-2">
               <VerifiedBadge
-                verified={typeof it.verified === "boolean" ? it.verified : null}
-                featured={Boolean(it.featured)}
-                featuredTier={tier}
+                {...(typeof badges.verified === "boolean" ? { verified: badges.verified } : {})}
+                featuredTier={badges.tier}
               />
             </div>
           )}
@@ -198,7 +261,13 @@ export default function ProductGrid(props: Props) {
   return (
     <div className={className}>
       {/* Grid */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div
+        className={[
+          "grid grid-cols-1 min-[420px]:grid-cols-2",
+          "gap-3 sm:gap-4 md:gap-6",
+          "sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4",
+        ].join(" ")}
+      >
         {items.map((p: any, idx: number) =>
           isAll ? (
             <MixedTile
@@ -217,16 +286,14 @@ export default function ProductGrid(props: Props) {
                 image: p.image ?? null,
                 featured: Boolean(p.featured),
 
-                // optional seller/account flags
-                verified: typeof p.verified === "boolean" ? p.verified : null,
-                featuredTier: p.featuredTier ?? null,
+                // ✅ preferred canonical badge object (no tier derived from `featured`)
+                sellerBadges: resolveSellerBadges(p),
 
                 position: idx,
                 prefetch: prefetchCards,
               } as any)}
-              // ProductCard already follows the border-first, lighter style after your recent updates
             />
-          )
+          ),
         )}
 
         {/* Skeletons while loading first page */}
@@ -235,31 +302,41 @@ export default function ProductGrid(props: Props) {
           Array.from({ length: pageSize }).map((_, i) => (
             <div
               key={`skeleton-${i}`}
-              className="rounded-2xl border border-border bg-card p-3"
+              className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 sm:p-3 shadow-sm"
             >
-              <div className="h-40 w-full animate-pulse rounded-lg bg-muted" />
-              <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-muted" />
-              <div className="mt-1 h-4 w-1/2 animate-pulse rounded bg-muted" />
+              <div className="h-36 sm:h-44 w-full animate-pulse rounded-xl bg-[var(--bg-subtle)]" />
+              <div className="mt-2 h-3 w-3/4 animate-pulse rounded-lg bg-[var(--bg-subtle)]" />
+              <div className="mt-1 h-3 w-1/2 animate-pulse rounded-lg bg-[var(--bg-subtle)]" />
             </div>
           ))}
       </div>
 
       {/* Status / errors / empty */}
-      <div className="mt-4">
+      <div className="mt-3 sm:mt-4">
         {error ? (
-          <div className="text-sm text-red-600">{error}</div>
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3 text-xs sm:text-sm text-[var(--text)] shadow-sm">
+            {error}
+          </div>
         ) : !loading && items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">{emptyText}</div>
+          <div className="text-xs sm:text-sm text-[var(--text-muted)]">
+            {emptyText}
+          </div>
         ) : null}
       </div>
 
       {/* Load more button */}
       {showLoadMoreButton && hasMore && (
-        <div className="mt-4 flex items-center justify-center">
+        <div className="mt-3 sm:mt-4 flex items-center justify-center">
           <button
             onClick={() => onLoadMoreAction && onLoadMoreAction()}
             disabled={loading}
-            className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted disabled:opacity-60"
+            className={[
+              "h-10 rounded-xl border px-4 text-xs sm:text-sm font-semibold shadow-sm transition",
+              "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+              "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+              "active:scale-[.99] disabled:opacity-60",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
           >
             {loading ? "Loading…" : "Load more"}
           </button>
@@ -268,11 +345,7 @@ export default function ProductGrid(props: Props) {
 
       {/* Optional sentinel for auto-load (parent controls when to fetch) */}
       {useSentinel && hasMore && !loading && (
-        <div
-          // Consumers can wrap this div with their own IntersectionObserver if needed
-          data-grid-sentinel
-          className="h-1 w-full"
-        />
+        <div data-grid-sentinel className="h-1 w-full" />
       )}
     </div>
   );

@@ -51,9 +51,7 @@ test("header inline search opens and submits to /search", async ({ page }) => {
   const isProduct = href.startsWith("/product/");
   const apiPath = isProduct ? `/api/products/${id}` : `/api/services/${id}`;
 
-  const apiRes = await page.request
-    .get(apiPath, { timeout: 30_000 })
-    .catch(() => null);
+  const apiRes = await page.request.get(apiPath, { timeout: 30_000 }).catch(() => null);
 
   if (!apiRes || !apiRes.ok()) {
     test.skip(true, `API ${apiPath} not available`);
@@ -70,11 +68,9 @@ test("header inline search opens and submits to /search", async ({ page }) => {
   }
 
   const tier =
-    typeof sellerFeaturedTier === "string"
-      ? sellerFeaturedTier.trim().toLowerCase()
-      : "";
+    typeof sellerFeaturedTier === "string" ? sellerFeaturedTier.trim().toLowerCase() : "";
 
   if (tier === "basic" || tier === "gold" || tier === "diamond") {
-    await expect(firstResult.locator(`text=/\\b${tier}\\b/i`)).toBeVisible();
+    await expect(firstResult.locator(`[data-testid="featured-tier-${tier}"]`)).toBeVisible();
   }
 });

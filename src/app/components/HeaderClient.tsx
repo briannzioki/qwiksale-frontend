@@ -32,6 +32,10 @@ type FeedItem = {
 
 const FEED_TIMEOUT_MS = 12_000;
 
+// Avoid SSR warnings while still running "early" on the client.
+const useIsoLayoutEffect =
+  typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
+
 function RequestsIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg
@@ -189,7 +193,11 @@ function RequestsDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-subtle)] text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+            className={[
+              "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-subtle)]",
+              "text-[var(--text-muted)] transition hover:bg-[var(--bg-subtle)]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
             aria-label="Close"
             title="Close"
           >
@@ -200,16 +208,16 @@ function RequestsDrawer({
         <div className="flex-1 overflow-auto p-3">
           {loading ? (
             <div className="space-y-2">
-              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-subtle/40" />
-              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-subtle/40" />
-              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-subtle/40" />
+              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/40" />
+              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/40" />
+              <div className="h-16 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/40" />
             </div>
           ) : error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-subtle)] px-4 py-3 text-sm text-[var(--text)]">
               {error}
             </div>
           ) : items.length === 0 ? (
-            <div className="rounded-2xl border border-[var(--border-subtle)] bg-subtle/40 px-4 py-6 text-sm text-[var(--text-muted)]">
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/40 px-4 py-6 text-sm text-[var(--text-muted)]">
               No requests yet.
             </div>
           ) : (
@@ -231,7 +239,7 @@ function RequestsDrawer({
                       onClick={onClose}
                       className={[
                         "block rounded-2xl border border-[var(--border-subtle)]",
-                        "bg-[var(--bg-elevated)] hover:bg-subtle transition",
+                        "bg-[var(--bg-elevated)] transition hover:bg-[var(--bg-subtle)]",
                         "px-3 py-3",
                         "focus-visible:outline-none focus-visible:ring-2 ring-focus",
                       ].join(" ")}
@@ -252,7 +260,7 @@ function RequestsDrawer({
                           ) : null}
                         </div>
                         {when ? (
-                          <div className="shrink-0 rounded-full bg-subtle px-2 py-1 text-[11px] text-[var(--text-muted)]">
+                          <div className="shrink-0 rounded-full bg-[var(--bg-subtle)] px-2 py-1 text-[11px] text-[var(--text-muted)]">
                             {when}
                           </div>
                         ) : null}
@@ -270,7 +278,11 @@ function RequestsDrawer({
             href="/requests"
             prefetch={false}
             onClick={onClose}
-            className="block rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-center text-sm font-semibold text-[var(--text)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+            className={[
+              "block rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-center",
+              "text-sm font-semibold text-[var(--text)] transition hover:bg-[var(--bg-subtle)]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
           >
             View all requests
           </Link>
@@ -320,16 +332,17 @@ export default function HeaderClient({ initialAuth }: Props) {
   /* -------------------------- Hotkey: Slash & Cmd+K -------------------------- */
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const isSlash = e.key === "/";
-      const isCmdK = e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey);
+      const key = typeof e.key === "string" ? e.key : "";
+      if (!key) return;
+
+      const isSlash = key === "/";
+      const isCmdK = key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey);
       if (!isSlash && !isCmdK) return;
       if (e.defaultPrevented) return;
 
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea" || t?.isContentEditable) {
-        return;
-      }
+      if (tag === "input" || tag === "textarea" || t?.isContentEditable) return;
 
       const found = getInlineSearch();
       if (!found) return;
@@ -346,8 +359,8 @@ export default function HeaderClient({ initialAuth }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /* -------------------- Hardening: Home/Logo click must navigate -------------------- */
-  React.useEffect(() => {
+  /* -------------------- Hardening: Home/Logo must be a real "/" link -------------------- */
+  useIsoLayoutEffect(() => {
     if (inAdmin) return;
 
     const root =
@@ -359,31 +372,105 @@ export default function HeaderClient({ initialAuth }: Props) {
 
     if (!root) return;
 
-    const selectors = [
-      '[data-testid="home-link"]',
-      '[data-testid="site-home-link"]',
-      'a[aria-label="Home"]',
-      'a[aria-label="QwikSale"]',
-      'a[href="/"]',
-    ];
+    const norm = (s?: string | null) => String(s ?? "").trim().toLowerCase();
 
-    let homeEl: HTMLElement | null = null;
-    for (const sel of selectors) {
-      const el = root.querySelector<HTMLElement>(sel);
-      if (el) {
-        homeEl = el;
-        break;
+    const scoreAnchor = (a: HTMLAnchorElement) => {
+      let score = 0;
+
+      const dt = a.getAttribute("data-testid");
+      if (dt === "home-link") score += 1_000;
+      if (dt === "site-home-link") score += 900;
+
+      const href = norm(a.getAttribute("href"));
+      if (href === "/") score += 800;
+
+      const aria = norm(a.getAttribute("aria-label"));
+      const title = norm(a.getAttribute("title"));
+      const text = norm(a.textContent);
+      const imgAlt = norm(a.querySelector("img")?.getAttribute("alt"));
+
+      const name = `${aria} ${title} ${text} ${imgAlt}`;
+
+      if (name.includes("qwiksale")) score += 250;
+      if (name.includes("home")) score += 220;
+      if (name.includes("logo")) score += 120;
+
+      if (href.startsWith("/") && (name.includes("qwiksale") || name.includes("logo"))) {
+        score += 60;
       }
+
+      return score;
+    };
+
+    const pickLikelyHomeAnchor = (): HTMLAnchorElement | null => {
+      const direct =
+        root.querySelector<HTMLAnchorElement>('a[data-testid="home-link"]') ??
+        root.querySelector<HTMLAnchorElement>('a[data-testid="site-home-link"]') ??
+        root.querySelector<HTMLAnchorElement>('a[aria-label="Home"]') ??
+        root.querySelector<HTMLAnchorElement>('a[aria-label="QwikSale"]') ??
+        root.querySelector<HTMLAnchorElement>('a[href="/"]') ??
+        null;
+
+      if (direct) return direct;
+
+      const anchors = Array.from(root.querySelectorAll<HTMLAnchorElement>("a[href]"));
+      if (anchors.length === 0) return null;
+
+      let best: HTMLAnchorElement | null = null;
+      let bestScore = -1;
+
+      for (const a of anchors) {
+        const s = scoreAnchor(a);
+        if (s > bestScore) {
+          bestScore = s;
+          best = a;
+        }
+      }
+
+      if (!best || bestScore < 120) return null;
+      return best;
+    };
+
+    const homeA = pickLikelyHomeAnchor();
+    if (homeA) {
+      if (!homeA.getAttribute("data-testid")) homeA.setAttribute("data-testid", "home-link");
+      if (!norm(homeA.getAttribute("aria-label"))) homeA.setAttribute("aria-label", "Home");
+
+      const hrefNow = (homeA.getAttribute("href") ?? "").trim();
+      if (hrefNow !== "/") homeA.setAttribute("href", "/");
     }
-    if (!homeEl) return;
+
+    const looksLikeHome = (a: HTMLAnchorElement) => {
+      const dt = norm(a.getAttribute("data-testid"));
+      if (dt === "home-link" || dt === "site-home-link") return true;
+
+      const href = (a.getAttribute("href") ?? "").trim();
+      if (href === "/") return true;
+
+      const aria = norm(a.getAttribute("aria-label"));
+      const title = norm(a.getAttribute("title"));
+      const text = norm(a.textContent);
+      const imgAlt = norm(a.querySelector("img")?.getAttribute("alt"));
+      const name = `${aria} ${title} ${text} ${imgAlt}`;
+
+      return name.includes("home") || name.includes("qwiksale") || name.includes("logo");
+    };
 
     const onClickCapture = (e: MouseEvent) => {
-      // Let modified clicks do their normal thing.
       const isModified =
         e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
       if (isModified) return;
 
-      // If already home, don’t interfere.
+      const t = e.target as HTMLElement | null;
+      const a = (t?.closest?.("a") as HTMLAnchorElement | null) ?? null;
+      if (!a) return;
+      if (!looksLikeHome(a)) return;
+
+      if (!a.getAttribute("data-testid")) a.setAttribute("data-testid", "home-link");
+      if (!norm(a.getAttribute("aria-label"))) a.setAttribute("aria-label", "Home");
+      const hrefNow = (a.getAttribute("href") ?? "").trim();
+      if (hrefNow !== "/") a.setAttribute("href", "/");
+
       if (pathname === "/") return;
 
       e.preventDefault();
@@ -391,38 +478,48 @@ export default function HeaderClient({ initialAuth }: Props) {
       router.push("/");
     };
 
-    homeEl.addEventListener("click", onClickCapture, true);
-    return () => {
-      homeEl?.removeEventListener("click", onClickCapture, true);
-    };
+    root.addEventListener("click", onClickCapture, true);
+    return () => root.removeEventListener("click", onClickCapture, true);
   }, [inAdmin, pathname, router]);
 
   /* ------------------------------ Header right slot ------------------------------ */
   const rightSlot = (
-    <div className="flex items-center gap-2.5">
+    <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
       {!inAdmin && (
         <>
+          {/* Requests: icon-only on xs, label from sm+ */}
           <button
             type="button"
             onClick={() => setRequestsOpen(true)}
             aria-label="Requests"
             title="Requests"
-            className="inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+            className={[
+              "inline-flex shrink-0 items-center gap-2 rounded-xl transition",
+              "px-2 py-1.5 sm:px-2.5 sm:py-1.5",
+              "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
           >
             <RequestsIcon className="h-5 w-5" />
-            <span className="text-sm font-semibold text-[var(--text)]">
+            <span className="hidden sm:inline text-sm font-semibold text-[var(--text)]">
               Requests
             </span>
           </button>
 
           {isAuthedHint && (
             <>
+              {/* Hide these on xs to prevent header crowding; user still has Saved inside Account menu */}
               <Link
                 href="/saved"
                 prefetch={false}
                 aria-label="Favorites"
                 title="Favorites"
-                className="relative inline-flex h-8 w-8 items-center justify-center rounded-xl text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+                className={[
+                  "hidden sm:inline-flex",
+                  "relative h-8 w-8 shrink-0 items-center justify-center rounded-xl",
+                  "text-[var(--text-muted)] transition hover:bg-[var(--bg-subtle)]",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                ].join(" ")}
               >
                 <Icon name="heart" />
               </Link>
@@ -432,7 +529,13 @@ export default function HeaderClient({ initialAuth }: Props) {
                 prefetch={false}
                 aria-label="Messages"
                 title="Messages"
-                className="relative inline-flex h-8 w-8 items-center justify-center rounded-xl text-[var(--text-muted)] hover:bg-subtle focus-visible:ring-2 ring-focus transition"
+                className={[
+                  "hidden sm:inline-flex",
+                  "relative h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-transparent",
+                  "text-[var(--text-muted)] transition",
+                  "hover:border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                ].join(" ")}
               >
                 <Icon name="message" />
               </Link>

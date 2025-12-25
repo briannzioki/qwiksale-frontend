@@ -1,4 +1,3 @@
-// src/app/requests/[id]/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -7,22 +6,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers, cookies } from "next/headers";
 import { auth } from "@/auth";
-
-type RequestDetail = {
-  id: string;
-  kind?: "product" | "service" | string | null;
-  title?: string | null;
-  description?: string | null;
-  location?: string | null;
-  category?: string | null;
-  tags?: string[] | string | null;
-  createdAt?: string | null;
-  expiresAt?: string | null;
-  boostUntil?: string | null;
-  status?: string | null;
-  contactEnabled?: boolean | null;
-  contactMode?: string | null;
-};
+import SectionHeader from "@/app/components/SectionHeader";
 
 type HeadersLike = { get(name: string): string | null };
 
@@ -51,53 +35,44 @@ async function cookieHeaderFromNextCookies(): Promise<string> {
   try {
     const jar = await cookies();
     const all = jar.getAll();
-    return all.map((c: { name: string; value: string }) => `${c.name}=${c.value}`).join("; ");
+    return all
+      .map((c: { name: string; value: string }) => `${c.name}=${c.value}`)
+      .join("; ");
   } catch {
     return "";
   }
 }
 
-function fmtDateTime(iso?: string | null) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  try {
-    return new Intl.DateTimeFormat("en-KE", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(d);
-  } catch {
-    return d.toISOString();
-  }
-}
-
-function asDetail(json: any): RequestDetail | null {
+function asItem(json: any) {
   if (!json) return null;
-  if (json?.request && typeof json.request === "object") return json.request as RequestDetail;
-  if (typeof json === "object") return json as RequestDetail;
-  return null;
+  if (json?.item) return json.item;
+  if (json?.request) return json.request;
+  if (json?.data) return json.data;
+  return json;
 }
 
-export default async function RequestDetailsPage({
+export default async function RequestDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const rid = String(id || "").trim();
+  const p = await params;
+  const id = String((p as any)?.id || "").trim();
 
   const session = await auth();
   const meId = (session as any)?.user?.id as string | undefined;
+
+  const target = `/requests/${encodeURIComponent(id)}`;
   if (!meId) {
-    const cb = `/requests/${encodeURIComponent(rid)}`;
-    redirect(`/signin?callbackUrl=${encodeURIComponent(cb)}`);
+    redirect(`/signin?callbackUrl=${encodeURIComponent(target)}`);
   }
 
   const h = await headers();
-  const url = makeApiUrl(`/api/requests/${encodeURIComponent(rid)}`, h);
+  const url = makeApiUrl(`/api/requests/${encodeURIComponent(id)}`, h);
   const cookieHeader = await cookieHeaderFromNextCookies();
 
-  let r: RequestDetail | null = null;
+  let item: any = null;
+  let loadError: string | null = null;
 
   try {
     const res = await fetch(url, {
@@ -107,129 +82,107 @@ export default async function RequestDetailsPage({
         ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       },
     });
+
     const j = await res.json().catch(() => null);
-    if (res.ok) r = asDetail(j);
+
+    if (!res.ok || (j as any)?.error) {
+      loadError =
+        (j as any)?.error ||
+        (j as any)?.message ||
+        `Could not load request (HTTP ${res.status}).`;
+    } else {
+      const raw = asItem(j);
+      if (raw?.id) item = raw;
+      if (!item) loadError = "Could not load request.";
+    }
   } catch {
-    r = null;
+    loadError = "Network error while loading request.";
   }
 
-  if (!r) {
-    return (
-      <main className="container-page py-6">
-        <div className="hero-surface">
-          <h1 className="text-2xl md:text-3xl font-extrabold">Request</h1>
-          <p className="text-sm text-white/80">Could not load this request.</p>
-        </div>
-
-        <div className="mt-6 rounded-2xl border border-border bg-card/90 p-6 shadow-sm">
-          <div className="text-sm text-muted-foreground">
-            This request may have been removed or the link is invalid.
-          </div>
-          <div className="mt-4">
-            <Link href="/requests" prefetch={false} className="btn-outline">
-              Back to Requests
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  const created = fmtDateTime(r.createdAt);
-  const expires = fmtDateTime(r.expiresAt);
-  const boosted = !!(r.boostUntil && new Date(r.boostUntil).getTime() > Date.now());
-
-  const tagsArr = Array.isArray(r.tags)
-    ? r.tags
-    : typeof r.tags === "string"
-      ? r.tags
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
+  const title = item?.title ? String(item.title) : "Request";
 
   return (
-    <main className="container-page py-6">
-      <div className="hero-surface">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-xs text-white/80">
-              {String(r.kind || "request")}
-              {boosted ? " • boosted" : ""}
-            </div>
-            <h1 className="mt-1 text-2xl md:text-3xl font-extrabold">{r.title || "Untitled"}</h1>
+    <main className="container-page py-4 text-[var(--text)] sm:py-6">
+      <SectionHeader
+        title={title}
+        subtitle={
+          item?.kind || item?.location
+            ? [
+                item?.kind ? String(item.kind) : null,
+                item?.location ? String(item.location) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : null
+        }
+        gradient="none"
+        as="h1"
+      />
+
+      {loadError ? (
+        <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-3 text-sm text-[var(--text)] shadow-sm sm:mt-4 sm:px-4">
+          {loadError}
+        </div>
+      ) : (
+        <section className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-4 sm:p-5">
+          {item?.description ? (
+            <p className="text-sm leading-relaxed text-[var(--text)]">
+              {String(item.description)}
+            </p>
+          ) : (
+            <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+              No description provided.
+            </p>
+          )}
+
+          <div className="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+            {item?.category ? (
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] p-2.5 shadow-sm sm:p-3">
+                <div className="text-xs font-semibold text-[var(--text-muted)]">
+                  Category
+                </div>
+                <div className="mt-1 font-semibold text-[var(--text)]">
+                  {String(item.category)}
+                </div>
+              </div>
+            ) : null}
+
+            {item?.status ? (
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] p-2.5 shadow-sm sm:p-3">
+                <div className="text-xs font-semibold text-[var(--text-muted)]">
+                  Status
+                </div>
+                <div className="mt-1 font-semibold text-[var(--text)]">
+                  {String(item.status)}
+                </div>
+              </div>
+            ) : null}
           </div>
-          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/15">
-            {r.status || "ACTIVE"}
-          </span>
-        </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/80">
-          {r.location ? <span>{r.location}</span> : null}
-          {r.location && r.category ? (
-            <span className="opacity-60" aria-hidden>
-              •
-            </span>
-          ) : null}
-          {r.category ? <span>{r.category}</span> : null}
-        </div>
-      </div>
-
-      <section className="mt-6 rounded-2xl border border-border bg-card/90 p-6 shadow-sm space-y-4">
-        <div className="grid gap-2 text-sm text-muted-foreground">
-          {created ? (
-            <div>
-              <span className="font-semibold text-foreground">Posted:</span> {created}
-            </div>
-          ) : null}
-          {expires ? (
-            <div>
-              <span className="font-semibold text-foreground">Expires:</span> {expires}
-            </div>
-          ) : null}
-        </div>
-
-        {r.description ? (
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Details</h2>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{r.description}</p>
-          </div>
-        ) : null}
-
-        {tagsArr.length ? (
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Tags</h2>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {tagsArr.map((t) => (
+          {Array.isArray(item?.tags) && item.tags.length ? (
+            <div className="mt-4 flex gap-1.5 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible sm:whitespace-normal">
+              {item.tags.slice(0, 12).map((t: any) => (
                 <span
-                  key={t}
-                  className="rounded-full bg-muted/50 px-2 py-1 text-xs text-muted-foreground"
+                  key={String(t)}
+                  className="shrink-0 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] text-[var(--text-muted)]"
                 >
-                  {t}
+                  {String(t)}
                 </span>
               ))}
             </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        <div className="rounded-xl border border-border bg-muted/30 p-4">
-          <div className="text-sm font-semibold text-foreground">Contact</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            {r.contactEnabled === false
-              ? "Contact is disabled for this request."
-              : `Contact is enabled${r.contactMode ? ` (${r.contactMode})` : ""}.`}
+          <div className="mt-4 flex flex-wrap items-center gap-2 sm:mt-5">
+            <Link
+              href="/requests"
+              prefetch={false}
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-4 sm:text-sm"
+            >
+              Back to requests
+            </Link>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 pt-2">
-          <Link href="/requests" prefetch={false} className="btn-outline">
-            Back to Requests
-          </Link>
-          <Link href="/messages" prefetch={false} className="btn-gradient-primary">
-            Messages
-          </Link>
-        </div>
-      </section>
+        </section>
+      )}
     </main>
   );
 }

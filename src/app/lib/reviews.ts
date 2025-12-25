@@ -351,7 +351,7 @@ export type ReviewMutationResult = {
 /**
  * Create a new review.
  * Normally you’ll let `AddReviewForm` hit the API directly,
- * then call `useListingReviews().reload()` – this wrapper is
+ * then call `useListingReviews().reload()` - this wrapper is
  * here if you want to drive it manually.
  */
 export async function createReview(

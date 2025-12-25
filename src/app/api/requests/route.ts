@@ -111,7 +111,7 @@ async function enforceCreateCapPerDay(args: {
   const cap = computeCreateCapPerDay(subscription ?? null);
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  // If model/count isn't available, skip enforcement (don’t crash endpoint).
+  // If model/count isn't available, skip enforcement (avoid crashing endpoint).
   if (typeof requestModel?.count !== "function") return;
 
   try {
@@ -187,7 +187,7 @@ export async function GET(req: NextRequest) {
       : { ...baseWhere, expiresAt: { gt: now } };
 
     // Status filtering is optional and must never be allowed to crash the endpoint
-    // if the enum values drift. We'll try it, and fallback without status.
+    // if enum values drift. We'll try it, and fallback without status.
     const whereAttempt: any = status
       ? { ...whereWithExpiry, status }
       : whereWithExpiry;
@@ -200,7 +200,7 @@ export async function GET(req: NextRequest) {
         requestModel?.findMany?.({
           where,
           select: safeListSelect(),
-          orderBy: [{ boostUntil: "desc" }, { createdAt: "desc" }],
+          orderBy: [{ boostUntil: "desc" }, { createdAt: "desc" }, { id: "desc" }],
           skip: (page - 1) * pageSize,
           take: pageSize,
         }) ?? [],
@@ -209,15 +209,9 @@ export async function GET(req: NextRequest) {
       const items = Array.isArray(itemsRaw)
         ? itemsRaw.map((r: any) => ({
             ...r,
-            createdAt: r?.createdAt
-              ? new Date(r.createdAt).toISOString()
-              : null,
-            expiresAt: r?.expiresAt
-              ? new Date(r.expiresAt).toISOString()
-              : null,
-            boostUntil: r?.boostUntil
-              ? new Date(r.boostUntil).toISOString()
-              : null,
+            createdAt: r?.createdAt ? new Date(r.createdAt).toISOString() : null,
+            expiresAt: r?.expiresAt ? new Date(r.expiresAt).toISOString() : null,
+            boostUntil: r?.boostUntil ? new Date(r.boostUntil).toISOString() : null,
           }))
         : [];
 
@@ -232,9 +226,7 @@ export async function GET(req: NextRequest) {
       // eslint-disable-next-line no-console
       console.warn("[/api/requests GET] query error (will fallback):", e);
 
-      if (!isPrismaValidationError(e)) {
-        throw e;
-      }
+      if (!isPrismaValidationError(e)) throw e;
 
       // Fallback: drop `status` filter entirely (and keep expiry filter).
       result = await runQuery(whereWithExpiry);
@@ -279,12 +271,8 @@ export async function POST(req: Request) {
     const contactEnabled =
       body?.contactEnabled === undefined ? true : Boolean(body?.contactEnabled);
 
-    // IMPORTANT:
-    // When contact is disabled, DO NOT invent a contactMode value (your Prisma enum
-    // doesn't accept "message_only"). Just omit contactMode entirely.
-    const contactModeRaw = String(body?.contactMode ?? "chat")
-      .trim()
-      .toLowerCase();
+    // When contact is disabled, do not invent a contactMode value. Omit it.
+    const contactModeRaw = String(body?.contactMode ?? "chat").trim().toLowerCase();
 
     const contactMode =
       contactEnabled !== false
@@ -314,10 +302,7 @@ export async function POST(req: Request) {
       });
       if (!me) return noStore({ error: "Unauthorized" }, { status: 401 });
       if ((me as any).banned || (me as any).suspended) {
-        return noStore(
-          { error: "Not allowed to post requests" },
-          { status: 403 },
-        );
+        return noStore({ error: "Not allowed to post requests" }, { status: 403 });
       }
     }
 
@@ -328,11 +313,9 @@ export async function POST(req: Request) {
     });
 
     const now = new Date();
-
     const requestModel = (prisma as any).request;
 
     // Safety-net cap so e2e can reliably observe limits.
-    // If your centralized limiter exists, it can still enforce separately.
     try {
       await enforceCreateCapPerDay({
         requestModel,
@@ -352,13 +335,10 @@ export async function POST(req: Request) {
     if (typeof limitsAny?.computeRequestExpiresAt === "function") {
       expiresAt = await limitsAny.computeRequestExpiresAt({ meId, now });
     } else {
-      const days = computeDefaultExpiryDays(
-        (meSub as any)?.subscription ?? null,
-      );
+      const days = computeDefaultExpiryDays((meSub as any)?.subscription ?? null);
       expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
     }
 
-    // Create payload (kept tolerant: we do NOT force enum-ish fields if schema drifts).
     const dataBase: any = {
       kind,
       title,
@@ -372,7 +352,6 @@ export async function POST(req: Request) {
       boostUntil: null,
     };
 
-    // Only include contact fields when they exist/are meaningful.
     const dataWithContact: any = {
       ...dataBase,
       ...(typeof contactEnabled === "boolean" ? { contactEnabled } : {}),

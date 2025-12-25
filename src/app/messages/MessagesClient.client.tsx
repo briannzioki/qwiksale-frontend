@@ -1,7 +1,14 @@
 // src/app/messages/MessagesClient.client.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
@@ -18,8 +25,18 @@ type Thread = {
   updatedAt: string | Date;
   buyerLastReadAt: string | Date | null;
   sellerLastReadAt: string | Date | null;
-  buyer: { id: string; name: string | null; username: string | null; image: string | null };
-  seller: { id: string; name: string | null; username: string | null; image: string | null };
+  buyer: {
+    id: string;
+    name: string | null;
+    username: string | null;
+    image: string | null;
+  };
+  seller: {
+    id: string;
+    name: string | null;
+    username: string | null;
+    image: string | null;
+  };
   _count: { messages: number };
 };
 
@@ -102,28 +119,34 @@ export default function MessagesClient({ meId }: Props) {
   const abortMsgsRef = useRef<AbortController | null>(null);
   const lastCountRef = useRef(0);
 
-  const fetchJSON = useCallback(async (url: string, ac?: AbortController | null) => {
-    try {
-      const init: RequestInit = {
-        cache: "no-store",
-        credentials: "same-origin",
-        ...(ac ? { signal: ac.signal } : {}),
-      };
-      const r = await fetch(url, init);
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error((j as any)?.error || `HTTP ${r.status}`);
-      return j;
-    } catch (e: any) {
-      if (e?.name === "AbortError") return null;
-      throw e;
-    }
-  }, []);
+  const fetchJSON = useCallback(
+    async (url: string, ac?: AbortController | null) => {
+      try {
+        const init: RequestInit = {
+          cache: "no-store",
+          credentials: "same-origin",
+          ...(ac ? { signal: ac.signal } : {}),
+        };
+        const r = await fetch(url, init);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((j as any)?.error || `HTTP ${r.status}`);
+        return j;
+      } catch (e: any) {
+        if (e?.name === "AbortError") return null;
+        throw e;
+      }
+    },
+    [],
+  );
 
   const scrollToBottom = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
     const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 160;
-    el.scrollTo({ top: el.scrollHeight, behavior: nearBottom ? "smooth" : "auto" });
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: nearBottom ? "smooth" : "auto",
+    });
   }, []);
 
   /* ------------------------------ Load threads ------------------------------ */
@@ -136,18 +159,24 @@ export default function MessagesClient({ meId }: Props) {
     try {
       const j = await fetchJSON("/api/messages", ac);
       if (!j) return;
-      const items: Thread[] = Array.isArray((j as any)?.items) ? (j as any).items : [];
+      const items: Thread[] = Array.isArray((j as any)?.items)
+        ? (j as any).items
+        : [];
       items.sort(
         (a, b) =>
           (new Date(b.updatedAt || b.lastMessageAt).getTime() || 0) -
-          (new Date(a.updatedAt || a.lastMessageAt).getTime() || 0)
+          (new Date(a.updatedAt || a.lastMessageAt).getTime() || 0),
       );
       setThreads(items);
 
       if (!selected && items.length) {
-        // Select first thread in UI only — no URL/nav mutation on mount
+        // Select first thread in UI only - no URL/nav mutation on mount
         setSelected(items[0]!.id);
-      } else if (selected && !items.some((t) => t.id === selected) && items.length) {
+      } else if (
+        selected &&
+        !items.some((t) => t.id === selected) &&
+        items.length
+      ) {
         setSelected(items[0]!.id);
       }
     } catch (e: any) {
@@ -187,10 +216,18 @@ export default function MessagesClient({ meId }: Props) {
       const ac = new AbortController();
       abortMsgsRef.current = ac;
       try {
-        const j = await fetchJSON(`/api/messages/${encodeURIComponent(id)}`, ac);
+        const j = await fetchJSON(
+          `/api/messages/${encodeURIComponent(id)}`,
+          ac,
+        );
         if (!j) return;
-        const arr: Message[] = Array.isArray((j as any)?.messages) ? (j as any).messages : [];
-        arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        const arr: Message[] = Array.isArray((j as any)?.messages)
+          ? (j as any).messages
+          : [];
+        arr.sort(
+          (a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        );
         setMessages(arr);
         // mark as read (best-effort)
         fetch(`/api/messages/${encodeURIComponent(id)}/read`, {
@@ -205,7 +242,7 @@ export default function MessagesClient({ meId }: Props) {
         if (!silent) setMsgsLoading(false);
       }
     },
-    [fetchJSON, scrollToBottom]
+    [fetchJSON, scrollToBottom],
   );
 
   // load + poll active conversation
@@ -221,7 +258,8 @@ export default function MessagesClient({ meId }: Props) {
       }
     }, 8_000);
     const onVis = () => {
-      if (document.visibilityState === "visible") void loadThread(selected, { silent: true });
+      if (document.visibilityState === "visible")
+        void loadThread(selected, { silent: true });
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
@@ -240,14 +278,18 @@ export default function MessagesClient({ meId }: Props) {
   /* --------------------------------- Derived -------------------------------- */
   const current = useMemo(
     () => (selected ? threads.find((t) => t.id === selected) || null : null),
-    [threads, selected]
+    [threads, selected],
   );
 
   const counterpart = useMemo(() => {
     if (!current) return null;
-    const other = meId && current.buyerId === meId ? current.seller : current.buyer;
+    const other =
+      meId && current.buyerId === meId ? current.seller : current.buyer;
     const label = other.username || other.name || "User";
-    const storeHref = storeHrefForUser({ id: other.id, username: other.username });
+    const storeHref = storeHrefForUser({
+      id: other.id,
+      username: other.username,
+    });
     return {
       label,
       image: other.image,
@@ -297,31 +339,39 @@ export default function MessagesClient({ meId }: Props) {
 
   /* --------------------------------- Render --------------------------------- */
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+    <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-12">
       {/* Thread list */}
       <aside className="md:col-span-4">
-        <div className="card p-0 overflow-hidden">
-          <div className="border-b px-4 py-3 dark:border-slate-800">
+        <div className="card overflow-hidden p-0">
+          <div className="border-b border-[var(--border-subtle)] px-3 py-2.5 sm:px-4 sm:py-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Conversations</h3>
-              <span className="text-xs text-gray-500 dark:text-slate-400">
+              <h3 className="text-sm font-semibold text-[var(--text)]">
+                Conversations
+              </h3>
+              <span className="text-[11px] text-[var(--text-muted)] sm:text-xs">
                 {threadsLoading ? "…" : threads.length}
               </span>
             </div>
           </div>
 
-          <div className="max-h-[70dvh] overflow-y-auto divide-y dark:divide-slate-800">
+          {/* phone-first: keep list shorter so chat appears sooner */}
+          <div className="max-h-[32dvh] overflow-y-auto divide-y divide-[var(--border-subtle)] sm:max-h-[70dvh]">
             {threadsLoading && (
-              <div className="p-4 text-sm text-gray-500 dark:text-slate-400">Loading…</div>
+              <div className="p-3 text-sm text-[var(--text-muted)] sm:p-4">
+                Loading…
+              </div>
             )}
 
             {threadsErr && !threadsLoading && (
-              <div className="p-4 text-sm text-rose-600 dark:text-rose-400">{threadsErr}</div>
+              <div className="p-3 text-sm font-semibold text-[var(--text)] sm:p-4">
+                {threadsErr}
+              </div>
             )}
 
             {!threadsLoading && !threadsErr && threads.length === 0 && (
-              <div className="p-4 text-sm text-gray-600 dark:text-slate-400">
-                No conversations yet. Message a seller or buyer to start a thread.
+              <div className="p-3 text-sm text-[var(--text-muted)] sm:p-4">
+                No conversations yet. Message a seller or buyer to start a
+                thread.
               </div>
             )}
 
@@ -329,10 +379,9 @@ export default function MessagesClient({ meId }: Props) {
               const isSel = selected === t.id;
               const other = meId && t.buyerId === meId ? t.seller : t.buyer;
               const label = other.name || other.username || "User";
-              const sub = `${t.listingType === "product" ? "Product" : "Service"} • #${t.listingId.slice(
-                0,
-                6
-              )}…`;
+              const sub = `${
+                t.listingType === "product" ? "Product" : "Service"
+              } • #${t.listingId.slice(0, 6)}…`;
               const when = fmtTime(t.updatedAt || t.lastMessageAt);
 
               return (
@@ -341,22 +390,32 @@ export default function MessagesClient({ meId }: Props) {
                   href={`/messages?t=${encodeURIComponent(t.id)}`}
                   prefetch={false}
                   className={cn(
-                    "block w-full px-4 py-3 text-left transition",
-                    isSel ? "bg-brandBlue/5 dark:bg-white/5" : "hover:bg-black/5 dark:hover:bg-white/5"
+                    "block w-full px-3 py-2.5 text-left transition sm:px-4 sm:py-3",
+                    "min-h-[44px]",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    isSel
+                      ? "bg-[var(--bg-subtle)]"
+                      : "hover:bg-[var(--bg-subtle)]",
                   )}
                 >
                   <div className="flex gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-[11px] font-semibold text-gray-700 dark:bg-slate-800 dark:text-slate-200">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[11px] font-semibold text-[var(--text)]">
                       {initials(other.name, other.username)}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="truncate font-medium">{label}</div>
-                        <div className="shrink-0 text-[11px] text-gray-500 dark:text-slate-400">{when}</div>
+                        <div className="truncate font-medium text-[var(--text)]">
+                          {label}
+                        </div>
+                        <div className="shrink-0 text-[11px] text-[var(--text-muted)]">
+                          {when}
+                        </div>
                       </div>
                       <div className="mt-0.5 flex items-center justify-between gap-2">
-                        <div className="truncate text-xs text-gray-600 dark:text-slate-400">{sub}</div>
-                        <span className="shrink-0 text-[10px] text-gray-400 dark:text-slate-500">
+                        <div className="truncate text-xs text-[var(--text-muted)]">
+                          {sub}
+                        </div>
+                        <span className="shrink-0 text-[10px] text-[var(--text-muted)] opacity-80">
                           {t._count?.messages ?? 0}
                         </span>
                       </div>
@@ -371,50 +430,64 @@ export default function MessagesClient({ meId }: Props) {
 
       {/* Chat panel */}
       <section className="md:col-span-8">
-        <div className="card p-0 overflow-hidden flex min-h-[60vh] flex-col">
+        <div className="card flex min-h-[52svh] flex-col overflow-hidden p-0 sm:min-h-[60vh]">
           {/* Header */}
-          <div className="border-b px-4 py-3 dark:border-slate-800">
+          <div className="border-b border-[var(--border-subtle)] px-3 py-2.5 sm:px-4 sm:py-3">
             {current ? (
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-[11px] font-semibold text-gray-700 dark:bg-slate-800 dark:text-slate-200">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[11px] font-semibold text-[var(--text)]">
                   {counterpart?.initials}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <div className="truncate font-semibold">{counterpart?.label || "Conversation"}</div>
+                    <div className="truncate font-semibold text-[var(--text)]">
+                      {counterpart?.label || "Conversation"}
+                    </div>
                     {counterpart?.storeHref ? (
                       <Link
                         href={counterpart.storeHref}
                         prefetch={false}
-                        className="shrink-0 text-xs font-semibold text-brandBlue hover:underline"
+                        className="shrink-0 text-xs font-semibold text-[var(--text)] underline-offset-4 hover:underline"
                         aria-label="View profile"
                       >
                         View profile
                       </Link>
                     ) : null}
                   </div>
-                  <div className="truncate text-xs text-gray-500 dark:text-slate-400">
-                    {current.listingType === "product" ? "Product" : "Service"} • #{current.listingId}
+                  <div className="truncate text-xs text-[var(--text-muted)]">
+                    {current.listingType === "product" ? "Product" : "Service"} •
+                    #{current.listingId}
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-gray-600 dark:text-slate-300">Select a conversation</div>
+              <div className="text-sm text-[var(--text-muted)]">
+                Select a conversation
+              </div>
             )}
           </div>
 
           {/* Messages list */}
-          <div ref={listRef} aria-live="polite" className="flex-1 overflow-auto px-3 py-3 space-y-2">
+          <div
+            ref={listRef}
+            aria-live="polite"
+            className="flex-1 space-y-1.5 overflow-auto px-2.5 py-2.5 sm:space-y-2 sm:px-3 sm:py-3"
+          >
             {msgsLoading && messages.length === 0 && (
               <div className="space-y-2">
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="h-10 rounded-md bg-gray-100 dark:bg-slate-800 animate-pulse" />
+                  <div
+                    key={i}
+                    className="h-10 animate-pulse rounded-md bg-[var(--bg-subtle)]"
+                  />
                 ))}
               </div>
             )}
 
             {msgsErr && !msgsLoading && messages.length === 0 && (
-              <div className="text-sm text-rose-600 dark:text-rose-400 px-1">{msgsErr}</div>
+              <div className="px-1 text-sm font-semibold text-[var(--text)]">
+                {msgsErr}
+              </div>
             )}
 
             {/* Day separators + bubbles */}
@@ -427,44 +500,52 @@ export default function MessagesClient({ meId }: Props) {
                   if (k !== prevDay) {
                     prevDay = k;
                     items.push(
-                      <div key={`day-${k}`} className="my-2 flex items-center justify-center">
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] text-gray-500 shadow-sm dark:bg-slate-800 dark:text-slate-400">
-                          {new Date(m.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+                      <div
+                        key={`day-${k}`}
+                        className="my-1.5 flex items-center justify-center sm:my-2"
+                      >
+                        <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-1 text-[11px] text-[var(--text-muted)] shadow-sm">
+                          {new Date(m.createdAt).toLocaleDateString([], {
+                            month: "short",
+                            day: "numeric",
+                          })}
                         </span>
-                      </div>
+                      </div>,
                     );
                   }
                   const mine = meId && m.senderId === meId;
                   items.push(
-                    <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
+                    <div
+                      key={m.id}
+                      className={cn(
+                        "flex",
+                        mine ? "justify-end" : "justify-start",
+                      )}
+                    >
                       <div
                         className={cn(
-                          "max-w-[80%] rounded-2xl px-3 py-2 shadow-sm",
+                          "max-w-[85%] rounded-2xl px-2.5 py-2 shadow-sm sm:max-w-[80%] sm:px-3",
+                          "border",
                           mine
-                            ? "bg-[#161748] text-white dark:bg-[#161748]"
-                            : "bg-white/90 text-gray-900 ring-1 ring-black/5 dark:bg-slate-900 dark:text-slate-100 dark:ring-white/10"
+                            ? "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+                            : "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
                         )}
                       >
-                        <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">
+                        <div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed sm:text-[14px]">
                           {m.body}
                         </div>
-                        <div
-                          className={cn(
-                            "mt-1 text-[10px]",
-                            mine ? "text-white/80" : "text-gray-500 dark:text-slate-400"
-                          )}
-                        >
+                        <div className="mt-1 text-[10px] text-[var(--text-muted)]">
                           {fmtTime(m.createdAt)}
                         </div>
                       </div>
-                    </div>
+                    </div>,
                   );
                 });
                 return items;
               })()}
 
             {!msgsLoading && !msgsErr && messages.length === 0 && current && (
-              <div className="text-sm text-gray-600 dark:text-slate-300 px-1">
+              <div className="px-1 text-sm text-[var(--text-muted)]">
                 No chat history yet.
               </div>
             )}
@@ -472,7 +553,7 @@ export default function MessagesClient({ meId }: Props) {
 
           {/* Composer */}
           <form
-            className="border-t px-3 py-3 dark:border-slate-800"
+            className="border-t border-[var(--border-subtle)] px-2.5 py-2.5 sm:px-3 sm:py-3"
             onSubmit={(e) => {
               e.preventDefault();
               void send();
@@ -480,19 +561,23 @@ export default function MessagesClient({ meId }: Props) {
           >
             <div className="flex items-end gap-2">
               <textarea
-                className="textarea flex-1 min-h-[44px] max-h-[40dvh] resize-y"
+                className="textarea flex-1 min-h-[44px] max-h-[40dvh] resize-y text-sm"
                 placeholder="Write a message…"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "enter") {
-                    e.preventDefault();
-                    void send();
-                  }
+                  const key = typeof e.key === "string" ? e.key : "";
+                  if (!key) return;
+
+                  const isEnter = key === "Enter";
+                  const isSend =
+                    (isEnter && !e.shiftKey) ||
+                    ((e.metaKey || e.ctrlKey) && key.toLowerCase() === "enter");
+
+                  if (!isSend) return;
+
+                  e.preventDefault();
+                  void send();
                 }}
                 disabled={!current || sending}
                 rows={1}
@@ -501,8 +586,9 @@ export default function MessagesClient({ meId }: Props) {
                 type="submit"
                 disabled={!current || sending || !body.trim()}
                 className={cn(
-                  "btn-gradient-primary",
-                  (!current || sending || !body.trim()) && "opacity-60 cursor-not-allowed"
+                  "btn-gradient-primary min-h-9 text-xs sm:text-sm",
+                  (!current || sending || !body.trim()) &&
+                    "cursor-not-allowed opacity-60",
                 )}
                 aria-label="Send message"
               >

@@ -63,32 +63,25 @@ export default function ContactModal({
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  const name = payload?.contact?.name ?? fallbackName ?? "—";
-  const phone = payload?.contact?.phone ?? "—";
-  const sellerLocation =
-    payload?.contact?.location ?? fallbackLocation ?? "—";
+  const name = payload?.contact?.name ?? fallbackName ?? "-";
+  const phone = payload?.contact?.phone ?? "-";
+  const sellerLocation = payload?.contact?.location ?? fallbackLocation ?? "-";
 
   const msisdn = useMemo(
     () =>
-      payload?.contact?.phone
-        ? normalizeKenyanPhone(payload.contact.phone)
-        : null,
-    [payload?.contact?.phone]
+      payload?.contact?.phone ? normalizeKenyanPhone(payload.contact.phone) : null,
+    [payload?.contact?.phone],
   );
 
   const waLink = useMemo(() => {
     if (!msisdn) return null;
-    const pname =
-      productName || payload?.product?.name || "your item";
-    const seller = name && name !== "—" ? name : "Seller";
+    const pname = productName || payload?.product?.name || "your item";
+    const seller = name && name !== "-" ? name : "Seller";
     const text = `Hi ${seller}, I'm interested in "${pname}" on QwikSale. Is it still available?`;
     return makeWhatsAppLink(msisdn, text) ?? null;
   }, [msisdn, name, productName, payload?.product?.name]);
 
-  const telLink = useMemo(
-    () => (msisdn ? `tel:+${msisdn}` : null),
-    [msisdn]
-  );
+  const telLink = useMemo(() => (msisdn ? `tel:+${msisdn}` : null), [msisdn]);
 
   const share = useCallback(async () => {
     const shareUrl =
@@ -129,15 +122,13 @@ export default function ContactModal({
     setPayload(null);
 
     try {
-      const res = await fetch(
-        `/api/products/${encodeURIComponent(productId)}/contact`,
-        { cache: "no-store" }
-      );
+      const res = await fetch(`/api/products/${encodeURIComponent(productId)}/contact`, {
+        cache: "no-store",
+      });
       const json = (await res.json().catch(() => ({}))) as RevealPayload;
 
       if (!res.ok || json?.error) {
-        const msg =
-          json?.error || `Failed to fetch contact (HTTP ${res.status})`;
+        const msg = json?.error || `Failed to fetch contact (HTTP ${res.status})`;
         setError(msg);
         setOpen(true); // Always show something on click
         track("contact_reveal_failed", { productId, message: msg });
@@ -171,10 +162,9 @@ export default function ContactModal({
       if (e.key === "Escape") setOpen(false);
       if (e.key !== "Tab" || !panelRef.current) return;
 
-      const focusables =
-        panelRef.current.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
-        );
+      const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      );
       if (!focusables.length) return;
 
       const first = focusables.item(0);
@@ -206,16 +196,10 @@ export default function ContactModal({
   // Focus restore
   useEffect(() => {
     if (open) {
-      const t = setTimeout(
-        () => closeBtnRef.current?.focus(),
-        15
-      );
+      const t = setTimeout(() => closeBtnRef.current?.focus(), 15);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(
-      () => triggerRef.current?.focus(),
-      0
-    );
+    const t = setTimeout(() => triggerRef.current?.focus(), 0);
     return () => clearTimeout(t);
   }, [open]);
 
@@ -239,16 +223,20 @@ export default function ContactModal({
   }
 
   return (
-    <div className="mt-4">
+    <div className="mt-3 sm:mt-4">
       <button
         ref={triggerRef}
         onClick={reveal}
         disabled={loading}
         type="button"
         className={[
-          "rounded-xl px-4 py-2 text-sm",
-          "bg-black text-white dark:bg-white dark:text-black",
-          "disabled:opacity-60",
+          // ✅ phone-first: smaller type + tighter horizontal padding, keep touch target
+          "min-h-9 rounded-xl px-3 py-2 text-xs sm:px-4 sm:text-sm font-semibold shadow-sm",
+          "bg-[var(--bg-elevated)] text-[var(--text)] border border-[var(--border)]",
+          "hover:bg-[var(--bg-subtle)]",
+          "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+          "active:scale-[.99]",
+          "disabled:cursor-not-allowed disabled:opacity-60",
           className,
         ]
           .filter(Boolean)
@@ -267,7 +255,7 @@ export default function ContactModal({
         <>
           <button
             type="button"
-            className="fixed inset-0 z-50 bg-black/40"
+            className="fixed inset-0 z-50 bg-black/40 supports-[backdrop-filter]:backdrop-blur-sm transition-opacity"
             aria-label="Close contact dialog"
             onClick={onBackdropClick}
           />
@@ -277,11 +265,12 @@ export default function ContactModal({
             aria-modal="true"
             aria-labelledby={`${modalId}-title`}
             aria-describedby={descId}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            // ✅ phone-first: bottom sheet on xs, center on sm+
+            className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center sm:p-4"
           >
             <div
               ref={panelRef}
-              className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-lg dark:border-gray-800 dark:bg-gray-950"
+              className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 sm:p-5 shadow-soft"
             >
               <p id={descId} className="sr-only">
                 Seller contact details and quick actions.
@@ -289,18 +278,20 @@ export default function ContactModal({
 
               {payload?.suggestLogin && (
                 <div
-                  className="mb-3 rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-900/50 dark:bg-yellow-950/30 dark:text-yellow-300"
+                  className="mb-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3 text-xs sm:text-sm text-[var(--text)]"
                   role="note"
                 >
-                  For safety, we recommend logging in first. You can
-                  still proceed.
+                  <div className="font-semibold">Safety tip</div>
+                  <div className="mt-0.5 text-[var(--text-muted)] leading-relaxed">
+                    For safety, we recommend logging in first. You can still proceed.
+                  </div>
                 </div>
               )}
 
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-1.5 sm:mb-2 flex items-center justify-between gap-2">
                 <h3
                   id={`${modalId}-title`}
-                  className="font-semibold text-gray-900 dark:text-gray-100"
+                  className="text-sm sm:text-base font-extrabold tracking-tight text-[var(--text)]"
                 >
                   Seller Contact
                 </h3>
@@ -308,7 +299,13 @@ export default function ContactModal({
                   ref={closeBtnRef}
                   onClick={() => setOpen(false)}
                   type="button"
-                  className="rounded-md border px-2 py-1 text-sm hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                  className={[
+                    "min-h-9 rounded-xl px-3 py-2 text-xs sm:px-3 sm:py-1.5 sm:text-sm font-medium",
+                    "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+                    "hover:bg-[var(--bg-subtle)]",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    "active:scale-[.99]",
+                  ].join(" ")}
                 >
                   Close
                 </button>
@@ -316,39 +313,59 @@ export default function ContactModal({
 
               {error ? (
                 <div
-                  className="text-sm text-red-600 dark:text-red-400"
+                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3 text-xs sm:text-sm text-[var(--text)]"
                   role="alert"
                   aria-live="polite"
                 >
-                  {error}
+                  <div className="font-semibold">Couldn’t load contact</div>
+                  <div className="mt-0.5 text-[var(--text-muted)] leading-relaxed">
+                    {error}
+                  </div>
                 </div>
               ) : (
                 <>
-                  <div className="space-y-2 text-sm text-gray-800 dark:text-gray-200">
-                    <div>
-                      <span className="font-medium">Name:</span> {name}
+                  <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-[var(--text)]">
+                    <div className="leading-relaxed">
+                      <span className="font-medium text-[var(--text-muted)]">
+                        Name:
+                      </span>{" "}
+                      {name}
                     </div>
+
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">Phone:</span>
-                      <span>{phone}</span>
+                      <span className="font-medium text-[var(--text-muted)]">
+                        Phone:
+                      </span>
+                      <span className="truncate">{phone}</span>
+
                       {payload?.contact?.phone && (
                         <button
                           onClick={copyPhone}
                           type="button"
-                          className="ml-2 rounded border px-2 py-0.5 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
+                          className={[
+                            "ml-2 min-h-9 rounded-lg px-3 py-2 sm:min-h-0 sm:px-2 sm:py-0.5 text-[11px] sm:text-xs font-medium",
+                            "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+                            "hover:bg-[var(--bg-subtle)]",
+                            "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                            "active:scale-[.99]",
+                          ].join(" ")}
                           title="Copy to clipboard"
                         >
                           {copied ? "Copied!" : "Copy"}
                         </button>
                       )}
                     </div>
-                    <div>
-                      <span className="font-medium">Location:</span>{" "}
+
+                    <div className="leading-relaxed">
+                      <span className="font-medium text-[var(--text-muted)]">
+                        Location:
+                      </span>{" "}
                       {sellerLocation}
                     </div>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  {/* ✅ phone-first: one-row action strip on xs; wrap on sm+ */}
+                  <div className="mt-3 flex items-center gap-2 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mt-4 sm:flex-wrap sm:overflow-visible sm:whitespace-normal sm:justify-end">
                     {waLink && (
                       <IconButton
                         icon="message"
@@ -357,20 +374,15 @@ export default function ContactModal({
                         srLabel="Message on WhatsApp"
                         onClick={() => {
                           try {
-                            window.open(
-                              waLink,
-                              "_blank",
-                              "noopener,noreferrer"
-                            );
-                            track("contact_whatsapp_click", {
-                              productId,
-                            });
+                            window.open(waLink, "_blank", "noopener,noreferrer");
+                            track("contact_whatsapp_click", { productId });
                           } catch {
                             /* ignore */
                           }
                         }}
                       />
                     )}
+
                     {telLink && (
                       <IconButton
                         icon="phone"
@@ -380,15 +392,14 @@ export default function ContactModal({
                         onClick={() => {
                           try {
                             window.location.href = telLink;
-                            track("contact_call_click", {
-                              productId,
-                            });
+                            track("contact_call_click", { productId });
                           } catch {
                             /* ignore */
                           }
                         }}
                       />
                     )}
+
                     <IconButton
                       icon="share"
                       variant="outline"
@@ -396,22 +407,26 @@ export default function ContactModal({
                       srLabel="Share listing"
                       onClick={() => void share()}
                     />
+
                     <IconButton
                       icon="heart"
                       variant="outline"
                       labelText={saved ? "Favorited" : "Favorite"}
-                      srLabel={
-                        saved
-                          ? "Unfavorite listing"
-                          : "Favorite listing"
-                      }
+                      srLabel={saved ? "Unfavorite listing" : "Favorite listing"}
                       aria-pressed={saved}
                       onClick={toggleSave}
                     />
+
                     <button
                       onClick={() => setOpen(false)}
                       type="button"
-                      className="rounded-xl border px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 dark:text-gray-200"
+                      className={[
+                        "min-h-9 rounded-xl px-3 py-2 text-xs sm:px-3 sm:py-1.5 sm:text-sm font-medium",
+                        "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+                        "hover:bg-[var(--bg-subtle)]",
+                        "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                        "active:scale-[.99]",
+                      ].join(" ")}
                     >
                       Close
                     </button>

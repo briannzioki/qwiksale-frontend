@@ -150,7 +150,7 @@ export async function GET(req: NextRequest) {
       try {
         recentRaw = (await (prisma as any).referral.findMany({
           where: { inviterId: uid },
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: 20,
           select: {
             id: true,
@@ -164,7 +164,7 @@ export async function GET(req: NextRequest) {
         try {
           recentRaw = (await (prisma as any).referral.findMany({
             where: { inviterId: uid },
-            orderBy: { createdAt: "desc" },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             take: 20,
             select: { id: true, createdAt: true, qualifiedAt: true, inviteeEmail: true },
           })) as RecentRow[];

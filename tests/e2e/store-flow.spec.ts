@@ -15,10 +15,6 @@ function idFromHref(href: string | null | undefined) {
   return parts.length ? parts[parts.length - 1] : undefined;
 }
 
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 async function getAnyProductId(page: Page): Promise<string | undefined> {
   const candidates: Array<() => Promise<string | undefined>> = [
     async () => {
@@ -59,16 +55,23 @@ test.describe("Store flows", () => {
     }
   });
 
-  test("Store page is reachable from a product detail and renders without 500", async ({ page }) => {
+  test("Store page is reachable from a product detail and renders without 500", async ({
+    page,
+  }) => {
     const productId = await getAnyProductId(page);
-    test.skip(!productId, "No product available in home feed or /api/products; seed at least one.");
+    test.skip(
+      !productId,
+      "No product available in home feed or /api/products; seed at least one.",
+    );
 
     const productUrl = `/product/${productId}`;
     const resp = await page.goto(productUrl, { waitUntil: "domcontentloaded" });
     expect(resp?.ok(), `GET ${productUrl} should be OK`).toBe(true);
 
     const storeLink = page
-      .getByRole("link", { name: /visit store|view store|more from this seller|seller store/i })
+      .getByRole("link", {
+        name: /visit store|view store|more from this seller|seller store/i,
+      })
       .first();
 
     await expect(storeLink).toBeVisible();
@@ -81,14 +84,18 @@ test.describe("Store flows", () => {
     expect(storeUrl.host).toBe(hostBefore);
     expect(storeUrl.pathname).toMatch(/\/store\//);
 
-    await expect(page.getByRole("heading", { name: /store|seller|listings by/i }).first()).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /store|seller|listings by/i }).first(),
+    ).toBeVisible();
     await expect(page.locator("text=Application error")).toHaveCount(0);
 
     // Wait for listings to appear (store page may be CSR/hydrating)
     const listingLinks = page.locator('a[href^="/product/"], a[href^="/service/"]');
 
     try {
-      await expect.poll(async () => await listingLinks.count(), { timeout: 15_000 }).toBeGreaterThan(0);
+      await expect
+        .poll(async () => await listingLinks.count(), { timeout: 15_000 })
+        .toBeGreaterThan(0);
     } catch {
       test.skip(true, "No store listings found to assert badges");
       return;
@@ -119,23 +126,30 @@ test.describe("Store flows", () => {
     const sellerVerified = apiJson?.sellerVerified as unknown;
     const sellerFeaturedTier = apiJson?.sellerFeaturedTier as unknown;
 
-    // ✅ Assert badge text via descendants (avoids brittle full-link textContent concatenation)
+    // ✅ Assert verification via stable testids (icon-only / sr-only safe)
     if (typeof sellerVerified === "boolean") {
-      const label = sellerVerified ? "Verified" : "Unverified";
-      await expect(firstListing.getByText(new RegExp(`\\b${escapeRegExp(label)}\\b`, "i"))).toBeVisible();
+      const badgeId = sellerVerified ? "verified-badge" : "unverified-badge";
+      await expect(firstListing.locator(`[data-testid="${badgeId}"]`)).toBeVisible();
     }
 
-    const tier = typeof sellerFeaturedTier === "string" ? sellerFeaturedTier.trim().toLowerCase() : "";
+    const tier =
+      typeof sellerFeaturedTier === "string" ? sellerFeaturedTier.trim().toLowerCase() : "";
     if (tier === "basic" || tier === "gold" || tier === "diamond") {
-      await expect(firstListing.getByText(new RegExp(`\\b${escapeRegExp(tier)}\\b`, "i"))).toBeVisible();
+      await expect(firstListing.locator(`[data-testid="featured-tier-${tier}"]`)).toBeVisible();
     }
   });
 
-  test("Store page shows listings even when viewed as ADMIN (regression)", async ({ page, browser }) => {
+  test("Store page shows listings even when viewed as ADMIN (regression)", async ({
+    page,
+    browser,
+  }) => {
     test.skip(!hasAdminState, "Missing admin auth storage state.");
 
     const productId = await getAnyProductId(page);
-    test.skip(!productId, "No product available in home feed or /api/products; seed at least one.");
+    test.skip(
+      !productId,
+      "No product available in home feed or /api/products; seed at least one.",
+    );
 
     // Step 1: find a seller store URL via a real product detail
     const productUrl = `/product/${productId}`;
@@ -143,7 +157,9 @@ test.describe("Store flows", () => {
     expect(resp?.ok(), `GET ${productUrl} should be OK`).toBe(true);
 
     const storeLink = page
-      .getByRole("link", { name: /visit store|view store|more from this seller|seller store/i })
+      .getByRole("link", {
+        name: /visit store|view store|more from this seller|seller store/i,
+      })
       .first();
     await expect(storeLink).toBeVisible();
 
@@ -154,7 +170,9 @@ test.describe("Store flows", () => {
 
     // Sanity: store has at least one listing for a normal viewer
     const listingLinks = page.locator('a[href^="/product/"], a[href^="/service/"]');
-    await expect.poll(async () => await listingLinks.count(), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect
+      .poll(async () => await listingLinks.count(), { timeout: 15_000 })
+      .toBeGreaterThan(0);
 
     // Step 2: open the SAME store URL as an admin viewer and ensure it's not empty
     const ctx = await browser.newContext({ storageState: ADMIN_STATE });
@@ -166,7 +184,9 @@ test.describe("Store flows", () => {
       await expect(adminPage.locator("text=Application error")).toHaveCount(0);
 
       const adminListingLinks = adminPage.locator('a[href^="/product/"], a[href^="/service/"]');
-      await expect.poll(async () => await adminListingLinks.count(), { timeout: 15_000 }).toBeGreaterThan(0);
+      await expect
+        .poll(async () => await adminListingLinks.count(), { timeout: 15_000 })
+        .toBeGreaterThan(0);
 
       expect(await adminPage.getByText(/no listings yet/i).count()).toBe(0);
     } finally {

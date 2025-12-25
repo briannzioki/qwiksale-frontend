@@ -1,5 +1,4 @@
 "use client";
-// src/app/components/Badge.tsx
 
 import * as React from "react";
 
@@ -23,61 +22,34 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
+/**
+ * Phone-first sizing:
+ * - xs screens: compact pills
+ * - sm+ screens: restore larger padding/font on "sm" and "md"
+ */
 const sizeMap: Record<Size, string> = {
-  xs: "text-[11px] px-2 py-0.5 rounded-full gap-1",
-  sm: "text-xs px-2.5 py-1 rounded-full gap-1.5",
-  md: "text-sm px-3 py-1.5 rounded-full gap-2",
+  // ✅ matches your knob: text-[11px] px-2 py-1
+  xs: "text-[11px] px-2 py-1 rounded-full gap-1",
+
+  // phone-first: compact on xs, restore at sm+
+  sm: "text-[11px] px-2 py-1 rounded-full gap-1.5 sm:text-xs sm:px-2.5 sm:py-1.5",
+
+  // slightly larger option; still phone-first and restores on sm+
+  md: "text-xs px-2.5 py-1.5 rounded-full gap-2 sm:text-sm sm:px-3 sm:py-1.5",
 };
 
-// Tailwind color tokens per tone
-const palette = {
-  slate: {
-    solid:
-      "bg-slate-800 text-white dark:bg-slate-300 dark:text-slate-900",
-    soft:
-      "bg-[var(--bg-muted)] text-[var(--text)] border border-[var(--border-subtle)]",
-    outline:
-      "bg-transparent text-[var(--text)] border border-[var(--border-subtle)]",
-    ring: "ring-slate-400/30 dark:ring-slate-300/25",
-    dot: "bg-slate-500",
-  },
-  green: {
-    solid: "bg-emerald-600 text-white",
-    soft:
-      "bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-50 dark:border-emerald-800",
-    outline:
-      "text-emerald-800 border border-emerald-300 dark:text-emerald-200 dark:border-emerald-700",
-    ring: "ring-emerald-400/40",
-    dot: "bg-emerald-500",
-  },
-  amber: {
-    solid: "bg-amber-500 text-amber-950 dark:text-amber-950",
-    soft:
-      "bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-100 dark:border-amber-800",
-    outline:
-      "text-amber-800 border border-amber-300 dark:text-amber-200 dark:border-amber-700",
-    ring: "ring-amber-400/40",
-    dot: "bg-amber-500",
-  },
-  rose: {
-    solid: "bg-rose-600 text-white",
-    soft:
-      "bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-900/20 dark:text-rose-100 dark:border-rose-800",
-    outline:
-      "text-rose-700 border border-rose-300 dark:text-rose-200 dark:border-rose-700",
-    ring: "ring-rose-400/40",
-    dot: "bg-rose-500",
-  },
-  indigo: {
-    solid: "bg-indigo-600 text-white",
-    soft:
-      "bg-indigo-50 text-indigo-800 border border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-100 dark:border-indigo-800",
-    outline:
-      "text-indigo-700 border border-indigo-300 dark:text-indigo-200 dark:border-indigo-700",
-    ring: "ring-indigo-400/40",
-    dot: "bg-indigo-500",
-  },
-} as const;
+/**
+ * Tone → CSS var color mapping (with safe fallbacks).
+ * If your theme defines --success/--warning/--danger/--info, tones will differentiate.
+ * Otherwise they gracefully fall back to --accent.
+ */
+const toneAccentVar: Record<Tone, string> = {
+  slate: "var(--text-muted)",
+  green: "var(--success, var(--accent))",
+  amber: "var(--warning, var(--accent))",
+  rose: "var(--danger, var(--accent))",
+  indigo: "var(--info, var(--accent))",
+};
 
 export const Badge = React.forwardRef<HTMLElement, BadgeProps>(
   (
@@ -97,17 +69,35 @@ export const Badge = React.forwardRef<HTMLElement, BadgeProps>(
     ref,
   ) => {
     const Comp: any = as;
-    const tonePal = palette[tone];
+    const accent = toneAccentVar[tone];
 
     const variantCls =
       variant === "solid"
-        ? tonePal.solid
+        ? tone === "slate"
+          ? "bg-[var(--text)] text-[var(--bg)]"
+          : `bg-[color:${accent}] text-[var(--bg)]`
         : variant === "outline"
-          ? cn("bg-transparent", tonePal.outline)
-          : tonePal.soft;
+          ? tone === "slate"
+            ? "bg-transparent text-[var(--text)] border border-[var(--border)]"
+            : `bg-transparent text-[color:${accent}] border border-[color:${accent}]`
+          : // soft
+            "bg-[var(--bg-subtle)] text-[var(--text)] border border-[var(--border-subtle)]";
 
-    // glow adds a faint brand-like aura; keeps it subtle
-    const glowCls = glow ? cn("ring-2", tonePal.ring, "shadow-sm") : "";
+    // glow: subtle aura; uses tone color when available, otherwise falls back safely
+    const glowCls = glow
+      ? tone === "slate"
+        ? "ring-1 ring-[var(--border)] shadow-sm"
+        : `ring-2 ring-[color:${accent}] shadow-sm`
+      : "";
+
+    const isInteractive = as !== "span";
+    const hoverCls = isInteractive
+      ? variant === "solid"
+        ? "hover:opacity-95"
+        : variant === "outline"
+          ? "hover:bg-[var(--bg-subtle)]"
+          : "hover:bg-[var(--bg-elevated)]"
+      : "";
 
     // Default button behavior: avoid accidental form submissions
     const extraProps: Record<string, any> = {};
@@ -125,11 +115,17 @@ export const Badge = React.forwardRef<HTMLElement, BadgeProps>(
         {...extraProps}
         className={cn(
           "inline-flex items-center font-medium leading-none",
+          "select-none whitespace-nowrap",
+          "transition-colors",
+          // ✅ touch target safety when clickable
+          isInteractive && "min-h-9",
+          isInteractive &&
+            "focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]",
           sizeMap[size],
           variantCls,
           glowCls,
-          isDisabled && "opacity-60 pointer-events-none",
-          "transition-colors",
+          hoverCls,
+          isDisabled && "pointer-events-none opacity-60",
           className,
         )}
         {...rest}
@@ -139,12 +135,14 @@ export const Badge = React.forwardRef<HTMLElement, BadgeProps>(
             {icon}
           </span>
         ) : null}
+
         {dot && !icon ? (
           <span
-            className={cn("h-1.5 w-1.5 rounded-full", tonePal.dot)}
+            className={cn("h-1.5 w-1.5 rounded-full", `bg-[color:${accent}]`)}
             aria-hidden
           />
         ) : null}
+
         <span className="truncate">{children}</span>
       </Comp>
     );

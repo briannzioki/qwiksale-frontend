@@ -62,7 +62,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           >
             {label}
             {requiredMark ? (
-              <span className="ml-0.5 text-rose-600">*</span>
+              <span className="ml-0.5 text-[var(--danger)]">*</span>
             ) : null}
           </label>
         ) : null}
@@ -81,7 +81,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             "border border-[var(--border)]",
             "placeholder:text-[var(--text-muted)]",
             "shadow-inner",
-            "focus:outline-none focus:ring-2 ring-focus",
+            "focus-visible:outline-none focus-visible:ring-2 ring-focus",
             "disabled:opacity-60 disabled:cursor-not-allowed",
             "transition",
             "resize-y",

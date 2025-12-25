@@ -30,7 +30,7 @@ export default async function Page({
       isAuthenticated = true;
     }
   } catch {
-    // Soft page – do not let auth lookup failures 500 this route.
+    // Soft page - do not let auth lookup failures 500 this route.
     isAuthenticated = false;
   }
 
@@ -40,15 +40,22 @@ export default async function Page({
   const listingHref = isEdit && id ? `/service/${encodeURIComponent(id)}` : null;
 
   return (
-    <main className="container-page py-6">
+    <main className="container-page py-6 text-[var(--text)]">
       <div className="mx-auto max-w-3xl space-y-4">
         {/* Top nav helpers */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/dashboard"
               prefetch={false}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-3 py-1 hover:bg-muted"
+              className={[
+                "inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5",
+                "border border-[var(--border-subtle)] bg-[var(--bg-subtle)]",
+                "text-[var(--text-muted)] shadow-sm transition",
+                "hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                "active:scale-[.99]",
+              ].join(" ")}
               data-testid="sell-service-back-dashboard"
             >
               ← Back to dashboard
@@ -57,7 +64,14 @@ export default async function Page({
               <Link
                 href={listingHref}
                 prefetch={false}
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-3 py-1 hover:bg-muted"
+                className={[
+                  "inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5",
+                  "border border-[var(--border-subtle)] bg-[var(--bg-subtle)]",
+                  "text-[var(--text-muted)] shadow-sm transition",
+                  "hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  "active:scale-[.99]",
+                ].join(" ")}
                 data-testid="sell-service-view-listing"
               >
                 View listing
@@ -67,23 +81,25 @@ export default async function Page({
         </div>
 
         {/* Hero / context */}
-        <div className="rounded-2xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-6 text-white shadow-soft dark:shadow-none">
-          <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">
-            {isEdit ? "Edit Service" : "Sell a Service"}
-          </h1>
-          <p className="mt-2 text-sm text-white/90">
-            Describe what you do, where you operate, and how people can reach
-            you. You can tweak or pause the service any time.
-          </p>
+        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft dark:shadow-none">
+          <div className="container-page py-8 text-white">
+            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl text-white">
+              {isEdit ? "Edit Service" : "Sell a Service"}
+            </h1>
+            <p className="mt-1 text-sm text-white/80">
+              Describe what you do, where you operate, and how people can reach
+              you. You can tweak or pause the service any time.
+            </p>
+          </div>
         </div>
 
-        {/* Guest warning — only for create flow (not while editing) */}
+        {/* Guest warning - only for create flow (not while editing) */}
         {!isAuthenticated && !isEdit && (
-          <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-            <p>
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-4 py-3 text-sm text-[var(--text)] shadow-sm">
+            <p className="leading-relaxed text-[var(--text-muted)]">
               <Link
                 href={signinHref}
-                className="font-semibold underline"
+                className="font-semibold text-[var(--text)] underline underline-offset-4"
                 prefetch={false}
               >
                 Sign in
@@ -93,25 +109,36 @@ export default async function Page({
           </div>
         )}
 
-        {/* Server-side CTA anchors (clickable immediately) */}
-        <div className="flex flex-wrap items-center gap-3">
-          <Link
-            href={createHref}
-            data-testid="sell-service-mode-cta"
-            className="btn-outline inline-block"
-            prefetch={false}
-          >
-            {isEdit ? "Save changes" : "Create New"}
-          </Link>
-          <Link
-            href={signinHref}
-            prefetch={false}
-            className="text-sm font-medium text-brandNavy underline-offset-2 hover:underline"
-            data-e2e="sell-service-signin"
-          >
-            Sign in
-          </Link>
-        </div>
+        {/* Contextual CTAs only (edit mode) */}
+        {isEdit && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href={createHref}
+              data-testid="sell-service-mode-cta"
+              className="btn-outline inline-block"
+              prefetch={false}
+            >
+              Create New
+            </Link>
+
+            {!isAuthenticated && (
+              <Link
+                href={signinHref}
+                prefetch={false}
+                className={[
+                  "text-sm font-semibold",
+                  "text-[var(--text)] underline-offset-4",
+                  "hover:underline",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  "rounded-md",
+                ].join(" ")}
+                data-e2e="sell-service-signin"
+              >
+                Sign in
+              </Link>
+            )}
+          </div>
+        )}
 
         {/* Real implementation (create/edit) lives in SellServiceClient.
             Client code is responsible for:
@@ -120,7 +147,7 @@ export default async function Page({
             - Showing any “View listing” actions in success UI */}
         <section
           aria-label={isEdit ? "Edit service form" : "Sell service form"}
-          className="rounded-2xl border border-border bg-card/90 p-4 shadow-sm"
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft"
         >
           <SellServiceClient editId={id} isAuthenticated={isAuthenticated} />
         </section>

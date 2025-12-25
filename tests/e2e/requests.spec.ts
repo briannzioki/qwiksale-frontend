@@ -1,11 +1,11 @@
 // tests/e2e/requests.spec.ts
 
 import { test, expect, type Page } from "@playwright/test";
-import { PrismaClient } from "@prisma/client";
+import { e2ePrisma, e2ePrismaDisconnect } from "./_helpers/prisma";
 
 test.describe.configure({ mode: "serial" });
 
-const prisma = new PrismaClient();
+const prisma = e2ePrisma;
 
 const RUN_ID = `e2e-requests-${Date.now()}-${Math.random()
   .toString(36)
@@ -155,7 +155,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await cleanupRunData();
-  await prisma.$disconnect();
+  await e2ePrismaDisconnect();
 });
 
 test("guest can see list, cannot open detail", async ({ page, browser }) => {

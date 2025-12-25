@@ -33,12 +33,16 @@ const isPreview =
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
-    { media: "(prefers-color-scheme: dark)", color: "#020617" },
+    // Keep aligned with globals.css --bg-app for each scheme (avoid hex literals here).
+    { media: "(prefers-color-scheme: light)", color: "rgb(246 248 253)" },
+    { media: "(prefers-color-scheme: dark)", color: "rgb(2 6 23)" },
   ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+
+  // ✅ Better iPhone/webview sizing (notch / safe-area capable)
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {
@@ -61,7 +65,6 @@ export const metadata: Metadata = {
     "mpesa",
   ],
   alternates: {
-    canonical: siteUrl + "/",
     languages: { "en-KE": "/", en: "/" },
   },
   manifest: "/manifest.webmanifest",
@@ -132,9 +135,7 @@ export const metadata: Metadata = {
   verification: {
     google: process.env["GOOGLE_SITE_VERIFICATION"] || undefined,
     other: process.env["BING_SITE_VERIFICATION"]
-      ? {
-          "msvalidate.01": process.env["BING_SITE_VERIFICATION"] as string,
-        }
+      ? { "msvalidate.01": process.env["BING_SITE_VERIFICATION"] as string }
       : undefined,
   },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "QwikSale" },
@@ -156,12 +157,7 @@ export default async function RootLayout({
     process.env["NEXT_PUBLIC_ENABLE_ANALYTICS"] !== "0";
 
   return (
-    <html
-      lang="en-KE"
-      dir="ltr"
-      className="h-full"
-      suppressHydrationWarning
-    >
+    <html lang="en-KE" dir="ltr" className="h-full" suppressHydrationWarning>
       <body
         className={`${fontVars} h-full antialiased bg-app text-strong`}
         style={{ fontFeatureSettings: "'kern' 1, 'liga' 1, 'calt' 1" }}
@@ -176,9 +172,14 @@ export default async function RootLayout({
           refetchOnWindowFocus={false}
           remountOnUserChange
         >
-          <SiteHeader />
-          {children}
-          <Footer />
+          {/* App-shell visual layer (texture/spotlight) is purely presentational */}
+          <div className="min-h-full relative bg-spotlight bg-noise">
+            <div className="relative z-10">
+              <SiteHeader />
+              {children}
+              <Footer />
+            </div>
+          </div>
         </Providers>
 
         {enableAnalytics ? (

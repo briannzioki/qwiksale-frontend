@@ -30,11 +30,7 @@ function getStr(sp: SafeSearchParams, key: string): string | undefined {
   return undefined;
 }
 
-function withTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-  fallback: T,
-): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   let tid: ReturnType<typeof setTimeout> | null = null;
   const t = new Promise<T>((resolve) => {
     tid = setTimeout(() => resolve(fallback), ms);
@@ -138,28 +134,43 @@ export default async function AdminRevealsPage({
   const csvHref = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
   const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
 
+  const inputClass =
+    "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const selectClass =
+    "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const actionBtnClass =
+    "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm font-semibold text-[var(--text)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const heroActionBtnClass =
+    "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)]/10 px-3 py-2 text-sm font-semibold text-white transition hover:bg-[var(--bg)]/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-6">
-      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-primary-foreground shadow">
+    <div className="container-page space-y-4 py-6 text-[var(--text)]">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] px-6 py-8 text-white shadow-soft">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-extrabold">Contact Reveals</h1>
-            <p className="mt-1 text-sm text-primary-foreground/90">
+            <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
+              Contact Reveals
+            </h1>
+            <p className="mt-1 text-sm text-white/80">
               Search, review, and export reveal logs.
             </p>
           </div>
+
           <div className="flex items-center gap-2">
             <a
               href={csvHref}
               download={`contact-reveals-${stamp}.csv`}
-              className="btn-outline text-sm"
+              className={heroActionBtnClass}
               aria-label="Export reveals as CSV"
             >
               Export CSV
             </a>
             <Link
               href="/admin/reveals"
-              className="btn-outline text-sm"
+              className={heroActionBtnClass}
               aria-label="Refresh page"
             >
               Refresh
@@ -169,20 +180,20 @@ export default async function AdminRevealsPage({
       </div>
 
       <form
-        className="flex flex-col gap-2 sm:flex-row"
+        className="flex flex-col gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:flex-row"
         aria-label="Filter reveals"
       >
         <input
           name="q"
           defaultValue={q}
           placeholder="Search product name, product id, user id, IP, User-Agent…"
-          className="input flex-1"
+          className={`${inputClass} flex-1`}
           aria-label="Search reveals"
         />
         <select
           name="take"
           defaultValue={String(takeNum)}
-          className="select"
+          className={selectClass}
           aria-label="Number to show"
         >
           {TAKE_CHOICES.map((n) => (
@@ -191,29 +202,26 @@ export default async function AdminRevealsPage({
             </option>
           ))}
         </select>
-        <button
-          className="btn-outline"
-          aria-label="Apply filters"
-        >
+        <button className={actionBtnClass} aria-label="Apply filters">
           Apply
         </button>
       </form>
 
       {loadError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] p-3 text-sm text-[var(--text)]">
           {loadError}
         </div>
       ) : null}
 
       {logs.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-muted)] shadow-soft">
           No reveal logs found{q ? ` for “${q}”` : ""}.
         </div>
       ) : (
-        <div className="relative overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+        <div className="relative overflow-x-auto rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border bg-muted text-left">
+              <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg)] text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 <Th>Time (UTC)</Th>
                 <Th>Product</Th>
                 <Th>Viewer</Th>
@@ -221,25 +229,21 @@ export default async function AdminRevealsPage({
                 <Th>User Agent</Th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-[var(--border-subtle)]">
               {logs.map((r) => {
                 const created =
-                  r.createdAt instanceof Date
-                    ? r.createdAt
-                    : new Date(r.createdAt);
+                  r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt);
                 return (
-                  <tr
-                    key={r.id}
-                    className="border-b border-border last:border-0"
-                  >
-                    <Td className="whitespace-nowrap">
+                  <tr key={r.id} className="hover:bg-[var(--bg-subtle)]">
+                    <Td className="whitespace-nowrap text-[var(--text-muted)]">
                       <time dateTime={created.toISOString()}>
                         {fmtUTC.format(created)}
                       </time>
                     </Td>
+
                     <Td>
                       <Link
-                        className="underline"
+                        className="rounded underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 ring-focus"
                         href={`/product/${r.productId}`}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -248,21 +252,22 @@ export default async function AdminRevealsPage({
                         {r.product?.name ?? r.productId}
                       </Link>
                     </Td>
-                    <Td>
+
+                    <Td className="text-[var(--text-muted)]">
                       {r.viewerUserId ? (
                         r.viewerUserId
                       ) : (
-                        <span className="text-muted-foreground">guest</span>
+                        <span className="text-[var(--text-muted)]">guest</span>
                       )}
                     </Td>
-                    <Td>
-                      {r.ip || (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+
+                    <Td className="text-[var(--text-muted)]">
+                      {r.ip || <span className="text-[var(--text-muted)]">-</span>}
                     </Td>
+
                     <Td className="max-w-[420px]">
-                      <span className="line-clamp-2 break-all text-foreground">
-                        {r.userAgent || "—"}
+                      <span className="line-clamp-2 break-all text-[var(--text)]">
+                        {r.userAgent || "-"}
                       </span>
                     </Td>
                   </tr>
@@ -273,10 +278,9 @@ export default async function AdminRevealsPage({
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Showing {logs.length} of latest reveals
-        {q ? ` filtered by “${q}”` : ""}. Data is uncached and rendered on
-        the server.
+      <p className="text-xs text-[var(--text-muted)]">
+        Showing {logs.length} of latest reveals{q ? ` filtered by “${q}”` : ""}.
+        Data is uncached and rendered on the server.
       </p>
     </div>
   );

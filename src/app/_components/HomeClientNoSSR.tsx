@@ -1,4 +1,3 @@
-// src/app/_components/HomeClientNoSSR.tsx
 "use client";
 
 import dynamic from "next/dynamic";
@@ -49,7 +48,7 @@ const LoadingHomeFeed = (props: any) => {
     return (
       <section
         id="search-results"
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 sm:gap-6"
+        className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 sm:gap-6"
         aria-label="Home feed results"
         aria-busy="true"
       >
@@ -77,12 +76,12 @@ const LoadingHomeFeed = (props: any) => {
               data-service-id={svc.id}
             >
               <div className="card-surface relative overflow-hidden rounded-xl border border-border shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-                <div className="h-44 w-full bg-muted animate-pulse" />
-                <div className="p-3">
+                <div className="h-36 w-full animate-pulse bg-muted sm:h-44" />
+                <div className="p-2.5 sm:p-3">
                   {/* Skeleton-ish rows for title/info */}
-                  <div className="mb-2 h-4 w-3/4 rounded bg-muted/70" />
+                  <div className="mb-2 h-3.5 w-3/4 rounded bg-muted/70" />
                   <div className="mb-2 h-3 w-1/2 rounded bg-muted/60" />
-                  <div className="mb-3 h-4 w-1/3 rounded bg-muted/50" />
+                  <div className="mb-3 h-3.5 w-1/3 rounded bg-muted/50" />
                   <p className="line-clamp-1 text-xs text-muted-foreground">
                     {categoryText}
                   </p>
@@ -101,7 +100,7 @@ const LoadingHomeFeed = (props: any) => {
   return (
     <div
       aria-label="Loading home feed"
-      className="mx-auto max-w-6xl px-4 py-8 text-sm text-muted-foreground"
+      className="mx-auto max-w-6xl px-4 py-6 text-xs text-muted-foreground sm:py-8 sm:text-sm"
     >
       Loading…
     </div>
