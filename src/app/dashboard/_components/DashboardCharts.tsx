@@ -1,5 +1,4 @@
 // src/app/dashboard/_components/DashboardCharts.tsx
-
 type DashboardChartPoint = {
   date: string; // YYYY-MM-DD
   label: string; // e.g. "Dec 10"
@@ -51,35 +50,33 @@ export default function DashboardCharts({
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex flex-col gap-4">
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-5">
+      <div className="flex flex-col gap-3 sm:gap-4">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-foreground">
-              {title}
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--text)]">{title}</h2>
             {description && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
                 {description}
               </p>
             )}
           </div>
 
           {/* Legend */}
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
             <span className="inline-flex items-center gap-1">
-              <span className="h-2 w-2 rounded-sm bg-brandBlue" />
+              <span className="h-2 w-2 rounded-sm bg-[var(--text)]" />
               <span>Listings</span>
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="h-2 w-2 rounded-sm bg-brandGreen" />
+              <span className="h-2 w-2 rounded-sm bg-[var(--text-muted)]" />
               <span>Messages</span>
             </span>
           </div>
         </div>
 
         {!hasAnyActivity ? (
-          <div className="flex h-32 items-center justify-center rounded-xl bg-muted/40 text-xs text-muted-foreground">
+          <div className="flex h-28 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-xs text-[var(--text-muted)] sm:h-32">
             No recent activity yet. Your listings and messages will appear
             here.
           </div>
@@ -93,17 +90,20 @@ export default function DashboardCharts({
 
                 return (
                   <div key={point.date} className="min-w-0 flex-1">
-                    <div className="flex h-32 items-end justify-center gap-1">
+                    <div className="flex h-28 items-end justify-center gap-1 sm:h-32">
                       {/* Listings bar */}
                       <div className="relative flex-1 max-w-[0.9rem]">
                         {point.listings > 0 && (
-                          <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground">
+                          <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] text-[var(--text-muted)]">
                             {point.listings}
                           </div>
                         )}
-                        <div className="flex h-full items-end" aria-hidden="true">
+                        <div
+                          className="flex h-full items-end"
+                          aria-hidden="true"
+                        >
                           <div
-                            className="w-full rounded-t-lg bg-brandBlue"
+                            className="w-full rounded-t-lg bg-[var(--text)]"
                             style={{ height: `${listingsHeight}%` }}
                           />
                         </div>
@@ -112,13 +112,16 @@ export default function DashboardCharts({
                       {/* Messages bar */}
                       <div className="relative flex-1 max-w-[0.9rem]">
                         {point.messages > 0 && (
-                          <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground">
+                          <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] text-[var(--text-muted)]">
                             {point.messages}
                           </div>
                         )}
-                        <div className="flex h-full items-end" aria-hidden="true">
+                        <div
+                          className="flex h-full items-end"
+                          aria-hidden="true"
+                        >
                           <div
-                            className="w-full rounded-t-lg bg-brandGreen"
+                            className="w-full rounded-t-lg bg-[var(--text-muted)]"
                             style={{ height: `${messagesHeight}%` }}
                           />
                         </div>
@@ -126,7 +129,7 @@ export default function DashboardCharts({
                     </div>
 
                     {/* X-axis label */}
-                    <div className="mt-1 text-center text-[10px] text-muted-foreground">
+                    <div className="mt-0.5 text-center text-[10px] text-[var(--text-muted)]">
                       {point.label}
                     </div>
                   </div>
@@ -135,7 +138,7 @@ export default function DashboardCharts({
             </div>
 
             {/* Max hint */}
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-[10px] text-[var(--text-muted)]">
               Peak day: {maxValue} item{maxValue === 1 ? "" : "s"} (combined).
             </p>
           </div>

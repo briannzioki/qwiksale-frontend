@@ -1,5 +1,4 @@
 // src/app/dashboard/_components/DashboardMetrics.tsx
-
 import type { SellerDashboardMetrics } from "@/app/lib/dashboard";
 import { fmtInt } from "@/app/lib/dashboard";
 
@@ -53,22 +52,22 @@ export default function DashboardMetrics({ metrics }: Props) {
     <section
       aria-label="Dashboard summary"
       data-e2e="dashboard-summary"
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4"
     >
       {items.map((item) => (
         <article
           key={item.key}
           data-e2e={`dashboard-metric-${item.key}`}
-          className="rounded-2xl border border-border bg-card p-5 shadow-sm"
+          className="rounded-2xl border border-border bg-card p-3 shadow-sm sm:p-4 md:p-5"
         >
-          <div className="text-sm font-medium text-muted-foreground">
+          <div className="text-xs font-medium text-muted-foreground sm:text-sm">
             {item.label}
           </div>
-          <div className="mt-1 text-2xl font-bold tracking-tight text-foreground">
+          <div className="mt-1 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
             {fmtInt(item.value)}
           </div>
           {item.hint && (
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground sm:mt-2 sm:text-xs">
               {item.hint}
             </p>
           )}

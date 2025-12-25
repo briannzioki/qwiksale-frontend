@@ -1,4 +1,3 @@
-// src/app/requests/new/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -7,6 +6,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers, cookies } from "next/headers";
 import { auth } from "@/auth";
+import SectionHeader from "@/app/components/SectionHeader";
 
 type SP = Record<string, string | string[] | undefined>;
 type HeadersLike = { get(name: string): string | null };
@@ -42,7 +42,9 @@ async function cookieHeaderFromNextCookies(): Promise<string> {
   try {
     const jar = await cookies();
     const all = jar.getAll();
-    return all.map((c: { name: string; value: string }) => `${c.name}=${c.value}`).join("; ");
+    return all
+      .map((c: { name: string; value: string }) => `${c.name}=${c.value}`)
+      .join("; ");
   } catch {
     return "";
   }
@@ -70,7 +72,9 @@ export default async function NewRequestPage({
   if (titlePrefill) returnQs.set("title", titlePrefill);
 
   if (!meId) {
-    const cb = `/requests/new${returnQs.toString() ? `?${returnQs.toString()}` : ""}`;
+    const cb = `/requests/new${
+      returnQs.toString() ? `?${returnQs.toString()}` : ""
+    }`;
     redirect(`/signin?callbackUrl=${encodeURIComponent(cb)}`);
   }
 
@@ -163,15 +167,37 @@ export default async function NewRequestPage({
 
   const error = getParam(sp, "error").trim();
 
+  const labelSm = "block text-sm font-semibold text-[var(--text)]";
+  const labelXs = "block text-xs font-semibold text-[var(--text-muted)]";
+  const inputBase =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const selectBase =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const btn =
+    "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-4 sm:text-sm";
+
   return (
-    <main className="container-page py-6">
-      <div className="hero-surface">
-        <h1 className="text-2xl md:text-3xl font-extrabold">Post a request</h1>
-        <p className="text-sm text-white/80">Tell QwikSale what you need. We’ll surface it to sellers.</p>
-      </div>
+    <main className="container-page py-4 text-[var(--text)] sm:py-6">
+      <SectionHeader
+        title="Post a request"
+        subtitle="Tell QwikSale what you need. We will surface it to sellers."
+        gradient="brand"
+        as="h1"
+        actions={[
+          <Link
+            key="back"
+            href="/requests"
+            prefetch={false}
+            className="btn-outline text-xs sm:text-sm"
+          >
+            Back to requests
+          </Link>,
+        ]}
+      />
 
       {error ? (
-        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+        <div className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-3 text-sm text-[var(--text)] shadow-sm sm:mt-4 sm:px-4">
+          <span className="font-semibold">Error:</span>{" "}
           {error === "title"
             ? "Title is required (min 3 characters)."
             : "Could not create request. Please try again."}
@@ -180,77 +206,65 @@ export default async function NewRequestPage({
 
       <form
         action={createRequest}
-        className="mt-6 rounded-2xl border border-border bg-card/90 p-6 shadow-sm space-y-4"
+        className="mt-4 space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:mt-6 sm:p-6"
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-3">
-            <label className="block text-sm font-semibold">Kind</label>
-            <select
-              name="kind"
-              defaultValue={kind}
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
-            >
+            <label className={labelSm}>Kind</label>
+            <select name="kind" defaultValue={kind} className={selectBase}>
               <option value="product">Product</option>
               <option value="service">Service</option>
             </select>
           </div>
 
           <div className="md:col-span-9">
-            <label className="block text-sm font-semibold">Title</label>
+            <label className={labelSm}>Title</label>
             <input
               name="title"
               defaultValue={titlePrefill}
               placeholder="What are you looking for?"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+              className={inputBase}
               minLength={3}
               required
             />
-            <div className="mt-1 text-xs text-muted-foreground">
-              Example: “iPhone 13 128GB, good condition” or “Plumber in Nairobi West”.
+            <div className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+              Example: "iPhone 13 128GB, good condition" or "Plumber in Nairobi West".
             </div>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-semibold">Description</label>
+          <label className={labelSm}>Description</label>
           <textarea
             name="description"
             rows={5}
             placeholder="Add details, budget range, timing, preferred brands, etc."
-            className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+            className={inputBase}
           />
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-5">
-            <label className="block text-sm font-semibold">Location</label>
+            <label className={labelSm}>Location</label>
             <input
               name="location"
-              placeholder="e.g. Nairobi, Kisumu, Mombasa…"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+              placeholder="e.g. Nairobi, Kisumu, Mombasa..."
+              className={inputBase}
             />
           </div>
 
           <div className="md:col-span-4">
-            <label className="block text-sm font-semibold">Category</label>
-            <input
-              name="category"
-              placeholder="Optional"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
-            />
+            <label className={labelSm}>Category</label>
+            <input name="category" placeholder="Optional" className={inputBase} />
           </div>
 
           <div className="md:col-span-3">
-            <label className="block text-sm font-semibold">Tags</label>
-            <input
-              name="tags"
-              placeholder="Comma-separated"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
-            />
+            <label className={labelSm}>Tags</label>
+            <input name="tags" placeholder="Comma-separated" className={inputBase} />
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-muted/30 p-4">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 shadow-sm sm:p-4">
           <div className="flex items-start gap-3">
             <input
               id="contactEnabled"
@@ -258,23 +272,19 @@ export default async function NewRequestPage({
               type="checkbox"
               value="1"
               defaultChecked
-              className="mt-1 h-4 w-4 rounded border-border text-[#161748] focus:ring-[#161748]"
+              className="mt-1 h-4 w-4 rounded border border-[var(--border-subtle)] bg-[var(--bg)] accent-[var(--text)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
             <div className="min-w-0">
-              <label htmlFor="contactEnabled" className="block text-sm font-semibold">
+              <label htmlFor="contactEnabled" className={labelSm}>
                 Enable contact
               </label>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs leading-relaxed text-[var(--text-muted)]">
                 If enabled, sellers may reach you based on your account contact settings.
               </div>
 
               <div className="mt-3 max-w-xs">
-                <label className="block text-xs font-semibold text-muted-foreground">Contact mode</label>
-                <select
-                  name="contactMode"
-                  defaultValue="chat"
-                  className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
-                >
+                <label className={labelXs}>Contact mode</label>
+                <select name="contactMode" defaultValue="chat" className={selectBase}>
                   <option value="chat">Chat</option>
                   <option value="phone">Phone</option>
                   <option value="whatsapp">WhatsApp</option>
@@ -285,10 +295,10 @@ export default async function NewRequestPage({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button type="submit" className="btn-gradient-primary">
+          <button type="submit" className={btn}>
             Create request
           </button>
-          <Link href="/requests" prefetch={false} className="btn-outline">
+          <Link href="/requests" prefetch={false} className={btn}>
             Cancel
           </Link>
         </div>

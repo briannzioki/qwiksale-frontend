@@ -1,11 +1,11 @@
 // tests/e2e/header-requests-drawer.spec.ts
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
-import { PrismaClient } from "@prisma/client";
+import { e2ePrisma, e2ePrismaDisconnect } from "./_helpers/prisma";
 
 test.describe.configure({ mode: "serial" });
 
-const prisma = new PrismaClient();
+const prisma = e2ePrisma;
 
 const RUN_ID = `e2e-reqdrawer-${Date.now()}-${Math.random()
   .toString(36)
@@ -172,7 +172,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await cleanupRunData();
-  await prisma.$disconnect();
+  await e2ePrismaDisconnect();
 });
 
 test("drawer opens", async ({ page }) => {

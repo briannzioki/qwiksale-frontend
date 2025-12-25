@@ -10,9 +10,10 @@ import { Icon } from "@/app/components/Icon";
 import { Badge } from "@/app/components/Badge";
 import { Button } from "@/app/components/Button";
 import ReviewStars from "@/app/components/ReviewStars";
-import VerifiedBadge from "@/app/components/VerifiedBadge";
 
 type Kind = "product" | "service";
+type FeaturedTier = "basic" | "gold" | "diamond";
+type SellerBadges = { verified: boolean | null; tier: FeaturedTier | null };
 
 export type ListingCardProps = {
   id: string;
@@ -22,16 +23,27 @@ export type ListingCardProps = {
   currency?: "KES" | string;
   imageUrl?: string | null;
   location?: string;
-  verified?: boolean;
+
+  /** Canonical resolved inputs (preferred): */
+  verified?: boolean | null;
+  featuredTier?: FeaturedTier | string | null;
+
+  /** Legacy/alias inputs (fallback only if canonical not provided): */
+  sellerVerified?: boolean | null;
+  sellerFeaturedTier?: FeaturedTier | string | null;
+
+  /** Preferred consolidated badges from API. */
+  sellerBadges?: {
+    verified?: boolean | null;
+    tier?: FeaturedTier | string | null;
+  } | null;
+
   saved?: boolean;
   kind?: Kind;
   conditionLabel?: string;
 
   /** Back-compat highlight flag (also used for ring). */
   featured?: boolean;
-
-  /** Preferred featured tier (basic/gold/diamond) when available. */
-  featuredTier?: "basic" | "gold" | "diamond" | string | null;
 
   className?: string;
 
@@ -89,44 +101,57 @@ function formatPrice(
   }
 }
 
-function SellerTextBadges({
-  verified,
-  tier,
-}: {
-  verified?: boolean;
-  tier?: "basic" | "gold" | "diamond" | null;
-}) {
+function normalizeTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  return t === "basic" || t === "gold" || t === "diamond"
+    ? (t as FeaturedTier)
+    : null;
+}
+
+/**
+ * Canonical badge renderer:
+ * - Tier is icon-only (no visible tier words) with stable testids + accessibility.
+ * - Verification uses stable testids (icon-only; screen reader text only).
+ * - If both are unknown/null, renders nothing.
+ */
+function VerifiedBadge({ sellerBadges }: { sellerBadges?: SellerBadges | null }) {
+  const verified = sellerBadges?.verified ?? null;
+  const tier = sellerBadges?.tier ?? null;
+
   const showVerified = typeof verified === "boolean";
   const showTier = tier === "basic" || tier === "gold" || tier === "diamond";
   if (!showVerified && !showTier) return null;
 
-  const pillBase =
-    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold";
+  const pillBase = cn(
+    "inline-flex items-center gap-1 rounded-xl border",
+    "px-2 py-1 text-[11px] sm:px-2.5 sm:py-1.5 sm:text-xs font-semibold",
+    "bg-[var(--bg-elevated)] text-[var(--text)]",
+    "border-[var(--border-subtle)] shadow-sm",
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {showVerified ? (
         verified ? (
           <span
-            className={cn(
-              pillBase,
-              "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200",
-            )}
+            data-testid="verified-badge"
+            aria-label="Verified"
+            title="Verified"
+            className={cn(pillBase, "border-[var(--border)]")}
           >
             <span aria-hidden>✓</span>
-            {" "}
-            <span>Verified</span>
+            <span className="sr-only">Verified</span>
           </span>
         ) : (
           <span
-            className={cn(
-              pillBase,
-              "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200",
-            )}
+            data-testid="unverified-badge"
+            aria-label="Unverified"
+            title="Unverified"
+            className={cn(pillBase, "border-[var(--border)] opacity-95")}
           >
             <span aria-hidden>!</span>
-            {" "}
-            <span>Unverified</span>
+            <span className="sr-only">Unverified</span>
           </span>
         )
       ) : null}
@@ -134,31 +159,33 @@ function SellerTextBadges({
       {showTier ? (
         tier === "gold" ? (
           <span
-            className={cn(
-              pillBase,
-              "border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100",
-            )}
+            data-testid="featured-tier-gold"
+            aria-label="Featured tier gold"
+            title="Featured gold"
+            className={cn(pillBase, "border-[var(--border)]")}
           >
-            <span aria-hidden>★</span>
-            {" "}
-            <span>Featured Gold</span>
+            <Icon name="tierGold" aria-hidden className="h-3.5 w-3.5" />
+            <span className="sr-only">Featured gold</span>
           </span>
         ) : tier === "diamond" ? (
           <span
-            className={cn(
-              pillBase,
-              "border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100",
-            )}
+            data-testid="featured-tier-diamond"
+            aria-label="Featured tier diamond"
+            title="Featured diamond"
+            className={cn(pillBase, "border-[var(--border)]")}
           >
-            <span aria-hidden>💎</span>
-            {" "}
-            <span>Featured Diamond</span>
+            <Icon name="tierDiamond" aria-hidden className="h-3.5 w-3.5" />
+            <span className="sr-only">Featured diamond</span>
           </span>
         ) : (
-          <span className={cn(pillBase, "border-border bg-muted text-foreground")}>
-            <span aria-hidden>★</span>
-            {" "}
-            <span>Featured Basic</span>
+          <span
+            data-testid="featured-tier-basic"
+            aria-label="Featured tier basic"
+            title="Featured basic"
+            className={cn(pillBase, "border-[var(--border)]")}
+          >
+            <Icon name="tierBasic" aria-hidden className="h-3.5 w-3.5" />
+            <span className="sr-only">Featured basic</span>
           </span>
         )
       ) : null}
@@ -174,12 +201,17 @@ export default function ListingCard({
   currency = "KES",
   imageUrl,
   location,
+
   verified,
+  featuredTier,
+  sellerVerified,
+  sellerFeaturedTier,
+  sellerBadges,
+
   saved = false,
   kind = "product",
   conditionLabel,
   featured = false,
-  featuredTier,
   className,
   ratingAverage,
   ratingCount,
@@ -205,13 +237,46 @@ export default function ListingCard({
     typeof ratingCount === "number" &&
     ratingCount > 0;
 
-  const tier = React.useMemo<"basic" | "gold" | "diamond" | null>(() => {
-    if (typeof featuredTier === "string") {
-      const t = featuredTier.trim().toLowerCase();
-      if (t === "basic" || t === "gold" || t === "diamond") return t;
-    }
-    return featured ? "basic" : null;
-  }, [featuredTier, featured]);
+  const badgesObj =
+    sellerBadges &&
+    typeof sellerBadges === "object" &&
+    !Array.isArray(sellerBadges)
+      ? sellerBadges
+      : null;
+
+  /**
+   * Resolver: pick the first VALID value across sources (so null/undefined in sellerBadges
+   * won't suppress a valid legacy/canonical value).
+   */
+  const tier = React.useMemo<FeaturedTier | null>(() => {
+    const fromBadges = normalizeTier((badgesObj as any)?.tier);
+    if (fromBadges) return fromBadges;
+
+    const fromCanonical =
+      featuredTier !== undefined ? normalizeTier(featuredTier) : null;
+    if (fromCanonical) return fromCanonical;
+
+    const fromLegacy =
+      sellerFeaturedTier !== undefined
+        ? normalizeTier(sellerFeaturedTier)
+        : null;
+    return fromLegacy;
+  }, [badgesObj, featuredTier, sellerFeaturedTier]);
+
+  const effectiveVerified = React.useMemo<boolean | null>(() => {
+    const vb = (badgesObj as any)?.verified;
+    if (typeof vb === "boolean") return vb;
+
+    if (typeof verified === "boolean") return verified;
+    if (typeof sellerVerified === "boolean") return sellerVerified;
+
+    return null;
+  }, [badgesObj, verified, sellerVerified]);
+
+  const sellerBadgesResolved = React.useMemo<SellerBadges>(
+    () => ({ verified: effectiveVerified, tier }),
+    [effectiveVerified, tier],
+  );
 
   async function handleSaveToggle(e: React.MouseEvent) {
     e.preventDefault();
@@ -271,25 +336,28 @@ export default function ListingCard({
     <article
       className={cn(
         "group relative overflow-hidden rounded-2xl border bg-[var(--bg-elevated)] text-[var(--text)]",
-        "border-[var(--border-subtle)] transition hover:border-[var(--border)]",
+        "border-[var(--border-subtle)] shadow-sm transition hover:border-[var(--border)]",
         featured && "ring-1 ring-focus",
         className,
       )}
       data-listing-id={id}
       data-listing-kind={kind}
       {...(hasRating
-        ? {
-            "data-rating-avg": ratingAverage,
-            "data-rating-count": ratingCount,
-          }
+        ? { "data-rating-avg": ratingAverage, "data-rating-count": ratingCount }
         : {})}
       role="article"
     >
       {/* Single canonical Link for the main click surface */}
-      <Link href={href} prefetch={false} aria-labelledby={`listing-${id}-title`}>
+      <Link
+        href={href}
+        prefetch={false}
+        aria-labelledby={`listing-${id}-title`}
+        className="relative block"
+      >
         {/* Cover */}
         <div className="relative overflow-hidden">
-          <div className="w-full" style={{ aspectRatio: "4 / 3" }}>
+          {/* Phone-first media height (more cards above fold) */}
+          <div className="relative h-36 w-full min-[420px]:h-40 sm:h-44">
             {imageUrl ? (
               <Image
                 src={imageUrl}
@@ -303,8 +371,11 @@ export default function ListingCard({
                 priority={false}
               />
             ) : (
-              <div className="grid h-full w-full place-items-center bg-muted">
-                <Icon name="image" className="opacity-40 text-muted-foreground" />
+              <div className="grid h-full w-full place-items-center bg-[var(--bg-subtle)]">
+                <Icon
+                  name="image"
+                  className="opacity-50 text-[var(--text-muted)]"
+                />
               </div>
             )}
           </div>
@@ -317,17 +388,18 @@ export default function ListingCard({
             aria-label={isSaved ? "Unfavorite" : "Favorite"}
             className={cn(
               "absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full",
-              "border border-border/60 bg-card/80 text-[var(--text)] shadow-sm backdrop-blur-md",
-              "transition hover:bg-card",
+              "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm backdrop-blur-md",
+              "transition hover:bg-[var(--bg-subtle)]",
+              "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
               isSaved && "ring-2 ring-focus",
             )}
             disabled={busy}
           >
             <Icon
               name="heart"
+              size="sm"
               className={cn(
-                "text-sm",
-                isSaved ? "text-pink-500" : "text-muted-foreground",
+                isSaved ? "text-[var(--text)]" : "text-[var(--text-muted)]",
               )}
               aria-hidden
             />
@@ -340,28 +412,22 @@ export default function ListingCard({
             </Badge>
           </div>
 
+          {/* Seller badges overlay (must be inside the Link anchor for E2E) */}
+          <div className="pointer-events-none absolute left-2 top-10 sm:top-12 z-10">
+            <VerifiedBadge sellerBadges={sellerBadgesResolved} />
+          </div>
+
           {/* Bottom overlay + meta */}
           <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-14 sm:h-20 bg-[var(--bg-elevated)] opacity-90"
             aria-hidden
           />
-          <div className="absolute inset-x-0 bottom-0 p-3 md:p-3.5 text-white">
-            <div className="flex items-center gap-1.5 text-xs opacity-90">
-              {typeof verified === "boolean" ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-semibold">
-                  <Icon
-                    name="verified"
-                    className={verified ? "text-emerald-300" : "text-amber-300"}
-                    aria-hidden
-                  />
-                  <span>{verified ? "Verified" : "Unverified"}</span>
-                </span>
-              ) : null}
-
+          <div className="absolute inset-x-0 bottom-0 p-2.5 sm:p-3 text-[var(--text)]">
+            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-[var(--text-muted)]">
               {location ? (
-                <span className="flex items-center gap-1">
-                  <Icon name="pin" aria-hidden />
-                  {location}
+                <span className="flex items-center gap-1 min-w-0">
+                  <Icon name="pin" size="xs" aria-hidden className="shrink-0" />
+                  <span className="truncate">{location}</span>
                 </span>
               ) : null}
               {conditionLabel ? (
@@ -373,42 +439,32 @@ export default function ListingCard({
             </div>
             <h3
               id={`listing-${id}-title`}
-              className="mt-1 line-clamp-2 text-sm font-semibold leading-snug drop-shadow"
+              className="mt-1 line-clamp-1 sm:line-clamp-2 text-sm sm:text-base font-semibold leading-snug"
             >
               {title}
             </h3>
           </div>
         </div>
 
-        {/* Footer row: rating + badges + View/Edit/Support actions */}
-        <div className="flex items-center justify-between gap-2 px-3 py-3">
-          <div className="flex flex-col gap-1 text-xs text-[var(--text-muted)]">
+        {/* Footer row: rating + View/Edit/Support actions */}
+        <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 sm:px-3 sm:py-3">
+          <div className="flex flex-col gap-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
             {hasRating && (
               <div
                 className="flex items-center gap-1.5"
-                aria-label={`${ratingAverage?.toFixed(1)} out of 5 stars from ${ratingCount} reviews`}
+                aria-label={`${ratingAverage?.toFixed(
+                  1,
+                )} out of 5 stars from ${ratingCount} reviews`}
               >
                 <ReviewStars rating={ratingAverage || 0} />
-                <span className="font-medium">{ratingAverage?.toFixed(1)}</span>
-                <span className="text-[0.7rem] text-muted-foreground">
+                <span className="font-medium text-[var(--text)]">
+                  {ratingAverage?.toFixed(1)}
+                </span>
+                <span className="text-[0.7rem] text-[var(--text-muted)]">
                   ({ratingCount})
                 </span>
               </div>
             )}
-
-            <div className="flex flex-col gap-1">
-              {/* Keep your existing badge component for styling/consistency */}
-              <VerifiedBadge
-                verified={typeof verified === "boolean" ? verified : null}
-                featured={featured}
-                featuredTier={tier}
-              />
-              {/* Add explicit visible text for Playwright assertions */}
-              <SellerTextBadges
-                {...(typeof verified === "boolean" ? { verified } : {})}
-                tier={tier}
-              />
-            </div>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -417,7 +473,7 @@ export default function ListingCard({
                 type="button"
                 size="xs"
                 variant="ghost"
-                className="px-2 py-1"
+                className="px-2 py-1 text-xs sm:text-sm"
                 onClick={handleDonateClick}
                 disabled={donating}
               >
@@ -429,7 +485,7 @@ export default function ListingCard({
               type="button"
               size="xs"
               variant="subtle"
-              className="px-2 py-1"
+              className="px-2 py-1 text-xs sm:text-sm"
               onClick={handleViewClick}
             >
               View <span className="sr-only">{title}</span>
@@ -440,7 +496,7 @@ export default function ListingCard({
                 type="button"
                 size="xs"
                 variant="outline"
-                className="px-2 py-1"
+                className="px-2 py-1 text-xs sm:text-sm"
                 onClick={handleEditClick}
               >
                 {editLabel || "Edit"} <span className="sr-only">{title}</span>

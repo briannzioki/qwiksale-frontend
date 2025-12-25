@@ -86,14 +86,41 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
     }
   }
 
+  const panelClass =
+    "mt-4 sm:mt-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-5 shadow-sm";
+
+  const tierBtnBase =
+    "rounded-2xl border p-3 sm:p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const tierBtnInactive =
+    "border-[var(--border-subtle)] bg-[var(--bg)] hover:bg-[var(--bg-subtle)]";
+
+  const tierBtnActive = "border-[var(--border)] bg-[var(--bg-elevated)] shadow-sm";
+
+  const labelText = "text-xs sm:text-sm text-[var(--text)]";
+  const labelHint = "block text-[11px] sm:text-xs text-[var(--text-muted)]";
+
+  const inputBase =
+    "mt-1 w-full rounded-xl border bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm outline-none placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const inputInvalid = "border-[var(--border)] bg-[var(--bg-subtle)]";
+  const inputValid = "border-[var(--border-subtle)]";
+
+  const selectClass =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const ctaBase =
+    "inline-flex min-h-9 items-center justify-center rounded-2xl border px-4 py-2 text-xs sm:text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const ctaEnabled =
+    "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm hover:bg-[var(--bg-subtle)]";
+
+  const ctaDisabled = "border-[var(--border-subtle)] opacity-60 cursor-not-allowed";
+
   return (
-    <section
-      className="mt-6 rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80"
-      aria-busy={busy || undefined}
-      aria-describedby="upgrade-status"
-    >
+    <section className={panelClass} aria-busy={busy || undefined} aria-describedby="upgrade-status">
       {/* Tiers */}
-      <div className="grid gap-4 sm:grid-cols-2" role="group" aria-label="Choose plan">
+      <div className="grid gap-3 sm:gap-4 sm:grid-cols-2" role="group" aria-label="Choose plan">
         {(["GOLD", "PLATINUM"] as Tier[]).map((t) => {
           const isActive = tier === t;
           return (
@@ -102,21 +129,15 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
               type="button"
               onClick={() => setTier(t)}
               aria-pressed={isActive}
-              className={[
-                "rounded-2xl border p-4 text-left transition",
-                "bg-white/90 dark:bg-slate-950/80",
-                isActive
-                  ? "border-gray-900 shadow-sm shadow-slate-900/10 dark:border-white"
-                  : "border-gray-200 dark:border-white/10 hover:border-gray-400 dark:hover:border-white/30",
-              ].join(" ")}
+              className={[tierBtnBase, isActive ? tierBtnActive : tierBtnInactive].join(" ")}
             >
-              <div className="text-lg font-semibold text-gray-900 dark:text-slate-100">
+              <div className="text-base sm:text-lg font-semibold text-[var(--text)]">
                 {t === "GOLD" ? "Gold" : "Platinum"}
               </div>
-              <div className="text-sm text-gray-600 dark:text-slate-300">
+              <div className="text-xs sm:text-sm text-[var(--text-muted)]">
                 KES {TIER_PRICE[t].toLocaleString("en-KE")}
               </div>
-              <ul className="mt-2 list-disc pl-4 text-sm text-gray-700 dark:text-slate-200">
+              <ul className="mt-1.5 sm:mt-2 list-disc pl-4 text-xs sm:text-sm text-[var(--text)]">
                 {t === "GOLD" ? (
                   <>
                     <li>Priority placement</li>
@@ -135,25 +156,15 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
       </div>
 
       {/* Payment inputs */}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <label className="text-sm text-gray-800 dark:text-slate-100">
-          <span className="block text-gray-600 dark:text-slate-300">
-            M-Pesa Number (2547XXXXXXXX)
-          </span>
+      <div className="mt-3 sm:mt-4 grid gap-2 sm:gap-3 sm:grid-cols-2">
+        <label className={labelText}>
+          <span className={labelHint}>M-Pesa Number (2547XXXXXXXX)</span>
           <input
             ref={phoneInputRef}
             type="tel"
             inputMode="numeric"
             placeholder="07XXXXXXXX or 2547XXXXXXXX"
-            className={[
-              "mt-1 w-full rounded-xl border px-3 py-2 outline-none",
-              "bg-white dark:bg-slate-900",
-              "text-gray-900 dark:text-slate-100",
-              "placeholder:text-gray-500 dark:placeholder:text-slate-400",
-              phone && !phoneValid
-                ? "border-red-400 focus:ring-2 focus:ring-red-200"
-                : "border-gray-300 dark:border-white/10 focus:ring-2 focus:ring-brandBlue",
-            ].join(" ")}
+            className={[inputBase, phone && !phoneValid ? inputInvalid : inputValid].join(" ")}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             onBlur={(e) => setPhone(e.target.value.trim())}
@@ -161,18 +172,15 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
             aria-describedby="phone-help"
             autoComplete="tel"
           />
-          <div id="phone-help" className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-            Will be used as{" "}
-            <code className="font-mono">
-              {normalized || "—"}
-            </code>
+          <div id="phone-help" className="mt-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
+            Will be used as <code className="font-mono">{normalized || "-"}</code>
           </div>
         </label>
 
-        <label className="text-sm text-gray-800 dark:text-slate-100">
-          <span className="block text-gray-600 dark:text-slate-300">Pay via</span>
+        <label className={labelText}>
+          <span className={labelHint}>Pay via</span>
           <select
-            className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none focus:ring-2 focus:ring-brandBlue dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+            className={selectClass}
             value={mode}
             onChange={(e) => setMode(e.target.value as "paybill" | "till")}
           >
@@ -183,21 +191,15 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
       </div>
 
       {/* CTA */}
-      <div className="mt-5 flex items-center justify-between">
-        <div className="text-sm text-gray-700 dark:text-slate-200">
-          Selected: <strong>{tier}</strong> — KES{" "}
-          {TIER_PRICE[tier].toLocaleString("en-KE")}
+      <div className="mt-4 sm:mt-5 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs sm:text-sm text-[var(--text)]">
+          Selected: <strong>{tier}</strong> - KES {TIER_PRICE[tier].toLocaleString("en-KE")}
         </div>
         <button
           type="button"
           onClick={startUpgrade}
           disabled={busy || !phoneValid}
-          className={[
-            "rounded-2xl px-4 py-2 text-sm font-medium text-white transition",
-            busy || !phoneValid
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-[#161748] hover:bg-[#161748]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brandBlue focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-950",
-          ].join(" ")}
+          className={[ctaBase, busy || !phoneValid ? ctaDisabled : ctaEnabled].join(" ")}
           title={!phoneValid && phone ? "Enter a valid M-Pesa number" : "Start upgrade"}
         >
           {busy ? "Starting…" : "Upgrade"}
@@ -208,21 +210,13 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
       <p id="upgrade-status" className="sr-only" aria-live="polite">
         {busy ? "Starting upgrade…" : message || error || ""}
       </p>
-      {message && (
-        <p className="mt-3 text-sm text-green-700 dark:text-emerald-400">
-          {message}
-        </p>
-      )}
-      {error && (
-        <p className="mt-3 text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      )}
+      {message && <p className="mt-2.5 sm:mt-3 text-xs sm:text-sm text-[var(--text)]">{message}</p>}
+      {error && <p className="mt-2.5 sm:mt-3 text-xs sm:text-sm text-[var(--text)]">{error}</p>}
 
       {/* Watcher */}
       {paymentId && (
-        <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50/60 p-3 dark:border-blue-400/40 dark:bg-blue-950/30">
-          <div className="text-sm text-blue-800 dark:text-blue-200">
+        <div className="mt-4 sm:mt-5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3">
+          <div className="text-xs sm:text-sm text-[var(--text)]">
             Waiting for payment confirmation…
           </div>
           <div className="mt-2">
@@ -242,17 +236,17 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
 
       {/* Final status */}
       {statusDone === "SUCCESS" && (
-        <div className="mt-4 rounded-xl bg-green-50 p-3 text-green-800 dark:bg-emerald-950/30 dark:text-emerald-300">
+        <div className="mt-3 sm:mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3 text-xs sm:text-sm text-[var(--text)]">
           Payment confirmed! Your account will reflect the new tier shortly.
         </div>
       )}
       {statusDone === "FAILED" && (
-        <div className="mt-4 rounded-xl bg-red-50 p-3 text-red-800 dark:bg-rose-950/30 dark:text-rose-300">
+        <div className="mt-3 sm:mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3 text-xs sm:text-sm text-[var(--text)]">
           Payment failed. Please try again.
         </div>
       )}
       {statusDone === "TIMEOUT" && (
-        <div className="mt-4 rounded-xl bg-yellow-50 p-3 text-yellow-800 dark:bg-amber-950/30 dark:text-amber-200">
+        <div className="mt-3 sm:mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3 text-xs sm:text-sm text-[var(--text)]">
           Timed out waiting for confirmation. You can check later in Billing.
         </div>
       )}

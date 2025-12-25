@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
@@ -38,8 +39,8 @@ export default function ContactPage() {
     trimmedEmail.length === 0
       ? "Email is required."
       : EMAIL_RE.test(trimmedEmail)
-      ? null
-      : "Enter a valid email.";
+        ? null
+        : "Enter a valid email.";
 
   const subjectErr = subject.length > MAX_SUBJECT ? "Subject is too long." : null;
 
@@ -48,10 +49,10 @@ export default function ContactPage() {
     trimmedMsg.length === 0
       ? "Message is required."
       : trimmedMsg.length < MIN_MESSAGE
-      ? `Message must be at least ${MIN_MESSAGE} characters.`
-      : message.length > MAX_MESSAGE
-      ? `Message must be under ${MAX_MESSAGE} characters.`
-      : null;
+        ? `Message must be at least ${MIN_MESSAGE} characters.`
+        : message.length > MAX_MESSAGE
+          ? `Message must be under ${MAX_MESSAGE} characters.`
+          : null;
 
   const canSubmit =
     !submitting &&
@@ -168,7 +169,7 @@ export default function ContactPage() {
       if (err?.name === "AbortError") {
         toast.error("Request timed out. Please try again.");
       } else {
-        toast.error(err?.message || "Something went wrong — please try again.");
+        toast.error(err?.message || "Something went wrong - please try again.");
       }
     } finally {
       clearTimeout(timeout);
@@ -183,43 +184,53 @@ export default function ContactPage() {
       case "OTHER":
         return "Have a request or something else on your mind? We’re listening.";
       default:
-        return "Questions, partnerships, feedback — we’d love to hear from you.";
+        return "Questions, partnerships, feedback - we’d love to hear from you.";
     }
   }, [type]);
 
   return (
-    <div className="container-page py-8">
+    <div className="container-page bg-[var(--bg)] py-4 text-[var(--text)] sm:py-6">
       <div className="mx-auto max-w-2xl">
-        {/* Header (lighter spacing & spotlight background) */}
-        <div className="rounded-2xl p-6 bg-spotlight brand-noise">
-          <h1 className="text-2xl md:text-3xl font-extrabold">Contact QwikSale</h1>
-          <p className="mt-1 text-sm">{headerBlurb}</p>
-          <p className="mt-2 text-xs text-gray-600 dark:text-slate-300" aria-live="polite">
-            We usually respond within 1–2 business days.
-          </p>
+        {/* Header */}
+        <div className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6">
+          {/* Brand strip (tiny, on-brand) */}
+          <div className="h-1.5 w-full bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]" />
+
+          <div className="pt-3 sm:pt-4">
+            <h1 className="text-xl font-extrabold text-[var(--text)] sm:text-2xl md:text-3xl">
+              Contact QwikSale
+            </h1>
+            <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">
+              {headerBlurb}
+            </p>
+            <p className="mt-2 text-xs text-[var(--text-muted)]" aria-live="polite">
+              We usually respond within 1-2 business days.
+            </p>
+          </div>
         </div>
-        <ul className="mt-3 flex flex-wrap gap-2">
+
+        <ul className="mt-2 flex gap-2 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] pb-1 sm:mt-3 sm:flex-wrap sm:overflow-visible sm:whitespace-normal">
           <li className="chip-outline">Support</li>
           <li className="chip-outline">Bug report</li>
           <li className="chip-outline">Feedback</li>
         </ul>
 
-        <div className="space-y-6 mt-6">
+        <div className="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
           {/* Success helper */}
           {sentOnce && (
             <div
-              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200"
+              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2.5 text-sm text-[var(--text)] shadow-sm sm:px-4 sm:py-3"
               aria-live="polite"
             >
-              Message sent — thanks! If you don’t see a reply, check your spam folder or add
-              support@qwiksale.sale to your contacts.
+              Message sent - thanks! If you don’t see a reply, check your spam
+              folder or add support@qwiksale.sale to your contacts.
             </div>
           )}
 
           {/* Form */}
           <form
             onSubmit={submit}
-            className="card-surface rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            className="card-surface rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 shadow-soft sm:p-5"
             noValidate
             aria-busy={submitting}
           >
@@ -230,12 +241,16 @@ export default function ContactPage() {
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label htmlFor="name" className="label block text-sm font-semibold mb-1">
-                  Your name <span className="text-gray-400">(optional)</span>
+                <label
+                  htmlFor="name"
+                  className="label mb-1 block text-sm font-semibold text-[var(--text)]"
+                >
+                  Your name{" "}
+                  <span className="text-[var(--text-muted)]">(optional)</span>
                 </label>
                 <input
                   id="name"
-                  className="input w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                  className="input w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Jane Doe"
@@ -244,15 +259,16 @@ export default function ContactPage() {
               </div>
 
               <div>
-                <label htmlFor="email" className="label block text-sm font-semibold mb-1">
-                  Email <span className="text-red-500">*</span>
+                <label
+                  htmlFor="email"
+                  className="label mb-1 block text-sm font-semibold text-[var(--text)]"
+                >
+                  Email <span className="text-[var(--text-muted)]">*</span>
                 </label>
                 <input
                   id="email"
                   type="email"
-                  className={`input w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 dark:border-slate-700 dark:bg-slate-950 ${
-                    emailErr ? "border-red-400 focus:ring-red-300" : "focus:ring-brandBlue/40"
-                  }`}
+                  className="input w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -262,21 +278,24 @@ export default function ContactPage() {
                   required
                 />
                 {emailErr && (
-                  <p id="email-err" className="mt-1 text-xs text-red-600">
+                  <p id="email-err" className="mt-1 text-xs text-[var(--text-muted)]">
                     {emailErr}
                   </p>
                 )}
               </div>
             </div>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="mt-2 grid gap-3 md:mt-3 md:grid-cols-2">
               <div>
-                <label htmlFor="topic" className="label block text-sm font-semibold mb-1">
+                <label
+                  htmlFor="topic"
+                  className="label mb-1 block text-sm font-semibold text-[var(--text)]"
+                >
                   Topic
                 </label>
                 <select
                   id="topic"
-                  className="input w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-slate-700 dark:bg-slate-950"
+                  className="input w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-[var(--text)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   value={type}
                   onChange={(e) => setType(e.target.value as TicketType)}
                 >
@@ -287,14 +306,16 @@ export default function ContactPage() {
               </div>
 
               <div>
-                <label htmlFor="subject" className="label block text-sm font-semibold mb-1">
-                  Subject <span className="text-gray-400">(optional)</span>
+                <label
+                  htmlFor="subject"
+                  className="label mb-1 block text-sm font-semibold text-[var(--text)]"
+                >
+                  Subject{" "}
+                  <span className="text-[var(--text-muted)]">(optional)</span>
                 </label>
                 <input
                   id="subject"
-                  className={`input w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 dark:border-slate-700 dark:bg-slate-950 ${
-                    subjectErr ? "border-red-400 focus:ring-red-300" : "focus:ring-brandBlue/40"
-                  }`}
+                  className="input w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="How can we help?"
@@ -304,11 +325,11 @@ export default function ContactPage() {
                 />
                 <div className="mt-1 flex items-center justify-between">
                   {subjectErr ? (
-                    <p id="subject-err" className="text-xs text-red-600">
+                    <p id="subject-err" className="text-xs text-[var(--text-muted)]">
                       {subjectErr}
                     </p>
                   ) : (
-                    <p id="subject-help" className="text-xs text-gray-500">
+                    <p id="subject-help" className="text-xs text-[var(--text-muted)]">
                       {subjectLeft} characters left
                     </p>
                   )}
@@ -328,15 +349,16 @@ export default function ContactPage() {
               />
             </div>
 
-            <div className="mt-3">
-              <label htmlFor="message" className="label block text-sm font-semibold mb-1">
-                Message <span className="text-red-500">*</span>
+            <div className="mt-2 md:mt-3">
+              <label
+                htmlFor="message"
+                className="label mb-1 block text-sm font-semibold text-[var(--text)]"
+              >
+                Message <span className="text-[var(--text-muted)]">*</span>
               </label>
               <textarea
                 id="message"
-                className={`input min-h-40 w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 dark:border-slate-700 dark:bg-slate-950 ${
-                  messageErr ? "border-red-400 focus:ring-red-300" : "focus:ring-brandBlue/40"
-                }`}
+                className="input min-h-[8rem] w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus sm:min-h-40"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Share details so we can help quickly…"
@@ -345,27 +367,29 @@ export default function ContactPage() {
                 aria-describedby={messageErr ? "message-err" : "message-help"}
                 required
               />
-              <div className="mt-1 flex items-center justify-between">
+              <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                 {messageErr ? (
-                  <p id="message-err" className="text-xs text-red-600">
+                  <p id="message-err" className="text-xs text-[var(--text-muted)]">
                     {messageErr}
                   </p>
                 ) : (
-                  <p id="message-help" className="text-xs text-gray-500">
+                  <p id="message-help" className="text-xs text-[var(--text-muted)]">
                     {messageLeft} characters left
                   </p>
                 )}
-                <p className="text-xs text-gray-400">We respond within 1–2 business days.</p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  We respond within 1-2 business days.
+                </p>
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-between">
-              <p className="text-[12px] text-gray-500 dark:text-slate-400">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-[11px] text-[var(--text-muted)] sm:text-[12px]">
                 This form is protected by basic anti-spam measures.
               </p>
               <button
                 disabled={!canSubmit}
-                className="btn-gradient-primary rounded-xl px-4 py-2 font-semibold disabled:opacity-60"
+                className="btn-gradient-primary min-h-[44px] rounded-xl px-4 py-2.5 text-xs font-semibold disabled:opacity-60 sm:text-sm"
                 aria-disabled={!canSubmit}
                 type="submit"
                 aria-label="Send message"

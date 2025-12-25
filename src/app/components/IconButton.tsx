@@ -1,6 +1,5 @@
 // src/app/components/IconButton.tsx
 "use client";
-// src/app/components/IconButton.tsx
 
 import * as React from "react";
 import { Icon, type IconName, type IconSize } from "@/app/components/Icon";
@@ -27,11 +26,25 @@ export type IconButtonProps = Omit<
   badgeCount?: number;
 };
 
+/**
+ * Phone-first touch rule:
+ * - any tappable icon/button should be >= 36px tall/wide (h-9 / w-9) or equivalent.
+ *
+ * We keep things visually compact by using min-h instead of forcing bigger heights,
+ * and we make icon-only buttons square to avoid padding bloat.
+ */
 const sizeCls: Record<Size, string> = {
-  xs: "h-7 px-2 text-xs rounded-lg",
-  sm: "h-8 px-2.5 text-sm rounded-lg",
-  md: "h-9 px-3 text-sm rounded-xl",
-  lg: "h-10 px-3.5 text-base rounded-xl",
+  xs: "min-h-9 px-2 text-xs rounded-lg",
+  sm: "min-h-9 px-2.5 text-sm rounded-lg",
+  md: "min-h-9 px-3 text-sm rounded-xl",
+  lg: "min-h-10 px-3.5 text-base rounded-xl",
+};
+
+const iconOnlyCls: Record<Size, string> = {
+  xs: "w-9 px-0",
+  sm: "w-9 px-0",
+  md: "w-9 px-0",
+  lg: "w-10 px-0",
 };
 
 const iconGap: Record<Size, string> = {
@@ -44,34 +57,51 @@ const iconGap: Record<Size, string> = {
 function classes(variant: Variant, tone: Tone) {
   const common =
     "inline-flex items-center justify-center font-semibold transition " +
-    "focus:outline-none focus:ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 ring-focus " +
-    "disabled:opacity-60 disabled:cursor-not-allowed";
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus " +
+    "disabled:opacity-60 disabled:cursor-not-allowed " +
+    "active:scale-[.99]";
 
   if (variant === "ghost") {
-    return `${common} border border-transparent bg-transparent hover:bg-muted`;
+    return [
+      common,
+      "border border-transparent bg-transparent",
+      "text-[var(--text)]",
+      "hover:bg-[var(--bg-subtle)]",
+    ].join(" ");
   }
 
   if (variant === "outline") {
-    const base = "border bg-card text-foreground hover:bg-muted";
+    const base = [
+      "border bg-[var(--bg-elevated)]",
+      "text-[var(--text)]",
+      "hover:bg-[var(--bg-subtle)]",
+    ].join(" ");
+
     const toneMap: Record<Tone, string> = {
-      default: base,
-      primary:
-        "border-brandBlue-300/60 text-brandBlue-700 hover:bg-brandBlue-50 dark:text-brandBlue-200 dark:border-brandBlue-700/50 dark:hover:bg-brandBlue-400/10",
-      danger:
-        "border-red-300/70 text-red-700 hover:bg-red-50 dark:text-red-300 dark:border-red-700/50 dark:hover:bg-red-400/10",
+      default: `border-[var(--border-subtle)] ${base}`,
+      primary: `border-[var(--border)] ${base}`,
+      danger: `border-[var(--border)] ${base}`,
     };
+
     return `${common} ${toneMap[tone]}`;
   }
 
   // solid
-  const base =
-    "shadow-sm hover:opacity-95 active:opacity-90 border border-border/60";
+  const base = [
+    "border border-[var(--border-subtle)]",
+    "bg-[var(--bg-subtle)]",
+    "text-[var(--text)]",
+    "shadow-sm",
+    "hover:bg-[var(--bg-elevated)]",
+  ].join(" ");
+
   const toneMap: Record<Tone, string> = {
-    default: "bg-muted text-foreground hover:bg-muted/80",
-    primary: "bg-brandNavy text-primary-foreground hover:brightness-[.98]",
-    danger: "bg-red-600 text-primary-foreground hover:bg-red-700",
+    default: base,
+    primary: base,
+    danger: base,
   };
-  return `${common} ${base} ${toneMap[tone]}`;
+
+  return `${common} ${toneMap[tone]}`;
 }
 
 export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
@@ -102,7 +132,9 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
     }
 
     const aria =
-      srLabel && !btn["aria-label"] ? { "aria-label": srLabel } : undefined;
+      srLabel && !btn["aria-label"] ? ({ "aria-label": srLabel } as const) : undefined;
+
+    const iconOnly = !labelText;
 
     return (
       <button
@@ -112,9 +144,12 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
           classes(variant, tone),
           sizeCls[size],
           iconGap[size],
+          iconOnly ? iconOnlyCls[size] : "",
           "relative select-none",
           className,
-        ].join(" ")}
+        ]
+          .filter(Boolean)
+          .join(" ")}
         {...aria}
         {...btn}
         disabled={btn.disabled || loading}
@@ -124,21 +159,23 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
           <Icon
             name="spinner"
             aria-hidden
-            className="animate-spin-slow"
+            className="animate-spin-slow shrink-0"
             size={iconSize}
           />
         ) : (
-          <Icon name={icon} aria-hidden size={iconSize} />
+          <Icon name={icon} aria-hidden size={iconSize} className="shrink-0" />
         )}
 
-        {labelText ? (
-          <span className="whitespace-nowrap">{labelText}</span>
-        ) : null}
+        {labelText ? <span className="whitespace-nowrap">{labelText}</span> : null}
 
         {/* Optional badge dot / count */}
         {typeof badgeCount === "number" && badgeCount > 0 && (
           <span
-            className="absolute -top-1.5 -right-1.5 inline-flex h-[1.1rem] min-w-[1.1rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] leading-none text-primary-foreground shadow"
+            className={[
+              "absolute -top-1.5 -right-1.5 inline-flex h-[1.1rem] min-w-[1.1rem] items-center justify-center rounded-full px-1",
+              "border border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+              "text-[10px] leading-none text-[var(--text)] shadow-sm",
+            ].join(" ")}
             aria-label={`${badgeCount} new`}
           >
             {badgeCount > 99 ? "99+" : badgeCount}

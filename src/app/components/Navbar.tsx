@@ -7,6 +7,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/app/components/Icon";
 import { Button } from "@/app/components/Button";
+import { cx, pillClass, pillIconClass } from "@/app/components/ui/pill";
 
 type NavbarProps = {
   searchSlot?: React.ReactNode;
@@ -16,10 +17,6 @@ type NavbarProps = {
   showMessages?: boolean;
   sticky?: boolean;
 };
-
-function cx(...xs: Array<string | false | null | undefined>) {
-  return xs.filter(Boolean).join(" ");
-}
 
 export default function Navbar({
   searchSlot,
@@ -41,17 +38,13 @@ export default function Navbar({
     return () => window.removeEventListener("scroll", onScroll);
   }, [sticky]);
 
+  // ✅ must return boolean (NOT boolean|undefined) for exactOptionalPropertyTypes friendliness
   const isActive = React.useCallback(
-    (href: string) =>
-      pathname === href ? true : pathname?.startsWith(href + "/"),
+    (href: string) => pathname === href || (pathname?.startsWith(href + "/") ?? false),
     [pathname],
   );
 
   const browseActive = isActive("/search");
-
-  const openCategories = React.useCallback(() => {
-    window.dispatchEvent(new CustomEvent("qs:categories:open"));
-  }, []);
 
   return (
     <div
@@ -61,7 +54,8 @@ export default function Navbar({
     >
       <div
         className={cx(
-          "bg-[var(--bg-elevated)] text-[var(--text)] backdrop-blur-md supports-[backdrop-filter]:backdrop-blur-md",
+          "bg-[var(--bg-elevated)] text-[var(--text)]",
+          "backdrop-blur-md supports-[backdrop-filter]:backdrop-blur-md",
           "border-b border-[var(--border-subtle)]",
           scrolled ? "shadow-soft" : "shadow-none",
           "transition-[box-shadow,background-color,backdrop-filter] duration-200",
@@ -70,28 +64,9 @@ export default function Navbar({
         <div className="container-page flex h-14 items-center gap-3 md:h-16">
           {/* Left */}
           <div className="flex min-w-0 items-center gap-2">
-            {/* Mobile categories toggle */}
-            <button
-              type="button"
-              className={cx(
-                "inline-flex h-9 w-9 items-center justify-center rounded-xl border md:hidden",
-                "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
-                "hover:bg-subtle transition",
-                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-              )}
-              onClick={openCategories}
-              aria-label="Open categories"
-            >
-              <Icon name="refine" />
-            </button>
-
-            {/* Logo */}
-            <Link
-              href="/"
-              className="flex shrink-0 items-center gap-2"
-              prefetch={false}
-            >
-              <span className="relative inline-flex h-8 w-8 overflow-hidden rounded-xl border border-[var(--border)] bg-subtle shadow-inner">
+            {/* ✅ Logo (left-most element; no button before it) */}
+            <Link href="/" className="flex shrink-0 items-center gap-2" prefetch={false}>
+              <span className="relative inline-flex h-8 w-8 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] shadow-inner">
                 <Image
                   src="/brand/qwiksale-logo.jpg"
                   alt="QwikSale logo"
@@ -111,10 +86,8 @@ export default function Navbar({
               href="/search"
               prefetch={false}
               className={cx(
-                "hidden md:inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium transition",
-                "border border-transparent",
-                "text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-subtle)]",
-                browseActive && "bg-subtle text-[var(--text)] border-[var(--border)]",
+                "hidden md:inline-flex",
+                pillClass({ active: browseActive, size: "sm" }),
               )}
               aria-current={browseActive ? "page" : undefined}
             >
@@ -162,13 +135,9 @@ export default function Navbar({
             <Link
               href="/search"
               prefetch={false}
-              className={cx(
-                "inline-flex h-9 w-9 items-center justify-center rounded-xl border md:hidden transition",
-                "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-                "hover:bg-subtle hover:text-[var(--text)]",
-                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-              )}
+              className={cx("md:hidden", pillIconClass({ active: browseActive }))}
               aria-label="Search"
+              aria-current={browseActive ? "page" : undefined}
             >
               <Icon name="search" />
             </Link>
@@ -177,12 +146,7 @@ export default function Navbar({
               <Link
                 href="/post"
                 prefetch={false}
-                className={cx(
-                  "inline-flex h-9 w-9 items-center justify-center rounded-xl border md:hidden transition",
-                  "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-                  "hover:bg-subtle hover:text-[var(--text)]",
-                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                )}
+                className={cx("md:hidden", pillIconClass({ active: false }))}
                 aria-label="Sell"
               >
                 <Icon name="add" />
@@ -208,27 +172,14 @@ function NavLink({
   active?: boolean;
   children: React.ReactNode;
 }) {
+  const isOn = !!active; // ✅ never pass undefined into helpers that expect boolean
   return (
     <Link
       href={href}
       prefetch={false}
-      className={cx(
-        "relative inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-medium transition",
-        "border border-transparent",
-        "text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-subtle)]",
-        active && "bg-subtle text-[var(--text)] border-[var(--border)]",
-      )}
-      aria-current={active ? "page" : undefined}
+      className={pillClass({ active: isOn, size: "sm" })}
+      aria-current={isOn ? "page" : undefined}
     >
-      <span
-        className={cx(
-          "absolute -bottom-[7px] left-2 right-2 h-[2px] rounded-full",
-          active
-            ? "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]"
-            : "bg-transparent",
-        )}
-        aria-hidden="true"
-      />
       {children}
     </Link>
   );

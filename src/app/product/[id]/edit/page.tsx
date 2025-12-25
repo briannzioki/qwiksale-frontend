@@ -1,4 +1,3 @@
-// src/app/product/[id]/edit/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,7 +9,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import DeleteListingButton from "@/app/components/DeleteListingButton";
 import ProductMediaManager from "./ProductMediaManager";
-import SectionHeader from "@/app/components/SectionHeader";
 import CommitBinder from "./CommitBinder";
 import SellProductClient from "@/app/sell/product/SellProductClient";
 
@@ -31,7 +29,7 @@ function toUrlish(v: any): string {
       v?.src ??
       v?.location ??
       v?.path ??
-      (typeof v === "string" ? v : "")
+      (typeof v === "string" ? v : ""),
   ).trim();
 }
 
@@ -54,14 +52,13 @@ function normalizeImagesFromRow(p: any): Img[] {
       !!(typeof p?.coverImageUrl === "string" && url === p.coverImageUrl) ||
       !!(typeof p?.image === "string" && url === p.image);
 
-    const sort =
-      Number.isFinite(x?.sortOrder)
-        ? Number(x.sortOrder)
-        : Number.isFinite(x?.sort)
+    const sort = Number.isFinite(x?.sortOrder)
+      ? Number(x.sortOrder)
+      : Number.isFinite(x?.sort)
         ? Number(x.sort)
         : Number.isFinite(x?.position)
-        ? Number(x.position)
-        : i;
+          ? Number(x.position)
+          : i;
 
     out.push({ id, url, isCover, sort });
   };
@@ -69,14 +66,14 @@ function normalizeImagesFromRow(p: any): Img[] {
   const arrays = Array.isArray(p?.images)
     ? p.images
     : Array.isArray(p?.photos)
-    ? p.photos
-    : Array.isArray(p?.media)
-    ? p.media
-    : Array.isArray(p?.gallery)
-    ? p.gallery
-    : Array.isArray(p?.imageUrls)
-    ? p.imageUrls
-    : [];
+      ? p.photos
+      : Array.isArray(p?.media)
+        ? p.media
+        : Array.isArray(p?.gallery)
+          ? p.gallery
+          : Array.isArray(p?.imageUrls)
+            ? p.imageUrls
+            : [];
 
   arrays.forEach((x: any, i: number) => push(x, i));
 
@@ -96,12 +93,16 @@ function normalizeImagesFromRow(p: any): Img[] {
     out[idx]!.isCover = true;
   }
 
-  return out.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id)).slice(0, 50);
+  return out
+    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id.localeCompare(b.id))
+    .slice(0, 50);
 }
 
 function getProductImageModel() {
   const any = prisma as any;
-  const candidates = [any.productImage, any.productImages, any.ProductImage, any.ProductImages].filter(Boolean);
+  const candidates = [any.productImage, any.productImages, any.ProductImage, any.ProductImages].filter(
+    Boolean,
+  );
   return candidates.find((m: any) => typeof m?.findMany === "function") || null;
 }
 
@@ -110,7 +111,11 @@ async function fetchRelatedImageRows(productId: string): Promise<any[]> {
   const m = getProductImageModel();
   if (!m) return [];
   try {
-    return await m.findMany({ where: { productId }, take: 50, orderBy: { id: "asc" } });
+    return await m.findMany({
+      where: { productId },
+      take: 50,
+      orderBy: { id: "asc" },
+    });
   } catch {
     return [];
   }
@@ -130,16 +135,15 @@ function rowsToImgs(rows: any[], parent: any): Img[] {
       !!(typeof parent?.coverImage === "string" && url === parent.coverImage) ||
       !!(typeof parent?.coverImageUrl === "string" && url === parent.coverImageUrl);
 
-    const sort =
-      Number.isFinite(x?.sortOrder)
-        ? Number(x.sortOrder)
-        : Number.isFinite(x?.sort)
+    const sort = Number.isFinite(x?.sortOrder)
+      ? Number(x.sortOrder)
+      : Number.isFinite(x?.sort)
         ? Number(x.sort)
         : Number.isFinite(x?.position)
-        ? Number(x.position)
-        : Number.isFinite(x?.order)
-        ? Number(x.order)
-        : i;
+          ? Number(x.position)
+          : Number.isFinite(x?.order)
+            ? Number(x.order)
+            : i;
 
     out.push({ id, url, isCover, sort });
   }
@@ -175,7 +179,9 @@ function mergeImgs(a: Img[], b: Img[], parent: any): Img[] {
     if (list.length > 0) list[idx >= 0 ? idx : 0]!.isCover = true;
   }
 
-  list = list.sort((x, y) => (x.sort ?? 0) - (y.sort ?? 0) || x.id.localeCompare(y.id)).slice(0, 50);
+  list = list
+    .sort((x, y) => (x.sort ?? 0) - (y.sort ?? 0) || x.id.localeCompare(y.id))
+    .slice(0, 50);
   return list;
 }
 
@@ -184,17 +190,21 @@ function briefStatus(p: any): string {
   if (["ACTIVE", "DRAFT", "PAUSED", "ARCHIVED"].includes(s)) return s;
   if (p?.published === true) return "ACTIVE";
   if (p?.published === false) return "DRAFT";
-  return "—";
+  return "-";
 }
 
 function fmtDate(d?: Date | string | null) {
-  if (!d) return "—";
+  if (!d) return "-";
   const dd = typeof d === "string" ? new Date(d) : d;
-  if (!(dd instanceof Date) || isNaN(dd.getTime())) return "—";
+  if (!(dd instanceof Date) || isNaN(dd.getTime())) return "-";
   return dd.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export default async function EditListingPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditListingPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   if (!id) notFound();
 
@@ -229,42 +239,51 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
     relationRows = [];
   }
 
-  const images = mergeImgs(
-    normalizeImagesFromRow(product),
-    rowsToImgs(relationRows, product),
-    product
-  );
+  const images = mergeImgs(normalizeImagesFromRow(product), rowsToImgs(relationRows, product), product);
   const canDelete = isOwner || isAdmin;
   const lastUpdated = product?.updatedAt ?? product?.createdAt ?? null;
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-6">
-      <SectionHeader
-        title={`Editing: ${product?.name ?? "Product"}`}
-        subtitle={
-          <>
-            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white/95">
-              Product Editor
-            </span>
-            <span className="mx-2 hidden text-white/70 md:inline">•</span>
-            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/95">
-              Status: <span className="ml-1 font-semibold">{briefStatus(product)}</span>
-            </span>
-            <span className="mx-2 hidden text-white/70 md:inline">•</span>
-            <span className="text-white/90">
-              ID <span className="font-mono">{product.id}</span> · Updated {fmtDate(lastUpdated)}
-            </span>
-          </>
-        }
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Link href="/dashboard" prefetch={false} className="btn-outline" aria-label="Back to dashboard">
+    <main className="container-page py-4 sm:py-6">
+      <header className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-soft">
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]" />
+        <div className="flex flex-wrap items-start justify-between gap-2 p-3 sm:gap-3 sm:p-5">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
+              Editing: {product?.name ?? "Product"}
+            </h1>
+
+            <div className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] font-semibold text-[var(--text)] sm:px-2.5 sm:py-1.5 sm:text-xs">
+                  Product editor
+                </span>
+
+                <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] text-[var(--text)] sm:px-2.5 sm:py-1.5 sm:text-xs">
+                  Status: <span className="ml-1 font-semibold">{briefStatus(product)}</span>
+                </span>
+
+                <span className="text-[11px] text-[var(--text-muted)] sm:text-xs">
+                  ID <span className="font-mono text-[var(--text)]">{product.id}</span> • Updated{" "}
+                  <span className="text-[var(--text)]">{fmtDate(lastUpdated)}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+            <Link
+              href="/dashboard"
+              prefetch={false}
+              className="btn-outline min-h-9"
+              aria-label="Back to dashboard"
+            >
               Back
             </Link>
             <Link
               href={`/product/${product.id}`}
               prefetch={false}
-              className="btn-outline"
+              className="btn-outline min-h-9"
               aria-label="View live product"
             >
               View live
@@ -273,15 +292,15 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
               <DeleteListingButton
                 productId={product.id}
                 label="Delete"
-                className="btn-danger"
+                className="btn-danger min-h-9"
                 redirectHref="/?deleted=1"
               />
             )}
           </div>
-        }
-      />
+        </div>
+      </header>
 
-      <section className="mt-6 card p-5">
+      <section className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:mt-6 sm:p-5">
         <ProductMediaManager
           productId={product.id}
           initial={
@@ -297,7 +316,7 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
         />
       </section>
 
-      <section className="mt-6 card p-5">
+      <section className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:mt-6 sm:p-5">
         <CommitBinder productId={product.id} />
         <div id="sell-form-host">
           <SellProductClient id={product.id} hideMedia />

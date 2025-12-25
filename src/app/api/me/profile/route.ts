@@ -7,6 +7,12 @@ export const fetchCache = "force-no-store";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+  sellerVerifiedFromEmailVerified,
+  type FeaturedTier,
+} from "@/app/lib/sellerVerification";
 
 const SHOULD_LOG = process.env.NODE_ENV === "development" && process.env["API_DEBUG"] === "1";
 
@@ -22,6 +28,21 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
   return res;
+}
+
+function normalizeFeaturedTier(v: unknown): FeaturedTier | null {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("diamond")) return "diamond";
+  if (t.includes("gold")) return "gold";
+  if (t.includes("basic") || t.includes("free") || t.includes("starter")) return "basic";
+  return null;
+}
+
+function coerceTierFromBadges(badges: any): FeaturedTier | null {
+  const t1 = normalizeFeaturedTier(badges?.sellerFeaturedTier);
+  if (t1) return t1;
+  return normalizeFeaturedTier(badges?.sellerBadges?.tier);
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -113,9 +134,40 @@ export async function GET() {
     const normalizedWhatsapp = normalizeKePhone(user.whatsapp ?? "") || null;
     const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
 
+    // ✅ Canonical seller verification: derived from emailVerified (single source of truth)
+    const sellerVerified = sellerVerifiedFromEmailVerified(user.emailVerified);
+
+    // ✅ No forced tier defaults (unknown stays null)
+    let badges: any = buildSellerBadgeFields(sellerVerified, null);
+    try {
+      const rows = await prisma.$queryRaw<{ u: any }[]>`
+        SELECT row_to_json(u) as u
+        FROM "User" u
+        WHERE u.id = ${user.id}
+        LIMIT 1
+      `;
+      const u = rows?.[0]?.u ?? null;
+      if (u) badges = resolveSellerBadgeFieldsFromUserLike(u) as any;
+    } catch {
+      // keep defaults
+    }
+
+    const tierCanon = coerceTierFromBadges(badges);
+    const badgeOut: any = { ...(badges as any) };
+    badgeOut.sellerVerified = sellerVerified;
+    badgeOut.sellerFeaturedTier = tierCanon;
+    badgeOut.sellerBadges = { verified: sellerVerified, tier: tierCanon };
+
     return noStore({
       user: {
         ...user,
+        // Force legacy boolean to match the canonical rule (prevents UI drift)
+        verified: badgeOut.sellerVerified,
+        sellerVerified: badgeOut.sellerVerified,
+        sellerFeaturedTier: badgeOut.sellerFeaturedTier,
+        sellerBadges: badgeOut.sellerBadges,
+        isVerified: badgeOut.isVerified,
+        seller_verified: badgeOut.seller_verified,
         // Back-compat alias (some UI code checks for snake_case)
         email_verified: user.emailVerified,
         whatsapp: normalizedWhatsapp,
@@ -205,6 +257,8 @@ export async function PATCH(req: Request) {
         data["email"] = nextEmail;
         if (typeof me.emailVerified !== "undefined") {
           data["emailVerified"] = null;
+          // Keep the legacy mirror consistent with the single source of truth
+          data["verified"] = false;
         }
       }
     }
@@ -250,7 +304,10 @@ export async function PATCH(req: Request) {
     if (body?.whatsapp !== undefined) {
       const norm = normalizeKePhone(body.whatsapp);
       if (norm && !looksLikeValidKePhone(norm)) {
-        return noStore({ error: "WhatsApp must be a valid KE number (07XXXXXXXX / 2547XXXXXXXX)." }, { status: 400 });
+        return noStore(
+          { error: "WhatsApp must be a valid KE number (07XXXXXXXX / 2547XXXXXXXX)." },
+          { status: 400 },
+        );
       }
       data["whatsapp"] = norm ? norm : null;
     }
@@ -271,7 +328,10 @@ export async function PATCH(req: Request) {
         try {
           url = new URL(raw);
         } catch {
-          return noStore({ error: "Store location URL must be a valid Google Maps link." }, { status: 400 });
+          return noStore(
+            { error: "Store location URL must be a valid Google Maps link." },
+            { status: 400 },
+          );
         }
 
         const host = url.hostname.toLowerCase();
@@ -341,10 +401,39 @@ export async function PATCH(req: Request) {
     const normalizedWhatsapp = normalizeKePhone(user.whatsapp ?? "") || null;
     const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
 
+    const sellerVerified = sellerVerifiedFromEmailVerified(user.emailVerified);
+
+    // ✅ No forced tier defaults (unknown stays null)
+    let badges: any = buildSellerBadgeFields(sellerVerified, null);
+    try {
+      const rows = await prisma.$queryRaw<{ u: any }[]>`
+        SELECT row_to_json(u) as u
+        FROM "User" u
+        WHERE u.id = ${user.id}
+        LIMIT 1
+      `;
+      const u = rows?.[0]?.u ?? null;
+      if (u) badges = resolveSellerBadgeFieldsFromUserLike(u) as any;
+    } catch {
+      // keep defaults
+    }
+
+    const tierCanon = coerceTierFromBadges(badges);
+    const badgeOut: any = { ...(badges as any) };
+    badgeOut.sellerVerified = sellerVerified;
+    badgeOut.sellerFeaturedTier = tierCanon;
+    badgeOut.sellerBadges = { verified: sellerVerified, tier: tierCanon };
+
     return noStore({
       ok: true,
       user: {
         ...user,
+        verified: badgeOut.sellerVerified,
+        sellerVerified: badgeOut.sellerVerified,
+        sellerFeaturedTier: badgeOut.sellerFeaturedTier,
+        sellerBadges: badgeOut.sellerBadges,
+        isVerified: badgeOut.isVerified,
+        seller_verified: badgeOut.seller_verified,
         // Back-compat alias
         email_verified: user.emailVerified,
         whatsapp: normalizedWhatsapp,

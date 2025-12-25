@@ -37,7 +37,11 @@ function SellSuccessInner() {
     try {
       await navigator.clipboard.writeText(productUrl);
       toast.success("Link copied to clipboard");
-      track("contact_click", { where: "sell_success_copy", productId, productUrl });
+      track("contact_click", {
+        where: "sell_success_copy",
+        productId,
+        productUrl,
+      });
     } catch {
       toast.error("Couldn't copy link");
     }
@@ -51,7 +55,11 @@ function SellSuccessInner() {
         text: "Check out my new listing on QwikSale:",
         url: productUrl,
       });
-      track("message_sent", { where: "sell_success_native_share", productId, productUrl });
+      track("message_sent", {
+        where: "sell_success_native_share",
+        productId,
+        productUrl,
+      });
     } catch {
       // user cancelled
     }
@@ -64,36 +72,49 @@ function SellSuccessInner() {
   }, [productUrl]);
 
   return (
-    <div className="container-page py-8">
+    <div className="container-page py-8 text-[var(--text)]">
       <div className="mx-auto max-w-2xl space-y-6 text-center">
         {/* Success hero */}
         <div
-          className="rounded-2xl p-10 text-white bg-gradient-to-br from-brandNavy via-brandGreen to-brandBlue shadow-soft dark:shadow-none animate-in fade-in zoom-in duration-500"
+          className="animate-in fade-in zoom-in duration-500 rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft dark:shadow-none"
           role="status"
           aria-live="polite"
         >
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/15 ring-2 ring-white/20">
-            <CheckIcon />
+          <div className="container-page py-8 text-white">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-[var(--border-subtle)] bg-[var(--bg-subtle)]/20 backdrop-blur-sm">
+              <CheckIcon />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl text-white">
+              Listing Posted 🎉
+            </h1>
+            <p className="mt-1 text-sm text-white/80">
+              Your item is now live on QwikSale. Share it with buyers and start
+              getting messages.
+            </p>
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Listing Posted 🎉</h1>
-          <p className="mt-2 text-white/90">
-            Your item is now live on QwikSale. Share it with buyers and start getting messages.
-          </p>
         </div>
 
         {/* Actions */}
-        <div className="card p-5 space-y-4">
+        <div className="space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-soft">
           {productId ? (
             <>
-              <div className="text-sm text-gray-700 dark:text-slate-200">
-                Listing URL: <code className="font-mono break-all">{productUrl || "…"}</code>
+              <div className="text-sm text-[var(--text-muted)]">
+                Listing URL:{" "}
+                <code className="break-all rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 font-mono text-[var(--text)]">
+                  {productUrl || "…"}
+                </code>
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <Link
                   href={`/product/${productId}`}
                   className="btn-gradient-primary"
-                  onClick={() => track("product_created", { where: "sell_success_view", productId })}
+                  onClick={() =>
+                    track("product_created", {
+                      where: "sell_success_view",
+                      productId,
+                    })
+                  }
                 >
                   View listing
                 </Link>
@@ -112,11 +133,17 @@ function SellSuccessInner() {
                   href={waShare || "#"}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`btn-gradient-accent ${!waShare ? "pointer-events-none opacity-60" : ""}`}
+                  className={`btn-outline ${
+                    !waShare ? "pointer-events-none opacity-60" : ""
+                  }`}
                   aria-disabled={!waShare}
                   onClick={() =>
                     waShare &&
-                    track("message_sent", { where: "sell_success_whatsapp", productId, productUrl })
+                    track("message_sent", {
+                      where: "sell_success_whatsapp",
+                      productId,
+                      productUrl,
+                    })
                   }
                 >
                   Share on WhatsApp
@@ -136,10 +163,12 @@ function SellSuccessInner() {
               </div>
             </>
           ) : (
-            <div className="text-sm text-gray-700 dark:text-slate-200">
+            <div className="text-sm text-[var(--text-muted)]">
               Your listing was posted. (Tip: pass{" "}
-              <code className="font-mono">?id=&lt;productId&gt;</code> to this page to enable share
-              buttons.)
+              <code className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-1.5 py-0.5 font-mono text-[var(--text)]">
+                ?id=&lt;productId&gt;
+              </code>{" "}
+              to this page to enable share buttons.)
             </div>
           )}
 
@@ -150,7 +179,9 @@ function SellSuccessInner() {
             <Link
               href="/sell"
               className="btn-outline"
-              onClick={() => track("product_created", { where: "sell_success_post_another" })}
+              onClick={() =>
+                track("product_created", { where: "sell_success_post_another" })
+              }
             >
               Post another
             </Link>
@@ -159,22 +190,33 @@ function SellSuccessInner() {
 
         {/* Tips / upsell */}
         {SUBSCRIPTIONS_ENABLED && (
-          <div className="card p-5 text-left">
-            <h2 className="text-base font-semibold mb-2">Boost your chances</h2>
-            <ul className="ml-5 list-disc space-y-1 text-sm text-gray-700 dark:text-slate-300">
-              <li>Add 3–6 clear photos from different angles.</li>
-              <li>Write an honest description and mention any accessories/warranty.</li>
-              <li>Enable WhatsApp on your phone number so buyers can reach you fast.</li>
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 text-left shadow-soft">
+            <h2 className="mb-2 text-base font-extrabold tracking-tight text-[var(--text)]">
+              Boost your chances
+            </h2>
+            <ul className="ml-5 list-disc space-y-1 text-sm text-[var(--text-muted)]">
+              <li>Add 3-6 clear photos from different angles.</li>
               <li>
-                Upgrade to <strong>Gold</strong> or <strong>Platinum</strong> for a badge and top
-                placement in search results.
+                Write an honest description and mention any
+                accessories/warranty.
+              </li>
+              <li>
+                Enable WhatsApp on your phone number so buyers can reach you fast.
+              </li>
+              <li>
+                Upgrade to{" "}
+                <strong className="text-[var(--text)]">Gold</strong> or{" "}
+                <strong className="text-[var(--text)]">Platinum</strong> for a
+                badge and top placement in search results.
               </li>
             </ul>
             <div className="mt-3">
               <Link
                 href="/account/billing"
                 className="btn-gradient-primary"
-                onClick={() => track("payment_initiated", { where: "sell_success_upgrade_cta" })}
+                onClick={() =>
+                  track("payment_initiated", { where: "sell_success_upgrade_cta" })
+                }
               >
                 Upgrade subscription
               </Link>

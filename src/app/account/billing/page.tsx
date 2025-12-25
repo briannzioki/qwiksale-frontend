@@ -38,11 +38,7 @@ function fmtDate(d?: Date | null) {
 }
 
 /** tiny Promise.race timeout */
-function withTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-  fallback: T,
-): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   let tid: ReturnType<typeof setTimeout> | null = null;
   const t = new Promise<T>((resolve) => {
     tid = setTimeout(() => resolve(fallback), ms);
@@ -58,17 +54,32 @@ export default async function BillingPage() {
 
   if (!email) {
     return (
-      <main className="mx-auto max-w-xl p-6 text-gray-900 dark:text-slate-100">
-        <h1 className="text-2xl font-semibold">Billing</h1>
-        <p className="mt-3 text-gray-700 dark:text-slate-200">
-          You need to be signed in to manage your plan.
-        </p>
-        <Link
-          href="/signin?callbackUrl=%2Faccount%2Fbilling"
-          className="mt-4 inline-flex items-center justify-center rounded-2xl bg-[#161748] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#161748]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brandBlue focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-950"
-        >
-          Sign in
-        </Link>
+      <main className="container-page max-w-xl py-4 sm:py-6 text-[var(--text)]">
+        <header className="space-y-1.5 sm:space-y-2">
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-[var(--text)]">
+            Billing
+          </h1>
+          <p className="text-sm sm:text-base text-[var(--text-muted)] leading-relaxed">
+            You need to be signed in to manage your plan.
+          </p>
+        </header>
+
+        <div className="mt-4 sm:mt-5">
+          <Link
+            href="/signin?callbackUrl=%2Faccount%2Fbilling"
+            className={[
+              "inline-flex min-h-9 items-center justify-center",
+              "rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold",
+              "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+              "shadow-soft transition",
+              "hover:bg-[var(--bg-subtle)]",
+              "active:scale-[.99]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
+          >
+            Sign in
+          </Link>
+        </div>
       </main>
     );
   }
@@ -94,29 +105,31 @@ export default async function BillingPage() {
     tier === "PLATINUM"
       ? "Platinum"
       : tier === "GOLD"
-      ? "Gold"
-      : tier === "BASIC"
-      ? "Basic"
-      : "Free";
+        ? "Gold"
+        : tier === "BASIC"
+          ? "Basic"
+          : "Free";
 
   return (
-    <main className="mx-auto max-w-2xl space-y-6 p-6 text-gray-900 dark:text-slate-100">
-      <header>
-        <h1 className="text-2xl font-semibold">Upgrade your plan</h1>
-        <p className="mt-2 text-gray-600 dark:text-slate-300">
+    <main className="container-page max-w-2xl space-y-4 sm:space-y-6 py-4 sm:py-6 text-[var(--text)]">
+      <header className="space-y-1.5 sm:space-y-2">
+        <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-[var(--text)]">
+          Upgrade your plan
+        </h1>
+        <p className="text-sm sm:text-base text-[var(--text-muted)] leading-relaxed">
           Choose a plan and enter your M-Pesa number to receive an STK push.
         </p>
       </header>
 
       {/* Current plan summary */}
-      <section className="rounded-2xl border border-gray-200/80 bg-white/90 p-4 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80">
-        <div className="text-sm text-gray-700 dark:text-slate-200">
+      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 shadow-soft">
+        <div className="text-xs sm:text-sm text-[var(--text-muted)]">
           Current plan:&nbsp;
-          <strong>{tierLabel}</strong>
+          <strong className="font-semibold text-[var(--text)]">{tierLabel}</strong>
           {until && (
             <>
               {" · valid until "}
-              <strong>{until}</strong>
+              <strong className="font-semibold text-[var(--text)]">{until}</strong>
             </>
           )}
         </div>
@@ -126,14 +139,12 @@ export default async function BillingPage() {
       <UpgradePanel userEmail={email} />
 
       {/* Help / extras */}
-      <section className="rounded-2xl border border-gray-200/80 bg-white/90 p-4 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80">
-        <h2 className="font-semibold text-gray-900 dark:text-slate-100">
-          Need help?
-        </h2>
-        <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 dark:text-slate-200">
+      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 shadow-soft">
+        <h2 className="text-sm sm:text-base font-semibold text-[var(--text)]">Need help?</h2>
+        <ul className="mt-2 list-disc pl-5 text-xs sm:text-sm text-[var(--text-muted)] leading-relaxed">
           <li>
             If the STK prompt doesn’t arrive, confirm your phone is in{" "}
-            <code className="rounded bg-gray-100 px-1 font-mono text-xs dark:bg-slate-900">
+            <code className="rounded bg-[var(--bg-subtle)] px-1 font-mono text-xs text-[var(--text)]">
               2547XXXXXXXX
             </code>{" "}
             format and try again.
@@ -142,7 +153,7 @@ export default async function BillingPage() {
             You can also{" "}
             <Link
               href="/help"
-              className="font-medium text-brandBlue underline-offset-4 hover:underline"
+              className="font-semibold text-[var(--text)] underline underline-offset-4 hover:opacity-90"
               prefetch={false}
             >
               contact support
@@ -153,7 +164,7 @@ export default async function BillingPage() {
             View{" "}
             <Link
               href="/settings/billing"
-              className="font-medium text-brandBlue underline-offset-4 hover:underline"
+              className="font-semibold text-[var(--text)] underline underline-offset-4 hover:opacity-90"
               prefetch={false}
             >
               billing settings &amp; history

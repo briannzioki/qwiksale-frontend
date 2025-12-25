@@ -72,7 +72,7 @@ async function uploadToCloudinary(
 
   if (!UPLOAD_PRESET) {
     throw new Error(
-      "Missing NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET — required for unsigned uploads"
+      "Missing NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET — required for unsigned uploads",
     );
   }
 
@@ -101,7 +101,6 @@ async function uploadToCloudinary(
   };
 }
 
-
 export default function SellServiceClient({
   editId,
   hideMedia = false,
@@ -112,9 +111,7 @@ export default function SellServiceClient({
 
   const [name, setName] = useState<string>("");
   const [price, setPrice] = useState<number | "">("");
-  const [rateType, setRateType] = useState<"hour" | "day" | "fixed">(
-    "fixed",
-  );
+  const [rateType, setRateType] = useState<"hour" | "day" | "fixed">("fixed");
   const [category, setCategory] = useState<string>(
     String(SERVICE_CATEGORIES[0]?.name || "Services"),
   );
@@ -146,12 +143,9 @@ export default function SellServiceClient({
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
-          `/api/services/${encodeURIComponent(editId)}`,
-          {
-            cache: "no-store",
-          },
-        );
+        const r = await fetch(`/api/services/${encodeURIComponent(editId)}`, {
+          cache: "no-store",
+        });
         if (!r.ok) {
           toast.error("Unable to load service for editing.");
           return;
@@ -163,32 +157,14 @@ export default function SellServiceClient({
         setDescription(s?.description ?? "");
         setCategory(s?.category ?? "Services");
         setSubcategory(s?.subcategory ?? "");
-        setRateType(
-          (s?.rateType as "hour" | "day" | "fixed") ?? "fixed",
-        );
-        setPrice(
-          typeof s?.price === "number"
-            ? s.price
-            : s?.price === null
-            ? ""
-            : "",
-        );
-        setServiceArea(
-          s?.serviceArea ?? s?.location ?? "Nairobi",
-        );
+        setRateType((s?.rateType as "hour" | "day" | "fixed") ?? "fixed");
+        setPrice(typeof s?.price === "number" ? s.price : s?.price === null ? "" : "");
+        setServiceArea(s?.serviceArea ?? s?.location ?? "Nairobi");
         setAvailability(s?.availability ?? "Weekdays");
-        setLocation(
-          s?.location ?? s?.serviceArea ?? "Nairobi",
-        );
+        setLocation(s?.location ?? s?.serviceArea ?? "Nairobi");
         setPhone(s?.sellerPhone ?? "");
         setExistingImage(s?.image ?? null);
-        setExistingGallery(
-          extractGalleryUrls(
-            { gallery: s?.gallery },
-            undefined,
-            50,
-          ),
-        );
+        setExistingGallery(extractGalleryUrls({ gallery: s?.gallery }, undefined, 50));
 
         // mark prefill success so we don't show a misleading "You're not signed in" banner
         setPrefilled(true);
@@ -253,10 +229,7 @@ export default function SellServiceClient({
         continue;
       }
       const key = `${f.name}:${f.size}:${f.lastModified}`;
-      if (
-        previews.some((p) => p.key === key) ||
-        next.some((p) => p.key === key)
-      ) {
+      if (previews.some((p) => p.key === key) || next.some((p) => p.key === key)) {
         continue;
       }
       const url = URL.createObjectURL(f);
@@ -331,9 +304,7 @@ export default function SellServiceClient({
           const item = await uploadToCloudinary(p.file, {
             folder: "qwiksale/services",
             onProgress: (pct) =>
-              setUploadPct(
-                Math.round(((done + pct / 100) / total) * 100),
-              ),
+              setUploadPct(Math.round(((done + pct / 100) / total) * 100)),
           });
           uploaded.push(item);
           done += 1;
@@ -346,10 +317,7 @@ export default function SellServiceClient({
         description: description.trim(),
         category,
         subcategory: subcategory || undefined,
-        price:
-          price === ""
-            ? null
-            : Math.max(0, Math.round(Number(price))),
+        price: price === "" ? null : Math.max(0, Math.round(Number(price))),
         rateType,
         serviceArea: serviceArea || undefined,
         availability: availability || undefined,
@@ -381,20 +349,15 @@ export default function SellServiceClient({
       let resultId: string | null = null;
 
       if (editId) {
-        const r = await fetch(
-          `/api/services/${encodeURIComponent(editId)}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            cache: "no-store",
-            body: JSON.stringify(payload),
-          },
-        );
+        const r = await fetch(`/api/services/${encodeURIComponent(editId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify(payload),
+        });
         const j = await r.json().catch(() => ({} as any));
         if (!r.ok || (j as any)?.error) {
-          throw new Error(
-            (j as any)?.error || `Failed to update (${r.status})`,
-          );
+          throw new Error((j as any)?.error || `Failed to update (${r.status})`);
         }
         resultId = editId;
         toast.success("Service updated!");
@@ -407,16 +370,11 @@ export default function SellServiceClient({
         });
         if (r.status === 429) {
           const j = await r.json().catch(() => ({}));
-          throw new Error(
-            j?.error ||
-              "You’re posting too fast. Please slow down.",
-          );
+          throw new Error(j?.error || "You’re posting too fast. Please slow down.");
         }
         const j = await r.json().catch(() => ({} as any));
         if (!r.ok || (j as any)?.error) {
-          throw new Error(
-            (j as any)?.error || `Failed to create (${r.status})`,
-          );
+          throw new Error((j as any)?.error || `Failed to create (${r.status})`);
         }
         resultId = String((j as any)?.serviceId || "");
         toast.success("Service posted!");
@@ -430,12 +388,7 @@ export default function SellServiceClient({
       }
     } catch (err: any) {
       console.error(err);
-      toast.error(
-        err?.message ||
-          (editId
-            ? "Failed to update service."
-            : "Failed to post service."),
-      );
+      toast.error(err?.message || (editId ? "Failed to update service." : "Failed to post service."));
     } finally {
       setSubmitting(false);
       setUploadPct(0);
@@ -447,25 +400,28 @@ export default function SellServiceClient({
   // - we're NOT in a successful edit prefill (i.e., either not editing or prefill failed)
   const notSignedIn = !isAuthenticated && !(editId && prefilled);
 
+  const fieldBase = [
+    "mt-1 w-full rounded-xl px-3 py-2 text-[13px] sm:text-sm",
+    "bg-[var(--bg)] text-[var(--text)] placeholder:text-[var(--text-muted)]",
+    "border border-[var(--border)] shadow-sm",
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+  ].join(" ");
+
+  const labelBase = "text-[11px] sm:text-xs font-semibold text-[var(--text-muted)]";
+
   return (
-    <div
-      className="container-page py-6"
-      data-authed={isAuthenticated ? "true" : "false"}
-    >
+    <div className="container-page py-4 text-[var(--text)] sm:py-6" data-authed={isAuthenticated ? "true" : "false"}>
       {notSignedIn && (
-        <div className="mb-4 rounded-xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">
+        <div className="mb-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:mb-4 sm:p-6">
+          <h2 className="text-lg font-extrabold tracking-tight text-[var(--text)] sm:text-xl">
             You’re not signed in
           </h2>
-          <p className="mt-2 text-muted-foreground">
-            You can sketch out your service, but you’ll need to sign in
-            before publishing.
+          <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--text-muted)] sm:mt-2 sm:text-sm">
+            You can sketch out your service, but you’ll need to sign in before publishing.
           </p>
-          <div className="mt-4">
+          <div className="mt-3 sm:mt-4">
             <Link
-              href={`/signin?callbackUrl=${encodeURIComponent(
-                "/sell/service",
-              )}`}
+              href={`/signin?callbackUrl=${encodeURIComponent("/sell/service")}`}
               className="btn-gradient-primary inline-block"
             >
               Sign in
@@ -474,35 +430,30 @@ export default function SellServiceClient({
         </div>
       )}
 
-      <div className="rounded-xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-5 text-white shadow-soft">
-        <h1 className="text-2xl font-bold">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-4 text-white shadow-soft sm:p-5">
+        <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl">
           {editId ? "Edit Service" : "Post a Service"}
         </h1>
-        <p className="text-white/90">
-          {editId
-            ? "Update your service details."
-            : "Describe what you offer and where you work."}
+        <p className="mt-1 text-[13px] text-white/90 sm:text-sm">
+          {editId ? "Update your service details." : "Describe what you offer and where you work."}
         </p>
       </div>
 
       <form
-        className="mt-6 space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
+        className="mt-4 space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-6 sm:space-y-4 sm:p-5"
         onSubmit={onSubmit}
       >
         {/* Name + Price + RateType */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <label
-              className="text-sm font-medium"
-              htmlFor="sf-name"
-            >
+            <label className={labelBase} htmlFor="sf-name">
               Service name
             </label>
             <input
               id="sf-name"
               value={name}
               onChange={(e) => setName(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+              className={fieldBase}
               required
               minLength={3}
               placeholder="e.g. House Cleaning, Plumbing, Tutoring…"
@@ -510,10 +461,7 @@ export default function SellServiceClient({
           </div>
 
           <div>
-            <label
-              className="text-sm font-medium"
-              htmlFor="sf-price"
-            >
+            <label className={labelBase} htmlFor="sf-price">
               Price (KES)
             </label>
             <input
@@ -526,29 +474,22 @@ export default function SellServiceClient({
                 setPrice(
                   e.currentTarget.value === ""
                     ? ""
-                    : Math.max(
-                        0,
-                        Math.floor(
-                          Number(e.currentTarget.value) || 0,
-                        ),
-                      ),
+                    : Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)),
                 )
               }
-              onWheel={(e) =>
-                (e.currentTarget as HTMLInputElement).blur()
-              }
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+              className={fieldBase}
               placeholder='Leave empty for "Contact for quote"'
               aria-describedby="sf-price-help"
             />
             <p
               id="sf-price-help"
-              className="mt-1 text-xs text-muted-foreground"
+              className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs"
             >
               Leave empty to show <em>Contact for quote</em>.
             </p>
 
-            <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+            <div className="mt-2 grid grid-cols-3 gap-2 text-[13px] text-[var(--text)] sm:text-sm">
               <label className="inline-flex items-center gap-2">
                 <input
                   type="radio"
@@ -556,7 +497,7 @@ export default function SellServiceClient({
                   value="fixed"
                   checked={rateType === "fixed"}
                   onChange={() => setRateType("fixed")}
-                  className="rounded border border-border"
+                  className="h-4 w-4 rounded-full border border-[var(--border)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 />
                 Fixed
               </label>
@@ -567,7 +508,7 @@ export default function SellServiceClient({
                   value="hour"
                   checked={rateType === "hour"}
                   onChange={() => setRateType("hour")}
-                  className="rounded border border-border"
+                  className="h-4 w-4 rounded-full border border-[var(--border)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 />
                 /hour
               </label>
@@ -578,7 +519,7 @@ export default function SellServiceClient({
                   value="day"
                   checked={rateType === "day"}
                   onChange={() => setRateType("day")}
-                  className="rounded border border-border"
+                  className="h-4 w-4 rounded-full border border-[var(--border)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 />
                 /day
               </label>
@@ -587,19 +528,16 @@ export default function SellServiceClient({
         </div>
 
         {/* Category/Subcategory/ServiceArea */}
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:mt-4 sm:gap-4 md:grid-cols-3">
           <div>
-            <label
-              className="text-sm font-medium"
-              htmlFor="sf-category"
-            >
+            <label className={labelBase} htmlFor="sf-category">
               Category
             </label>
             <select
               id="sf-category"
               value={category}
               onChange={(e) => setCategory(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+              className={fieldBase}
             >
               {cats.map((c) => (
                 <option key={c.name} value={c.name}>
@@ -610,19 +548,14 @@ export default function SellServiceClient({
           </div>
 
           <div>
-            <label
-              className="text-sm font-medium"
-              htmlFor="sf-subcategory"
-            >
+            <label className={labelBase} htmlFor="sf-subcategory">
               Subcategory (optional)
             </label>
             <select
               id="sf-subcategory"
               value={subcategory}
-              onChange={(e) =>
-                setSubcategory(e.currentTarget.value)
-              }
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+              onChange={(e) => setSubcategory(e.currentTarget.value)}
+              className={fieldBase}
             >
               {subcats.length > 0 ? (
                 subcats.map((s) => (
@@ -637,77 +570,59 @@ export default function SellServiceClient({
           </div>
 
           <div>
-            <label
-              className="text-sm font-medium"
-              htmlFor="sf-area"
-            >
+            <label className={labelBase} htmlFor="sf-area">
               Service area (optional)
             </label>
             <input
               id="sf-area"
               value={serviceArea}
-              onChange={(e) =>
-                setServiceArea(e.currentTarget.value)
-              }
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+              onChange={(e) => setServiceArea(e.currentTarget.value)}
+              className={fieldBase}
               placeholder="e.g. Nairobi & Kiambu"
             />
           </div>
         </div>
 
         {/* Availability/Location/Phone */}
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:mt-4 sm:gap-4 md:grid-cols-3">
           <div>
-            <label
-              className="text-sm font-medium"
-              htmlFor="sf-avail"
-            >
+            <label className={labelBase} htmlFor="sf-avail">
               Availability (optional)
             </label>
             <input
               id="sf-avail"
               value={availability}
-              onChange={(e) =>
-                setAvailability(e.currentTarget.value)
-              }
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+              onChange={(e) => setAvailability(e.currentTarget.value)}
+              className={fieldBase}
               placeholder="e.g. Mon–Sat, 8am–6pm"
             />
           </div>
           <div>
-            <label
-              className="text-sm font-medium"
-              htmlFor="sf-location"
-            >
+            <label className={labelBase} htmlFor="sf-location">
               Base location
             </label>
             <input
               id="sf-location"
               value={location}
-              onChange={(e) =>
-                setLocation(e.currentTarget.value)
-              }
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+              onChange={(e) => setLocation(e.currentTarget.value)}
+              className={fieldBase}
               placeholder="e.g. Nairobi"
             />
           </div>
           <div>
-            <label
-              className="text-sm font-medium"
-              htmlFor="sf-phone"
-            >
+            <label className={labelBase} htmlFor="sf-phone">
               Seller phone (optional)
             </label>
             <input
               id="sf-phone"
               value={phone}
               onChange={(e) => setPhone(e.currentTarget.value)}
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+              className={fieldBase}
               placeholder="2547XXXXXXXX"
               inputMode="tel"
               aria-invalid={phone && !phoneOk ? "true" : undefined}
             />
-            <div className="mt-1 text-xs text-muted-foreground">
+            <div className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
               {phone
                 ? phoneOk
                   ? `Normalized: ${normalizedPhone}`
@@ -718,21 +633,16 @@ export default function SellServiceClient({
         </div>
 
         {/* Description */}
-        <div className="mt-4">
-          <label
-            className="text-sm font-medium"
-            htmlFor="sf-description"
-          >
+        <div className="mt-3 sm:mt-4">
+          <label className={labelBase} htmlFor="sf-description">
             Description
           </label>
           <textarea
             id="sf-description"
             value={description}
-            onChange={(e) =>
-              setDescription(e.currentTarget.value)
-            }
+            onChange={(e) => setDescription(e.currentTarget.value)}
             rows={5}
-            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+            className={fieldBase}
             placeholder="Describe your service, experience, what’s included, etc."
             required
             minLength={10}
@@ -741,40 +651,39 @@ export default function SellServiceClient({
 
         {/* Photos */}
         {!hideMedia && (
-          <section className="mt-4 space-y-3">
+          <section className="mt-3 space-y-2.5 sm:mt-4 sm:space-y-3">
             <div
-              className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground"
+              className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm text-[var(--text-muted)] shadow-sm sm:p-4"
               onDrop={onDrop}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
               }}
             >
-              <p className="font-medium">Photos</p>
-              <p className="text-xs">
-                Drag & drop up to {MAX_FILES} images ({MAX_MB}MB each), or
-                click to select.
+              <p className="font-semibold text-[var(--text)]">Photos</p>
+              <p className="mt-1 text-[11px] sm:text-xs">
+                Drag & drop up to {MAX_FILES} images ({MAX_MB}MB each), or click to select.
               </p>
               <input
                 ref={inputRef}
                 type="file"
                 accept={ACCEPTED_TYPES.join(",")}
                 multiple
-                className="mt-2 block text-xs"
+                className="mt-1.5 block text-[11px] sm:mt-2 sm:text-xs"
                 onChange={(e) => onFileInputChange(e.target.files)}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-3">
               {existingImage && existingGallery.length === 0 && (
-                <div className="rounded border border-border p-2 text-xs">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2 text-xs text-[var(--text-muted)]">
                   Existing cover image
                 </div>
               )}
               {existingGallery.map((url) => (
                 <div
                   key={url}
-                  className="rounded border border-border p-2 text-xs"
+                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2 text-xs text-[var(--text-muted)]"
                 >
                   Existing photo
                 </div>
@@ -782,37 +691,37 @@ export default function SellServiceClient({
               {previews.map((p, idx) => (
                 <div
                   key={p.key}
-                  className="space-y-1 rounded border border-border p-2 text-xs"
+                  className="space-y-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2 text-xs shadow-sm"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={p.url}
                     alt=""
-                    className="h-24 w-full rounded object-cover"
+                    className="h-20 w-full rounded-xl object-cover sm:h-24"
                   />
                   <div className="flex items-center justify-between gap-1">
-                    <span className="truncate">
+                    <span className="truncate text-[var(--text-muted)]">
                       {Math.round(p.file.size / 1024)} KB
                     </span>
                     <div className="flex gap-1">
                       <button
                         type="button"
                         onClick={() => move(idx, -1)}
-                        className="rounded border border-border px-1"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)] shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
                       >
                         ↑
                       </button>
                       <button
                         type="button"
                         onClick={() => move(idx, 1)}
-                        className="rounded border border-border px-1"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)] shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
                       >
                         ↓
                       </button>
                       <button
                         type="button"
                         onClick={() => removeAt(idx)}
-                        className="rounded border border-border px-1 text-red-600"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)] shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
                       >
                         ✕
                       </button>
@@ -823,34 +732,22 @@ export default function SellServiceClient({
             </div>
 
             {previews.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No new files selected
-              </p>
+              <p className="text-xs text-[var(--text-muted)]">No new files selected</p>
             )}
 
             {uploadPct > 0 && submitting && (
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-[var(--text-muted)]">
                 Uploading photos… {uploadPct}%
               </div>
             )}
           </section>
         )}
 
-        <div className="mt-5 flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={!canSubmit || submitting}
-            className="btn-gradient-primary"
-          >
-            {submitting
-              ? editId
-                ? "Saving…"
-                : "Posting…"
-              : editId
-              ? "Save changes"
-              : "Post service"}
+        <div className="mt-4 flex flex-wrap items-center gap-2.5 sm:mt-5 sm:gap-3">
+          <button type="submit" disabled={!canSubmit || submitting} className="btn-gradient-primary">
+            {submitting ? (editId ? "Saving…" : "Posting…") : editId ? "Save changes" : "Post service"}
           </button>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[var(--text-muted)]">
             You can edit this service later from your dashboard.
           </p>
         </div>

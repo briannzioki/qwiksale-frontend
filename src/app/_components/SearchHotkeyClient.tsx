@@ -1,4 +1,3 @@
-// src/app/_components/SearchHotkeyClient.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -42,9 +41,7 @@ export default function SearchHotkeyClient() {
           const toggle = root.querySelector<HTMLButtonElement>(
             '[data-testid="header-inline-search-toggle"]',
           );
-          const input = root.querySelector<HTMLInputElement>(
-            'input[name="q"]',
-          );
+          const input = root.querySelector<HTMLInputElement>('input[name="q"]');
           const isOpen = root.getAttribute("data-open") === "true";
 
           if (!isOpen && toggle) {
@@ -93,17 +90,24 @@ export default function SearchHotkeyClient() {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 top-2 z-[90] mx-auto flex justify-center"
+      className="pointer-events-none fixed inset-x-0 top-1 sm:top-2 z-[90] mx-auto flex justify-center"
     >
       {open && (
         <div
           ref={containerRef}
-          className="pointer-events-auto w-full max-w-2xl px-4"
+          className="pointer-events-auto w-full max-w-2xl px-3 sm:px-4"
         >
           <form
             onSubmit={onSubmit}
             aria-label="Inline search"
-            className="rounded-xl border bg-background/95 backdrop-blur p-2 shadow-xl"
+            className={[
+              "rounded-xl border border-[var(--border-subtle)]",
+              "bg-[var(--bg-elevated)] text-[var(--text)]",
+              "p-1.5 sm:p-2 shadow-soft backdrop-blur",
+              "transition",
+              "focus-within:ring-2 ring-focus",
+              "active:scale-[.99]",
+            ].join(" ")}
           >
             <label htmlFor="hotkey-search" className="sr-only">
               Search
@@ -116,7 +120,7 @@ export default function SearchHotkeyClient() {
               autoComplete="off"
               enterKeyHint="search"
               spellCheck={false}
-              className="w-full bg-transparent p-2 outline-none"
+              className="w-full bg-transparent p-1.5 sm:p-2 text-sm sm:text-base text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
               aria-label="Search"
             />
           </form>

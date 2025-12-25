@@ -10,6 +10,7 @@ import HomeClientNoSSR, {
   type HomeServiceSeed,
 } from "@/app/_components/HomeClientNoSSR";
 import type { SearchParams15 } from "@/app/lib/next15";
+import { getBaseUrl } from "@/app/lib/url";
 
 /* ------------------------------ Minimal shapes ----------------------------- */
 type AnyItem = {
@@ -29,6 +30,15 @@ type ServiceSeed = HomeServiceSeed;
 
 /* ------------------------------ Small utilities ---------------------------- */
 function resolveBaseUrl(): string {
+  // Prefer your shared base URL helper so home doesn’t accidentally generate
+  // localhost-origin API calls in prod.
+  try {
+    const base = String(getBaseUrl() || "").trim();
+    if (base) return new URL(base).origin;
+  } catch {
+    // ignore
+  }
+
   const env =
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
@@ -52,9 +62,7 @@ function timeout<T = never>(ms: number): Promise<T> {
   );
 }
 
-async function safeJSON<T>(
-  r: Response | undefined | null,
-): Promise<T | null> {
+async function safeJSON<T>(r: Response | undefined | null): Promise<T | null> {
   try {
     if (!r || !r.ok) return null;
     return (await r.json()) as T;
@@ -63,13 +71,10 @@ async function safeJSON<T>(
   }
 }
 
-async function pickFirst(
-  url: string,
-  softMs = 3500,
-): Promise<AnyItem | null> {
+async function pickFirst(url: string, softMs = 3500): Promise<AnyItem | null> {
   try {
     const r: any = await Promise.race([
-      fetch(url, { cache: "no-store" }),
+      fetch(url, { cache: "no-store", headers: { Accept: "application/json" } }),
       timeout(softMs),
     ]);
     const json = (await safeJSON<PageResponse>(r)) as PageResponse | null;
@@ -89,7 +94,7 @@ async function pickServiceSlice(
 ): Promise<ServiceSeed[]> {
   try {
     const r: any = await Promise.race([
-      fetch(url, { cache: "no-store" }),
+      fetch(url, { cache: "no-store", headers: { Accept: "application/json" } }),
       timeout(softMs),
     ]);
 
@@ -98,8 +103,8 @@ async function pickServiceSlice(
     const rawItems: AnyItem[] = Array.isArray(json)
       ? (json as AnyItem[])
       : Array.isArray((json as PageResponse | null)?.items)
-      ? ((json as PageResponse).items as AnyItem[])
-      : [];
+        ? ((json as PageResponse).items as AnyItem[])
+        : [];
 
     if (!rawItems.length) return [];
 
@@ -114,28 +119,23 @@ async function pickServiceSlice(
           typeof anyRaw.name === "string"
             ? anyRaw.name
             : typeof anyRaw.title === "string"
-            ? anyRaw.title
-            : null,
+              ? anyRaw.title
+              : null,
         price:
           typeof anyRaw.price === "number"
             ? anyRaw.price
             : typeof anyRaw.amount === "number"
-            ? anyRaw.amount
-            : null,
+              ? anyRaw.amount
+              : null,
         image:
           typeof anyRaw.image === "string"
             ? anyRaw.image
             : Array.isArray(anyRaw.images) && anyRaw.images.length > 0
-            ? anyRaw.images[0]
-            : null,
-        category:
-          typeof anyRaw.category === "string"
-            ? anyRaw.category
-            : null,
+              ? anyRaw.images[0]
+              : null,
+        category: typeof anyRaw.category === "string" ? anyRaw.category : null,
         subcategory:
-          typeof anyRaw.subcategory === "string"
-            ? anyRaw.subcategory
-            : null,
+          typeof anyRaw.subcategory === "string" ? anyRaw.subcategory : null,
         location:
           typeof anyRaw.location === "string"
             ? anyRaw.location
@@ -214,10 +214,14 @@ function getParam(sp: SearchParams15, k: string): string | undefined {
 }
 
 export const metadata: Metadata = {
-  title: "Home · QwikSale",
+  title: "Home",
   description:
-    "Discover the latest listings on QwikSale — Kenya’s most trusted marketplace to buy & sell anything fast.",
+    "Discover fresh listings on QwikSale, Kenya’s most trusted marketplace to buy and sell fast. Shop great deals, find services near you, and connect with sellers in minutes.",
+  // Prevent homepage variants like /?t=services from being treated as separate canonicals.
+  alternates: { canonical: "/" },
 };
+
+const SectionHeaderAny = SectionHeader as any;
 
 export default async function Page({
   searchParams,
@@ -255,20 +259,19 @@ export default async function Page({
     !!productId || !!serviceId || shouldRenderServiceFallback;
 
   return (
-    <main id="main" className="min-h-[60svh]">
-      <section aria-label="Welcome" className="container mx-auto px-4 py-6">
-        <SectionHeader
-          as="h1"
+    <main
+      id="main"
+      className="min-h-[60svh] bg-[var(--bg)] text-[var(--text)]"
+    >
+      <section aria-label="Welcome" className="container-page py-4 sm:py-6">
+        <SectionHeaderAny
           title="QwikSale"
           subtitle="Kenya’s most trusted marketplace, buy & sell anything fast."
           kicker="Welcome"
         />
       </section>
 
-      <section
-        aria-label="Search results"
-        className="container mx-auto px-4 pb-12"
-      >
+      <section aria-label="Search results" className="container-page pb-8 sm:pb-12">
         <HomeClientNoSSR {...seedProps} />
       </section>
 
@@ -277,7 +280,7 @@ export default async function Page({
       {hasAnySeedLink && (
         <section
           aria-label="Quick links"
-          className="container mx-auto px-4 pt-2 pb-0 leading-none"
+          className="container-page pt-1 pb-0 leading-none"
         >
           <div className="flex gap-2">
             {productId && (

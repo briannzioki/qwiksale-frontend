@@ -1,3 +1,4 @@
+// src/app/account/verify-email/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,10 +12,12 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+const SectionHeaderAny = SectionHeader as any;
+
 export default function Page() {
   return (
-    <main className="page-root">
-      <SectionHeader
+    <main className="page-root bg-[var(--bg)] text-[var(--text)]">
+      <SectionHeaderAny
         title="Verify your email"
         subtitle="Enter the code we send to your inbox to confirm this email address."
         gradient="brand"

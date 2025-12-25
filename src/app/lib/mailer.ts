@@ -17,7 +17,12 @@ if (!RESEND_KEY && SMTP_URL) {
   smtp = nodemailer.createTransport(SMTP_URL);
 }
 
-async function sendViaResend(to: string, subject: string, html: string, replyTo?: string) {
+async function sendViaResend(
+  to: string,
+  subject: string,
+  html: string,
+  replyTo?: string,
+) {
   if (!resend) throw new Error("Resend not configured");
   // Resend uses `reply_to`
   await resend.emails.send({
@@ -29,7 +34,12 @@ async function sendViaResend(to: string, subject: string, html: string, replyTo?
   } as any);
 }
 
-async function sendViaSmtp(to: string, subject: string, html: string, replyTo?: string) {
+async function sendViaSmtp(
+  to: string,
+  subject: string,
+  html: string,
+  replyTo?: string,
+) {
   if (!smtp) throw new Error("SMTP not configured");
   await smtp.sendMail({
     from: FROM,
@@ -45,14 +55,16 @@ export async function sendMail(
   to: string,
   subject: string,
   html: string,
-  opts?: { replyTo?: string }
+  opts?: { replyTo?: string },
 ) {
   if (resend) return sendViaResend(to, subject, html, opts?.replyTo);
   if (smtp) return sendViaSmtp(to, subject, html, opts?.replyTo);
 
   // Last resort: avoid silent failure in dev
   // eslint-disable-next-line no-console
-  console.warn("[mailer] No mail transport configured. Set RESEND_API_KEY or EMAIL_SERVER.");
+  console.warn(
+    "[mailer] No mail transport configured. Set RESEND_API_KEY or EMAIL_SERVER.",
+  );
   if (process.env.NODE_ENV !== "production") return;
   throw new Error("No mail transport configured");
 }
@@ -69,7 +81,7 @@ export async function sendWeeklyDigest(args: {
     <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;">
       <h2 style="margin:0 0 12px">Hi ${name || "there"} 👋</h2>
       <p>In the last 7 days (since ${since.toDateString()}), you had <strong>${weeklyCount}</strong> new events.</p>
-      <p><a href="${process.env["NEXT_PUBLIC_APP_URL"] || "https://qwiksale.sale"}/dashboard" style="color:#39a0ca">Open your dashboard →</a></p>
+      <p><a href="${process.env["NEXT_PUBLIC_APP_URL"] || "https://qwiksale.sale"}/dashboard" style="color:rgb(57 160 202)">Open your dashboard →</a></p>
     </div>
   `;
   await sendMail(to, "Your QwikSale weekly digest", html);

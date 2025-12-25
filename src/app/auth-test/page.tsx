@@ -130,50 +130,49 @@ export default function AuthTest() {
   }, [isAuthed]);
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
+    <div className="container-page space-y-6 bg-[var(--bg)] py-6 text-[var(--text)]">
       {/* SR live region */}
       <span ref={liveRef} className="sr-only" aria-live="polite" />
 
       {/* Header */}
-      <div
-        className="rounded-2xl p-6 text-white shadow bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]"
-        style={{
-          backgroundImage:
-            "linear-gradient(90deg, #161748 0%, #478559 50%, #39a0ca 100%)",
-        }}
-      >
-        <h1 className="text-2xl font-extrabold">Auth Debug</h1>
-        <p className="text-white/90">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] px-6 py-8 text-white shadow-soft">
+        <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
+          Auth Debug
+        </h1>
+        <p className="mt-1 text-sm text-white/80">
           Check sign-in status, session fields, and the{" "}
-          <code className="px-1 rounded bg-white/10">/api/me</code> API.
+          <code className="rounded bg-white/10 px-1">/api/me</code> API.
         </p>
       </div>
 
       {/* Auth state card */}
-      <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4">
+      <div className="space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="text-sm">
             <div>
               <span className="font-semibold">Status:</span>{" "}
-              <span className={isAuthed ? "text-emerald-700" : "text-rose-700"}>
+              <span
+                className={
+                  isAuthed ? "text-[var(--text)]" : "text-[var(--text-muted)]"
+                }
+              >
                 {status}
               </span>
             </div>
             {isAuthed ? (
               <>
                 <div>
-                  <span className="font-semibold">Email:</span>{" "}
-                  {u?.email || "—"}
+                  <span className="font-semibold">Email:</span> {u?.email || "-"}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">User ID:</span>
-                  <code className="px-2 py-0.5 rounded bg-gray-100">
-                    {uid || "—"}
+                  <code className="rounded bg-[var(--bg-subtle)] px-2 py-0.5">
+                    {uid || "-"}
                   </code>
                   {uid && (
                     <button
                       onClick={() => copy(uid)}
-                      className="text-xs rounded border px-2 py-1 hover:bg-gray-50"
+                      className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)] transition hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                     >
                       Copy
                     </button>
@@ -181,13 +180,15 @@ export default function AuthTest() {
                 </div>
                 <div>
                   <span className="font-semibold">Subscription:</span>{" "}
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">
+                  <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs text-[var(--text)]">
                     {sub || "FREE"}
                   </span>
                 </div>
               </>
             ) : (
-              <div className="text-gray-600">You are not signed in.</div>
+              <div className="text-[var(--text-muted)]">
+                You are not signed in.
+              </div>
             )}
           </div>
 
@@ -199,7 +200,7 @@ export default function AuthTest() {
                   // next-auth/react: signIn still accepts callbackUrl
                   signIn(undefined, { callbackUrl: "/auth-test" });
                 }}
-                className="rounded-lg bg-black text-white px-4 py-2 text-sm"
+                className="btn-gradient-primary focus-visible:outline-none focus-visible:ring-2 ring-focus"
               >
                 Sign in
               </button>
@@ -210,7 +211,7 @@ export default function AuthTest() {
                   // next-auth/react: use callbackUrl to land back here
                   signOut({ callbackUrl: "/auth-test" });
                 }}
-                className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+                className="btn-outline focus-visible:outline-none focus-visible:ring-2 ring-focus"
               >
                 Sign out
               </button>
@@ -222,25 +223,25 @@ export default function AuthTest() {
           <button
             onClick={pingMe}
             disabled={loadingMe}
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60"
+            className="btn-outline focus-visible:outline-none focus-visible:ring-2 ring-focus disabled:opacity-60"
           >
             {loadingMe ? "Pinging /api/me…" : "Ping /api/me"}
           </button>
           <Link
             href="/api/auth/session"
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="btn-outline focus-visible:outline-none focus-visible:ring-2 ring-focus"
           >
             View NextAuth session JSON
           </Link>
           <Link
             href="/dashboard"
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="btn-outline focus-visible:outline-none focus-visible:ring-2 ring-focus"
           >
             Go to Dashboard
           </Link>
           <Link
             href="/settings/billing"
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+            className="btn-outline focus-visible:outline-none focus-visible:ring-2 ring-focus"
           >
             Go to Billing
           </Link>
@@ -248,33 +249,33 @@ export default function AuthTest() {
       </div>
 
       {/* Session JSON */}
-      <div className="rounded-xl border bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-2">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-sm">
+        <div className="mb-2 flex items-center justify-between">
           <h2 className="font-semibold">Session (sanitized)</h2>
           <button
             onClick={() => copy(sessionJson)}
-            className="text-xs rounded border px-2 py-1 hover:bg-gray-50"
+            className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)] transition hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
           >
             Copy JSON
           </button>
         </div>
-        <pre className="text-xs bg-gray-50 rounded p-3 overflow-x-auto">
+        <pre className="overflow-x-auto rounded-xl bg-[var(--bg-subtle)] p-3 text-xs text-[var(--text)]">
           {sessionJson}
         </pre>
       </div>
 
       {/* /api/me JSON */}
-      <div className="rounded-xl border bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-2">
+      <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-sm">
+        <div className="mb-2 flex items-center justify-between">
           <h2 className="font-semibold">/api/me response</h2>
           <button
             onClick={pingMe}
-            className="text-xs rounded border px-2 py-1 hover:bg-gray-50"
+            className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)] transition hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
           >
             Refresh
           </button>
         </div>
-        <pre className="text-xs bg-gray-50 rounded p-3 overflow-x-auto">
+        <pre className="overflow-x-auto rounded-xl bg-[var(--bg-subtle)] p-3 text-xs text-[var(--text)]">
           {JSON.stringify(me ?? { hint: "Click Ping /api/me" }, null, 2)}
         </pre>
       </div>

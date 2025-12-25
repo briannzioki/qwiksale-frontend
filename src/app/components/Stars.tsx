@@ -22,8 +22,8 @@ export default function Stars({
   rating,
   outOf = 5,
   size = 16,
-  fillClassName = "text-amber-500",
-  emptyClassName = "text-gray-300 dark:text-slate-600",
+  fillClassName = "text-[var(--text)]",
+  emptyClassName = "text-[var(--text-muted)]",
   className = "",
   showNumeric = false,
 }: StarsProps) {
@@ -43,7 +43,7 @@ export default function Stars({
 
   return (
     <div
-      className={`inline-flex items-center gap-1 ${className}`}
+      className={`inline-flex items-center gap-0.5 sm:gap-1 ${className}`}
       role="img"
       aria-label={aria}
       title={aria}
@@ -92,7 +92,10 @@ export default function Stars({
       })}
 
       {showNumeric && (
-        <span className="ml-1 text-xs text-gray-600 dark:text-slate-400" aria-hidden="true">
+        <span
+          className="ml-1 text-[11px] text-[var(--text-muted)] sm:text-xs"
+          aria-hidden="true"
+        >
           {value.toFixed(1)}/{total}
         </span>
       )}

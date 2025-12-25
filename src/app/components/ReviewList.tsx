@@ -1,4 +1,3 @@
-// src/app/components/ReviewList.tsx
 "use client";
 
 import React, { useMemo, useState } from "react";
@@ -50,7 +49,7 @@ export function ReviewList({
     return (
       <div
         className={cn(
-          "mt-4 rounded-xl border border-dashed border-border/70 bg-card p-4 text-sm text-muted-foreground",
+          "mt-3 sm:mt-4 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 text-xs sm:text-sm text-[var(--text-muted)]",
           className,
         )}
       >
@@ -62,15 +61,13 @@ export function ReviewList({
   const visible = expanded ? sorted : sorted.slice(0, maxVisible);
   const hasMore = sorted.length > maxVisible;
 
-  const summaryBlock = showSummary ? (
-    <ReviewSummary reviews={sorted} />
-  ) : null;
+  const summaryBlock = showSummary ? <ReviewSummary reviews={sorted} /> : null;
 
   return (
-    <section className={cn("mt-4 space-y-4", className)}>
+    <section className={cn("mt-3 sm:mt-4 space-y-3 sm:space-y-4", className)}>
       {summaryPlacement === "above" && summaryBlock}
 
-      <div className="space-y-3">
+      <div className="space-y-2.5 sm:space-y-3">
         {visible.map((r: any, idx: number) => (
           <ReviewItem
             key={r?.id ?? r?.createdAt ?? idx}
@@ -86,7 +83,13 @@ export function ReviewList({
           <button
             type="button"
             onClick={() => setExpanded((x) => !x)}
-            className="inline-flex items-center rounded-full border border-border bg-background px-4 py-1.5 text-xs font-semibold text-foreground shadow-sm hover:bg-muted"
+            className={[
+              "inline-flex h-10 items-center rounded-xl border px-4 text-xs sm:text-sm font-semibold shadow-sm transition",
+              "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+              "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+              "active:scale-[.99]",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
           >
             {expanded
               ? "Show fewer reviews"

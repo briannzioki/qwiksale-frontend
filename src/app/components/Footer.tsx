@@ -1,4 +1,3 @@
-// src/app/components/Footer.tsx
 "use client";
 
 import * as React from "react";
@@ -38,7 +37,7 @@ export default function Footer() {
 
   const linkClass =
     "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 " +
-    "focus-visible:ring-offset-2 ring-offset-white dark:ring-offset-slate-900 ring-focus rounded-sm";
+    "focus-visible:ring-offset-2 ring-offset-[var(--bg)] ring-focus rounded-sm";
 
   // --- Newsletter state/handlers (client-only) ---
   const [email, setEmail] = React.useState("");
@@ -94,7 +93,7 @@ export default function Footer() {
 
   return (
     <footer
-      className="mt-12 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] backdrop-blur supports-[backdrop-filter]:backdrop-blur-md"
+      className="mt-8 sm:mt-12 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] backdrop-blur supports-[backdrop-filter]:backdrop-blur-md"
       aria-labelledby="site-footer-title"
       role="contentinfo"
     >
@@ -113,23 +112,25 @@ export default function Footer() {
         </h2>
 
         {/* Top: brand + nav blocks */}
-        <div className="grid gap-8 py-10 text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
+        <div className="grid gap-6 py-8 text-[13px] sm:gap-8 sm:py-10 sm:text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
           {/* Brand / blurb */}
-          <div className="space-y-2 lg:col-span-2">
-            <div className="text-lg font-extrabold tracking-tight text-[var(--text)]">
+          <div className="space-y-1.5 lg:col-span-2">
+            <div className="text-base sm:text-lg font-extrabold tracking-tight text-[var(--text)]">
               QwikSale
             </div>
+
             <p className="leading-relaxed text-[var(--text-muted)]">
               Buy & sell, faster.{" "}
               <span className="whitespace-nowrap">Made in Kenya.</span>
             </p>
-            <p className="text-xs text-[var(--text-muted)]">
+
+            <p className="text-[11px] sm:text-xs text-[var(--text-muted)]">
               Secure listings • KES pricing • Community moderation
             </p>
 
             {/* Newsletter */}
             <form
-              className="mt-4 flex items-stretch gap-2"
+              className="mt-3 sm:mt-4 flex items-stretch gap-2"
               onSubmit={onSubscribe}
               noValidate
             >
@@ -143,13 +144,13 @@ export default function Footer() {
                 inputMode="email"
                 placeholder="Email for deals & tips"
                 className={[
-                  "w-full rounded-lg px-3 py-2",
-                  "bg-[var(--bg-elevated)] text-[var(--text)]",
+                  "w-full rounded-xl px-3 py-2 text-sm",
+                  "bg-[var(--bg)] text-[var(--text)]",
                   "border border-[var(--border)]",
                   "placeholder:text-[var(--text-muted)]",
                   "shadow-inner",
-                  "focus:outline-none focus:ring-2 ring-focus",
-                  "disabled:opacity-60 disabled:cursor-not-allowed",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  "disabled:cursor-not-allowed disabled:opacity-60",
                 ].join(" ")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -168,7 +169,7 @@ export default function Footer() {
             </form>
 
             {/* Trust row */}
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-[var(--text-muted)]">
+            <div className="mt-3 sm:mt-4 flex flex-wrap items-center gap-2.5 text-[11px] sm:text-xs text-[var(--text-muted)]">
               <span className="inline-flex items-center gap-1">
                 <ShieldIcon /> Buyer Safety
               </span>
@@ -182,9 +183,9 @@ export default function Footer() {
           </div>
 
           {/* Company */}
-          <nav aria-label="Company" className="space-y-3">
+          <nav aria-label="Company" className="space-y-2.5 sm:space-y-3">
             <div className="font-semibold text-[var(--text)]">Company</div>
-            <ul className="space-y-2">
+            <ul className="space-y-1.5 sm:space-y-2">
               <li>
                 <Link className={linkClass} href="/about" prefetch={false}>
                   About
@@ -214,9 +215,9 @@ export default function Footer() {
           </nav>
 
           {/* Legal */}
-          <nav aria-label="Legal" className="space-y-3">
+          <nav aria-label="Legal" className="space-y-2.5 sm:space-y-3">
             <div className="font-semibold text-[var(--text)]">Legal</div>
-            <ul className="space-y-2">
+            <ul className="space-y-1.5 sm:space-y-2">
               <li>
                 <Link className={linkClass} href="/terms" prefetch={false}>
                   Terms
@@ -241,51 +242,31 @@ export default function Footer() {
           </nav>
 
           {/* Popular on QwikSale */}
-          <nav aria-label="Popular categories" className="space-y-3">
+          <nav aria-label="Popular categories" className="space-y-2.5 sm:space-y-3">
             <div className="font-semibold text-[var(--text)]">Popular</div>
-            <ul className="space-y-2">
+            <ul className="space-y-1.5 sm:space-y-2">
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Phones"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Phones" prefetch={false}>
                   Phones
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Electronics"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Electronics" prefetch={false}>
                   Electronics
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Home%20%26%20Living"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Home%20%26%20Living" prefetch={false}>
                   Home &amp; Living
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Fashion"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Fashion" prefetch={false}>
                   Fashion
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Vehicles"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Vehicles" prefetch={false}>
                   Vehicles
                 </Link>
               </li>
@@ -293,16 +274,16 @@ export default function Footer() {
           </nav>
 
           {/* Social / Press / Apps */}
-          <nav aria-label="Social & Press" className="space-y-3">
+          <nav aria-label="Social & Press" className="space-y-2.5 sm:space-y-3">
             <div className="font-semibold text-[var(--text)]">Social</div>
-            <ul className="space-y-2">
+            <ul className="space-y-1.5 sm:space-y-2">
               <li>
                 <a
                   className={`${linkClass} inline-flex items-center gap-1.5`}
                   href="https://www.tiktok.com/@qwiksale.sale"
                   target="_blank"
                   rel="me noopener noreferrer"
-                  aria-label="TikTok — QwikSale"
+                  aria-label="TikTok - QwikSale"
                 >
                   <TikTokIcon />
                   TikTok
@@ -314,7 +295,7 @@ export default function Footer() {
                   href="https://www.linkedin.com/company/qwiksale"
                   target="_blank"
                   rel="me noopener noreferrer"
-                  aria-label="LinkedIn — QwikSale"
+                  aria-label="LinkedIn - QwikSale"
                 >
                   <LinkedInIcon />
                   LinkedIn
@@ -341,14 +322,14 @@ export default function Footer() {
                 </a>
               </li>
               <li className="pt-1">
-                <div className="mb-1 text-xs text-[var(--text-muted)]">
+                <div className="mb-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
                   Get the app
                 </div>
                 <div className="flex gap-2">
                   <a
                     href="#"
                     aria-label="Get it on Google Play (coming soon)"
-                    className="inline-flex items-center rounded-md border border-[var(--border-subtle)] bg-subtle px-2 py-1 text-xs"
+                    className="inline-flex items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] sm:text-xs text-[var(--text)]"
                     rel="nofollow noopener"
                     target="_blank"
                   >
@@ -358,7 +339,7 @@ export default function Footer() {
                   <a
                     href="#"
                     aria-label="Download on the App Store (coming soon)"
-                    className="inline-flex items-center rounded-md border border-[var(--border-subtle)] bg-subtle px-2 py-1 text-xs"
+                    className="inline-flex items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] sm:text-xs text-[var(--text)]"
                     rel="nofollow noopener"
                     target="_blank"
                   >
@@ -372,13 +353,13 @@ export default function Footer() {
         </div>
 
         {/* Payment / badges strip */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] py-4 text-xs text-[var(--text-muted)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] py-3 sm:py-4 text-[11px] sm:text-xs text-[var(--text-muted)]">
           <div className="flex items-center gap-3">
             <span className="opacity-80">We accept</span>
-            <span className="inline-flex items-center gap-1 rounded border border-[var(--border-subtle)] bg-subtle px-2 py-0.5">
+            <span className="inline-flex items-center gap-1 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5">
               <MpesaIcon /> M-Pesa
             </span>
-            <span className="inline-flex items-center gap-1 rounded border border-[var(--border-subtle)] bg-subtle px-2 py-0.5">
+            <span className="inline-flex items-center gap-1 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5">
               <CardIcon /> Cards
             </span>
           </div>
@@ -392,7 +373,7 @@ export default function Footer() {
             <select
               id="lang"
               aria-label="Language"
-              className="rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-muted)]"
+              className="rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-2 py-1 text-[11px] sm:text-xs text-[var(--text-muted)]"
               defaultValue="en"
             >
               <option value="en">English (KE)</option>
@@ -402,7 +383,7 @@ export default function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="flex flex-col items-start justify-between gap-3 border-t border-[var(--border-subtle)] py-4 text-xs text-[var(--text-muted)] sm:flex-row sm:items-center">
+        <div className="flex flex-col items-start justify-between gap-2.5 border-t border-[var(--border-subtle)] py-3 sm:py-4 text-[11px] sm:text-xs text-[var(--text-muted)] sm:flex-row sm:items-center">
           <p>
             © {year} QwikSale. All rights reserved.
             <span className="ml-2 opacity-80">Built in Nairobi, Kenya.</span>

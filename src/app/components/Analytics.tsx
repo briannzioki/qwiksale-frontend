@@ -135,7 +135,7 @@ export default function Analytics() {
       {/* Google Analytics (non-blocking) */}
       {primaryId ? (
         <>
-          {/* Load gtag only once — any GA ID works for the loader */}
+          {/* Load gtag only once - any GA ID works for the loader */}
           <Script
             src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(
               primaryId

@@ -8,17 +8,17 @@
  */
 
 type ShimmerOpts = {
-  width?: number;          // px
-  height?: number;         // px
-  speedSec?: number;       // animation duration (lower = faster)
-  radius?: number;         // corner radius
-  from?: string;           // base color (left)
-  mid?: string;            // highlight color (center)
-  to?: string;             // base color (right)
-  darkFrom?: string;       // dark-mode overrides
+  width?: number; // px
+  height?: number; // px
+  speedSec?: number; // animation duration (lower = faster)
+  radius?: number; // corner radius
+  from?: string; // base color (left)
+  mid?: string; // highlight color (center)
+  to?: string; // base color (right)
+  darkFrom?: string; // dark-mode overrides
   darkMid?: string;
   darkTo?: string;
-  useDark?: boolean;       // force dark palette (no window access in RSC)
+  useDark?: boolean; // force dark palette (no window access in RSC)
 };
 
 /** Portable base64 (Node or Browser) */
@@ -39,7 +39,12 @@ export const transparentPixel =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
 
 /** Solid color placeholder */
-export function solidPlaceholder(color = "#eee", width = 32, height = 20, radius = 0): string {
+export function solidPlaceholder(
+  color = "rgb(238 238 238)",
+  width = 32,
+  height = 20,
+  radius = 0,
+): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="${width}" height="${height}" rx="${radius}" ry="${radius}" fill="${color}"/>
   </svg>`;
@@ -47,7 +52,7 @@ export function solidPlaceholder(color = "#eee", width = 32, height = 20, radius
 }
 
 /**
- * Shimmer SVG placeholder — use with Next/Image:
+ * Shimmer SVG placeholder - use with Next/Image:
  * <Image placeholder="blur" blurDataURL={shimmer({ width, height })} ... />
  */
 export function shimmer(opts: ShimmerOpts = {}): string {
@@ -56,17 +61,19 @@ export function shimmer(opts: ShimmerOpts = {}): string {
     height = 475,
     speedSec = 1.3,
     radius = 0,
-    from = "#eeeeee",
-    mid = "#dddddd",
-    to = "#eeeeee",
-    darkFrom = "#1f2937",   // slate-800
-    darkMid = "#374151",    // slate-700
-    darkTo = "#1f2937",
+    from = "rgb(238 238 238)",
+    mid = "rgb(221 221 221)",
+    to = "rgb(238 238 238)",
+    darkFrom = "rgb(31 41 55)", // slate-800
+    darkMid = "rgb(55 65 81)", // slate-700
+    darkTo = "rgb(31 41 55)",
     useDark,
   } = opts;
 
   // Palette: if useDark is explicitly set, honor it; otherwise attempt to detect in browser
-  let A = from, B = mid, C = to;
+  let A = from,
+    B = mid,
+    C = to;
   try {
     const prefersDark =
       useDark ??
@@ -74,7 +81,9 @@ export function shimmer(opts: ShimmerOpts = {}): string {
         window.matchMedia &&
         window.matchMedia("(prefers-color-scheme: dark)").matches);
     if (prefersDark) {
-      A = darkFrom; B = darkMid; C = darkTo;
+      A = darkFrom;
+      B = darkMid;
+      C = darkTo;
     }
   } catch {
     /* no-op */

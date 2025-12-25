@@ -197,7 +197,7 @@ export async function GET(req: NextRequest) {
           contactEnabled: true,
           contactMode: true,
         },
-        orderBy: [{ boostUntil: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ boostUntil: "desc" }, { createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }) ?? [],

@@ -1,4 +1,3 @@
-// src/app/components/ReviewSummary.tsx
 "use client";
 
 import React, { useMemo } from "react";
@@ -22,7 +21,7 @@ export type ReviewSummaryProps = {
   breakdown?: Partial<Record<number, number>>;
   /** Visual density: "md" = full card, "sm" = compact pill. */
   size?: "sm" | "md";
-  /** Optional hint fields – ignored here but allowed for callers. */
+  /** Optional hint fields - ignored here but allowed for callers. */
   listingId?: string;
   listingType?: string;
   /** Optional loading state for first fetch/reload. */
@@ -48,17 +47,14 @@ export default function ReviewSummary({
         : [];
 
     const baseCount =
-      typeof count === "number" && count >= 0
-        ? count
-        : usableRatings.length;
+      typeof count === "number" && count >= 0 ? count : usableRatings.length;
 
     const baseAvg =
       typeof average === "number" && Number.isFinite(average)
         ? average
         : usableRatings.length
-        ? usableRatings.reduce((a, b) => a + b, 0) /
-          usableRatings.length
-        : 0;
+          ? usableRatings.reduce((a, b) => a + b, 0) / usableRatings.length
+          : 0;
 
     const baseDist: Partial<Record<number, number>> =
       breakdown && Object.keys(breakdown).length
@@ -76,25 +72,21 @@ export default function ReviewSummary({
     };
   }, [reviews, average, count, breakdown]);
 
-  // Explicit loading state – avoids flashing “No reviews yet” while fetching
+  // Explicit loading state - avoids flashing “No reviews yet” while fetching
   if (loading) {
     const baseClasses =
       size === "sm"
-        ? "inline-flex items-center rounded-full border border-dashed border-border/70 bg-card/80 px-3 py-1.5 text-xs text-muted-foreground"
-        : "rounded-xl border border-dashed border-border/70 bg-card p-4 text-sm text-muted-foreground";
+        ? "inline-flex items-center rounded-full border border-dashed border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs text-[var(--text-muted)]"
+        : "rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 text-xs sm:text-sm text-[var(--text-muted)]";
 
-    return (
-      <div className={cn(baseClasses, className)}>
-        Loading reviews…
-      </div>
-    );
+    return <div className={cn(baseClasses, className)}>Loading reviews…</div>;
   }
 
   if (!total || total <= 0 || !Number.isFinite(avg) || avg <= 0) {
     const baseClasses =
       size === "sm"
-        ? "inline-flex items-center rounded-full border border-dashed border-border/70 bg-card/80 px-3 py-1.5 text-xs text-muted-foreground"
-        : "rounded-xl border border-dashed border-border/70 bg-card p-4 text-sm text-muted-foreground";
+        ? "inline-flex items-center rounded-full border border-dashed border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs text-[var(--text-muted)]"
+        : "rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 text-xs sm:text-sm text-[var(--text-muted)]";
 
     return (
       <div className={cn(baseClasses, className)}>
@@ -106,11 +98,11 @@ export default function ReviewSummary({
   const normalizedAvg = Math.max(0, Math.min(5, avg));
 
   if (size === "sm") {
-    // Compact pill – good for hero or inline near seller handle
+    // Compact pill - good for hero or inline near seller handle
     return (
       <div
         className={cn(
-          "inline-flex items-center gap-2 rounded-full border border-border bg-card/90 px-3 py-1.5 text-xs shadow-sm backdrop-blur",
+          "inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5 text-xs text-[var(--text)] shadow-sm backdrop-blur",
           className,
         )}
       >
@@ -118,7 +110,7 @@ export default function ReviewSummary({
         <span className="font-semibold">
           {normalizedAvg.toFixed(1).replace(/\.0$/, "")}
         </span>
-        <span className="text-[0.7rem] text-muted-foreground">
+        <span className="text-[0.7rem] text-[var(--text-muted)]">
           ({total.toLocaleString()} review{total === 1 ? "" : "s"})
         </span>
       </div>
@@ -134,24 +126,23 @@ export default function ReviewSummary({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card p-4 shadow-sm",
+        "rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 text-[var(--text)] shadow-sm",
         className,
       )}
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
             Overall rating
           </p>
           <div className="mt-1 flex items-center gap-3">
-            <span className="text-3xl font-bold text-foreground">
+            <span className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[var(--text)]">
               {normalizedAvg.toFixed(1).replace(/\.0$/, "")}
             </span>
             <ReviewStars rating={normalizedAvg} size="lg" />
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Based on {total.toLocaleString()} review
-            {total === 1 ? "" : "s"}
+          <p className="mt-1 text-xs sm:text-sm text-[var(--text-muted)]">
+            Based on {total.toLocaleString()} review{total === 1 ? "" : "s"}
           </p>
         </div>
 
@@ -164,12 +155,12 @@ export default function ReviewSummary({
             return (
               <div
                 key={star}
-                className="flex items-center gap-2 text-xs text-muted-foreground"
+                className="flex items-center gap-2 text-[11px] sm:text-xs text-[var(--text-muted)]"
               >
                 <span className="w-6 text-right">{star}★</span>
-                <div className="relative h-2 flex-1 rounded-full bg-muted">
+                <div className="relative h-2 flex-1 rounded-full bg-[var(--bg-subtle)]">
                   <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-brandBlue"
+                    className="absolute inset-y-0 left-0 rounded-full bg-[var(--border)]"
                     style={{ width }}
                   />
                 </div>

@@ -106,7 +106,7 @@ export function canonicalFor(
     "maxPrice",
     "sort",
     "featured",
-    "rateType",        // "fixed" | "hour" | "day"
+    "rateType", // "fixed" | "hour" | "day"
     "serviceArea",
     "availability",
   ];
@@ -142,7 +142,7 @@ export function safeTitle(s?: string | null, fallback = "QwikSale") {
   return t || fallback;
 }
 
-export function safeDesc(s?: string | null, fallback = "QwikSale — Kenya’s trusted marketplace for all items.") {
+export function safeDesc(s?: string | null, fallback = "QwikSale - Kenya’s trusted marketplace for all items.") {
   return clampLen(stripHtml(s || "") || fallback, 160);
 }
 
@@ -244,11 +244,7 @@ export function productJsonLd(p: {
   ratingValue?: number | null;
   reviewCount?: number | null;
 }) {
-  const images = Array.isArray(p.image)
-    ? p.image
-    : p.image
-    ? [p.image]
-    : undefined;
+  const images = Array.isArray(p.image) ? p.image : p.image ? [p.image] : undefined;
 
   const url = p.url || `${SITE_URL}/product/${encodeURIComponent(p.id)}`;
 
@@ -259,9 +255,7 @@ export function productJsonLd(p: {
           price: p.price,
           priceCurrency: p.currency || "KES",
           availability: mapAvailability(p.status),
-          ...(p.priceValidUntil
-            ? { priceValidUntil: new Date(p.priceValidUntil).toISOString() }
-            : {}),
+          ...(p.priceValidUntil ? { priceValidUntil: new Date(p.priceValidUntil).toISOString() } : {}),
           ...(p.sellerName
             ? { seller: { "@type": "Organization", name: p.sellerName, url: p.sellerUrl || SITE_URL } }
             : {}),
@@ -313,11 +307,7 @@ export function serviceJsonLd(s: {
   sellerName?: string | null;
   sellerUrl?: string | null;
 }) {
-  const images = Array.isArray(s.image)
-    ? s.image
-    : s.image
-    ? [s.image]
-    : undefined;
+  const images = Array.isArray(s.image) ? s.image : s.image ? [s.image] : undefined;
 
   const url = s.url || `${SITE_URL}/service/${encodeURIComponent(s.id)}`;
 

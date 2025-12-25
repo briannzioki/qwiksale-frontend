@@ -11,7 +11,7 @@ function idFromHref(href: string | null | undefined) {
 async function assertBadgesIfPresentOnCard(
   page: import("@playwright/test").Page,
   card: import("@playwright/test").Locator,
-  kind: "product" | "service"
+  kind: "product" | "service",
 ) {
   const href = await card.getAttribute("href");
   const id = idFromHref(href);
@@ -30,9 +30,10 @@ async function assertBadgesIfPresentOnCard(
     await expect(card.locator(`text=/\\b${label}\\b/i`)).toBeVisible();
   }
 
-  const tier = typeof sellerFeaturedTier === "string" ? sellerFeaturedTier.trim().toLowerCase() : "";
+  const tier =
+    typeof sellerFeaturedTier === "string" ? sellerFeaturedTier.trim().toLowerCase() : "";
   if (tier === "basic" || tier === "gold" || tier === "diamond") {
-    await expect(card.locator(`text=/\\b${tier}\\b/i`)).toBeVisible();
+    await expect(card.locator(`[data-testid="featured-tier-${tier}"]`)).toBeVisible();
   }
 }
 
@@ -40,15 +41,15 @@ test.describe("Home feed tabs", () => {
   test("Products & Services tabs render results", async ({ page }) => {
     await gotoHome(page);
 
-    const productsTab =
-      page.getByRole("tab", { name: /^products$/i })
-        .or(page.getByRole("button", { name: /^products$/i }))
-        .or(page.getByRole("link", { name: /^products$/i }));
+    const productsTab = page
+      .getByRole("tab", { name: /^products$/i })
+      .or(page.getByRole("button", { name: /^products$/i }))
+      .or(page.getByRole("link", { name: /^products$/i }));
 
-    const servicesTab =
-      page.getByRole("tab", { name: /^services$/i })
-        .or(page.getByRole("button", { name: /^services$/i }))
-        .or(page.getByRole("link", { name: /^services$/i }));
+    const servicesTab = page
+      .getByRole("tab", { name: /^services$/i })
+      .or(page.getByRole("button", { name: /^services$/i }))
+      .or(page.getByRole("link", { name: /^services$/i }));
 
     // Always verify products show up (tabbed or not)
     if ((await productsTab.count()) > 0) {
@@ -65,7 +66,9 @@ test.describe("Home feed tabs", () => {
     if ((await servicesTab.count()) > 0) {
       await servicesTab.first().click({ noWaitAfter: true }).catch(() => {});
       await Promise.race([
-        page.waitForURL(/(\?|&)(t|tab)=services|#t=services/, { timeout: 1000 }).catch(() => {}),
+        page
+          .waitForURL(/(\?|&)(t|tab)=services|#t=services/, { timeout: 1000 })
+          .catch(() => {}),
         page.waitForTimeout(200),
       ]);
     } else {

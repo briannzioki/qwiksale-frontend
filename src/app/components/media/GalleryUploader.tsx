@@ -17,7 +17,7 @@ type Props = {
   className?: string;
   /** Optional label override (default reflects cap). */
   label?: string;
-  /** If true, allow drag–drop reordering (default true). */
+  /** If true, allow drag-drop reordering (default true). */
   draggable?: boolean;
 
   /** Accept string for file input (default: "image/*"; supports ".jpg,.png", etc.) */
@@ -105,7 +105,7 @@ export default function GalleryUploader({
       const capped = cleaned.slice(0, CAP);
       await onChangeAction(capped);
     },
-    [onChangeAction, CAP]
+    [onChangeAction, CAP],
   );
 
   const removeAt = useCallback(
@@ -115,7 +115,7 @@ export default function GalleryUploader({
       void commit(next);
       announce(`Removed photo ${i + 1}`);
     },
-    [images, commit, announce]
+    [images, commit, announce],
   );
 
   const move = useCallback(
@@ -128,7 +128,7 @@ export default function GalleryUploader({
       void commit(next);
       announce(`Moved photo ${i + 1} ${dir < 0 ? "left" : "right"}`);
     },
-    [images, commit, announce]
+    [images, commit, announce],
   );
 
   const makeCover = useCallback(
@@ -141,7 +141,7 @@ export default function GalleryUploader({
       void commit(next);
       announce(`Photo ${i + 1} set as cover`);
     },
-    [images, commit, announce]
+    [images, commit, announce],
   );
 
   // ----- drag & drop reorder -----
@@ -150,7 +150,7 @@ export default function GalleryUploader({
       if (!draggable) return;
       setDragIdx(i);
     },
-    [draggable]
+    [draggable],
   );
 
   const onDragOver = useCallback(
@@ -159,7 +159,7 @@ export default function GalleryUploader({
       e.preventDefault();
       setDragOverIdx(i);
     },
-    [draggable]
+    [draggable],
   );
 
   const onDragEnd = useCallback(() => {
@@ -183,7 +183,7 @@ export default function GalleryUploader({
       announce(`Moved photo ${dragIdx + 1} to position ${i + 1}`);
       onDragEnd();
     },
-    [draggable, dragIdx, images, commit, onDragEnd, announce]
+    [draggable, dragIdx, images, commit, onDragEnd, announce],
   );
 
   // ----- pick files (button/tile) -----
@@ -238,7 +238,7 @@ export default function GalleryUploader({
         }
       }
     },
-    [images.length, CAP, accept, maxSizeMB, onFilesSelectedAction, announce]
+    [images.length, CAP, accept, maxSizeMB, onFilesSelectedAction, announce],
   );
 
   // ----- input change -----
@@ -250,7 +250,7 @@ export default function GalleryUploader({
       input.value = "";
       await handleFiles(files);
     },
-    [handleFiles]
+    [handleFiles],
   );
 
   // ----- drag & drop files onto the whole component -----
@@ -310,14 +310,15 @@ export default function GalleryUploader({
     return () => window.removeEventListener("paste", onPaste);
   }, [handleFiles, canAddMore]);
 
+  const miniCtl =
+    "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus disabled:opacity-40";
+
   return (
     <div
       ref={wrapRef}
       className={[
-        "w-full rounded-2xl border p-3 transition",
-        dropping
-          ? "border-dashed bg-muted ring-2 ring-primary"
-          : "border-border bg-card",
+        "w-full rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 transition shadow-soft sm:p-3",
+        dropping ? "border-dashed bg-[var(--bg-subtle)] ring-2 ring-focus" : "",
         className,
       ].join(" ")}
       aria-busy={busy ? "true" : "false"}
@@ -327,14 +328,17 @@ export default function GalleryUploader({
         {liveMsg}
       </span>
 
-      <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-medium text-foreground" htmlFor={`gu-files-${uid}`}>
+      <div className="flex items-center justify-between gap-2">
+        <label
+          className="text-sm font-extrabold tracking-tight text-[var(--text)]"
+          htmlFor={`gu-files-${uid}`}
+        >
           {labelText}
         </label>
 
         <div
           id={`gu-help-${uid}`}
-          className="text-xs text-muted-foreground"
+          className="text-[11px] text-[var(--text-muted)] leading-relaxed sm:text-xs"
         >
           Drag & drop or paste images. Max {CAP}.
         </div>
@@ -342,13 +346,13 @@ export default function GalleryUploader({
 
       {/* Grid */}
       <ul
-        className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+        className="mt-2 grid grid-cols-2 gap-3 min-[420px]:grid-cols-3 sm:gap-4 md:grid-cols-4"
         aria-label="Gallery images"
       >
         {/* Add tile */}
         {canAddMore && (
-          <li className="relative rounded-lg border border-dashed border-border p-2 text-center">
-            <div className="flex h-28 w-full items-center justify-center">
+          <li className="relative rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg)] p-2 text-center">
+            <div className="flex h-24 w-full items-center justify-center sm:h-28">
               <IconButton
                 icon="upload"
                 variant="outline"
@@ -365,8 +369,10 @@ export default function GalleryUploader({
 
         {images.length === 0 && (
           <li className="col-span-full">
-            <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              No photos yet. Click <span className="font-semibold">Upload photos</span>, drag & drop, or paste.
+            <div className="rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg)] p-4 text-center text-sm text-[var(--text-muted)] leading-relaxed sm:p-6">
+              No photos yet. Click{" "}
+              <span className="font-semibold text-[var(--text)]">Upload photos</span>, drag
+              &amp; drop, or paste.
             </div>
           </li>
         )}
@@ -377,9 +383,8 @@ export default function GalleryUploader({
             <li
               key={`${url}-${i}`}
               className={[
-                "relative rounded-lg border p-2 transition",
-                isOver ? "border-transparent ring-2 ring-primary" : "border-border",
-                "bg-card",
+                "relative rounded-xl border bg-[var(--bg)] p-2 transition",
+                isOver ? "border-[var(--border)] ring-2 ring-focus" : "border-[var(--border-subtle)]",
               ].join(" ")}
               draggable={draggable}
               onDragStart={onDragStart(i)}
@@ -389,17 +394,19 @@ export default function GalleryUploader({
               aria-roledescription="Draggable gallery item"
               aria-grabbed={dragIdx === i}
             >
-              <div className="relative h-28 w-full overflow-hidden rounded-md bg-muted">
+              <div className="relative h-24 w-full overflow-hidden rounded-xl bg-[var(--bg-subtle)] sm:h-28">
                 <SmartImage src={url} alt={`Photo ${i + 1}`} fill className="object-cover" />
               </div>
 
-              <div className="mt-2 flex items-center justify-between text-xs text-foreground">
-                <span className="truncate">{i === 0 ? "Cover" : `#${i + 1}`}</span>
+              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-[var(--text)] sm:text-xs">
+                <span className="truncate text-[var(--text-muted)]">
+                  {i === 0 ? "Cover" : `#${i + 1}`}
+                </span>
 
                 <div className="flex gap-1">
                   <button
                     type="button"
-                    className="rounded border border-border px-2 py-0.5 disabled:opacity-40"
+                    className={miniCtl}
                     onClick={() => move(i, -1)}
                     title="Move left"
                     aria-label={`Move photo ${i + 1} left`}
@@ -409,7 +416,7 @@ export default function GalleryUploader({
                   </button>
                   <button
                     type="button"
-                    className="rounded border border-border px-2 py-0.5 disabled:opacity-40"
+                    className={miniCtl}
                     onClick={() => move(i, +1)}
                     title="Move right"
                     aria-label={`Move photo ${i + 1} right`}
@@ -420,7 +427,7 @@ export default function GalleryUploader({
                   {i !== 0 && (
                     <button
                       type="button"
-                      className="rounded border border-border px-2 py-0.5"
+                      className={miniCtl}
                       onClick={() => makeCover(i)}
                       title="Make cover"
                       aria-label={`Make photo ${i + 1} the cover`}
@@ -430,7 +437,7 @@ export default function GalleryUploader({
                   )}
                   <button
                     type="button"
-                    className="rounded border border-border px-2 py-0.5"
+                    className={miniCtl}
                     onClick={() => removeAt(i)}
                     title="Remove"
                     aria-label={`Remove photo ${i + 1}`}
@@ -445,7 +452,7 @@ export default function GalleryUploader({
       </ul>
 
       {/* Controls row */}
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2 sm:mt-3">
         <IconButton
           icon="upload"
           labelText={busy ? "Uploading…" : "Upload photos"}
@@ -465,11 +472,14 @@ export default function GalleryUploader({
           className="hidden"
           onChange={onFiles}
         />
-        <div className="text-xs text-muted-foreground">
+        <div className="text-[11px] text-[var(--text-muted)] sm:text-xs">
           {images.length}/{CAP} images
         </div>
         {errorMsg && (
-          <div className="ml-2 text-xs text-red-600" role="alert">
+          <div
+            className="rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] text-[var(--text)] sm:text-xs"
+            role="alert"
+          >
             {errorMsg}
           </div>
         )}

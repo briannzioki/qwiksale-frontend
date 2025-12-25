@@ -145,75 +145,89 @@ function SignUpPageInner() {
               : 100;
 
   return (
-    <div className="container-page py-10">
+    <div className="container-page py-4 text-[var(--text)] sm:py-8">
       <div className="mx-auto max-w-2xl">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue p-8 text-white shadow-soft dark:shadow-none">
-          <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-          <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">
-            Create your QwikSale account
-          </h1>
-          <p className="mt-2 max-w-prose text-white/90">
-            Buy & sell with confidence across Kenya. It takes less than a
-            minute.
-          </p>
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft dark:shadow-none">
+          <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-[var(--bg)] opacity-10 blur-3xl" />
+          <div className="container-page py-5 text-white sm:py-8">
+            <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+              Create your QwikSale account
+            </h1>
+            <p className="mt-1 text-[11px] leading-relaxed text-white/80 sm:text-sm">
+              Buy & sell with confidence across Kenya. It takes less than a
+              minute.
+            </p>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-white/85">
-            <Badge icon="🔒">Secure & private</Badge>
-            <Badge icon="⚡">Fast posting</Badge>
-            <Badge icon="✅">Verified listings</Badge>
-            <Badge icon="💬">Direct chat</Badge>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/85 sm:mt-4 sm:gap-3">
+              <Badge icon="🔒">Secure & private</Badge>
+              <Badge icon="⚡">Fast posting</Badge>
+              <Badge icon="✅">Verified listings</Badge>
+              <Badge icon="💬">Direct chat</Badge>
+            </div>
           </div>
         </div>
 
         {friendlyError ? (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+          <div className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm font-medium text-[var(--text)] shadow-sm sm:mt-4 sm:px-4 sm:py-3">
             {friendlyError}
           </div>
         ) : null}
 
-        <div className="mt-8 grid gap-6">
-          <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 transition hover:shadow-md dark:border-white/10 dark:bg-slate-950/80">
+        <div className="mt-5 grid gap-4 sm:mt-8 sm:gap-6">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft transition hover:shadow-sm sm:p-5">
             <button
               onClick={onGoogle}
               disabled={!!working}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200/80 px-4 py-3 font-semibold hover:bg-gray-50 active:scale-[.99] dark:border-white/20 dark:hover:bg-slate-800 disabled:opacity-60"
+              className={[
+                "flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)]",
+                "bg-[var(--bg-elevated)] px-4 py-3 text-xs font-semibold text-[var(--text)] sm:text-sm",
+                "hover:bg-[var(--bg-subtle)] active:scale-[.99]",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                "disabled:opacity-60",
+              ].join(" ")}
               aria-label="Continue with Google"
               type="button"
             >
               <GoogleIcon className="h-5 w-5" />
               {working === "google" ? "Opening Google…" : "Continue with Google"}
             </button>
-            <p className="mt-2 text-center text-xs text-gray-500 dark:text-slate-400">
+            <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
               We’ll never post without your permission.
             </p>
           </div>
 
-          <div className="relative my-2 flex items-center justify-center">
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-gray-200 to-transparent dark:via-slate-800" />
-            <span className="absolute -top-3 bg-white px-3 text-xs text-gray-500 dark:bg-slate-950 dark:text-slate-400">
+          <div className="relative my-1.5 flex items-center justify-center sm:my-2">
+            <div className="h-px w-full bg-[var(--border-subtle)]" />
+            <span className="absolute -top-2.5 bg-[var(--bg)] px-3 text-xs text-[var(--text-muted)]">
               or use email
             </span>
           </div>
 
           <form
             onSubmit={onCreate}
-            className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 transition hover:shadow-md dark:border-white/10 dark:bg-slate-950/80"
+            className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft transition hover:shadow-sm sm:p-6"
             noValidate
           >
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {/* Email */}
               <label className="block">
-                <span className="mb-1 block text-sm font-semibold">Email</span>
+                <span className="mb-1 block text-xs font-semibold text-[var(--text)] sm:text-sm">
+                  Email
+                </span>
                 <input
                   type="email"
-                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                  className={[
+                    "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
+                    "text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  ].join(" ")}
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                   required
                 />
-                <span className="mt-1 block text-xs text-gray-500 dark:text-slate-400">
+                <span className="mt-1 block text-xs leading-relaxed text-[var(--text-muted)]">
                   We’ll send important notifications here.
                 </span>
               </label>
@@ -222,7 +236,7 @@ function SignUpPageInner() {
               <div>
                 <label
                   htmlFor="signup-password"
-                  className="mb-1 block text-sm font-semibold"
+                  className="mb-1 block text-xs font-semibold text-[var(--text)] sm:text-sm"
                 >
                   Password
                 </label>
@@ -230,7 +244,11 @@ function SignUpPageInner() {
                   <input
                     id="signup-password"
                     type={showPassword ? "text" : "password"}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pr-12 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                    className={[
+                      "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 pr-12",
+                      "text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none",
+                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    ].join(" ")}
                     placeholder="At least 6 characters"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -241,7 +259,11 @@ function SignUpPageInner() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                    className={[
+                      "absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs",
+                      "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    ].join(" ")}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? "Hide" : "Show"}
@@ -249,19 +271,20 @@ function SignUpPageInner() {
                 </div>
 
                 <div className="mt-2">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--bg-subtle)]">
                     <div
-                      className={`h-full rounded-full transition-all ${
+                      className={[
+                        "h-full rounded-full bg-[var(--text)] transition-all",
                         pwBarPct < 35
-                          ? "bg-red-400"
+                          ? "opacity-30"
                           : pwBarPct < 65
-                            ? "bg-yellow-400"
-                            : "bg-green-500"
-                      }`}
+                            ? "opacity-55"
+                            : "opacity-80",
+                      ].join(" ")}
                       style={{ width: `${pwBarPct}%` }}
                     />
                   </div>
-                  <div className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">
+                  <div className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
                     Strength: {pwStrength}
                   </div>
                 </div>
@@ -271,14 +294,18 @@ function SignUpPageInner() {
               <div>
                 <label
                   htmlFor="signup-confirm-password"
-                  className="mb-1 block text-sm font-semibold"
+                  className="mb-1 block text-xs font-semibold text-[var(--text)] sm:text-sm"
                 >
                   Confirm password
                 </label>
                 <input
                   id="signup-confirm-password"
                   type="password"
-                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                  className={[
+                    "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
+                    "text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  ].join(" ")}
                   placeholder="Repeat your password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
@@ -291,15 +318,15 @@ function SignUpPageInner() {
               <button
                 type="submit"
                 disabled={!!working}
-                className="mt-1 w-full rounded-xl bg-[#161748] px-4 py-3 font-semibold text-white shadow-sm transition hover:opacity-95 active:scale-[.99] disabled:opacity-60"
+                className="btn-gradient-primary mt-1 w-full text-sm active:scale-[.99] disabled:opacity-60 sm:text-base"
               >
                 {working === "creds" ? "Creating account…" : "Create account"}
               </button>
 
-              <p className="text-xs text-gray-600 dark:text-slate-400">
+              <p className="text-xs leading-relaxed text-[var(--text-muted)]">
                 By creating an account, you agree to QwikSale’s{" "}
                 <Link
-                  className="underline underline-offset-2"
+                  className="text-[var(--text)] underline underline-offset-2"
                   href="/terms"
                   prefetch={false}
                 >
@@ -307,7 +334,7 @@ function SignUpPageInner() {
                 </Link>{" "}
                 and{" "}
                 <Link
-                  className="underline underline-offset-2"
+                  className="text-[var(--text)] underline underline-offset-2"
                   href="/privacy"
                   prefetch={false}
                 >
@@ -316,10 +343,10 @@ function SignUpPageInner() {
                 .
               </p>
 
-              <p className="text-xs text-gray-600 dark:text-slate-400">
+              <p className="text-xs leading-relaxed text-[var(--text-muted)]">
                 Already have an account?{" "}
                 <Link
-                  className="underline underline-offset-2"
+                  className="text-[var(--text)] underline underline-offset-2"
                   href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}
                   prefetch={false}
                 >
@@ -329,11 +356,11 @@ function SignUpPageInner() {
             </div>
           </form>
 
-          <section className="rounded-2xl border border-gray-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80">
-            <h2 className="text-base font-semibold">
+          <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-6">
+            <h2 className="text-sm font-semibold text-[var(--text)] sm:text-base">
               Why people stay with QwikSale
             </h2>
-            <ul className="mt-3 grid gap-3 text-sm text-gray-700 dark:text-slate-300 md:grid-cols-2">
+            <ul className="mt-3 grid gap-2 text-[13px] leading-relaxed text-[var(--text-muted)] sm:gap-3 sm:text-sm md:grid-cols-2">
               <li className="flex items-start gap-2">
                 <Spark /> Smart visibility: verified listings get prime
                 placement.
@@ -358,7 +385,7 @@ function SignUpPageInner() {
 
 function Badge({ children, icon }: { children: ReactNode; icon: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] ring-1 ring-white/15 backdrop-blur">
+    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-1 text-[11px] font-semibold text-[var(--text)] shadow-sm">
       <span aria-hidden>{icon}</span>
       {children}
     </span>
@@ -369,19 +396,19 @@ function GoogleIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 48 48" {...props} aria-hidden>
       <path
-        fill="#FFC107"
+        fill="currentColor"
         d="M43.611 20.083H42V20H24v8h11.303C33.826 32.599 29.28 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.152 7.961 3.039l5.657-5.657C33.64 6.053 28.999 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.651-.389-3.917z"
       />
       <path
-        fill="#FF3D00"
+        fill="currentColor"
         d="M6.306 14.691l6.571 4.817C14.48 16.064 18.883 14 24 14c3.059 0 5.842 1.152 7.961 3.039l5.657-5.657C33.64 6.053 28.999 4 24 4 16.318 4 9.657 8.337 6.306 14.691z"
       />
       <path
-        fill="#4CAF50"
+        fill="currentColor"
         d="M24 44c5.227 0 9.941-1.997 13.515-5.261l-6.231-5.274C29.24 34.737 26.747 36 24 36c-5.255 0-9.79-3.381-11.396-8.078l-6.52 5.02C9.386 39.63 16.13 44 24 44z"
       />
       <path
-        fill="#1976D2"
+        fill="currentColor"
         d="M43.611 20.083H42V20H24v8h11.303c-1.151 3.247-3.557 5.833-6.519 7.382l.003-.002 6.231 5.274C37.617 38.079 40 32.666 40 27c0-2.356-.389-4.621-1.111-6.917z"
       />
     </svg>
@@ -392,7 +419,7 @@ function Spark() {
   return (
     <svg
       viewBox="0 0 20 20"
-      className="mt-0.5 h-4 w-4 text-brandBlue"
+      className="mt-0.5 h-4 w-4 text-[var(--text-muted)]"
       fill="currentColor"
       aria-hidden
     >

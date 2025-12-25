@@ -82,7 +82,10 @@ export default function CompleteProfileClient() {
   const didLoadMe = useRef(false);
   const loadAbort = useRef<AbortController | null>(null);
 
-  const whatsappNormalized = useMemo(() => (whatsapp ? normalizeKePhone(whatsapp) : ""), [whatsapp]);
+  const whatsappNormalized = useMemo(
+    () => (whatsapp ? normalizeKePhone(whatsapp) : ""),
+    [whatsapp],
+  );
 
   const sessionUser: any = (session as any)?.user ?? null;
 
@@ -251,7 +254,7 @@ export default function CompleteProfileClient() {
       return;
     }
     if (!looksLikeValidUsername(u)) {
-      toast.error("Username must be 3–24 chars (letters, numbers, dot, underscore).");
+      toast.error("Username must be 3-24 chars (letters, numbers, dot, underscore).");
       return;
     }
     if (nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "checking") {
@@ -307,32 +310,32 @@ export default function CompleteProfileClient() {
 
   const nameHint =
     nameStatus === "available"
-      ? "Looks good — available."
+      ? "Looks good - available."
       : nameStatus === "taken"
         ? "That username is taken."
         : nameStatus === "invalid"
-          ? "Use 3–24 chars: letters, numbers, dot, underscore."
+          ? "Use 3-24 chars: letters, numbers, dot, underscore."
           : nameStatus === "checking"
             ? "Checking availability…"
             : "";
 
   const nameHintClass =
     nameStatus === "available"
-      ? "text-emerald-700"
+      ? "text-[var(--text)]"
       : nameStatus === "taken" || nameStatus === "invalid" || nameStatus === "error"
-        ? "text-red-600"
+        ? "text-[var(--text)] font-semibold"
         : "text-[var(--text-muted)]";
 
   const emailInvalid = email.trim().length > 0 && !looksLikeEmail(email.trim());
 
   if (sessionStatus === "loading" || loading) {
     return (
-      <div className="container-page py-8 md:py-10">
+      <div className="container-page py-4 sm:py-6 text-[var(--text)] md:py-10">
         <div className="mx-auto max-w-3xl">
-          <div className="card-surface p-4 sm:p-6">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-sm sm:p-6">
             <div className="h-5 w-40 rounded bg-[var(--skeleton)]" />
-            <div className="mt-4 h-4 w-full max-w-md rounded bg-[var(--skeleton)]" />
-            <div className="mt-6 space-y-3">
+            <div className="mt-3 sm:mt-4 h-4 w-full max-w-md rounded bg-[var(--skeleton)]" />
+            <div className="mt-4 sm:mt-6 space-y-3">
               <div className="h-10 w-full rounded bg-[var(--skeleton)]" />
               <div className="h-10 w-full rounded bg-[var(--skeleton)]" />
             </div>
@@ -345,25 +348,30 @@ export default function CompleteProfileClient() {
   // If guest, show sign-in prompt and STOP (no background /api/me calls).
   if (unauth) {
     return (
-      <div className="container-page py-8 md:py-10">
-        <div className="mx-auto max-w-3xl space-y-4">
+      <div className="container-page py-4 sm:py-6 text-[var(--text)] md:py-10">
+        <div className="mx-auto max-w-3xl space-y-3 sm:space-y-4">
           <div
             role="alert"
-            className="card-surface border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50"
+            className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2.5 text-xs sm:text-sm text-[var(--text)] shadow-sm"
           >
             Please{" "}
-            <Link className="underline" href={signinHref}>
+            <Link
+              className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
+              href={signinHref}
+            >
               sign in
             </Link>{" "}
             to complete your profile.
           </div>
 
-          <div className="card-surface p-4 sm:p-6">
-            <h1 className="text-xl font-semibold text-[var(--text-strong)]">Finish setting up your account</h1>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-sm sm:p-6">
+            <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-[var(--text)]">
+              Finish setting up your account
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
               Sign in to add your username, contact details, and verify your email.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-3 sm:mt-4 flex flex-wrap gap-2">
               <Button asChild size="sm" variant="primary">
                 <Link href={signinHref}>Sign in</Link>
               </Button>
@@ -378,41 +386,55 @@ export default function CompleteProfileClient() {
   }
 
   return (
-    <div className="container-page py-8 md:py-10">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+    <div className="container-page py-4 sm:py-6 text-[var(--text)] md:py-10">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4 sm:gap-6">
         {/* Alerts */}
         {saved && (
-          <div className="card-surface border border-emerald-300/70 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-amber-50">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2.5 text-xs sm:text-sm text-[var(--text)] shadow-sm">
             Profile saved.{" "}
-            <Link href={ret} className="underline">
+            <Link
+              href={ret}
+              className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
+            >
               Continue
             </Link>
           </div>
         )}
 
         {/* Main form card */}
-        <form onSubmit={onSave} className="card-surface p-4 sm:p-6 space-y-6" noValidate aria-busy={saving}>
+        <form
+          onSubmit={onSave}
+          className="space-y-4 sm:space-y-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-sm sm:p-6"
+          noValidate
+          aria-busy={saving}
+        >
           {/* Intro */}
           <header className="space-y-1">
-            <h1 className="text-xl font-semibold text-[var(--text-strong)]">Finish setting up your account</h1>
-            <p className="text-sm text-[var(--text-muted)]">
+            <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-[var(--text)]">
+              Finish setting up your account
+            </h1>
+            <p className="text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
               A clear username and contact details help buyers and sellers recognise you and get in touch quickly.
             </p>
           </header>
 
           {/* Account section */}
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Account</h2>
+          <section className="space-y-2.5 sm:space-y-3">
+            <h2 className="text-sm font-semibold text-[var(--text)]">Account</h2>
 
             {!emailIsVerified && (
-              <div className="rounded-xl border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50">
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-[var(--text)] shadow-sm">
                 <div className="font-semibold">Verify your email</div>
-                <div className="mt-0.5 text-xs text-amber-950/80 dark:text-amber-50/80">
+                <div className="mt-0.5 text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
                   Verified accounts get better trust and unlock the verified badge where applicable.
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2.5 sm:mt-3 flex flex-wrap gap-2">
                   <Button asChild size="sm" variant="primary">
-                    <Link href={verifyEmailHref} prefetch={false} data-testid="complete-profile-verify-email">
+                    <Link
+                      href={verifyEmailHref}
+                      prefetch={false}
+                      data-testid="complete-profile-verify-email"
+                    >
                       Verify email
                     </Link>
                   </Button>
@@ -425,7 +447,7 @@ export default function CompleteProfileClient() {
               </div>
             )}
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
               <div>
                 <label htmlFor="email" className="label">
                   Email
@@ -444,7 +466,9 @@ export default function CompleteProfileClient() {
                   disabled={saving}
                   aria-invalid={emailInvalid || undefined}
                 />
-                <p className="mt-1 text-xs text-[var(--text-muted)]">Changing your sign-in email may require verification.</p>
+                <p className="mt-1 text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
+                  Changing your sign-in email may require verification.
+                </p>
               </div>
 
               <div>
@@ -461,7 +485,9 @@ export default function CompleteProfileClient() {
                   required
                   minLength={3}
                   maxLength={24}
-                  aria-invalid={nameStatus === "taken" || nameStatus === "invalid" ? true : undefined}
+                  aria-invalid={
+                    nameStatus === "taken" || nameStatus === "invalid" ? true : undefined
+                  }
                   aria-describedby="username-help username-status"
                   disabled={saving}
                   inputMode="text"
@@ -470,11 +496,18 @@ export default function CompleteProfileClient() {
                   autoCorrect="off"
                   spellCheck={false}
                 />
-                <p id="username-help" className="mt-1 text-xs text-[var(--text-muted)]">
-                  Shown on your listings. 3–24 chars, letters/numbers/dot/underscore.
+                <p
+                  id="username-help"
+                  className="mt-1 text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]"
+                >
+                  Shown on your listings. 3-24 chars, letters/numbers/dot/underscore.
                 </p>
                 {nameHint && (
-                  <p id="username-status" className={`mt-1 text-xs ${nameHintClass}`} aria-live="polite">
+                  <p
+                    id="username-status"
+                    className={`mt-1 text-[11px] sm:text-xs ${nameHintClass}`}
+                    aria-live="polite"
+                  >
                     {nameHint}
                   </p>
                 )}
@@ -483,17 +516,17 @@ export default function CompleteProfileClient() {
           </section>
 
           {/* Profile photo */}
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Profile photo</h2>
-            <p className="text-sm text-[var(--text-muted)]">
+          <section className="space-y-2.5 sm:space-y-3">
+            <h2 className="text-sm font-semibold text-[var(--text)]">Profile photo</h2>
+            <p className="text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
               A clear photo helps people recognise you. You can change this any time.
             </p>
             <ProfilePhotoUploader initialImage={me?.image ?? null} />
           </section>
 
           {/* Contact */}
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Contact</h2>
+          <section className="space-y-2.5 sm:space-y-3">
+            <h2 className="text-sm font-semibold text-[var(--text)]">Contact</h2>
             <div>
               <label className="label">WhatsApp (optional)</label>
               <input
@@ -507,29 +540,44 @@ export default function CompleteProfileClient() {
                 autoCorrect="off"
                 spellCheck={false}
               />
-              <p className="mt-1 text-xs text-[var(--text-muted)]">
-                Will be stored as <code className="font-mono">{whatsappNormalized || "—"}</code>.
+              <p className="mt-1 text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
+                Will be stored as <code className="font-mono">{whatsappNormalized || "-"}</code>.
               </p>
             </div>
           </section>
 
           {/* Location */}
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Location (optional)</h2>
+          <section className="space-y-2.5 sm:space-y-3">
+            <h2 className="text-sm font-semibold text-[var(--text)]">Location (optional)</h2>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className="label">City</label>
-                <input className="input" value={city} onChange={(e) => setCity(e.target.value)} disabled={saving} />
+                <input
+                  className="input"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  disabled={saving}
+                />
               </div>
               <div>
                 <label className="label">Country</label>
-                <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} disabled={saving} />
+                <input
+                  className="input"
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  disabled={saving}
+                />
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className="label">Postal code</label>
-                <input className="input" value={postalCode} onChange={(e) => setPostal(e.target.value)} disabled={saving} />
+                <input
+                  className="input"
+                  value={postalCode}
+                  onChange={(e) => setPostal(e.target.value)}
+                  disabled={saving}
+                />
               </div>
               <div>
                 <label className="label">Address</label>
@@ -545,15 +593,22 @@ export default function CompleteProfileClient() {
           </section>
 
           {/* Actions */}
-          <section className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-4">
-            <p className="text-xs text-[var(--text-muted)]">You can update these details later from your account settings.</p>
+          <section className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-3 sm:pt-4">
+            <p className="text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
+              You can update these details later from your account settings.
+            </p>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="submit"
                 size="sm"
                 variant="primary"
                 loading={saving}
-                disabled={saving || nameStatus === "checking" || nameStatus === "invalid" || !looksLikeEmail(email.trim())}
+                disabled={
+                  saving ||
+                  nameStatus === "checking" ||
+                  nameStatus === "invalid" ||
+                  !looksLikeEmail(email.trim())
+                }
               >
                 {saving ? "Saving…" : "Save profile"}
               </Button>

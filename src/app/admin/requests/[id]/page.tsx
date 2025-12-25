@@ -51,9 +51,9 @@ function makeApiUrl(path: string) {
 }
 
 function fmtWhen(iso: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const t = new Date(iso);
-  if (!Number.isFinite(t.getTime())) return "—";
+  if (!Number.isFinite(t.getTime())) return "-";
   return t.toLocaleString("en-KE");
 }
 
@@ -80,7 +80,9 @@ export default async function AdminRequestDetailPage({
   const rid = String(id || "").trim();
   if (!rid) notFound();
 
-  const url = `${makeApiUrl("/api/admin/requests")}?${new URLSearchParams({ id: rid }).toString()}`;
+  const url = `${makeApiUrl("/api/admin/requests")}?${new URLSearchParams({
+    id: rid,
+  }).toString()}`;
 
   let req: RequestDetail | null = null;
   try {
@@ -96,22 +98,35 @@ export default async function AdminRequestDetailPage({
   if (!req) notFound();
 
   const ownerId = String(req.ownerId || "");
+  const SectionHeaderAny = SectionHeader as any;
 
   return (
     <div className="space-y-5">
-      <SectionHeader
+      <SectionHeaderAny
         title="Request"
         subtitle="Admin detail view."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/admin/requests" prefetch={false} className="btn-outline text-sm">
+            <Link
+              href="/admin/requests"
+              prefetch={false}
+              className="btn-outline text-sm"
+            >
               Back to list
             </Link>
-            <Link href={`/requests/${encodeURIComponent(req.id)}`} prefetch={false} className="btn-outline text-sm">
+            <Link
+              href={`/requests/${encodeURIComponent(req.id)}`}
+              prefetch={false}
+              className="btn-outline text-sm"
+            >
               Public page
             </Link>
             {ownerId && (
-              <Link href={`/admin/users/${encodeURIComponent(ownerId)}`} prefetch={false} className="btn-outline text-sm">
+              <Link
+                href={`/admin/users/${encodeURIComponent(ownerId)}`}
+                prefetch={false}
+                className="btn-outline text-sm"
+              >
                 View owner
               </Link>
             )}
@@ -119,27 +134,34 @@ export default async function AdminRequestDetailPage({
         }
       />
 
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+      <div className="space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{req.kind}</div>
-            <h1 className="mt-1 text-xl font-bold text-foreground">{req.title}</h1>
-            <div className="mt-1 text-sm text-muted-foreground">
-              {req.location || "—"} {req.category ? <span>• {req.category}</span> : null}
+            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              {req.kind}
+            </div>
+            <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[var(--text)]">
+              {req.title}
+            </h1>
+            <div className="mt-1 text-sm text-[var(--text-muted)]">
+              {req.location || "-"}{" "}
+              {req.category ? <span>• {req.category}</span> : null}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs">
+            <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--text)]">
               {req.status}
             </span>
+
             {isExpired(req.expiresAt) && (
-              <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+              <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--text-muted)]">
                 Expired
               </span>
             )}
+
             {isBoosted(req.boostUntil) && (
-              <span className="inline-flex items-center rounded-full bg-[#161748] px-2 py-0.5 text-xs font-semibold text-white">
+              <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-semibold text-[var(--text)]">
                 Boosted
               </span>
             )}
@@ -147,11 +169,11 @@ export default async function AdminRequestDetailPage({
         </div>
 
         {req.description ? (
-          <div className="whitespace-pre-wrap rounded-lg border border-border bg-muted/20 p-3 text-sm text-foreground">
+          <div className="whitespace-pre-wrap rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm leading-relaxed text-[var(--text)]">
             {req.description}
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm text-[var(--text-muted)]">
             No description provided.
           </div>
         )}
@@ -160,13 +182,21 @@ export default async function AdminRequestDetailPage({
           <Meta label="Created" value={fmtWhen(req.createdAt)} />
           <Meta label="Expires" value={fmtWhen(req.expiresAt)} />
           <Meta label="Boost until" value={fmtWhen(req.boostUntil)} />
-          <Meta label="Contact" value={`${req.contactEnabled ? "Enabled" : "Disabled"} • ${req.contactMode || "—"}`} />
+          <Meta
+            label="Contact"
+            value={`${req.contactEnabled ? "Enabled" : "Disabled"} • ${
+              req.contactMode || "-"
+            }`}
+          />
         </div>
 
         {Array.isArray(req.tags) && req.tags.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {req.tags.slice(0, 20).map((t) => (
-              <span key={t} className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs">
+              <span
+                key={t}
+                className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--text)]"
+              >
                 {t}
               </span>
             ))}
@@ -175,61 +205,80 @@ export default async function AdminRequestDetailPage({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
-          <div className="text-sm font-semibold text-foreground">Owner</div>
-          <div className="text-sm text-muted-foreground">
+        <div className="space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft">
+          <div className="text-sm font-semibold text-[var(--text)]">Owner</div>
+
+          <div className="text-sm text-[var(--text-muted)]">
             <div>
-              <span className="font-semibold text-foreground">ID:</span> {ownerId || "—"}
+              <span className="font-semibold text-[var(--text)]">ID:</span>{" "}
+              {ownerId || "-"}
             </div>
             <div>
-              <span className="font-semibold text-foreground">Name:</span> {req.owner?.name || "—"}
+              <span className="font-semibold text-[var(--text)]">Name:</span>{" "}
+              {req.owner?.name || "-"}
             </div>
             <div>
-              <span className="font-semibold text-foreground">Username:</span> {req.owner?.username || "—"}
+              <span className="font-semibold text-[var(--text)]">
+                Username:
+              </span>{" "}
+              {req.owner?.username || "-"}
             </div>
             <div>
-              <span className="font-semibold text-foreground">Email:</span> {req.owner?.email || "—"}
+              <span className="font-semibold text-[var(--text)]">Email:</span>{" "}
+              {req.owner?.email || "-"}
             </div>
             <div>
-              <span className="font-semibold text-foreground">Phone:</span> {req.owner?.phone || "—"}
+              <span className="font-semibold text-[var(--text)]">Phone:</span>{" "}
+              {req.owner?.phone || "-"}
             </div>
             <div>
-              <span className="font-semibold text-foreground">WhatsApp:</span> {req.owner?.whatsapp || "—"}
+              <span className="font-semibold text-[var(--text)]">
+                WhatsApp:
+              </span>{" "}
+              {req.owner?.whatsapp || "-"}
             </div>
             <div>
-              <span className="font-semibold text-foreground">Plan:</span> {req.owner?.subscription || "—"}
+              <span className="font-semibold text-[var(--text)]">Plan:</span>{" "}
+              {req.owner?.subscription || "-"}
             </div>
             <div>
-              <span className="font-semibold text-foreground">Joined:</span> {fmtWhen(req.owner?.createdAt || null)}
+              <span className="font-semibold text-[var(--text)]">Joined:</span>{" "}
+              {fmtWhen(req.owner?.createdAt || null)}
             </div>
           </div>
 
           {ownerId && (
-            <div className="pt-2 border-t border-border space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="space-y-2 border-t border-[var(--border-subtle)] pt-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Request posting ban
               </div>
 
               <form
-                action={`/api/admin/users/${encodeURIComponent(ownerId)}/request-ban`}
+                action={`/api/admin/users/${encodeURIComponent(
+                  ownerId,
+                )}/request-ban`}
                 method="POST"
                 className="grid grid-cols-1 gap-2 sm:grid-cols-6"
               >
                 <input type="hidden" name="action" value="ban" />
                 <div className="sm:col-span-3">
-                  <label className="block text-xs font-semibold text-muted-foreground">Ban until (ISO)</label>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)]">
+                    Ban until (ISO)
+                  </label>
                   <input
                     name="until"
                     placeholder="2026-01-01T00:00:00.000Z"
-                    className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+                    className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   />
                 </div>
                 <div className="sm:col-span-3">
-                  <label className="block text-xs font-semibold text-muted-foreground">Reason (optional)</label>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)]">
+                    Reason (optional)
+                  </label>
                   <input
                     name="reason"
                     placeholder="Spam / abuse..."
-                    className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+                    className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   />
                 </div>
                 <div className="sm:col-span-6 flex flex-wrap gap-2">
@@ -239,23 +288,33 @@ export default async function AdminRequestDetailPage({
                 </div>
               </form>
 
-              <form action={`/api/admin/users/${encodeURIComponent(ownerId)}/request-ban`} method="POST">
+              <form
+                action={`/api/admin/users/${encodeURIComponent(
+                  ownerId,
+                )}/request-ban`}
+                method="POST"
+              >
                 <input type="hidden" name="action" value="unban" />
                 <button type="submit" className="btn-outline text-sm">
                   Unban
                 </button>
               </form>
 
-              <div className="text-xs text-muted-foreground">
-                Current ban: {req.owner?.requestBanUntil ? fmtWhen(req.owner.requestBanUntil) : "None"}
-                {req.owner?.requestBanReason ? <span> • {req.owner.requestBanReason}</span> : null}
+              <div className="text-xs text-[var(--text-muted)]">
+                Current ban:{" "}
+                {req.owner?.requestBanUntil
+                  ? fmtWhen(req.owner.requestBanUntil)
+                  : "None"}
+                {req.owner?.requestBanReason ? (
+                  <span> • {req.owner.requestBanReason}</span>
+                ) : null}
               </div>
             </div>
           )}
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
-          <div className="text-sm font-semibold text-foreground">Actions</div>
+        <div className="space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft">
+          <div className="text-sm font-semibold text-[var(--text)]">Actions</div>
 
           <form action="/api/admin/requests" method="POST" className="space-y-2">
             <input type="hidden" name="action" value="close" />
@@ -263,8 +322,9 @@ export default async function AdminRequestDetailPage({
             <button type="submit" className="btn-outline text-sm">
               Close request
             </button>
-            <div className="text-xs text-muted-foreground">
-              Admin close sets status to <span className="font-semibold">CLOSED</span>.
+            <div className="text-xs text-[var(--text-muted)]">
+              Admin close sets status to{" "}
+              <span className="font-semibold text-[var(--text)]">CLOSED</span>.
             </div>
           </form>
 
@@ -276,8 +336,12 @@ export default async function AdminRequestDetailPage({
             <button type="submit" className="btn-outline text-sm">
               Delete request
             </button>
-            <div className="text-xs text-muted-foreground">
-              Delete is <span className="font-semibold">hard-delete</span>.
+            <div className="text-xs text-[var(--text-muted)]">
+              Delete is{" "}
+              <span className="font-semibold text-[var(--text)]">
+                hard-delete
+              </span>
+              .
             </div>
           </form>
         </div>
@@ -288,9 +352,13 @@ export default async function AdminRequestDetailPage({
 
 function Meta({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border bg-muted/20 p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
+    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-[var(--text)]">
+        {value}
+      </div>
     </div>
   );
 }

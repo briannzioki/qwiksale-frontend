@@ -142,43 +142,51 @@ function ResetPasswordPageInner() {
     pwStrength === "Too short"
       ? 10
       : pwStrength === "Weak"
-      ? 25
-      : pwStrength === "Okay"
-      ? 45
-      : pwStrength === "Good"
-      ? 65
-      : pwStrength === "Strong"
-      ? 85
-      : 100;
+        ? 25
+        : pwStrength === "Okay"
+          ? 45
+          : pwStrength === "Good"
+            ? 65
+            : pwStrength === "Strong"
+              ? 85
+              : 100;
+
+  const pwBarOpacity =
+    pwBarPct < 35 ? "opacity-40" : pwBarPct < 65 ? "opacity-60" : "opacity-85";
 
   /* ---------- Render ---------- */
   return (
-    <div className="container-page py-10">
+    <div className="container-page bg-[var(--bg)] py-10">
       <div className="mx-auto max-w-xl">
-        <div className="rounded-2xl p-6 text-white shadow-soft bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]">
-          <h1 className="text-2xl md:text-3xl font-extrabold">
-            {hasToken ? "Set a new password" : "Reset your password"}
-          </h1>
-          <p className="mt-1 text-white/85">
-            {hasToken
-              ? "Enter a new password for your account."
-              : "We’ll email you a link to reset your password."}
-          </p>
+        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft">
+          <div className="container-page py-8 text-white">
+            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl text-white">
+              {hasToken ? "Set a new password" : "Reset your password"}
+            </h1>
+            <p className="mt-1 text-sm text-white/80">
+              {hasToken
+                ? "Enter a new password for your account."
+                : "We’ll email you a link to reset your password."}
+            </p>
+          </div>
         </div>
 
         {!hasToken ? (
           <form
             onSubmit={onRequest}
-            className="mt-6 rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4"
+            className="mt-6 space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-soft"
           >
             <div>
-              <label htmlFor="email" className="label font-semibold">
+              <label
+                htmlFor="email"
+                className="label font-semibold text-[var(--text)]"
+              >
                 Email
               </label>
               <input
                 id="email"
                 type="email"
-                className="input"
+                className="input border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -192,12 +200,12 @@ function ResetPasswordPageInner() {
               type="submit"
               disabled={requesting}
               aria-busy={requesting}
-              className="btn-gradient-primary w-full"
+              className="btn-gradient-primary w-full focus-visible:outline-none focus-visible:ring-2 ring-focus"
             >
               {requesting ? "Sending…" : "Send reset link"}
             </button>
 
-            <div className="text-xs text-gray-600 dark:text-slate-400 text-center">
+            <div className="text-center text-xs leading-relaxed text-[var(--text-muted)]">
               Remembered it?{" "}
               <Link
                 href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}
@@ -210,17 +218,20 @@ function ResetPasswordPageInner() {
         ) : (
           <form
             onSubmit={onReset}
-            className="mt-6 rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4"
+            className="mt-6 space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-soft"
           >
             <div>
-              <label htmlFor="password" className="label font-semibold">
+              <label
+                htmlFor="password"
+                className="label font-semibold text-[var(--text)]"
+              >
                 New password
               </label>
               <div className="relative">
                 <input
                   id="password"
                   type={showPwd ? "text" : "password"}
-                  className="input pr-24"
+                  className="input pr-24 border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   placeholder="At least 6 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -229,7 +240,7 @@ function ResetPasswordPageInner() {
                 />
                 <button
                   type="button"
-                  className="btn-outline absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs"
+                  className="btn-outline absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
                   onClick={() => setShowPwd((s) => !s)}
                   aria-pressed={showPwd}
                   aria-label={showPwd ? "Hide password" : "Show password"}
@@ -239,28 +250,29 @@ function ResetPasswordPageInner() {
               </div>
 
               <div className="mt-2">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--bg-subtle)]">
                   <div
-                    className={`h-full rounded-full transition-all ${
-                      pwBarPct < 35 ? "bg-red-400" : pwBarPct < 65 ? "bg-yellow-400" : "bg-green-500"
-                    }`}
+                    className={`h-full rounded-full bg-[var(--text)] transition-all ${pwBarOpacity}`}
                     style={{ width: `${pwBarPct}%` }}
                   />
                 </div>
-                <div className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">
+                <div className="mt-1 text-[11px] text-[var(--text-muted)] opacity-80">
                   Strength: {pwStrength}
                 </div>
               </div>
             </div>
 
             <div>
-              <label htmlFor="confirm" className="label font-semibold">
+              <label
+                htmlFor="confirm"
+                className="label font-semibold text-[var(--text)]"
+              >
                 Confirm new password
               </label>
               <input
                 id="confirm"
                 type="password"
-                className="input"
+                className="input border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 placeholder="Repeat password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
@@ -273,7 +285,7 @@ function ResetPasswordPageInner() {
               type="submit"
               disabled={resetting}
               aria-busy={resetting}
-              className="btn-gradient-primary w-full"
+              className="btn-gradient-primary w-full focus-visible:outline-none focus-visible:ring-2 ring-focus"
             >
               {resetting ? "Updating…" : "Update password"}
             </button>
@@ -281,12 +293,12 @@ function ResetPasswordPageInner() {
             {done && (
               <div
                 role="status"
-                className="mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200"
+                className="mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-4 py-3 text-sm text-[var(--text)] shadow-sm"
               >
                 Password updated.{" "}
                 <Link
                   href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}
-                  className="underline"
+                  className="underline underline-offset-2"
                 >
                   Continue to sign in
                 </Link>
@@ -294,7 +306,7 @@ function ResetPasswordPageInner() {
               </div>
             )}
 
-            <div className="text-xs text-gray-600 dark:text-slate-400 text-center">
+            <div className="text-center text-xs leading-relaxed text-[var(--text-muted)]">
               Done?{" "}
               <Link
                 href={`/signin?callbackUrl=${encodeURIComponent(returnTo)}`}

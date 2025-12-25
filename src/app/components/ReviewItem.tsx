@@ -1,4 +1,3 @@
-// src/app/components/ReviewItem.tsx
 "use client";
 
 import React from "react";
@@ -25,8 +24,7 @@ export type ReviewItemProps = {
 function formatDate(input: unknown): string {
   if (!input) return "";
   try {
-    const d =
-      input instanceof Date ? input : new Date(String(input as string));
+    const d = input instanceof Date ? input : new Date(String(input as string));
     if (Number.isNaN(d.getTime())) return "";
     return d.toLocaleString(undefined, {
       year: "numeric",
@@ -91,12 +89,12 @@ export default function ReviewItem({
   return (
     <article
       className={cn(
-        "rounded-xl border border-border bg-card p-3 shadow-sm",
+        "rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 sm:p-3 text-[var(--text)] shadow-sm",
         className,
       )}
       data-review-id={review?.id ?? undefined}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2.5 sm:gap-3">
         {showAvatar && (
           <div className="mt-0.5">
             <UserAvatar
@@ -113,29 +111,25 @@ export default function ReviewItem({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="truncate text-sm font-semibold text-foreground">
+                <span className="truncate text-sm font-semibold text-[var(--text)]">
                   {authorName}
                 </span>
 
                 {verified && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                    <Icon
-                      name="verified"
-                      className="h-3 w-3"
-                      aria-hidden
-                    />
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] sm:text-xs sm:px-2.5 sm:py-1.5 font-semibold leading-none text-[var(--text)]">
+                    <Icon name="verified" className="h-3 w-3" aria-hidden />
                     Verified
                   </span>
                 )}
 
                 {isOwner && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-brandBlue/10 px-2 py-0.5 text-[10px] font-semibold text-brandBlue">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] sm:text-xs sm:px-2.5 sm:py-1.5 font-semibold leading-none text-[var(--text)]">
                     Your review
                   </span>
                 )}
               </div>
 
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs text-[var(--text-muted)]">
                 <ReviewStars rating={rating} size="sm" />
                 {createdAtLabel && <span>• {createdAtLabel}</span>}
               </div>
@@ -147,7 +141,13 @@ export default function ReviewItem({
                   <button
                     type="button"
                     onClick={() => onEditAction?.(review)}
-                    className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted"
+                    className={[
+                      "inline-flex h-9 items-center rounded-xl border px-2.5 text-xs font-semibold shadow-sm transition",
+                      "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)]",
+                      "hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+                      "active:scale-[.99]",
+                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    ].join(" ")}
                   >
                     Edit
                   </button>
@@ -156,7 +156,13 @@ export default function ReviewItem({
                   <button
                     type="button"
                     onClick={() => onDeleteAction?.(review)}
-                    className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                    className={[
+                      "inline-flex h-9 items-center rounded-xl border px-2.5 text-xs font-semibold shadow-sm transition",
+                      "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                      "hover:bg-[var(--bg-subtle)]",
+                      "active:scale-[.99]",
+                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    ].join(" ")}
                   >
                     Delete
                   </button>
@@ -166,13 +172,13 @@ export default function ReviewItem({
           </div>
 
           {title && (
-            <p className="mt-2 text-sm font-medium text-foreground">
+            <p className="mt-1.5 sm:mt-2 text-sm font-semibold text-[var(--text)]">
               {title}
             </p>
           )}
 
           {text && (
-            <p className="mt-1 whitespace-pre-line text-sm text-foreground">
+            <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-[var(--text-muted)]">
               {text}
             </p>
           )}

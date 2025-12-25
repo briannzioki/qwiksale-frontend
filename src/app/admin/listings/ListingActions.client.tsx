@@ -58,11 +58,15 @@ export function ListingActions({
     <button
       type="button"
       onClick={() => toggle(!suspended)}
-      className={`rounded px-2 py-1 text-xs text-white transition ${
-        suspended
-          ? "bg-emerald-600/90 hover:bg-emerald-600"
-          : "bg-red-600/90 hover:bg-red-600"
-      } disabled:opacity-60`}
+      className={[
+        "inline-flex items-center justify-center",
+        "rounded-xl px-2.5 py-1.5 text-xs font-semibold",
+        "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+        "transition hover:bg-[var(--bg-subtle)] active:scale-[.99]",
+        "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+        suspended ? "shadow-sm" : "shadow-sm",
+        "disabled:opacity-60",
+      ].join(" ")}
       disabled={pending}
       aria-busy={pending}
       title={suspended ? "Unsuspend listing" : "Suspend listing"}

@@ -84,7 +84,7 @@ export default function FavoriteButton({
     if (process.env["NODE_ENV"] !== "production") {
       // eslint-disable-next-line no-console
       console.warn(
-        "[FavoriteButton] Missing entity/entityId (or productId/serviceId). Button will render disabled."
+        "[FavoriteButton] Missing entity/entityId (or productId/serviceId). Button will render disabled.",
       );
     }
   }
@@ -106,7 +106,7 @@ export default function FavoriteButton({
       typeof Intl !== "undefined"
         ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 })
         : null,
-    []
+    [],
   );
 
   useEffect(() => {
@@ -123,12 +123,12 @@ export default function FavoriteButton({
       isFavorited
         ? `Remove ${labelPrefix} from favorites`
         : `Add ${labelPrefix} to favorites`,
-    [isFavorited, labelPrefix]
+    [isFavorited, labelPrefix],
   );
   // IMPORTANT: Avoid “Save/Unsave” so we don’t match /save|update|edit/i
   const ariaLabel = useMemo(
     () => (isFavorited ? `Unfavorite ${labelPrefix}` : `Favorite ${labelPrefix}`),
-    [isFavorited, labelPrefix]
+    [isFavorited, labelPrefix],
   );
 
   const onClick = useCallback(
@@ -153,7 +153,9 @@ export default function FavoriteButton({
         if (typeof navigator !== "undefined" && "vibrate" in navigator) {
           try {
             (navigator as any).vibrate?.(12);
-          } catch {/* ignore */}
+          } catch {
+            /* ignore */
+          }
         }
 
         // analytics + events include entity info
@@ -161,7 +163,11 @@ export default function FavoriteButton({
           entity: resolvedEntity,
           entityId: resolvedId,
         });
-        emit("qs:favorite:toggle", { entity: resolvedEntity, entityId: resolvedId, favorited: next });
+        emit("qs:favorite:toggle", {
+          entity: resolvedEntity,
+          entityId: resolvedId,
+          favorited: next,
+        });
 
         if (onToggledAction) await onToggledAction(next);
 
@@ -180,7 +186,7 @@ export default function FavoriteButton({
         }, 1200);
       }
     },
-    [isFavorited, labelPrefix, resolvedEntity, resolvedId, toggle, onToggledAction]
+    [isFavorited, labelPrefix, resolvedEntity, resolvedId, toggle, onToggledAction],
   );
 
   const icon = useMemo(
@@ -200,19 +206,32 @@ export default function FavoriteButton({
         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" />
       </svg>
     ),
-    [isFavorited, size]
+    [isFavorited, size],
   );
 
   const baseClasses =
-    "inline-flex items-center gap-1 rounded-full text-sm transition select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#39a0ca]";
-  const colorClasses = isFavorited
-    ? "text-[#39a0ca] dark:text-[#39a0ca]"
-    : "text-gray-700 dark:text-slate-200";
-  const stateClasses = loading ? "opacity-60 cursor-wait" : "hover:opacity-90 active:opacity-100";
+    "inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold transition select-none " +
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)] " +
+    "active:scale-[.99] disabled:opacity-60 disabled:cursor-not-allowed";
+
+  const colorClasses = isFavorited ? "text-[var(--text)]" : "text-[var(--text-muted)]";
+
+  const stateClasses = loading ? "opacity-60 cursor-wait" : "hover:text-[var(--text)]";
+
   const shapeClasses =
     variant === "icon"
-      ? "p-1.5"
-      : "px-2 py-1 border border-black/10 dark:border-white/15 bg-white/80 dark:bg-white/10";
+      ? [
+          "p-1.5 border",
+          isFavorited
+            ? "border-[var(--border)] bg-[var(--bg-subtle)]"
+            : "border-transparent hover:bg-[var(--bg-subtle)]",
+        ].join(" ")
+      : [
+          "px-2.5 py-1.5 border",
+          isFavorited
+            ? "border-[var(--border)] bg-[var(--bg-subtle)]"
+            : "border-[var(--border-subtle)] bg-[var(--bg)] hover:bg-[var(--bg-subtle)]",
+        ].join(" ");
 
   const c = count ?? 0;
   const visualCount = fmt ? fmt.format(c) : String(c);

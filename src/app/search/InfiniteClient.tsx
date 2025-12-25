@@ -4,11 +4,17 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InfiniteLoader from "@/app/components/InfiniteLoader";
+import VerifiedBadge from "@/app/components/VerifiedBadge";
 import type { Sort } from "./SearchClient";
 
 /* ------------------------------ Types ------------------------------ */
 
 type FeaturedTier = "basic" | "gold" | "diamond";
+
+type SellerBadges = {
+  verified?: boolean | null;
+  tier?: FeaturedTier | string | null;
+};
 
 type Envelope<T> = {
   page: number;
@@ -37,6 +43,8 @@ type ProductHit = {
   /** Optional seller/account flags (if API includes them) */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
+  sellerBadges?: SellerBadges | null;
+
   seller?: {
     id?: string | null;
     username?: string | null;
@@ -44,7 +52,20 @@ type ProductHit = {
     image?: string | null;
     verified?: boolean | null;
     featuredTier?: FeaturedTier | string | null;
+    emailVerified?: unknown;
+    email_verified?: unknown;
+    emailVerifiedAt?: unknown;
+    email_verified_at?: unknown;
+    verifiedAt?: unknown;
+    verified_at?: unknown;
   } | null;
+
+  emailVerified?: unknown;
+  email_verified?: unknown;
+  emailVerifiedAt?: unknown;
+  email_verified_at?: unknown;
+  verifiedAt?: unknown;
+  verified_at?: unknown;
 };
 
 type ServiceHit = {
@@ -67,6 +88,8 @@ type ServiceHit = {
   /** Optional seller/account flags (if API includes them) */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
+  sellerBadges?: SellerBadges | null;
+
   seller?: {
     id?: string | null;
     username?: string | null;
@@ -74,7 +97,20 @@ type ServiceHit = {
     image?: string | null;
     verified?: boolean | null;
     featuredTier?: FeaturedTier | string | null;
+    emailVerified?: unknown;
+    email_verified?: unknown;
+    emailVerifiedAt?: unknown;
+    email_verified_at?: unknown;
+    verifiedAt?: unknown;
+    verified_at?: unknown;
   } | null;
+
+  emailVerified?: unknown;
+  email_verified?: unknown;
+  emailVerifiedAt?: unknown;
+  email_verified_at?: unknown;
+  verifiedAt?: unknown;
+  verified_at?: unknown;
 };
 
 type BaseParams = {
@@ -125,30 +161,114 @@ function coerceFeaturedTier(v: unknown): FeaturedTier | null {
   return null;
 }
 
+function normalizeStoreHandle(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  let s = raw.trim();
+  if (!s) return "";
+  try {
+    s = decodeURIComponent(s);
+  } catch {
+    // ignore
+  }
+  s = s.trim().replace(/^@+/, "");
+  return s;
+}
+
+function isStoreCodeToken(raw: unknown): boolean {
+  const s = normalizeStoreHandle(raw);
+  if (!s) return false;
+  const lower = s.toLowerCase();
+  if (lower === "undefined" || lower === "null" || lower === "nan") return false;
+  if (/^(?:sto|store)[-_]?\d{1,18}$/i.test(s)) return true;
+  if (/^\d{1,18}$/.test(s)) return true;
+  return false;
+}
+
 function pickSellerVerified(raw: any): boolean | null {
   if (!raw || typeof raw !== "object") return null;
 
   const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
+  const sellerObj =
+    seller && typeof seller === "object" && !Array.isArray(seller) ? seller : null;
 
-  const candidates: unknown[] = [
-    raw?.sellerVerified,
-    raw?.seller_verified,
-    raw?.accountVerified,
-    raw?.account_verified,
-    seller?.verified,
-    seller?.isVerified,
-  ];
+  const hasOwn = (o: any, k: string) =>
+    !!o && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k);
 
-  for (const c of candidates) {
-    if (typeof c === "boolean") return c;
+  // ✅ 1) sellerBadges.verified is authoritative IF sellerBadges key exists (even if null)
+  if (hasOwn(raw, "sellerBadges")) {
+    const sb = raw.sellerBadges;
+    if (sb && typeof sb === "object" && !Array.isArray(sb)) {
+      if (hasOwn(sb, "verified")) {
+        const v = (sb as any).verified;
+        return typeof v === "boolean" ? v : null;
+      }
+      return null;
+    }
+    return null;
   }
 
-  const hasSellerContext = Boolean(
-    raw?.sellerId || raw?.sellerName || raw?.seller || raw?.user || raw?.owner || seller,
-  );
+  // ✅ 2) sellerVerified alias is authoritative IF key exists (even if null)
+  if (hasOwn(raw, "sellerVerified")) {
+    const v = (raw as any).sellerVerified;
+    return typeof v === "boolean" ? v : null;
+  }
 
-  if (hasSellerContext && typeof raw?.verified === "boolean") {
-    return raw.verified;
+  const normalizeEmailVerified = (v: unknown): boolean | null => {
+    if (v === null) return false;
+
+    if (typeof v === "boolean") return v;
+
+    if (v instanceof Date) {
+      const t = v.getTime();
+      return Number.isFinite(t) ? true : null;
+    }
+
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) return null;
+      return v > 0;
+    }
+
+    if (typeof v === "string") {
+      const s = v.trim();
+      if (!s) return false;
+
+      const low = s.toLowerCase();
+      if (low === "null" || low === "undefined") return false;
+
+      const parsed = Date.parse(s);
+      if (!Number.isNaN(parsed)) return true;
+
+      if (/^\d+$/.test(s)) {
+        const n = Number(s);
+        if (Number.isFinite(n)) return n > 0;
+      }
+
+      return null;
+    }
+
+    return null;
+  };
+
+  const emailCandidates: Array<[any, string]> = [
+    [raw, "emailVerified"],
+    [raw, "email_verified"],
+    [raw, "emailVerifiedAt"],
+    [raw, "email_verified_at"],
+    [raw, "verifiedAt"],
+    [raw, "verified_at"],
+    [sellerObj, "emailVerified"],
+    [sellerObj, "email_verified"],
+    [sellerObj, "emailVerifiedAt"],
+    [sellerObj, "email_verified_at"],
+    [sellerObj, "verifiedAt"],
+    [sellerObj, "verified_at"],
+  ];
+
+  for (const [o, k] of emailCandidates) {
+    if (!o || !hasOwn(o, k)) continue;
+    const v = (o as any)[k];
+    const norm = normalizeEmailVerified(v);
+    if (typeof norm === "boolean") return norm;
   }
 
   return null;
@@ -159,12 +279,29 @@ function pickSellerFeaturedTier(raw: any): FeaturedTier | null {
 
   const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
 
+  const hasOwn = (o: any, k: string) =>
+    !!o && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k);
+
+  // ✅ 1) sellerBadges.tier is authoritative IF sellerBadges key exists (even if null)
+  if (hasOwn(raw, "sellerBadges")) {
+    const sb = raw.sellerBadges;
+    if (sb && typeof sb === "object" && !Array.isArray(sb)) {
+      if (hasOwn(sb, "tier")) return coerceFeaturedTier((sb as any).tier);
+      return null;
+    }
+    return null;
+  }
+
+  // ✅ 2) sellerFeaturedTier alias is authoritative IF key exists (even if null)
+  if (hasOwn(raw, "sellerFeaturedTier")) {
+    return coerceFeaturedTier((raw as any).sellerFeaturedTier);
+  }
+
   const candidates: unknown[] = [
     seller?.featuredTier,
     seller?.featured_tier,
     seller?.tier,
     seller?.featuredLevel,
-    raw?.sellerFeaturedTier,
     raw?.seller_featured_tier,
     raw?.accountFeaturedTier,
     raw?.account_featured_tier,
@@ -195,7 +332,9 @@ function pickSellerUsername(raw: any): string | null {
   for (const c of candidates) {
     if (typeof c === "string") {
       const s = c.trim();
-      if (s) return s;
+      if (!s) continue;
+      if (isStoreCodeToken(s)) continue;
+      return s;
     }
   }
   return null;
@@ -220,7 +359,9 @@ function pickSellerId(raw: any): string | null {
   for (const c of candidates) {
     if (typeof c === "string" || typeof c === "number") {
       const s = String(c).trim();
-      if (s) return s;
+      if (!s) continue;
+      if (isStoreCodeToken(s)) continue;
+      return s;
     }
   }
   return null;
@@ -264,9 +405,11 @@ function storeHrefFrom(raw: any): string | null {
 }
 
 function fmtKES(n?: number | null) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "—";
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "-";
   return `KES ${n.toLocaleString("en-KE")}`;
 }
+
+/* ------------------------ Badges (single canonical component) ------------------------ */
 
 function SellerBadgesRow({
   verified,
@@ -275,51 +418,29 @@ function SellerBadgesRow({
   verified?: boolean | null;
   tier?: FeaturedTier | null;
 }) {
-  const showVerified = typeof verified === "boolean";
-  const showTier = !!tier;
-  if (!showVerified && !showTier) return null;
+  const hasVerified = typeof verified === "boolean";
+  const hasTier = tier === "basic" || tier === "gold" || tier === "diamond";
+  if (!hasVerified && !hasTier) return null;
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      {showVerified ? (
-        verified ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
-            <span aria-hidden>✓</span>
-            <span>Verified</span>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
-            <span aria-hidden>!</span>
-            <span>Unverified</span>
-          </span>
-        )
-      ) : null}
-
-      {tier ? (
-        tier === "gold" ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 px-2 py-0.5 text-[11px] font-semibold text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100">
-            <span aria-hidden>★</span>
-            <span>Featured Gold</span>
-          </span>
-        ) : tier === "diamond" ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 px-2 py-0.5 text-[11px] font-semibold text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100">
-            <span aria-hidden>💎</span>
-            <span>Featured Diamond</span>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground">
-            <span aria-hidden>★</span>
-            <span>Featured Basic</span>
-          </span>
-        )
-      ) : null}
+    <div className="mt-1.5 sm:mt-2">
+      <VerifiedBadge
+        {...(hasVerified ? { verified } : {})}
+        {...(hasTier ? { featuredTier: tier } : {})}
+        featured={false}
+      />
     </div>
   );
 }
 
 /* ---------------------------- Component --------------------------- */
 
-export function InfiniteClient({ endpoint, initial, params, renderInitial = true }: Props) {
+export function InfiniteClient({
+  endpoint,
+  initial,
+  params,
+  renderInitial = true,
+}: Props) {
   const isProduct = params.type === "product";
 
   // track IDs to avoid duplicates
@@ -337,9 +458,13 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
     renderInitial ? [((initial?.items as any) ?? [])] : [],
   );
   const [page, setPage] = useState<number>(initial?.page ?? 1);
-  const [totalPages, setTotalPages] = useState<number>(initial?.totalPages ?? 1);
+  const [totalPages, setTotalPages] = useState<number>(
+    initial?.totalPages ?? 1,
+  );
   const [loading, setLoading] = useState<boolean>(false);
-  const [done, setDone] = useState<boolean>((initial?.page ?? 1) >= (initial?.totalPages ?? 1));
+  const [done, setDone] = useState<boolean>(
+    (initial?.page ?? 1) >= (initial?.totalPages ?? 1),
+  );
   const [error, setError] = useState<string | null>(null);
 
   const items = useMemo(() => pages.flat(), [pages]);
@@ -378,8 +503,10 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
         brand: params.brand || undefined,
         condition: params.condition || undefined,
         featured: params.featured ? true : undefined,
-        minPrice: typeof params.minPrice === "number" ? params.minPrice : undefined,
-        maxPrice: typeof params.maxPrice === "number" ? params.maxPrice : undefined,
+        minPrice:
+          typeof params.minPrice === "number" ? params.minPrice : undefined,
+        maxPrice:
+          typeof params.maxPrice === "number" ? params.maxPrice : undefined,
         sort: params.sort,
         page: nextPage,
         pageSize: params.pageSize,
@@ -392,7 +519,9 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
 
       if (res.status === 429) {
         const j = await res.json().catch(() => ({}));
-        setError(j?.error || "You’re loading too fast. Please wait and try again.");
+        setError(
+          j?.error || "You’re loading too fast. Please wait and try again.",
+        );
         setLoading(false);
         return;
       }
@@ -403,20 +532,29 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
         return;
       }
 
-      const data = (await res.json()) as Envelope<ProductHit> | Envelope<ServiceHit>;
+      const data = (await res.json()) as
+        | Envelope<ProductHit>
+        | Envelope<ServiceHit>;
 
       // De-duplicate by id
-      const fresh = (Array.isArray(data.items) ? data.items : []).filter((it: any) => {
-        const id = String(it?.id);
-        if (idsRef.current.has(id)) return false;
-        idsRef.current.add(id);
-        return true;
-      });
+      const fresh = (Array.isArray(data.items) ? data.items : []).filter(
+        (it: any) => {
+          const id = String(it?.id);
+          if (idsRef.current.has(id)) return false;
+          idsRef.current.add(id);
+          return true;
+        },
+      );
 
       setPages((prev) => (fresh.length ? [...prev, fresh as any] : prev));
       setPage(typeof data.page === "number" ? data.page : nextPage);
-      setTotalPages(typeof data.totalPages === "number" ? data.totalPages : totalPages);
-      if ((typeof data.page === "number" ? data.page : nextPage) >= (data.totalPages ?? totalPages)) {
+      setTotalPages(
+        typeof data.totalPages === "number" ? data.totalPages : totalPages,
+      );
+      if (
+        (typeof data.page === "number" ? data.page : nextPage) >=
+        (data.totalPages ?? totalPages)
+      ) {
         setDone(true);
       }
     } catch (e: any) {
@@ -494,7 +632,9 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
     };
 
     const initialEl =
-      typeof document !== "undefined" ? document.querySelector("[data-grid-sentinel]") : null;
+      typeof document !== "undefined"
+        ? document.querySelector("[data-grid-sentinel]")
+        : null;
     if (initialEl) attach(initialEl);
 
     if (typeof MutationObserver !== "undefined" && typeof document !== "undefined") {
@@ -527,8 +667,16 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
   return (
     <>
       {(renderInitial ? (initial?.items?.length ?? 0) : items.length) > 0 && (
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {(renderInitial ? items : items).map((it: any) => {
+        <div
+          className={[
+            "mt-3 grid gap-3",
+            "grid-cols-1 min-[420px]:grid-cols-2",
+            "sm:mt-4 sm:gap-4",
+            "md:grid-cols-3 md:gap-6",
+            "xl:grid-cols-4",
+          ].join(" ")}
+        >
+          {items.map((it: any) => {
             if (isProduct) {
               const p = it as ProductHit;
               const href = `/product/${encodeURIComponent(String(p.id))}`;
@@ -543,18 +691,19 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
               return (
                 <div
                   key={`p-${p.id}`}
-                  className="group h-full overflow-hidden rounded-2xl border border-border bg-card/90 shadow-sm transition hover:border-brandBlue/70 hover:bg-card"
+                  className={[
+                    "group h-full overflow-hidden rounded-2xl border shadow-soft transition",
+                    "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+                    "hover:border-[var(--border)] hover:bg-[var(--bg-subtle)]",
+                  ].join(" ")}
                 >
                   <Link
                     href={href}
                     prefetch={false}
                     aria-label={`Product: ${p.name}`}
-                    className="block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="block h-full focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   >
-                    <div
-                      className="relative overflow-hidden bg-muted"
-                      style={{ aspectRatio: "4 / 3" }}
-                    >
+                    <div className="relative h-36 w-full overflow-hidden bg-[var(--bg-subtle)] sm:h-44">
                       {p.image ? (
                         <img
                           src={p.image}
@@ -564,32 +713,34 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
                           className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
                         />
                       ) : (
-                        <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
                           No photo
                         </div>
                       )}
                     </div>
 
-                    <div className="p-3">
-                      <div className="line-clamp-1 text-sm font-semibold text-foreground">
+                    <div className="p-2.5 sm:p-3">
+                      <div className="line-clamp-1 text-sm font-semibold text-[var(--text)]">
                         {p.name}
                       </div>
 
                       <SellerBadgesRow verified={sellerVerified} tier={sellerTier} />
 
-                      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                        <span className="line-clamp-1">{p.category || p.subcategory || "—"}</span>
-                        <span>{hasPrice ? fmtKES(p.price) : "—"}</span>
+                      <div className="mt-1.5 flex items-center justify-between text-[11px] text-[var(--text-muted)] sm:mt-2 sm:text-xs">
+                        <span className="line-clamp-1">
+                          {p.category || p.subcategory || "-"}
+                        </span>
+                        <span>{hasPrice ? fmtKES(p.price) : "-"}</span>
                       </div>
                     </div>
                   </Link>
 
                   {storeHref && (
-                    <div className="border-t border-border px-3 py-2">
+                    <div className="border-t border-[var(--border-subtle)] px-2.5 py-2 sm:px-3">
                       <Link
                         href={storeHref}
                         prefetch={false}
-                        className="inline-flex items-center gap-2 text-xs font-semibold text-brandBlue hover:underline"
+                        className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text)] hover:underline underline-offset-4"
                         aria-label={`View seller: ${sellerLabel || "Seller"}`}
                       >
                         <span className="truncate">{sellerLabel}</span>
@@ -614,15 +765,19 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
             return (
               <div
                 key={`s-${s.id}`}
-                className="group h-full overflow-hidden rounded-2xl border border-border bg-card/90 shadow-sm transition hover:border-brandBlue/70 hover:bg-card"
+                className={[
+                  "group h-full overflow-hidden rounded-2xl border shadow-soft transition",
+                  "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+                  "hover:border-[var(--border)] hover:bg-[var(--bg-subtle)]",
+                ].join(" ")}
               >
                 <Link
                   href={href}
                   prefetch={false}
                   aria-label={`Service: ${name}`}
-                  className="block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="block h-full focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 >
-                  <div className="relative overflow-hidden bg-muted" style={{ aspectRatio: "4 / 3" }}>
+                  <div className="relative h-36 w-full overflow-hidden bg-[var(--bg-subtle)] sm:h-44">
                     {s.image ? (
                       <img
                         src={s.image}
@@ -632,30 +787,34 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
                         className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
                         No photo
                       </div>
                     )}
                   </div>
 
-                  <div className="p-3">
-                    <div className="line-clamp-1 text-sm font-semibold text-foreground">{name}</div>
+                  <div className="p-2.5 sm:p-3">
+                    <div className="line-clamp-1 text-sm font-semibold text-[var(--text)]">
+                      {name}
+                    </div>
 
                     <SellerBadgesRow verified={sellerVerified} tier={sellerTier} />
 
-                    <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                      <span className="line-clamp-1">{s.serviceArea || s.availability || "—"}</span>
-                      <span>{hasPrice ? fmtKES(s.price) : "—"}</span>
+                    <div className="mt-1.5 flex items-center justify-between text-[11px] text-[var(--text-muted)] sm:mt-2 sm:text-xs">
+                      <span className="line-clamp-1">
+                        {s.serviceArea || s.availability || "-"}
+                      </span>
+                      <span>{hasPrice ? fmtKES(s.price) : "-"}</span>
                     </div>
                   </div>
                 </Link>
 
                 {storeHref && (
-                  <div className="border-t border-border px-3 py-2">
+                  <div className="border-t border-[var(--border-subtle)] px-2.5 py-2 sm:px-3">
                     <Link
                       href={storeHref}
                       prefetch={false}
-                      className="inline-flex items-center gap-2 text-xs font-semibold text-brandBlue hover:underline"
+                      className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text)] hover:underline underline-offset-4"
                       aria-label={`View seller: ${sellerLabel || "Seller"}`}
                     >
                       <span className="truncate">{sellerLabel}</span>
@@ -671,14 +830,14 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
       {error && (
         <div
           role="alert"
-          className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200"
+          className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-sm text-[var(--text)] shadow-soft"
         >
           <span>{error}</span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onRetry}
-              className="rounded-md border border-amber-300 bg-white/80 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-white dark:border-amber-800/60 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-900/30"
+              className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
             >
               Retry
             </button>
@@ -686,8 +845,11 @@ export function InfiniteClient({ endpoint, initial, params, renderInitial = true
         </div>
       )}
 
-      <div ref={sentinelRef} className="mt-4">
-        <InfiniteLoader onLoadAction={fetchNext} disabled={done || loading || !!error} />
+      <div ref={sentinelRef} className="mt-3 sm:mt-4">
+        <InfiniteLoader
+          onLoadAction={fetchNext}
+          disabled={done || loading || !!error}
+        />
       </div>
     </>
   );

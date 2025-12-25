@@ -9,6 +9,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/app/lib/prisma";
 import { checkRateLimit } from "@/app/lib/ratelimit";
 import { tooMany } from "@/app/lib/ratelimit-response";
+import type { FeaturedTier } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 /**
  * Full-text-ish listing search (pg_trgm similarity + ILIKE fallback) with filters & facets.
@@ -87,61 +92,68 @@ interface ConditionFacet {
 
 /* ------------------------ seller badge helpers ------------------------ */
 
-type SellerTier = "basic" | "gold" | "diamond";
-type SellerBadgeInfo = { verified: boolean; tier: SellerTier };
+type SellerBadgesObj = { verified: boolean | null; tier: FeaturedTier | null };
 
-function normalizeTier(v: unknown): SellerTier {
-  const t = String(v ?? "").trim().toLowerCase();
-  if (t.includes("diamond")) return "diamond";
-  if (t.includes("gold")) return "gold";
-  return "basic";
-}
+type SellerBadgePayload = {
+  sellerVerified: boolean | null;
+  sellerFeaturedTier: FeaturedTier | null;
+  sellerBadges: SellerBadgesObj;
+  [k: string]: unknown;
+};
 
-function pickVerifiedFromUserJson(u: any): boolean | null {
-  if (!u || typeof u !== "object") return null;
-  const keys = [
-    "verified",
-    "isVerified",
-    "accountVerified",
-    "sellerVerified",
-    "isSellerVerified",
-    "verifiedSeller",
-    "isAccountVerified",
-  ];
-  for (const k of keys) {
-    const v = (u as any)[k];
-    if (typeof v === "boolean") return v;
-    if (typeof v === "number") return v === 1;
-    if (typeof v === "string") {
-      const s = v.trim().toLowerCase();
-      if (["1", "true", "yes", "verified"].includes(s)) return true;
-      if (["0", "false", "no", "unverified"].includes(s)) return false;
-    }
-  }
-  // date-style fallbacks
-  const at =
-    (u as any)?.verifiedAt ??
-    (u as any)?.verified_on ??
-    (u as any)?.verifiedOn ??
-    (u as any)?.verificationDate ??
-    null;
-  if (typeof at === "string" && at.trim()) return true;
+function toNullableBool(v: unknown): boolean | null {
+  if (v === true) return true;
+  if (v === false) return false;
   return null;
 }
 
-function pickTierFromUserJson(u: any): SellerTier {
-  if (!u || typeof u !== "object") return "basic";
-  const v =
-    (u as any).featuredTier ??
-    (u as any).subscriptionTier ??
-    (u as any).subscription ??
-    (u as any).plan ??
-    (u as any).tier;
-  return normalizeTier(v);
+function toNullableTier(v: unknown): FeaturedTier | null {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("diamond")) return "diamond";
+  if (t.includes("gold")) return "gold";
+  if (t.includes("basic")) return "basic";
+  return null;
+}
+
+/**
+ * Canonical badge shaper:
+ * - never forces defaults when unknown (nulls stay null)
+ * - keeps canonical keys aligned with other list endpoints
+ * - preserves sellerBadges when provided by resolver
+ */
+function canonicalizeSellerBadges(raw: any): SellerBadgePayload {
+  const sellerVerified = toNullableBool(raw?.sellerVerified ?? raw?.sellerBadges?.verified);
+  const sellerFeaturedTier = toNullableTier(raw?.sellerFeaturedTier ?? raw?.sellerBadges?.tier);
+
+  let base: any = {};
+  try {
+    base = (buildSellerBadgeFields(sellerVerified, sellerFeaturedTier) as any) ?? {};
+  } catch {
+    base = {};
+  }
+
+  base.sellerVerified = sellerVerified;
+  base.sellerFeaturedTier = sellerFeaturedTier;
+
+  const rawBadges = raw?.sellerBadges;
+  if (rawBadges && typeof rawBadges === "object" && !Array.isArray(rawBadges)) {
+    base.sellerBadges = {
+      verified: toNullableBool((rawBadges as any).verified),
+      tier: toNullableTier((rawBadges as any).tier),
+    } satisfies SellerBadgesObj;
+  } else {
+    base.sellerBadges = {
+      verified: sellerVerified,
+      tier: sellerFeaturedTier,
+    } satisfies SellerBadgesObj;
+  }
+
+  return base as SellerBadgePayload;
 }
 
 async function fetchSellerBadgeMap(ids: string[]) {
-  const out = new Map<string, SellerBadgeInfo>();
+  const out = new Map<string, SellerBadgePayload>();
   const uniq = Array.from(new Set(ids.filter(Boolean)));
   if (!uniq.length) return out;
 
@@ -155,13 +167,15 @@ async function fetchSellerBadgeMap(ids: string[]) {
     for (const r of rows) {
       const id = String(r?.id ?? "");
       if (!id) continue;
-      const u = r?.u;
-      const verified = pickVerifiedFromUserJson(u);
-      const tier = pickTierFromUserJson(u);
-      out.set(id, { verified: verified ?? false, tier });
+
+      const u = r?.u ?? null;
+
+      // ✅ emailVerified-only resolution happens inside resolver
+      const resolved = resolveSellerBadgeFieldsFromUserLike(u);
+      out.set(id, canonicalizeSellerBadges(resolved));
     }
   } catch {
-    // ignore: defaults applied by caller
+    // ignore: caller will attach canonical nulls
   }
 
   return out;
@@ -170,34 +184,18 @@ async function fetchSellerBadgeMap(ids: string[]) {
 /**
  * SQL expression that safely interprets seller verification from to_jsonb(u)
  * without hard-depending on columns existing.
+ *
+ * VerifiedOnly must check ONLY emailVerified-ish fields.
  */
 function sellerVerifiedSqlExpr() {
   return `
     CASE
       WHEN COALESCE(
-        NULLIF(to_jsonb(u)->>'verifiedAt',''),
-        NULLIF(to_jsonb(u)->>'verified_on',''),
-        NULLIF(to_jsonb(u)->>'verifiedOn',''),
-        NULLIF(to_jsonb(u)->>'verificationDate','')
+        NULLIF(to_jsonb(u)->>'emailVerified',''),
+        NULLIF(to_jsonb(u)->>'email_verified',''),
+        NULLIF(to_jsonb(u)->>'emailVerifiedAt',''),
+        NULLIF(to_jsonb(u)->>'email_verified_at','')
       ) IS NOT NULL THEN TRUE
-      WHEN LOWER(COALESCE(
-        to_jsonb(u)->>'verified',
-        to_jsonb(u)->>'isVerified',
-        to_jsonb(u)->>'accountVerified',
-        to_jsonb(u)->>'sellerVerified',
-        to_jsonb(u)->>'isSellerVerified',
-        to_jsonb(u)->>'verifiedSeller',
-        to_jsonb(u)->>'isAccountVerified'
-      )) IN ('1','true','t','yes','verified') THEN TRUE
-      WHEN LOWER(COALESCE(
-        to_jsonb(u)->>'verified',
-        to_jsonb(u)->>'isVerified',
-        to_jsonb(u)->>'accountVerified',
-        to_jsonb(u)->>'sellerVerified',
-        to_jsonb(u)->>'isSellerVerified',
-        to_jsonb(u)->>'verifiedSeller',
-        to_jsonb(u)->>'isAccountVerified'
-      )) IN ('0','false','f','no','unverified') THEN FALSE
       ELSE FALSE
     END
   `;
@@ -265,7 +263,7 @@ export async function GET(req: NextRequest) {
     else if (condition === "pre-owned")
       baseFilters.push(`LOWER(l."condition") = ${ph(baseParams, "pre-owned")}`);
 
-    // ✅ FIX: verifiedOnly must filter SELLER verification, not listing "featured"
+    // ✅ verifiedOnly filters SELLER verification (emailVerified-only)
     if (verifiedOnly) baseFilters.push(`(${sellerVerifiedSqlExpr()}) = TRUE`);
 
     const baseWhere = baseFilters.length ? `WHERE ${baseFilters.join(" AND ")}` : "";
@@ -479,9 +477,9 @@ export async function GET(req: NextRequest) {
       hasMore,
       items: rows.map((r: Row) => {
         const sid = r.sellerId ?? null;
-        const b = sid ? badgeMap.get(sid) : undefined;
-        const verified = b?.verified ?? false;
-        const tier = b?.tier ?? "basic";
+        const resolved = sid ? badgeMap.get(sid) : undefined;
+        const badges = resolved ?? canonicalizeSellerBadges(null);
+
         return {
           id: r.id,
           title: r.title,
@@ -493,19 +491,21 @@ export async function GET(req: NextRequest) {
           condition: r.condition,
           featured: r.featured,
           sellerId: sid,
-          sellerVerified: verified,
-          sellerFeaturedTier: tier,
-          sellerBadges: { verified, tier },
+          ...badges,
           createdAt:
             r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
         };
       }),
       facets: {
-        towns: towns.filter((f: TownFacet) => f.town).map((f: TownFacet) => ({ value: f.town, count: f.count })),
+        towns: towns
+          .filter((f: TownFacet) => f.town)
+          .map((f: TownFacet) => ({ value: f.town, count: f.count })),
         categories: categories
           .filter((f: CategoryFacet) => f.category)
           .map((f: CategoryFacet) => ({ value: f.category, count: f.count })),
-        brands: brands.filter((f: BrandFacet) => f.brand).map((f: BrandFacet) => ({ value: f.brand, count: f.count })),
+        brands: brands
+          .filter((f: BrandFacet) => f.brand)
+          .map((f: BrandFacet) => ({ value: f.brand, count: f.count })),
         conditions: conditions
           .filter((f: ConditionFacet) => f.condition)
           .map((f: ConditionFacet) => ({ value: f.condition, count: f.count })),

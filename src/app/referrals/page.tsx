@@ -1,4 +1,3 @@
-// src/app/referrals/page.tsx
 "use client";
 // src/app/referrals/page.tsx
 
@@ -124,11 +123,7 @@ export default function ReferralsPage() {
     if (!shareUrl) return;
     const text = `Join me on QwikSale: ${shareUrl}`;
     const nav = navigator as unknown as {
-      share?: (data: {
-        title?: string;
-        text?: string;
-        url?: string;
-      }) => Promise<void>;
+      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
     };
 
     if (typeof nav?.share === "function") {
@@ -179,82 +174,93 @@ export default function ReferralsPage() {
   }
 
   return (
-    <div className="container-page py-8">
-      <div className="mx-auto max-w-3xl space-y-6">
+    <div className="container-page bg-[var(--bg)] py-4 sm:py-6 text-[var(--text)]">
+      <div className="mx-auto max-w-3xl space-y-4 sm:space-y-6">
         <div className="hero-surface">
-          <h1 className="text-2xl md:text-3xl font-extrabold">
+          <h1 className="text-xl font-extrabold sm:text-2xl md:text-3xl">
             Refer &amp; Earn
           </h1>
-          <p className="text-sm text-white/80">
+          <p className="mt-1 text-xs text-white/80 sm:text-sm">
             Invite friends to QwikSale. Get <b>30 days of GOLD</b> for every 10
             qualified referrals.
           </p>
         </div>
 
-        <div className="card-surface p-4 space-y-4">
+        <div className="card-surface space-y-4 p-3 sm:p-4">
           {loading ? (
-            <div className="text-sm text-gray-600 dark:text-slate-300">
-              Loading…
-            </div>
+            <div className="text-sm text-[var(--text-muted)]">Loading…</div>
           ) : (
             <>
               <div>
-                <div className="text-sm text-gray-600 mb-1">
+                <div className="mb-1 text-xs text-[var(--text-muted)] sm:text-sm">
                   Your referral code
                 </div>
-                <div className="inline-flex items-center gap-3 rounded-xl border px-3 py-2 bg-white dark:bg-slate-900">
-                  <code className="font-mono text-sm">{code || "—"}</code>
-                  <span className="opacity-60" aria-hidden>
-                    •
-                  </span>
-                  <button
-                    className="text-sm underline"
-                    onClick={copy}
-                    disabled={!shareUrl}
-                  >
-                    Copy signup link
-                  </button>
-                  <span className="opacity-60" aria-hidden>
-                    •
-                  </span>
-                  <button
-                    className="text-sm underline"
-                    onClick={share}
-                    disabled={!shareUrl}
-                  >
-                    Share
-                  </button>
-                </div>
-                <div className="mt-2 text-xs text-gray-500 break-all">
-                  {shareUrl || "—"}
-                </div>
-                <div className="mt-3">
-                  <a
-                    href={`https://wa.me/?text=${encodeURIComponent(
-                      `Join me on QwikSale: ${shareUrl}`,
-                    )}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg border px-4 py-2 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
-                    aria-disabled={!shareUrl}
-                  >
-                    Share on WhatsApp
-                  </a>
+
+                {/* On phones: stack actions, no giant pill row */}
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <code className="font-mono text-sm">{code || "-"}</code>
+
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        className="btn-outline h-9 px-3 text-xs sm:text-sm"
+                        onClick={copy}
+                        disabled={!shareUrl}
+                        type="button"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        className="btn-outline h-9 px-3 text-xs sm:text-sm"
+                        onClick={share}
+                        disabled={!shareUrl}
+                        type="button"
+                      >
+                        Share
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 break-all text-[11px] text-[var(--text-muted)] sm:text-xs">
+                    {shareUrl || "-"}
+                  </div>
+
+                  <div className="mt-3">
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(
+                        `Join me on QwikSale: ${shareUrl}`,
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-9 w-full items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-4 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:w-auto sm:text-sm"
+                      aria-disabled={!shareUrl}
+                    >
+                      Share on WhatsApp
+                    </a>
+                  </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border bg-white dark:bg-slate-900 p-4">
-                  <div className="text-sm text-gray-500">Invited</div>
-                  <div className="text-2xl font-bold">{counts.invited}</div>
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4">
+                  <div className="text-xs text-[var(--text-muted)] sm:text-sm">
+                    Invited
+                  </div>
+                  <div className="text-xl font-bold text-[var(--text)] sm:text-2xl">
+                    {counts.invited}
+                  </div>
                 </div>
-                <div className="rounded-xl border bg-white dark:bg-slate-900 p-4">
-                  <div className="text-sm text-gray-500">Qualified</div>
-                  <div className="text-2xl font-bold">{counts.qualified}</div>
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4">
+                  <div className="text-xs text-[var(--text-muted)] sm:text-sm">
+                    Qualified
+                  </div>
+                  <div className="text-xl font-bold text-[var(--text)] sm:text-2xl">
+                    {counts.qualified}
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-2 text-xs text-gray-500">
+              <div className="pt-1 text-xs text-[var(--text-muted)]">
                 A referral qualifies when your friend creates an account (you
                 can later tighten this to phone verification or first listing
                 posted).
@@ -263,14 +269,17 @@ export default function ReferralsPage() {
           )}
         </div>
 
-        <div className="card-surface p-4 space-y-3">
-          <div className="text-sm font-semibold">Have a code?</div>
+        <div className="card-surface space-y-3 p-3 sm:p-4">
+          <div className="text-sm font-semibold text-[var(--text)]">
+            Have a code?
+          </div>
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
               void claim();
             }}
-            className="flex gap-2"
+            className="flex flex-col gap-2 min-[420px]:flex-row"
           >
             <input
               className="input flex-1"
@@ -284,19 +293,20 @@ export default function ReferralsPage() {
             <button
               type="submit"
               disabled={claiming || !refInput.trim()}
-              className="btn-gradient-primary"
+              className="btn-gradient-primary h-9 px-4 text-xs sm:text-sm"
             >
               {claiming ? "Claiming…" : "Claim"}
             </button>
           </form>
-          <div className="text-xs text-gray-500">
-            Tip: If you arrived via <code className="font-mono">?ref=CODE</code>
-            , we’ll remember it—just sign up, then claim.
+
+          <div className="text-xs text-[var(--text-muted)]">
+            Tip: If you arrived via <code className="font-mono">?ref=CODE</code>,
+            we’ll remember it - just sign up, then claim.
           </div>
         </div>
 
         <div className="text-sm">
-          <Link href="/dashboard" className="underline">
+          <Link href="/dashboard" className="underline underline-offset-2">
             Back to dashboard
           </Link>
         </div>

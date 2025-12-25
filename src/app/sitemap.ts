@@ -28,13 +28,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();
   const now = new Date();
 
+  // Only include clearly-public routes here (avoid gated/private URLs).
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: `${base}/`, lastModified: now, changeFrequency: "daily", priority: 1 },
     { url: `${base}/search`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
-    { url: `${base}/sell`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
+    { url: `${base}/about`, lastModified: now, changeFrequency: "yearly", priority: 0.4 },
+    { url: `${base}/contact`, lastModified: now, changeFrequency: "yearly", priority: 0.4 },
+    { url: `${base}/pricing`, lastModified: now, changeFrequency: "yearly", priority: 0.4 },
+    { url: `${base}/help`, lastModified: now, changeFrequency: "yearly", priority: 0.4 },
+    { url: `${base}/safety`, lastModified: now, changeFrequency: "yearly", priority: 0.35 },
     { url: `${base}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
     { url: `${base}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${base}/account/billing`, lastModified: now, changeFrequency: "monthly", priority: 0.2 },
+    { url: `${base}/donate`, lastModified: now, changeFrequency: "yearly", priority: 0.2 },
   ];
 
   if (process.env["SKIP_SITEMAP_DB"] === "1") return staticRoutes;

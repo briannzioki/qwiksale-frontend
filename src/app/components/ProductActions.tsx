@@ -1,5 +1,5 @@
 // src/app/components/ProductActions.tsx
-// SERVER COMPONENT — guarantees the "Visit Store" link is SSR-visible and provides a guest fallback.
+// SERVER COMPONENT - guarantees the "Visit Store" link is SSR-visible and provides a guest fallback.
 
 import type React from "react";
 import Link from "next/link";
@@ -39,9 +39,20 @@ export default function ProductActions({
 
   const guestLabel = kind === "service" ? "Message provider" : "Message seller";
 
+  const actionButtonCls = [
+    "rounded-xl border px-3 py-2 text-sm font-semibold shadow-sm transition",
+    "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+    "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+    "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
+  ].join(" ");
+
   return (
     <div
-      className={["relative z-[5] mt-3 flex flex-wrap items-center gap-3", className]
+      className={[
+        "relative z-[5] mt-3 flex flex-wrap items-center gap-3",
+        "text-[var(--text)]",
+        className,
+      ]
         .filter(Boolean)
         .join(" ")}
       data-actions={kind}
@@ -56,7 +67,7 @@ export default function ProductActions({
         prefetch={false}
         aria-label="Visit Store"
         data-testid="visit-store-link"
-        className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800"
+        className={actionButtonCls}
       >
         Visit Store
       </Link>
@@ -65,7 +76,7 @@ export default function ProductActions({
       {isAuthed === false && (
         <button
           type="button"
-          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800"
+          className={actionButtonCls}
           aria-label={guestLabel}
           onClick={() => {
             // eslint-disable-next-line no-alert

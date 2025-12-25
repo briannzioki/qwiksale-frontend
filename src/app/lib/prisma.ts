@@ -3,7 +3,22 @@
 // Safe for server components and route handlers; avoid from Edge.
 
 import "server-only";
-import prisma from "@/lib/db";
+import prismaFromDb from "@/lib/db";
+
+type PrismaFromDb = typeof prismaFromDb;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __qwiksale_app_prisma: PrismaFromDb | undefined;
+}
+
+// In dev (and Playwright runs using dev server), module reloads can cause multiple clients.
+// Cache on globalThis to prevent connection-pool explosions even if the upstream import changes.
+const prisma: PrismaFromDb = globalThis.__qwiksale_app_prisma ?? prismaFromDb;
+
+if (process.env.NODE_ENV !== "production") {
+  globalThis.__qwiksale_app_prisma = prisma;
+}
 
 export { prisma };
 

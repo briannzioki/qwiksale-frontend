@@ -14,8 +14,7 @@ export default function AdminProductActions({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState<"feature" | "delete" | null>(null);
-  const [optimisticFeatured, setOptimisticFeatured] =
-    useState(featured);
+  const [optimisticFeatured, setOptimisticFeatured] = useState(featured);
 
   async function patchFeature(target: boolean, force = false) {
     const r = await fetch(
@@ -83,14 +82,11 @@ export default function AdminProductActions({
     setBusy("delete");
     try {
       // Deletion stays on the main resource route (it already allows owner/admin)
-      const r = await fetch(
-        `/api/products/${encodeURIComponent(id)}`,
-        {
-          method: "DELETE",
-          credentials: "same-origin",
-          cache: "no-store",
-        },
-      );
+      const r = await fetch(`/api/products/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
       if (!r.ok) {
         const j = (await r.json().catch(() => ({}))) as any;
         alert(j?.error || "Failed to delete");
@@ -114,18 +110,14 @@ export default function AdminProductActions({
         disabled={isBusy}
         aria-pressed={optimisticFeatured}
         aria-busy={busy === "feature" || undefined}
-        className={`rounded border px-3 py-1 text-sm transition ${
+        className={`rounded-xl border px-3 py-1 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 ring-focus ${
           optimisticFeatured
-            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-            : "hover:bg-gray-50"
+            ? "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+            : "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] hover:bg-[var(--bg-subtle)]"
         } ${isBusy ? "cursor-wait opacity-60" : ""}`}
         title={optimisticFeatured ? "Unfeature listing" : "Feature listing"}
       >
-        {busy === "feature"
-          ? "…"
-          : optimisticFeatured
-            ? "Unfeature"
-            : "Feature"}
+        {busy === "feature" ? "…" : optimisticFeatured ? "Unfeature" : "Feature"}
       </button>
 
       <button
@@ -133,7 +125,7 @@ export default function AdminProductActions({
         onClick={deleteProduct}
         disabled={isBusy}
         aria-busy={busy === "delete" || undefined}
-        className={`rounded bg-red-600 px-3 py-1 text-sm text-white transition hover:bg-red-700 ${
+        className={`rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-1 text-sm font-semibold text-[var(--text)] transition hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus ${
           isBusy ? "cursor-wait opacity-70" : ""
         }`}
         title="Delete listing"

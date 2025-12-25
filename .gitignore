@@ -81,3 +81,28 @@ tests/e2e/_all-specs.txt
 /cookies.txt
 /full-backup.patch
 /tests/e2e/.artifacts/
+
+# --- IDE / OS junk ---
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# --- Android / Gradle generated ---
+android/.idea/
+android/.gradle/
+android/**/build/
+android/local.properties
+
+# --- iOS generated ---
+ios/DerivedData/
+ios/build/
+
+# --- Local debug / scan outputs (repo root) ---
+_debug/
+tools/_reports/
+badge-misalignment-report*.txt
+badge-scan.txt
+badge-scan*.txt
+tier-text-assertions.txt
+_hits_*.txt

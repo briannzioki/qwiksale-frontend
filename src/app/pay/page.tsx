@@ -93,6 +93,27 @@ export default function PayPage() {
 
   const abortRef = useRef<AbortController | null>(null);
 
+  const heroClass =
+    "rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft";
+
+  // phone-first: tighter padding, restore on sm+
+  const panelClass =
+    "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3.5 shadow-soft sm:p-5";
+
+  const labelClass = "mb-1 block text-sm font-semibold text-[var(--text)]";
+
+  const helpTextClass = "mt-1 text-xs leading-relaxed text-[var(--text-muted)]";
+
+  const inputClass =
+    "w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const selectClass =
+    "rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  // phone-first: slightly tighter pills, keep touch target
+  const pillButtonBase =
+    "inline-flex min-h-9 items-center justify-center rounded-xl border px-2.5 py-2 text-xs font-semibold transition active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-3 sm:text-sm";
+
   // Prefill order: last used (ls) -> env default
   useEffect(() => {
     const last = lsGet("qs_last_msisdn", DEFAULT_MSISDN);
@@ -215,7 +236,7 @@ export default function PayPage() {
       if (code === "0") {
         toast.success("STK push sent. Check your phone!");
       } else {
-        toast("Request accepted — check your phone", { icon: "📲" });
+        toast("Request accepted - check your phone", { icon: "📲" });
       }
     } catch (e: any) {
       if (e?.name !== "AbortError") {
@@ -229,30 +250,37 @@ export default function PayPage() {
   }
 
   const showUseProfile =
-    !!profileMsisdn && isValidMsisdn(profileMsisdn) && profileMsisdn !== normalized;
+    !!profileMsisdn &&
+    isValidMsisdn(profileMsisdn) &&
+    profileMsisdn !== normalized;
 
   return (
-    <div className="container-page py-6 space-y-6 max-w-2xl mx-auto">
+    <div className="container-page mx-auto max-w-2xl space-y-4 bg-[var(--bg)] py-4 sm:space-y-6 sm:py-6">
       {/* Hero */}
-      <div className="rounded-2xl p-6 text-white shadow-soft dark:shadow-none bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue">
-        <h1 className="text-2xl font-bold">Test M-Pesa STK Push</h1>
-        <p className="text-white/90">
-          Environment: <b className="underline">{PUBLIC_ENV}</b>. Use sandbox
-          credentials unless you’ve switched to production.
-        </p>
+      <div className={heroClass}>
+        <div className="container-page py-6 text-white sm:py-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
+            Test M-Pesa STK Push
+          </h1>
+          <p className="mt-1 text-sm text-white/80">
+            Environment: <b className="underline">{PUBLIC_ENV}</b>. Use sandbox
+            credentials unless you’ve switched to production.
+          </p>
+        </div>
       </div>
 
       {/* Form */}
-      <div className="rounded-2xl border border-gray-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/80 space-y-4">
+      <div className={`${panelClass} space-y-4`}>
         {/* Phone */}
         <div>
-          <label htmlFor="pay-phone" className="block text-sm font-semibold mb-1">
+          <label htmlFor="pay-phone" className={labelClass}>
             Phone (2547XXXXXXXX or 2541XXXXXXXX)
           </label>
-          <div className="flex gap-2 items-start">
+
+          <div className="flex items-start gap-2">
             <input
               id="pay-phone"
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+              className={inputClass}
               placeholder="2547XXXXXXXX"
               value={msisdn}
               onChange={(e) => setMsisdn(e.target.value)}
@@ -265,7 +293,7 @@ export default function PayPage() {
               <button
                 type="button"
                 onClick={() => setMsisdn(profileMsisdn)}
-                className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800"
+                className={`${pillButtonBase} shrink-0 border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]`}
                 title="Use my profile phone"
                 disabled={loading || loadingProfile}
               >
@@ -275,7 +303,7 @@ export default function PayPage() {
               <button
                 type="button"
                 onClick={loadPhoneFromProfile}
-                className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60"
+                className={`${pillButtonBase} shrink-0 border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] disabled:opacity-60`}
                 title="Load phone from my profile"
                 disabled={loading || loadingProfile}
               >
@@ -284,84 +312,103 @@ export default function PayPage() {
             )}
           </div>
 
-          <div className="text-xs text-gray-600 dark:text-slate-400 mt-1">
-            Normalized: <code className="font-mono">{normalized || "—"}</code>
+          <div className={helpTextClass}>
+            Normalized:{" "}
+            <code className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 font-mono text-[11px] text-[var(--text)]">
+              {normalized || "-"}
+            </code>
           </div>
+
           {!validPhone && msisdn && (
             <div
-              className="text-xs text-red-600 mt-1"
+              className="mt-2 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-xs leading-relaxed text-[var(--text)]"
               role="alert"
               aria-live="polite"
             >
-              Must match <code className="font-mono">2547XXXXXXXX</code> or{" "}
-              <code className="font-mono">2541XXXXXXXX</code>
+              Must match{" "}
+              <code className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg)] px-2 py-0.5 font-mono text-[11px]">
+                2547XXXXXXXX
+              </code>{" "}
+              or{" "}
+              <code className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg)] px-2 py-0.5 font-mono text-[11px]">
+                2541XXXXXXXX
+              </code>
+              .
             </div>
           )}
         </div>
 
         {/* Amount + quick chips */}
         <div>
-          <label htmlFor="pay-amount" className="block text-sm font-semibold mb-1">
+          <label htmlFor="pay-amount" className={labelClass}>
             Amount (KES)
           </label>
-          <div className="flex flex-wrap gap-2 items-center">
+
+          <div className="flex flex-wrap items-center gap-2">
             <input
               id="pay-amount"
               type="number"
               min={1}
               step={1}
-              className="w-36 rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+              className={`${inputClass} w-32 sm:w-36`}
               value={amount}
               onChange={(e) => setAmountSafe(e.target.value)}
             />
-            <div className="flex gap-2">
-              {PRESETS.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  className={`rounded-lg border px-3 py-2 text-sm font-semibold transition
-                    ${
-                      amount === v
-                        ? "bg-brandNavy text-white border-brandNavy"
-                        : "bg-white hover:bg-gray-50 dark:bg-slate-900 dark:hover:bg-slate-800"
+
+            {/* xs: horizontal scroll strip, sm+: wraps normally */}
+            <div className="flex w-full gap-2 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] sm:w-auto sm:flex-wrap sm:overflow-visible sm:whitespace-normal">
+              {PRESETS.map((v) => {
+                const isActive = amount === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`${pillButtonBase} shrink-0 ${
+                      isActive
+                        ? "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+                        : "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]"
                     }`}
-                  onClick={() => setAmount(v)}
-                >
-                  {v.toLocaleString()}
-                </button>
-              ))}
+                    onClick={() => setAmount(v)}
+                  >
+                    {v.toLocaleString()}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
 
         {/* Mode */}
         <div>
-          <label htmlFor="pay-mode" className="block text-sm font-semibold mb-1">
+          <label htmlFor="pay-mode" className={labelClass}>
             Mode
           </label>
           <select
             id="pay-mode"
-            className="w-64 rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-900 outline-none focus:ring-2 focus:ring-brandBlue/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
+            className={`${selectClass} w-full sm:w-64`}
             value={mode}
             onChange={(e) => setMode(e.target.value as Mode)}
           >
             <option value="paybill">Paybill (CustomerPayBillOnline)</option>
-            <option value="till">Till / Buy Goods (CustomerBuyGoodsOnline)</option>
+            <option value="till">
+              Till / Buy Goods (CustomerBuyGoodsOnline)
+            </option>
           </select>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <button
             onClick={pay}
             disabled={loading || !validPhone || amount < 1}
-            className="rounded-xl bg-[#161748] text-white px-4 py-2 font-semibold hover:opacity-95 disabled:opacity-60"
+            className="btn-gradient-primary text-xs sm:text-sm disabled:pointer-events-none disabled:opacity-60"
           >
             {loading ? "Processing…" : "Send STK Push"}
           </button>
+
           <button
             type="button"
-            className="rounded-xl border px-4 py-2 font-semibold hover:bg-gray-50 dark:hover:bg-slate-800"
+            className="btn-outline text-xs sm:text-sm"
             onClick={() => {
               setResp(null);
               setErr(null);
@@ -370,11 +417,12 @@ export default function PayPage() {
           >
             Clear
           </button>
+
           <a
             href="/api/mpesa/callback"
             target="_blank"
             rel="noreferrer"
-            className="rounded-xl px-4 py-2 font-semibold hover:underline text-sm"
+            className="btn-outline text-xs sm:text-sm"
             title="Callback health check (GET)"
           >
             Callback status
@@ -384,7 +432,7 @@ export default function PayPage() {
         {/* Error */}
         {err && (
           <div
-            className="p-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm dark:bg-red-900/20 dark:border-red-800 dark:text-red-200"
+            className="rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] p-3 text-sm leading-relaxed text-[var(--text)]"
             role="alert"
             aria-live="polite"
           >
@@ -394,61 +442,62 @@ export default function PayPage() {
 
         {/* Parsed summary */}
         {resp && (
-          <div className="rounded-xl border dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
-            <h2 className="font-semibold">Response</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+          <div className="space-y-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3.5 sm:p-4">
+            <h2 className="text-sm font-semibold text-[var(--text)]">Response</h2>
+
+            <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
               <div>
-                <span className="text-gray-500 dark:text-slate-400">
-                  Response Code:
-                </span>{" "}
-                <span className="font-medium">
+                <span className="text-[var(--text-muted)]">Response Code:</span>{" "}
+                <span className="font-medium text-[var(--text)]">
                   {String(
                     resp?.ResponseCode ??
                       resp?.responseCode ??
                       resp?.Body?.stkCallback?.ResultCode ??
-                      "—",
+                      "-",
                   )}
                 </span>
               </div>
+
               <div>
-                <span className="text-gray-500 dark:text-slate-400">
-                  Response:
-                </span>{" "}
-                <span className="font-medium">
+                <span className="text-[var(--text-muted)]">Response:</span>{" "}
+                <span className="font-medium text-[var(--text)]">
                   {resp?.ResponseDescription ??
                     resp?.responseDescription ??
                     resp?.CustomerMessage ??
                     resp?.customerMessage ??
                     resp?.Body?.stkCallback?.ResultDesc ??
-                    "—"}
+                    "-"}
                 </span>
               </div>
+
               <div>
-                <span className="text-gray-500 dark:text-slate-400">
+                <span className="text-[var(--text-muted)]">
                   MerchantRequestID:
                 </span>{" "}
-                <span className="font-medium">
+                <span className="font-medium text-[var(--text)]">
                   {resp?.MerchantRequestID ??
                     resp?.merchantRequestId ??
                     resp?.Body?.stkCallback?.MerchantRequestID ??
-                    "—"}
+                    "-"}
                 </span>
               </div>
+
               <div>
-                <span className="text-gray-500 dark:text-slate-400">
+                <span className="text-[var(--text-muted)]">
                   CheckoutRequestID:
                 </span>{" "}
-                <span className="font-medium break-all">
+                <span className="break-all font-medium text-[var(--text)]">
                   {resp?.CheckoutRequestID ??
                     resp?.checkoutRequestId ??
                     resp?.Body?.stkCallback?.CheckoutRequestID ??
-                    "—"}
+                    "-"}
                 </span>
+
                 {(resp?.CheckoutRequestID ||
                   resp?.checkoutRequestId ||
                   resp?.Body?.stkCallback?.CheckoutRequestID) && (
                   <button
-                    className="ml-2 rounded-md border px-2 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-800"
+                    className={`${pillButtonBase} ml-2 border-[var(--border-subtle)] bg-[var(--bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] sm:text-xs`}
                     onClick={async () => {
                       try {
                         const id =
@@ -471,11 +520,11 @@ export default function PayPage() {
             </div>
 
             {/* Raw JSON */}
-            <details className="mt-3">
-              <summary className="cursor-pointer text-sm text-gray-600 dark:text-slate-300">
+            <details className="mt-2 sm:mt-3">
+              <summary className="cursor-pointer text-sm text-[var(--text-muted)]">
                 Raw response JSON
               </summary>
-              <pre className="text-xs bg-gray-100 dark:bg-slate-800/50 p-3 rounded mt-2 overflow-x-auto">
+              <pre className="mt-2 overflow-x-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-xs text-[var(--text)]">
                 {prettyJson(resp)}
               </pre>
             </details>
@@ -483,13 +532,12 @@ export default function PayPage() {
         )}
 
         {/* Tips */}
-        <div className="text-xs text-gray-600 dark:text-slate-400">
-          Ensure{" "}
-          <code className="font-mono">MPESA_CALLBACK_URL</code> is publicly
+        <div className="text-xs leading-relaxed text-[var(--text-muted)]">
+          Ensure <code className="font-mono">MPESA_CALLBACK_URL</code> is publicly
           reachable (e.g., Vercel prod domain or an ngrok URL) pointing to{" "}
-          <code className="font-mono">/api/mpesa/callback</code>. In sandbox,
-          the default shortcode is <code className="font-mono">174379</code> and
-          mode is <code className="font-mono">paybill</code>.
+          <code className="font-mono">/api/mpesa/callback</code>. In sandbox, the
+          default shortcode is <code className="font-mono">174379</code> and mode
+          is <code className="font-mono">paybill</code>.
         </div>
       </div>
     </div>

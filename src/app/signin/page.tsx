@@ -59,20 +59,20 @@ export default async function Page({
     rawErr === "CredentialsSignin"
       ? 'Email or password is incorrect. If you registered with Google, use “Continue with Google”.'
       : rawErr === "OAuthSignin"
-      ? "We couldn't start Google sign-in. Please try again."
-      : rawErr === "OAuthCallback"
-      ? "Google sign-in failed. Please try again."
-      : rawErr === "OAuthAccountNotLinked"
-      ? "This email is already linked to another login method. Use your original sign-in method."
-      : rawErr === "AccessDenied"
-      ? "Access denied for this account."
-      : rawErr === "Configuration"
-      ? "Auth is temporarily misconfigured. Please try again shortly."
-      : rawErr === "CallbackRouteError"
-      ? "Sign-in callback failed. Please retry."
-      : rawErr
-      ? "Sign-in failed. Please try again."
-      : null;
+        ? "We couldn't start Google sign-in. Please try again."
+        : rawErr === "OAuthCallback"
+          ? "Google sign-in failed. Please try again."
+          : rawErr === "OAuthAccountNotLinked"
+            ? "This email is already linked to another login method. Use your original sign-in method."
+            : rawErr === "AccessDenied"
+              ? "Access denied for this account."
+              : rawErr === "Configuration"
+                ? "Auth is temporarily misconfigured. Please try again shortly."
+                : rawErr === "CallbackRouteError"
+                  ? "Sign-in callback failed. Please retry."
+                  : rawErr
+                    ? "Sign-in failed. Please try again."
+                    : null;
 
   const credsAction = `/api/auth/callback/credentials?callbackUrl=${encodeURIComponent(
     callbackUrl,
@@ -88,29 +88,31 @@ export default async function Page({
     process.env.NODE_ENV !== "production" || hasGoogleConfigured();
 
   return (
-    <div className="container-page py-10">
+    <div className="container-page py-4 text-[var(--text)] sm:py-8">
       <div className="mx-auto max-w-xl">
-        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] p-6 text-white shadow-soft">
-          <h1 className="text-2xl font-extrabold md:text-3xl">
-            Sign in to QwikSale
-          </h1>
-          <p className="mt-1 text-white/85">
-            {hasGoogle
-              ? "Use your email & password, or continue with Google."
-              : "Use your email & password to sign in."}
-          </p>
+        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft">
+          <div className="container-page py-5 text-white sm:py-8">
+            <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+              Sign in to QwikSale
+            </h1>
+            <p className="mt-1 text-[11px] leading-relaxed text-white/80 sm:text-sm">
+              {hasGoogle
+                ? "Use your email & password, or continue with Google."
+                : "Use your email & password to sign in."}
+            </p>
+          </div>
         </div>
 
         {friendly && (
           <div
             role="alert"
-            className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200"
+            className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm font-medium text-[var(--text)] shadow-sm sm:mt-4 sm:px-4 sm:py-3"
           >
             {friendly}
           </div>
         )}
 
-        <div className="mt-6 grid gap-6">
+        <div className="mt-5 grid gap-4 sm:mt-6 sm:gap-6">
           <CredsFormClient
             action={credsAction}
             callbackUrl={callbackUrl}
@@ -118,32 +120,43 @@ export default async function Page({
           />
 
           {hasGoogle && (
-            <div className="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-5">
               <GoogleSignInButton callbackUrl={callbackUrl} />
-              <p className="mt-2 text-[12px] text-gray-500 dark:text-slate-400">
+              <p className="mt-2 text-[12px] leading-relaxed text-[var(--text-muted)]">
                 By continuing, you agree to QwikSale’s{" "}
-                <Link className="underline" href="/terms" prefetch={false}>
+                <Link
+                  className="text-[var(--text)] underline underline-offset-2"
+                  href="/terms"
+                  prefetch={false}
+                >
                   Terms
                 </Link>{" "}
                 and{" "}
-                <Link className="underline" href="/privacy" prefetch={false}>
+                <Link
+                  className="text-[var(--text)] underline underline-offset-2"
+                  href="/privacy"
+                  prefetch={false}
+                >
                   Privacy Policy
                 </Link>
                 .
               </p>
-              <div className="mt-3 text-[12px] text-gray-500 dark:text-slate-400">
+              <div className="mt-2 text-[12px] leading-relaxed text-[var(--text-muted)] sm:mt-3">
                 Returning from a protected page? You’ll be sent back to{" "}
-                <code className="font-mono">{callbackUrl}</code>.
+                <code className="font-mono text-[var(--text)]">
+                  {callbackUrl}
+                </code>
+                .
               </div>
             </div>
           )}
 
-          <div className="text-center text-xs text-gray-600 dark:text-slate-400">
+          <div className="text-center text-xs leading-relaxed text-[var(--text-muted)]">
             Prefer to browse first?{" "}
             <Link
               href="/"
               prefetch={false}
-              className="underline underline-offset-2"
+              className="text-[var(--text)] underline underline-offset-2"
             >
               Continue as guest
             </Link>

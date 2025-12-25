@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { waitForServerReady } from "./utils/server";
 
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 test("product happy flow: search → open → gallery keys", async ({ page }) => {
   // Warm the app & Prisma to avoid API timeouts after build/start
   await waitForServerReady(page);
@@ -11,8 +15,13 @@ test("product happy flow: search → open → gallery keys", async ({ page }) =>
   test.skip(!first?.id, "No products in API to test with");
 
   // Pull badge expectations (only assert if data exists)
-  const detailApi = await page.request.get(`/api/products/${first.id}`, { timeout: 30_000 }).catch(() => null);
-  const detailJson = detailApi && detailApi.ok() ? await detailApi.json().catch(() => ({} as any)) : ({} as any);
+  const detailApi = await page.request
+    .get(`/api/products/${first.id}`, { timeout: 30_000 })
+    .catch(() => null);
+  const detailJson =
+    detailApi && detailApi.ok()
+      ? await detailApi.json().catch(() => ({} as any))
+      : ({} as any);
 
   const sellerVerified = detailJson?.sellerVerified as unknown;
   const sellerFeaturedTier = detailJson?.sellerFeaturedTier as unknown;
@@ -22,11 +31,15 @@ test("product happy flow: search → open → gallery keys", async ({ page }) =>
   // ✅ Assert badges near public UI (only if API provides the data)
   if (typeof sellerVerified === "boolean") {
     const label = sellerVerified ? "Verified" : "Unverified";
-    await expect(page.getByText(new RegExp(`\\b${label}\\b`, "i")).first()).toBeVisible();
+    await expect(
+      page.getByText(new RegExp(`\\b${escapeRegExp(label)}\\b`, "i")).first(),
+    ).toBeVisible();
   }
-  const tier = typeof sellerFeaturedTier === "string" ? sellerFeaturedTier.trim().toLowerCase() : "";
+
+  const tier =
+    typeof sellerFeaturedTier === "string" ? sellerFeaturedTier.trim().toLowerCase() : "";
   if (tier === "basic" || tier === "gold" || tier === "diamond") {
-    await expect(page.getByText(new RegExp(`\\b${tier}\\b`, "i")).first()).toBeVisible();
+    await expect(page.getByTestId(`featured-tier-${tier}`).first()).toBeVisible();
   }
 
   // Open lightbox — allow either the explicit button or the overlay

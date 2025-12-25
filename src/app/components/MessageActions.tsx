@@ -1,4 +1,3 @@
-// src/app/components/MessageActions.tsx
 "use client";
 
 import * as React from "react";
@@ -149,8 +148,12 @@ function MessageButtonBase({
       try {
         await onStartMessageAction(targetId);
         setBody(
-          <p className="text-sm">
-            Your conversation has been started for <code>{targetId}</code>.
+          <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+            Your conversation has been started for{" "}
+            <code className="font-mono text-[0.9em] text-[var(--text)]">
+              {targetId}
+            </code>
+            .
           </p>,
         );
         setOpen(true);
@@ -162,15 +165,24 @@ function MessageButtonBase({
 
     if (isAuthedEffective) {
       setBody(
-        <div className="space-y-3 text-sm">
+        <div className="space-y-3 text-sm leading-relaxed text-[var(--text-muted)]">
           <p>
-            (Placeholder) You’re signed in — this is where we’d open a chat
-            with the {label} for <code>{targetId}</code>.
+            (Placeholder) You’re signed in - this is where we’d open a chat with
+            the {label} for{" "}
+            <code className="font-mono text-[0.9em] text-[var(--text)]">
+              {targetId}
+            </code>
+            .
           </p>
           <div>
             <button
               type="button"
-              className="rounded-md border px-3 py-1.5 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900"
+              className={[
+                "h-9 rounded-xl border px-3 text-xs sm:text-sm font-semibold shadow-sm transition",
+                "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+                "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+                "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              ].join(" ")}
               onClick={() => setOpen(false)}
             >
               Close
@@ -183,15 +195,21 @@ function MessageButtonBase({
     }
 
     // Guest: prompt to sign in (this is where the prod.no-auto-logout spec cares).
-    const signInHref = `/signin?callbackUrl=${encodeURIComponent(
-      getReturnTo(),
-    )}`;
+    const signInHref = `/signin?callbackUrl=${encodeURIComponent(getReturnTo())}`;
     setBody(
-      <div className="space-y-3 text-sm" aria-live="polite">
+      <div
+        className="space-y-3 text-sm leading-relaxed text-[var(--text-muted)]"
+        aria-live="polite"
+      >
         <p>Please sign in to message the {label}.</p>
         <div className="flex gap-2">
           <a
-            className="rounded-md border px-3 py-1.5 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900"
+            className={[
+              "h-9 inline-flex items-center rounded-xl border px-3 text-xs sm:text-sm font-semibold shadow-sm transition",
+              "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+              "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+              "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
             href={signInHref}
             aria-label="Sign in to message"
             title="Sign in to message"
@@ -200,7 +218,12 @@ function MessageButtonBase({
           </a>
           <button
             type="button"
-            className="rounded-md border px-3 py-1.5 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900"
+            className={[
+              "h-9 rounded-xl border px-3 text-xs sm:text-sm font-semibold shadow-sm transition",
+              "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+              "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+              "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
             onClick={() => setOpen(false)}
           >
             Cancel
@@ -211,8 +234,7 @@ function MessageButtonBase({
     setOpen(true);
   }
 
-  const btnText =
-    label === "seller" ? "Message seller" : "Message provider";
+  const btnText = label === "seller" ? "Message seller" : "Message provider";
 
   return (
     <>
@@ -225,8 +247,10 @@ function MessageButtonBase({
         aria-expanded={open ? "true" : "false"}
         onClick={handleClick}
         className={[
-          "w-full rounded-lg bg-[#161748] text-white px-4 py-2 font-medium hover:opacity-95",
-          "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#39a0ca]",
+          "w-full h-10 rounded-xl border px-3 sm:px-4 text-xs sm:text-sm font-semibold shadow-sm transition",
+          "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]",
+          "hover:bg-[var(--bg-subtle)]",
+          "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
           className,
         ].join(" ")}
       >
@@ -238,7 +262,11 @@ function MessageButtonBase({
           {/* Overlay (click to close) */}
           <button
             type="button"
-            className="fixed inset-0 z-50 bg-black/60"
+            className={[
+              "fixed inset-0 z-50",
+              "bg-[color:color-mix(in_oklab,var(--text)_70%,transparent)]",
+              "supports-[backdrop-filter]:backdrop-blur-sm",
+            ].join(" ")}
             aria-label="Close message dialog"
             onClick={() => setOpen(false)}
           />
@@ -249,23 +277,32 @@ function MessageButtonBase({
             role="dialog"
             aria-modal="true"
             aria-labelledby="msg-action-title"
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4"
           >
             <div
               ref={panelRef}
-              className="w-full max-w-md rounded-2xl border bg-white p-4 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+              className={[
+                "w-full max-w-md rounded-2xl border p-3 sm:p-4",
+                "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+                "shadow-soft",
+              ].join(" ")}
             >
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <h2
                   id="msg-action-title"
-                  className="text-sm font-semibold"
+                  className="text-sm font-extrabold tracking-tight text-[var(--text)]"
                 >
                   {btnText}
                 </h2>
                 <button
                   ref={closeBtnRef}
                   type="button"
-                  className="rounded-md border px-2 py-1 text-sm hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-900"
+                  className={[
+                    "h-9 rounded-xl border px-3 text-xs sm:text-sm font-semibold shadow-sm transition",
+                    "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+                    "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+                    "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  ].join(" ")}
                   onClick={() => setOpen(false)}
                   aria-label="Close"
                 >
@@ -292,9 +329,7 @@ export function MessageSellerButton(props: {
     <MessageButtonBase
       targetId={props.productId}
       label="seller"
-      {...(props.isAuthed !== undefined
-        ? { isAuthed: props.isAuthed }
-        : {})}
+      {...(props.isAuthed !== undefined ? { isAuthed: props.isAuthed } : {})}
       {...(props.onStartMessageAction
         ? { onStartMessageAction: props.onStartMessageAction }
         : {})}
@@ -314,9 +349,7 @@ export function MessageProviderButton(props: {
     <MessageButtonBase
       targetId={props.serviceId}
       label="provider"
-      {...(props.isAuthed !== undefined
-        ? { isAuthed: props.isAuthed }
-        : {})}
+      {...(props.isAuthed !== undefined ? { isAuthed: props.isAuthed } : {})}
       {...(props.onStartMessageAction
         ? { onStartMessageAction: props.onStartMessageAction }
         : {})}

@@ -1,8 +1,10 @@
 "use client";
 // src/app/components/HomeTabs.tsx
 
+import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { cx, pillClass, pillGroupClass } from "@/app/components/ui/pill";
 
 type Mode = "all" | "products" | "services";
 
@@ -50,7 +52,12 @@ function IconProducts(props: React.SVGProps<SVGSVGElement>) {
 function IconServices(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden {...props}>
-      <path d="M20 14a6 6 0 1 1-9.33-5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+      <path
+        d="M20 14a6 6 0 1 1-9.33-5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
       <path d="M14 4l6 6M20 4l-6 6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
     </svg>
   );
@@ -61,72 +68,101 @@ export default function HomeTabs({ className = "" }: { className?: string }) {
   // Accept ?t= or legacy ?tab= for highlighting only.
   const mode = normalizeMode(sp.get("t") ?? sp.get("tab"));
 
-  const baseTab =
-    "relative inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition " +
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 " +
-    "focus-visible:ring-offset-background";
+  const isAll = mode === "all";
+  const isProducts = mode === "products";
+  const isServices = mode === "services";
 
-  const selectedTab =
-    "bg-gradient-to-r from-brandNavy via-brandGreen to-brandBlue text-primary-foreground " +
-    "border-transparent shadow-sm shadow-brandNavy/20";
+  const tabClass = (active: boolean) =>
+    pillClass({
+      active,
+      size: "sm",
+      className: cx(
+        // Phone-first: dense, equal-width tabs
+        "flex-1 min-w-0 justify-center",
+        "whitespace-nowrap",
+        "gap-1.5",
 
-  const unselectedTab =
-    "bg-card/70 border-border/70 hover:bg-card/90 text-foreground";
+        // ✅ tighter xs metrics; restore on sm+
+        "px-2 py-1.5 text-xs",
+        "min-[420px]:px-2.5",
+        "sm:px-3 sm:py-2 sm:text-sm",
+
+        // ✅ touch target: keep 36px+ height without adding padding bloat
+        "min-h-9",
+
+        "font-semibold transition",
+        "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+
+        active
+          ? "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm"
+          : "border-[var(--border-subtle)] bg-transparent hover:bg-[var(--bg-elevated)]",
+      ),
+    });
 
   return (
     <nav
       aria-label="Feed type"
       role="tablist"
-      className={[
-        "inline-flex items-center gap-1 rounded-2xl border border-border",
-        "bg-card/60 backdrop-blur shadow-sm",
-        "p-1",
-        className,
-      ].join(" ")}
+      className={pillGroupClass(
+        cx(
+          // ✅ phone-first: reduce vertical footprint while keeping brand + pill chrome
+          "w-full bg-[var(--bg-subtle)] shadow-sm",
+
+          // tighter wrapper padding on xs; restore on sm+
+          "px-1 py-1",
+          "min-[420px]:px-1.5",
+          "sm:px-2 sm:py-2",
+
+          // ✅ allow chips to “hug” content tightly
+          "rounded-2xl",
+
+          className,
+        ),
+      )}
       data-home-tabs
     >
-      {/* ALL — href MUST be "/" */}
+      {/* ALL - href MUST be "/" */}
       <Link
         role="tab"
-        aria-selected={mode === "all"}
-        aria-current={mode === "all" ? "page" : undefined}
+        aria-selected={isAll}
+        aria-current={isAll ? "page" : undefined}
         href="/"
         prefetch={false}
-        className={`${baseTab} ${mode === "all" ? selectedTab : unselectedTab}`}
+        className={tabClass(isAll)}
         data-tab="all"
       >
-        <IconAll className="h-4 w-4" />
+        <IconAll className="h-4 w-4 shrink-0" />
         <span>All</span>
         <span className="sr-only">items</span>
       </Link>
 
-      {/* PRODUCTS — href MUST contain "?t=products" */}
+      {/* PRODUCTS - href MUST contain "?t=products" */}
       <Link
         role="tab"
-        aria-selected={mode === "products"}
-        aria-current={mode === "products" ? "page" : undefined}
+        aria-selected={isProducts}
+        aria-current={isProducts ? "page" : undefined}
         href="/?t=products"
         prefetch={false}
-        className={`${baseTab} ${mode === "products" ? selectedTab : unselectedTab}`}
+        className={tabClass(isProducts)}
         data-tab="products"
         data-verify-href="/?t=products"
       >
-        <IconProducts className="h-4 w-4" />
+        <IconProducts className="h-4 w-4 shrink-0" />
         <span>Products</span>
       </Link>
 
-      {/* SERVICES — href MUST contain "?t=services" */}
+      {/* SERVICES - href MUST contain "?t=services" */}
       <Link
         role="tab"
-        aria-selected={mode === "services"}
-        aria-current={mode === "services" ? "page" : undefined}
+        aria-selected={isServices}
+        aria-current={isServices ? "page" : undefined}
         href="/?t=services"
         prefetch={false}
-        className={`${baseTab} ${mode === "services" ? selectedTab : unselectedTab}`}
+        className={tabClass(isServices)}
         data-tab="services"
         data-verify-href="/?t=services"
       >
-        <IconServices className="h-4 w-4" />
+        <IconServices className="h-4 w-4 shrink-0" />
         <span>Services</span>
       </Link>
     </nav>

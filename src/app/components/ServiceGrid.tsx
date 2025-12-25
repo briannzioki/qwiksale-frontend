@@ -8,6 +8,9 @@ import IconButton from "@/app/components/IconButton";
 import DeleteListingButton from "@/app/components/DeleteListingButton"; // ✅ canonical import
 import VerifiedBadge from "@/app/components/VerifiedBadge";
 
+type FeaturedTier = "basic" | "gold" | "diamond";
+type SellerBadges = { verified: boolean | null; tier: FeaturedTier | null };
+
 type ServiceItem = {
   id: string;
   name: string;
@@ -15,9 +18,18 @@ type ServiceItem = {
   image: string | null;
   featured?: boolean | null;
 
-  /** Seller/account flags for public UI (optional) */
+  /**
+   * Canonical / preferred:
+   * - API should send sellerBadges always
+   * - optionally aliases: sellerVerified + sellerFeaturedTier
+   */
+  sellerBadges?: SellerBadges | null;
+  sellerVerified?: boolean | null;
+  sellerFeaturedTier?: FeaturedTier | string | null;
+
+  /** Back-compat legacy inputs (fallback only): */
   verified?: boolean | null;
-  featuredTier?: "basic" | "gold" | "diamond" | string | null;
+  featuredTier?: FeaturedTier | string | null;
 
   category?: string | null;
   subcategory?: string | null;
@@ -58,18 +70,56 @@ const fmtKES = (n?: number | null) =>
     ? `KES ${new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n)}`
     : "Contact for price";
 
+function normalizeTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  if (t === "basic" || t === "gold" || t === "diamond") return t;
+  return null;
+}
+
+/**
+ * Canonical badge resolver (UI must not derive tier from `featured` boolean):
+ * 1) sellerBadges if present
+ * 2) sellerVerified + sellerFeaturedTier aliases
+ * 3) legacy verified + featuredTier
+ */
+function resolveSellerBadges(it: any): SellerBadges {
+  const isObj = it && typeof it === "object" && !Array.isArray(it);
+
+  // 1) sellerBadges (preferred)
+  if (isObj && "sellerBadges" in it && it.sellerBadges && typeof it.sellerBadges === "object") {
+    const sb = it.sellerBadges as any;
+    const verified = typeof sb?.verified === "boolean" ? (sb.verified as boolean) : null;
+    const tier = normalizeTier(sb?.tier);
+    return { verified, tier };
+  }
+
+  // 2) aliases
+  if (isObj && ("sellerVerified" in it || "sellerFeaturedTier" in it)) {
+    const verified =
+      typeof it?.sellerVerified === "boolean" ? (it.sellerVerified as boolean) : null;
+    const tier = normalizeTier(it?.sellerFeaturedTier);
+    return { verified, tier };
+  }
+
+  // 3) legacy
+  const verified = typeof it?.verified === "boolean" ? (it.verified as boolean) : null;
+  const tier = normalizeTier(it?.featuredTier);
+  return { verified, tier };
+}
+
 /** tiny shimmer dataURL for next/image blur placeholders (browser-only) */
 function shimmer(width: number, height: number) {
   const svg = `
   <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
     <defs>
       <linearGradient id="g">
-        <stop stop-color="#eee" offset="20%" />
-        <stop stop-color="#ddd" offset="50%" />
-        <stop stop-color="#eee" offset="70%" />
+        <stop stop-color="rgba(0,0,0,0.06)" offset="20%" />
+        <stop stop-color="rgba(0,0,0,0.10)" offset="50%" />
+        <stop stop-color="rgba(0,0,0,0.06)" offset="70%" />
       </linearGradient>
     </defs>
-    <rect width="${width}" height="${height}" fill="#eee" />
+    <rect width="${width}" height="${height}" fill="rgba(0,0,0,0.06)" />
     <rect id="r" width="${width}" height="${height}" fill="url(#g)" />
     <animate xlink:href="#r" attributeName="x" from="-${width}" to="${width}" dur="1.2s" repeatCount="indefinite" />
   </svg>`.trim();
@@ -78,9 +128,7 @@ function shimmer(width: number, height: number) {
   const encode = (s: string) => {
     try {
       // encodeURIComponent handles unicode safely for btoa
-      return typeof window !== "undefined"
-        ? window.btoa(unescape(encodeURIComponent(s)))
-        : ""; // SSR path not used for "use client" component
+      return typeof window !== "undefined" ? window.btoa(unescape(encodeURIComponent(s))) : "";
     } catch {
       return "";
     }
@@ -109,11 +157,11 @@ export default function ServiceGrid({
 
   return (
     <div className={className}>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4">
         {items.map((s) => {
           const blur = shimmer(800, 440);
           const categoryText =
-            [s.category ?? "", s.subcategory ?? ""].filter(Boolean).join(" • ") || "—";
+            [s.category ?? "", s.subcategory ?? ""].filter(Boolean).join(" • ") || "-";
 
           // ✅ Normalize prefix to guarantee `/service/:id/edit` shape even if caller omits the trailing slash
           const prefixNormalized = editHrefPrefix.endsWith("/")
@@ -123,13 +171,8 @@ export default function ServiceGrid({
 
           const ariaTitle = s.name || "Service";
 
-          const tier = (() => {
-            if (typeof s.featuredTier === "string") {
-              const t = s.featuredTier.trim().toLowerCase();
-              if (t === "basic" || t === "gold" || t === "diamond") return t;
-            }
-            return s.featured ? "basic" : null;
-          })();
+          const badges = resolveSellerBadges(s);
+          const showBadges = typeof badges.verified === "boolean" || badges.tier !== null;
 
           return (
             <div key={s.id} className="group relative">
@@ -169,24 +212,25 @@ export default function ServiceGrid({
               <Link
                 href={`/service/${s.id}`}
                 prefetch={prefetchCards}
-                className="block"
+                className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 aria-label={`Service: ${ariaTitle}`}
                 title={ariaTitle}
               >
-                <div className="relative overflow-hidden rounded-2xl border border-border bg-card transition">
-                  {s.featured ? (
-                    <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs text-white">
-                      Featured
-                    </span>
-                  ) : null}
-
+                <div
+                  className={[
+                    "relative overflow-hidden rounded-2xl border bg-[var(--bg-elevated)] transition will-change-transform",
+                    "border-[var(--border-subtle)] shadow-sm",
+                    "group-hover:-translate-y-0.5 group-hover:border-[var(--border)] group-hover:shadow-soft",
+                    "active:scale-[.99]",
+                  ].join(" ")}
+                >
                   <div className="relative">
                     <Image
                       alt={s.name || "Service image"}
                       src={s.image || FALLBACK_IMG}
                       width={800}
                       height={440}
-                      className="h-44 w-full bg-muted object-cover"
+                      className="h-36 w-full bg-[var(--bg-subtle)] object-cover sm:h-44"
                       placeholder="blur"
                       blurDataURL={blur}
                       priority={false}
@@ -200,23 +244,25 @@ export default function ServiceGrid({
                     />
                   </div>
 
-                  <div className="p-4">
-                    <h3 className="line-clamp-1 font-semibold text-foreground">
+                  <div className="p-2.5 sm:p-3 md:p-4">
+                    <h3 className="line-clamp-1 text-sm font-semibold text-[var(--text)] sm:text-base">
                       {s.name || "Unnamed service"}
                     </h3>
-                    <p className="line-clamp-1 text-xs text-muted-foreground">
+
+                    <p className="line-clamp-1 text-[11px] text-[var(--text-muted)] sm:text-xs">
                       {categoryText}
                     </p>
-                    <p className="mt-1 font-bold text-brandBlue">
+
+                    <p className="mt-1 text-sm font-extrabold tracking-tight text-[var(--text)] sm:text-base">
                       {fmtKES(s.price)}
                     </p>
 
-                    {(typeof s.verified === "boolean" || tier) && (
+                    {/* Exactly one badge component in this region (no separate tier overlays). */}
+                    {showBadges && (
                       <div className="mt-2">
                         <VerifiedBadge
-                          verified={typeof s.verified === "boolean" ? s.verified : null}
-                          featured={Boolean(s.featured)}
-                          featuredTier={tier}
+                          {...(typeof badges.verified === "boolean" ? { verified: badges.verified } : {})}
+                          featuredTier={badges.tier}
                         />
                       </div>
                     )}
@@ -233,11 +279,11 @@ export default function ServiceGrid({
           Array.from({ length: pageSize }).map((_, i) => (
             <div
               key={`skeleton-${i}`}
-              className="rounded-2xl border border-border bg-card p-3"
+              className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 shadow-sm sm:p-3"
             >
-              <div className="h-40 w-full animate-pulse rounded-lg bg-muted" />
-              <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-muted" />
-              <div className="mt-1 h-4 w-1/2 animate-pulse rounded bg-muted" />
+              <div className="h-36 w-full animate-pulse rounded-xl bg-[var(--bg-subtle)] sm:h-44" />
+              <div className="mt-2 h-4 w-3/4 animate-pulse rounded-lg bg-[var(--bg-subtle)]" />
+              <div className="mt-1 h-4 w-1/2 animate-pulse rounded-lg bg-[var(--bg-subtle)]" />
             </div>
           ))}
       </div>
@@ -245,9 +291,11 @@ export default function ServiceGrid({
       {/* Status / errors / empty */}
       <div className="mt-4">
         {error ? (
-          <div className="text-sm text-red-600">{error}</div>
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-sm text-[var(--text)] shadow-sm">
+            {error}
+          </div>
         ) : !loading && items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">{emptyText}</div>
+          <div className="text-sm text-[var(--text-muted)]">{emptyText}</div>
         ) : null}
       </div>
 
@@ -257,7 +305,13 @@ export default function ServiceGrid({
           <button
             onClick={() => onLoadMoreAction && onLoadMoreAction()}
             disabled={loading}
-            className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted disabled:opacity-60"
+            className={[
+              "rounded-xl border px-4 py-2 text-xs font-semibold shadow-sm transition sm:text-sm",
+              "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
+              "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
+              "active:scale-[.99] disabled:opacity-60",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
           >
             {loading ? "Loading…" : "Load more"}
           </button>

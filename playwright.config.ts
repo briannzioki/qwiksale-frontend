@@ -5,6 +5,7 @@ import path from "node:path";
 const CI = !!process.env.CI;
 const PORT = String(process.env.PORT || 3000);
 const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${PORT}`;
+const DETERMINISTIC = process.env.E2E_DETERMINISTIC === "1";
 
 // If using a running server (externally) or explicitly requested dev
 const USING_EXTERNAL_SERVER =
@@ -27,9 +28,9 @@ export default defineConfig({
   // Hard cap for the whole run (only really matters in CI)
   globalTimeout: CI ? 60 * 60 * 1000 : undefined,
 
-  fullyParallel: true,
-  workers: CI ? 2 : 4,
-  retries: CI ? 2 : 0,
+   fullyParallel: DETERMINISTIC ? false : true,
+   workers: DETERMINISTIC ? 1 : CI ? 2 : 4,
+   retries: DETERMINISTIC ? 0 : CI ? 2 : 0,
   forbidOnly: CI,
 
   expect: { timeout: 15_000 },

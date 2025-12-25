@@ -1,4 +1,3 @@
-// src/app/_components/SuggestInput.tsx
 "use client";
 // src/app/components/SuggestInput.tsx
 
@@ -74,12 +73,11 @@ export default function SuggestInput({
   const optionIdBase = useId();
 
   // Don’t pass extraParams if undefined (exactOptionalPropertyTypes)
-  const hookArgs =
-    extraParams
-      ? { endpoint, debounceMs: 200, minLength, limit, extraParams }
-      : { endpoint, debounceMs: 200, minLength, limit };
+  const hookArgs = extraParams
+    ? { endpoint, debounceMs: 200, minLength, limit, extraParams }
+    : { endpoint, debounceMs: 200, minLength, limit };
 
-  const { query, setQuery, items, loading, error, cancel } = useSuggest(hookArgs);
+  const { setQuery, items, loading, error, cancel } = useSuggest(hookArgs);
 
   // Local input value; value prop is just the initial/external value
   const [innerValue, setInnerValue] = useState(value ?? "");
@@ -95,6 +93,9 @@ export default function SuggestInput({
   const [active, setActive] = useState<number>(-1);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const trimmed = (innerValue ?? "").trim();
+  const hasQuery = trimmed.length > 0;
+
   // Filter by types if requested
   const filtered = useMemo(() => {
     if (!typesAllowed?.length) return items;
@@ -103,19 +104,21 @@ export default function SuggestInput({
   }, [items, typesAllowed]);
 
   const hasResults = filtered.length > 0;
+  const meetsMin = trimmed.length >= Math.max(0, minLength);
 
+  // ✅ Listbox visibility should depend on “typed input / open”, not on results count.
   const showList = useMemo(() => {
     if (disabled) return false;
     if (!open) return false;
-    if ((innerValue?.trim().length ?? 0) < Math.max(0, minLength)) return false;
+    if (!hasQuery) return false;
     return true;
-  }, [disabled, open, innerValue, minLength]);
+  }, [disabled, open, hasQuery]);
 
   const handleChange = useCallback(
     async (next: string) => {
       setInnerValue(next);
       setQuery(next);
-      setOpen(true);
+      setOpen(Boolean(next.trim()));
       setActive(-1);
       if (onChangeAction) {
         await onChangeAction(next);
@@ -155,8 +158,8 @@ export default function SuggestInput({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (!showList) {
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          // if we have something to show, opening with arrows feels natural
-          if (hasResults) setOpen(true);
+          // ✅ allow opening even when there are no results yet
+          if (hasQuery) setOpen(true);
         }
         return;
       }
@@ -179,7 +182,7 @@ export default function SuggestInput({
         closeList();
       }
     },
-    [active, filtered, onSelect, showList, closeList, hasResults],
+    [active, filtered, onSelect, showList, closeList, hasQuery],
   );
 
   // Blur handling (delay to allow click on options)
@@ -215,6 +218,7 @@ export default function SuggestInput({
           {label}
         </label>
       ) : null}
+
       <input
         id={inputId}
         ref={inputRef}
@@ -235,45 +239,57 @@ export default function SuggestInput({
         aria-activedescendant={active >= 0 ? `${optionIdBase}-${active}` : undefined}
         aria-label={!label ? ariaLabel : undefined}
         className={[
-          "w-full rounded-lg px-4 py-2",
-          "text-gray-900 dark:text-slate-100",
-          "placeholder:text-gray-500 dark:placeholder:text-slate-400",
-          "bg-white dark:bg-slate-900",
-          "border border-gray-200 dark:border-white/10",
-          "focus:outline-none focus:ring-2 focus:ring-brandBlue",
-          "disabled:opacity-60",
+          "w-full rounded-xl px-3 py-2 text-sm shadow-sm sm:px-4 sm:text-[0.95rem]",
+          "bg-[var(--bg)] text-[var(--text)]",
+          "border border-[var(--border-subtle)]",
+          "placeholder:text-[var(--text-muted)]",
+          "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+          "disabled:opacity-60 disabled:cursor-not-allowed",
           inputClassName || "",
         ].join(" ")}
-        onFocus={() => setOpen(true)}
+        onFocus={() => setOpen(Boolean((innerValue ?? "").trim()))}
       />
 
       {/* Dropdown */}
       {showList && (
         <div
           className={[
-            "absolute z-20 mt-1 w-full rounded-xl shadow-lg",
-            "bg-white dark:bg-slate-900",
-            "border border-gray-200 dark:border-white/10",
+            "absolute z-20 mt-1 w-full rounded-xl border shadow-sm",
+            "bg-[var(--bg-elevated)] border-[var(--border-subtle)]",
             listClassName || "",
           ].join(" ")}
         >
-          <ul id={listboxId} role="listbox" className="max-h-72 overflow-auto py-1">
-            {loading && (
-              <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
+          <ul
+            id={listboxId}
+            role="listbox"
+            className="max-h-72 overflow-auto py-1"
+          >
+            {!meetsMin && (
+              <li className="px-2.5 py-2 text-sm text-[var(--text-muted)] sm:px-3">
+                Type at least {Math.max(0, minLength)} characters
+              </li>
+            )}
+
+            {meetsMin && loading && (
+              <li className="px-2.5 py-2 text-sm text-[var(--text-muted)] sm:px-3">
                 Loading…
               </li>
             )}
-            {!loading && error && (
-              <li className="px-3 py-2 text-sm text-rose-600 dark:text-rose-400">
+
+            {meetsMin && !loading && error && (
+              <li className="px-2.5 py-2 text-sm text-[var(--danger)] sm:px-3">
                 Error: {error}
               </li>
             )}
-            {!loading && !error && !hasResults && (
-              <li className="px-3 py-2 text-sm text-gray-500 dark:text-slate-400">
+
+            {meetsMin && !loading && !error && !hasResults && (
+              <li className="px-2.5 py-2 text-sm text-[var(--text-muted)] sm:px-3">
                 No suggestions
               </li>
             )}
-            {!loading &&
+
+            {meetsMin &&
+              !loading &&
               !error &&
               filtered.map((sug, i) => {
                 const isActive = i === active;
@@ -284,11 +300,11 @@ export default function SuggestInput({
                     role="option"
                     aria-selected={isActive}
                     className={[
-                      "cursor-pointer select-none px-3 py-2 text-sm",
-                      "text-gray-900 dark:text-slate-100",
+                      "cursor-pointer select-none px-2.5 py-2 text-sm sm:px-3",
+                      "text-[var(--text)]",
                       isActive
-                        ? "bg-gray-100 dark:bg-white/5"
-                        : "hover:bg-gray-50 dark:hover:bg-white/5",
+                        ? "bg-[var(--bg-subtle)]"
+                        : "bg-transparent hover:bg-[var(--bg-subtle)]",
                     ].join(" ")}
                     onMouseEnter={() => setActive(i)}
                     onMouseDown={(e) => {
@@ -302,9 +318,9 @@ export default function SuggestInput({
                       <span className="truncate">{sug.label}</span>
                       <span
                         className={[
-                          "ml-auto rounded-full px-2 py-[2px] text-[11px]",
-                          "border border-gray-200 dark:border-white/10",
-                          "text-gray-600 dark:text-slate-300",
+                          "ml-auto rounded-full px-2 py-[2px] text-[10px] sm:text-[11px]",
+                          "border border-[var(--border-subtle)]",
+                          "bg-[var(--bg-subtle)] text-[var(--text-muted)]",
                         ].join(" ")}
                       >
                         {sug.type}
@@ -317,7 +333,7 @@ export default function SuggestInput({
         </div>
       )}
 
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-1 text-[11px] text-[var(--text-muted)] sm:text-xs">
         Use ↑/↓ to navigate, Enter to pick, Esc to close.
       </p>
     </div>

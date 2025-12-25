@@ -48,7 +48,7 @@ export async function GET(req: Request) {
   const [items, agg] = await Promise.all([
     prisma.review.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip,
       take: pageSize,
     }),

@@ -1,13 +1,7 @@
 "use client";
 // src/app/components/FiltersBar.tsx
 
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import SuggestInput from "@/app/components/SuggestInput";
 import IconButton from "@/app/components/IconButton";
 import NumberInputNoWheel from "@/app/components/ui/NumberInputNoWheel";
@@ -113,7 +107,11 @@ export default function FiltersBar({
     const t = setTimeout(async () => {
       if (qLocal !== (value.query ?? "")) {
         const next = { ...value, query: qLocal };
-        emit("qs:filters:change", { source: "debounce", filters: next, debounceMs });
+        emit("qs:filters:change", {
+          source: "debounce",
+          filters: next,
+          debounceMs,
+        });
         try {
           await onFiltersChangeAction?.(next);
         } catch (e) {
@@ -140,7 +138,7 @@ export default function FiltersBar({
         console.error("[FiltersBar] onFiltersChangeAction error:", e);
       }
     },
-    [onFiltersChangeAction]
+    [onFiltersChangeAction],
   );
 
   const update = useCallback(
@@ -150,13 +148,14 @@ export default function FiltersBar({
       const next = { ...value, ...patch };
       void notifyChange(next, trackLabel ? { field: trackLabel } : undefined);
     },
-    [disabled, notifyChange, value, clearDebounce]
+    [disabled, notifyChange, value, clearDebounce],
   );
 
   const applyNow = useCallback(async () => {
     if (disabled) return;
     clearDebounce(); // ensure immediate submit isn't followed by a stale debounced call
-    const next = qLocal !== (value.query ?? "") ? { ...value, query: qLocal } : value;
+    const next =
+      qLocal !== (value.query ?? "") ? { ...value, query: qLocal } : value;
     emit("qs:filters:submit", { filters: next });
     try {
       await onSubmitAction?.(next);
@@ -177,7 +176,9 @@ export default function FiltersBar({
       minPrice: "",
       maxPrice: "",
       sort: "newest",
-      ...(typeof value.verifiedOnly === "boolean" ? { verifiedOnly: false } : {}),
+      ...(typeof value.verifiedOnly === "boolean"
+        ? { verifiedOnly: false }
+        : {}),
     };
     setQLocal("");
     emit("qs:filters:reset", { filters: base });
@@ -187,9 +188,16 @@ export default function FiltersBar({
     } catch (e) {
       console.error("[FiltersBar] reset actions error:", e);
     }
-  }, [disabled, onFiltersChangeAction, onSubmitAction, value.verifiedOnly, clearDebounce]);
+  }, [
+    disabled,
+    onFiltersChangeAction,
+    onSubmitAction,
+    value.verifiedOnly,
+    clearDebounce,
+  ]);
 
-  const hasBoth = typeof minPrice === "number" && typeof maxPrice === "number";
+  const hasBoth =
+    typeof minPrice === "number" && typeof maxPrice === "number";
   const rangeInvalid = hasBoth && (minPrice as number) > (maxPrice as number);
 
   const idCond = useId();
@@ -216,22 +224,27 @@ export default function FiltersBar({
   const sortValue = (sort ?? "newest") as Filters["sort"];
 
   const inputBase =
-    "w-full rounded-lg px-3 py-2 " +
-    "text-foreground bg-background " +
-    "border border-border " +
-    "placeholder:text-muted-foreground " +
-    "focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60";
+    "w-full rounded-xl px-3 py-2 text-sm " +
+    "bg-[var(--bg)] text-[var(--text)] " +
+    "border border-[var(--border-subtle)] " +
+    "placeholder:text-[var(--text-muted)] " +
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus " +
+    "disabled:opacity-60";
 
   const selectBase =
-    "w-full rounded-lg px-3 py-2 " +
-    "text-foreground bg-background " +
-    "border border-border";
+    "w-full rounded-xl px-3 py-2 text-sm " +
+    "bg-[var(--bg)] text-[var(--text)] " +
+    "border border-[var(--border-subtle)] " +
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus " +
+    "disabled:opacity-60";
 
   const buttonBase =
-    "px-3 md:px-4 py-2 rounded-lg " +
-    "bg-card text-foreground " +
-    "border border-border " +
-    "hover:bg-muted disabled:opacity-60";
+    "inline-flex min-h-9 items-center justify-center rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold " +
+    "bg-[var(--bg-elevated)] text-[var(--text)] " +
+    "border border-[var(--border-subtle)] shadow-sm " +
+    "transition hover:bg-[var(--bg-subtle)] hover:text-[var(--text)] " +
+    "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus " +
+    "disabled:opacity-60";
 
   // ----- Mobile Refine & Sort via IconButtons -----
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
@@ -264,14 +277,18 @@ export default function FiltersBar({
 
   return (
     <div
-      className={`card-surface w-full px-4 py-3 ${className}`}
+      className={[
+        "w-full rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft",
+        "p-3 sm:px-4 sm:py-3",
+        className,
+      ].join(" ")}
       role="region"
       aria-label="Listing filters"
       aria-live="polite"
       data-filter-bar="true"
     >
       {/* Mobile quick actions */}
-      <div className="mb-2 flex items-center gap-2 md:hidden">
+      <div className="mb-1.5 flex items-center gap-2 md:hidden">
         <IconButton
           icon="refine"
           labelText="Refine"
@@ -290,7 +307,7 @@ export default function FiltersBar({
       </div>
 
       {/* Row 1: Search / Category / Subcategory + Sort + (optional) Featured */}
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-12 md:items-end">
+      <div className="grid grid-cols-1 gap-2 sm:gap-3 md:grid-cols-12 md:items-end">
         {/* Search */}
         <div className="md:col-span-4 flex gap-2">
           {/* Label: only attach htmlFor when we control an input id */}
@@ -384,7 +401,9 @@ export default function FiltersBar({
             name="subcategory"
             type="text"
             value={value.subcategory ?? ""}
-            onChange={(e) => update({ subcategory: e.target.value }, "subcategory")}
+            onChange={(e) =>
+              update({ subcategory: e.target.value }, "subcategory")
+            }
             placeholder="Subcategory"
             disabled={disabled}
             className={inputBase}
@@ -401,7 +420,9 @@ export default function FiltersBar({
             name="sort"
             ref={sortRef}
             value={sortValue}
-            onChange={(e) => update({ sort: e.target.value as Filters["sort"] }, "sort")}
+            onChange={(e) =>
+              update({ sort: e.target.value as Filters["sort"] }, "sort")
+            }
             className={selectBase}
             title="Sort"
             disabled={disabled}
@@ -418,11 +439,13 @@ export default function FiltersBar({
           <div className="md:col-span-2 md:col-start-11 md:row-start-1 md:justify-self-end hidden md:block">
             <label
               htmlFor={idVerified}
-              className="
-                inline-flex w-full select-none items-center justify-center gap-2
-                rounded-lg border border-border bg-card
-                px-3 py-2 text-sm text-foreground
-              "
+              className={[
+                "inline-flex w-full select-none items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold",
+                "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm",
+                "transition hover:bg-[var(--bg-subtle)] active:scale-[.99]",
+                "focus-within:outline-none focus-within:ring-2 ring-focus",
+                disabled ? "opacity-60" : "",
+              ].join(" ")}
               title="Featured (verified) listings only"
             >
               <input
@@ -430,8 +453,10 @@ export default function FiltersBar({
                 name="featured"
                 type="checkbox"
                 checked={!!value.verifiedOnly}
-                onChange={(e) => update({ verifiedOnly: e.target.checked }, "verifiedOnly")}
-                className="rounded border border-border"
+                onChange={(e) =>
+                  update({ verifiedOnly: e.target.checked }, "verifiedOnly")
+                }
+                className="rounded border border-[var(--border-subtle)]"
                 disabled={disabled}
               />
               Featured only
@@ -445,12 +470,19 @@ export default function FiltersBar({
         <details
           ref={detailsRef}
           id={idDetails}
-          className="group rounded-xl border border-border bg-card/70"
+          className="group rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]"
         >
-          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-foreground">
+          <summary
+            className={[
+              "flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs sm:text-sm font-semibold",
+              "text-[var(--text)]",
+              "rounded-2xl",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+            ].join(" ")}
+          >
             <span className="inline-flex items-center gap-2">
               More filters
-              <span className="hidden text-muted-foreground md:inline">
+              <span className="hidden text-[var(--text-muted)] md:inline">
                 (brand, condition, price range)
               </span>
             </span>
@@ -458,7 +490,7 @@ export default function FiltersBar({
               width="16"
               height="16"
               viewBox="0 0 24 24"
-              className="text-muted-foreground transition-transform duration-200 group-open:rotate-180"
+              className="text-[var(--text-muted)] transition-transform duration-200 group-open:rotate-180"
               fill="currentColor"
               aria-hidden="true"
             >
@@ -494,7 +526,10 @@ export default function FiltersBar({
                 name="condition"
                 value={conditionValue}
                 onChange={(e) =>
-                  update({ condition: e.target.value as Filters["condition"] }, "condition")
+                  update(
+                    { condition: e.target.value as Filters["condition"] },
+                    "condition",
+                  )
                 }
                 className={selectBase}
                 title="Condition"
@@ -517,13 +552,26 @@ export default function FiltersBar({
                 min={0}
                 step={1}
                 inputMode="numeric"
-                value={minPrice === "" || minPrice == null ? "" : Number(minPrice)}
-                onChange={(e) => update({ minPrice: parsePrice(e.currentTarget.value) }, "minPrice")}
-                onBlur={(e) => update({ minPrice: parsePrice(e.currentTarget.value) }, "minPrice")}
+                value={
+                  minPrice === "" || minPrice == null ? "" : Number(minPrice)
+                }
+                onChange={(e) =>
+                  update(
+                    { minPrice: parsePrice(e.currentTarget.value) },
+                    "minPrice",
+                  )
+                }
+                onBlur={(e) =>
+                  update(
+                    { minPrice: parsePrice(e.currentTarget.value) },
+                    "minPrice",
+                  )
+                }
                 placeholder="Min KES"
-                className={`${inputBase} ${
-                  rangeInvalid ? "border-red-400 focus:ring-red-300" : ""
-                }`}
+                className={[
+                  inputBase,
+                  rangeInvalid ? "border-[var(--border)]" : "",
+                ].join(" ")}
                 title="Min price"
                 aria-invalid={rangeInvalid}
                 aria-describedby={rangeInvalid ? idRangeHint : undefined}
@@ -542,13 +590,26 @@ export default function FiltersBar({
                 min={0}
                 step={1}
                 inputMode="numeric"
-                value={maxPrice === "" || maxPrice == null ? "" : Number(maxPrice)}
-                onChange={(e) => update({ maxPrice: parsePrice(e.currentTarget.value) }, "maxPrice")}
-                onBlur={(e) => update({ maxPrice: parsePrice(e.currentTarget.value) }, "maxPrice")}
+                value={
+                  maxPrice === "" || maxPrice == null ? "" : Number(maxPrice)
+                }
+                onChange={(e) =>
+                  update(
+                    { maxPrice: parsePrice(e.currentTarget.value) },
+                    "maxPrice",
+                  )
+                }
+                onBlur={(e) =>
+                  update(
+                    { maxPrice: parsePrice(e.currentTarget.value) },
+                    "maxPrice",
+                  )
+                }
                 placeholder="Max KES"
-                className={`${inputBase} ${
-                  rangeInvalid ? "border-red-400 focus:ring-red-300" : ""
-                }`}
+                className={[
+                  inputBase,
+                  rangeInvalid ? "border-[var(--border)]" : "",
+                ].join(" ")}
                 title="Max price"
                 aria-invalid={rangeInvalid}
                 aria-describedby={rangeInvalid ? idRangeHint : undefined}
@@ -557,8 +618,12 @@ export default function FiltersBar({
             </div>
 
             {rangeInvalid && (
-              <p id={idRangeHint} className="md:col-span-12 text-xs text-red-600">
-                Min price is greater than max price. Adjust the range to apply a valid filter.
+              <p
+                id={idRangeHint}
+                className="md:col-span-12 text-xs font-medium text-[var(--text)]"
+              >
+                Min price is greater than max price. Adjust the range to apply a
+                valid filter.
               </p>
             )}
           </div>
@@ -566,7 +631,7 @@ export default function FiltersBar({
       </div>
 
       {/* Footer actions */}
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-2.5 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => void applyNow()}

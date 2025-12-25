@@ -11,20 +11,21 @@ const EFFECTIVE_DATE = "2025-01-01"; // ← update when you ship changes
 
 export default function TermsPage() {
   return (
-    <div className="container-page py-10">
+    <div className="container-page py-4 sm:py-6">
       <div className="prose max-w-3xl dark:prose-invert">
         <h1>Terms of Service</h1>
-        <p className="text-sm text-muted-foreground">
-          Effective:{" "}
-          <time dateTime={EFFECTIVE_DATE}>{EFFECTIVE_DATE}</time>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Effective: <time dateTime={EFFECTIVE_DATE}>{EFFECTIVE_DATE}</time>
         </p>
+
         <p>
           These Terms of Service (“Terms”) govern your access to and use of
           QwikSale’s website, apps, and services (collectively, the “Service”).
           By accessing or using the Service, you agree to be bound by these
           Terms.
         </p>
-        <div className="rounded-xl border border-border bg-muted p-3 text-sm">
+
+        <div className="rounded-xl border border-border bg-muted p-2.5 text-sm sm:p-3">
           <strong>Not legal advice.</strong> This is a template for product use.
           Replace with counsel-approved language before launch.
         </div>
@@ -43,9 +44,7 @@ export default function TermsPage() {
             Payments (e.g., M-Pesa) are processed by third parties; certain
             actions may be final and fees may apply.
           </li>
-          <li>
-            We can suspend or remove accounts that violate these Terms.
-          </li>
+          <li>We can suspend or remove accounts that violate these Terms.</li>
         </ul>
 
         <h2 id="toc">Contents</h2>
@@ -114,12 +113,8 @@ export default function TermsPage() {
         <h2 id="account">2) Accounts &amp; Security</h2>
         <ul>
           <li>Provide accurate information and keep it up to date.</li>
-          <li>
-            You are responsible for safeguarding your login credentials.
-          </li>
-          <li>
-            Notify us promptly of any unauthorized use of your account.
-          </li>
+          <li>You are responsible for safeguarding your login credentials.</li>
+          <li>Notify us promptly of any unauthorized use of your account.</li>
         </ul>
 
         <h2 id="listings">3) Listings &amp; Transactions</h2>
@@ -129,8 +124,8 @@ export default function TermsPage() {
             condition, photos) and for complying with applicable laws.
           </li>
           <li>
-            Meet safely: prefer public places; verify items before paying;
-            avoid sharing sensitive information.
+            Meet safely: prefer public places; verify items before paying; avoid
+            sharing sensitive information.
           </li>
           <li>
             QwikSale is a marketplace platform and is not a party to
@@ -141,8 +136,13 @@ export default function TermsPage() {
         <h2 id="prohibited">4) Prohibited Items &amp; Conduct</h2>
         <p>Do not post or transact on:</p>
         <ul>
-          <li>Illegal items, stolen goods, counterfeit products, or recalled items.</li>
-          <li>Weapons, explosives, hazardous materials, or regulated substances.</li>
+          <li>
+            Illegal items, stolen goods, counterfeit products, or recalled
+            items.
+          </li>
+          <li>
+            Weapons, explosives, hazardous materials, or regulated substances.
+          </li>
           <li>
             Items that infringe intellectual property rights or violate
             third-party terms.
@@ -203,9 +203,9 @@ export default function TermsPage() {
 
         <h2 id="privacy">8) Privacy</h2>
         <p>
-          Our <a href="/privacy">Privacy Policy</a> explains how we collect,
-          use, and protect your data. By using the Service, you agree to the
-          Privacy Policy.
+          Our <a href="/privacy">Privacy Policy</a> explains how we collect, use,
+          and protect your data. By using the Service, you agree to the Privacy
+          Policy.
         </p>
 
         <h2 id="notices">9) Communications &amp; Notices</h2>
@@ -279,10 +279,7 @@ export default function TermsPage() {
         <h2 id="contact">17) Contact</h2>
         <p>
           Questions? Email{" "}
-          <a href="mailto:support@qwiksale.sale">
-            support@qwiksale.sale
-          </a>
-          .
+          <a href="mailto:support@qwiksale.sale">support@qwiksale.sale</a>.
         </p>
 
         <hr />

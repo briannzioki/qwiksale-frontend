@@ -1,3 +1,4 @@
+// src/app/service/[id]/opengraph-image.tsx
 /* eslint-disable @next/next/no-img-element */
 import { ImageResponse } from "next/og";
 
@@ -22,9 +23,7 @@ function appBaseUrl(): string {
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_ORIGIN"] ||
     process.env["NEXTAUTH_URL"] ||
-    (process.env["VERCEL_URL"]
-      ? `https://${process.env["VERCEL_URL"]}`
-      : "") ||
+    (process.env["VERCEL_URL"] ? `https://${process.env["VERCEL_URL"]}` : "") ||
     "http://localhost:3000";
   return raw.replace(/\/+$/, "");
 }
@@ -52,9 +51,7 @@ async function loadService(id: string): Promise<ServiceOG | null> {
       name: r?.name ?? null,
       price: typeof r?.price === "number" ? r.price : null,
       rateType:
-        r?.rateType === "hour" ||
-        r?.rateType === "day" ||
-        r?.rateType === "fixed"
+        r?.rateType === "hour" || r?.rateType === "day" || r?.rateType === "fixed"
           ? r.rateType
           : null,
       category: r?.category ?? null,
@@ -76,14 +73,10 @@ export default async function Image({
   const title = safeTxt(s?.name) || "QwikSale Service";
   const price =
     typeof s?.price === "number" && s.price > 0
-      ? `KES ${new Intl.NumberFormat("en-KE").format(
-          s.price
-        )}${rateSuffix(s?.rateType)}`
+      ? `KES ${new Intl.NumberFormat("en-KE").format(s.price)}${rateSuffix(s?.rateType)}`
       : "Contact for quote";
-  const cat =
-    [s?.category, s?.subcategory]
-      .filter(Boolean)
-      .join(" • ") || "Service";
+
+  const cat = [s?.category, s?.subcategory].filter(Boolean).join(" • ") || "Service";
   const host = appBaseUrl().replace(/^https?:\/\//, "");
 
   return new ImageResponse(
@@ -97,63 +90,28 @@ export default async function Image({
           justifyContent: "space-between",
           padding: 48,
           background:
-            "linear-gradient(135deg, #39a0ca 0%, #478559 50%, #161748 100%)",
-          color: "#fff",
+            "linear-gradient(135deg, rgb(22, 23, 72) 0%, rgb(71, 133, 89) 50%, rgb(57, 160, 202) 100%)",
+          color: "white",
           fontFamily:
             "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div
             style={{
               width: 18,
               height: 18,
               borderRadius: 4,
-              background: "#fff",
-              opacity: 0.9,
+              background: "rgba(255,255,255,0.92)",
             }}
           />
-          <div
-            style={{
-              fontSize: 28,
-              fontWeight: 800,
-              letterSpacing: 0.5,
-            }}
-          >
-            QwikSale
-          </div>
+          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 0.5 }}>QwikSale</div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 64,
-              fontWeight: 800,
-              lineHeight: 1.1,
-            }}
-          >
-            {title}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 16,
-              fontSize: 28,
-              opacity: 0.9,
-            }}
-          >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 64, fontWeight: 800, lineHeight: 1.1 }}>{title}</div>
+
+          <div style={{ display: "flex", gap: 16, fontSize: 28, opacity: 0.92 }}>
             <span>{cat}</span>
             <span>· {price}</span>
           </div>
@@ -166,25 +124,11 @@ export default async function Image({
             alignItems: "flex-end",
           }}
         >
-          <div
-            style={{
-              fontSize: 20,
-              opacity: 0.9,
-            }}
-          >
-            Find trusted pros near you
-          </div>
-          <div
-            style={{
-              fontSize: 20,
-              opacity: 0.9,
-            }}
-          >
-            {host}
-          </div>
+          <div style={{ fontSize: 20, opacity: 0.92 }}>Find trusted pros near you</div>
+          <div style={{ fontSize: 20, opacity: 0.92 }}>{host}</div>
         </div>
       </div>
     ),
-    size
+    size,
   );
 }

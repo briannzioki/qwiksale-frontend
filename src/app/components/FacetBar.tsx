@@ -10,7 +10,10 @@ export type Facets = {
 
 type Props = {
   facets?: Facets | null;
-  onPickAction?: (kind: "category" | "brand" | "condition", value: string) => void | Promise<void>;
+  onPickAction?: (
+    kind: "category" | "brand" | "condition",
+    value: string,
+  ) => void | Promise<void>;
   className?: string;
   /** Maximum chips per section (default 10) */
   maxPerSection?: number;
@@ -37,7 +40,9 @@ function emit<T = unknown>(name: string, detail?: T) {
 function slug(input: string) {
   const base = (input || "").toLowerCase();
   const normalized =
-    typeof (base as any).normalize === "function" ? base.normalize("NFKD") : base;
+    typeof (base as any).normalize === "function"
+      ? base.normalize("NFKD")
+      : base;
   return normalized
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
@@ -97,34 +102,50 @@ export default function FacetBar({
 
     return (
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)] sm:mb-2 sm:text-xs">
           {title}
         </h3>
-        <ul className="flex flex-wrap gap-2" role="list">
+
+        {/* xs: horizontal scroll strip; sm+: wraps normally */}
+        <ul
+          className={[
+            "flex gap-2",
+            "-mx-1 overflow-x-auto px-1 pb-1 pr-2",
+            "[-webkit-overflow-scrolling:touch]",
+            "sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 sm:pr-0",
+          ].join(" ")}
+          role="list"
+        >
           {top.map((f) => {
             const value = f.value ?? "";
             const key = `${kind}:${slug(value) || value}`;
             const countTxt = nf.format(f.count ?? 0);
             const label = `${title}: ${value} (${countTxt})`;
+
             return (
-              <li key={key}>
+              <li key={key} className="shrink-0 sm:shrink">
                 <button
                   type="button"
                   onClick={() => pick(value)}
-                  className="
-                    inline-flex items-center gap-2
-                    rounded-full px-3 py-1.5 text-sm
-                    bg-muted text-foreground
-                    border border-border
-                    hover:bg-muted/80
-                    focus:outline-none focus-visible:ring-2 focus-visible:ring-primary
-                    transition
-                  "
+                  className={[
+                    "inline-flex min-h-9 items-center gap-2",
+                    "rounded-xl px-2 py-1 text-[11px] sm:px-3 sm:py-1.5 sm:text-sm",
+                    "bg-[var(--bg-subtle)] text-[var(--text)]",
+                    "border border-[var(--border-subtle)]",
+                    "transition",
+                    "hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]",
+                    "active:scale-[.99]",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  ].join(" ")}
                   title={label}
                   aria-label={label}
                 >
-                  <span className="max-w-[12rem] truncate">{value}</span>
-                  <span className="text-xs opacity-70">{countTxt}</span>
+                  <span className="max-w-[10rem] truncate sm:max-w-[12rem]">
+                    {value}
+                  </span>
+                  <span className="text-[11px] text-[var(--text-muted)] sm:text-xs">
+                    {countTxt}
+                  </span>
                 </button>
               </li>
             );
@@ -137,19 +158,27 @@ export default function FacetBar({
   return (
     <section
       aria-label="Top facets"
-      className={`
-        w-full rounded-2xl
-        bg-card/60
-        border border-border
-        shadow-sm
-        p-4 md:p-5
-        ${className}
-      `}
+      className={[
+        "w-full rounded-2xl",
+        "bg-[var(--bg-elevated)]",
+        "border border-[var(--border-subtle)]",
+        "shadow-sm",
+        "p-3 sm:p-4 md:p-5",
+        className,
+      ].join(" ")}
     >
-      <div className="grid gap-4 md:gap-5 md:grid-cols-3">
-        <Section title="Top Categories" items={facets?.categories ?? []} kind="category" />
+      <div className="grid gap-4 sm:gap-6 md:grid-cols-3 md:gap-5">
+        <Section
+          title="Top Categories"
+          items={facets?.categories ?? []}
+          kind="category"
+        />
         <Section title="Top Brands" items={facets?.brands ?? []} kind="brand" />
-        <Section title="Condition" items={facets?.conditions ?? []} kind="condition" />
+        <Section
+          title="Condition"
+          items={facets?.conditions ?? []}
+          kind="condition"
+        />
       </div>
     </section>
   );

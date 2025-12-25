@@ -1,4 +1,3 @@
-// src/app/components/charts/LineChart.tsx
 "use client";
 
 import {
@@ -12,10 +11,7 @@ import {
   Legend,
 } from "recharts";
 
-export type LineDatum = Record<
-  string,
-  string | number | null | undefined
->;
+export type LineDatum = Record<string, string | number | null | undefined>;
 
 export type LineSeries = {
   /** key in your data objects, e.g. "users" */
@@ -45,13 +41,18 @@ export type LineChartProps = {
   className?: string;
 };
 
-const brandLineColors = [
-  "#161748", // navy
-  "#39a0ca", // blue
-  "#478559", // green
-  "#f97316", // orange
-  "#e11d48", // rose
-];
+/**
+ * Token-first series colors (no hardcoded hex).
+ * If your theme defines --chart-1..--chart-5, those will be used.
+ * Otherwise we fall back to the core tokens to stay readable in light/dark.
+ */
+const chartColors = [
+  "var(--chart-1, var(--text))",
+  "var(--chart-2, var(--text-muted))",
+  "var(--chart-3, var(--border))",
+  "var(--chart-4, var(--text))",
+  "var(--chart-5, var(--text-muted))",
+] as const;
 
 function formatNumber(value: unknown): string {
   const num =
@@ -61,7 +62,7 @@ function formatNumber(value: unknown): string {
         ? Number(value)
         : NaN;
 
-  if (!Number.isFinite(num)) return String(value ?? "—");
+  if (!Number.isFinite(num)) return String(value ?? "-");
   try {
     return num.toLocaleString("en-KE");
   } catch {
@@ -88,7 +89,7 @@ export function LineChart({
   if (!series.length) {
     return (
       <div
-        className={`flex items-center justify-center rounded-xl border border-dashed border-border bg-card/60 p-4 text-xs text-muted-foreground ${className ?? ""}`}
+        className={`flex items-center justify-center rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-[11px] text-[var(--text-muted)] sm:p-4 sm:text-xs ${className ?? ""}`}
         style={{ height }}
       >
         LineChart: no series configured.
@@ -98,42 +99,40 @@ export function LineChart({
 
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-xl bg-card/80 p-3 text-xs shadow-sm ring-1 ring-border/70 ${className ?? ""}`}
+      className={`relative w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 text-[11px] text-[var(--text)] shadow-soft sm:p-3 sm:text-xs ${className ?? ""}`}
       style={{ height }}
     >
       {safeData.length === 0 ? (
-        <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground">
+        <div className="flex h-full items-center justify-center text-[11px] text-[var(--text-muted)]">
           No data
         </div>
       ) : (
         <ResponsiveContainer width="100%" height="100%">
-          <ReLineChart data={safeData}>
+          <ReLineChart data={safeData} margin={{ right: 4, top: showLegend ? 2 : 0 }}>
             {showGrid && (
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
-              />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
             )}
             <XAxis
               dataKey={xKey}
               tickLine={false}
               axisLine={false}
-              tickMargin={8}
+              tickMargin={6}
               tickFormatter={(v) => String(v)}
             />
             <YAxis
               tickLine={false}
               axisLine={false}
-              tickMargin={8}
-              width={48}
+              tickMargin={6}
+              width={44}
               tickFormatter={(v) => formatNumber(v)}
             />
             <Tooltip
-              cursor={{ stroke: "hsl(var(--border))", strokeWidth: 1 }}
+              cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
               contentStyle={{
-                borderRadius: 8,
-                border: "1px solid hsl(var(--border))",
-                background: "hsl(var(--card))",
+                borderRadius: 12,
+                border: "1px solid var(--border)",
+                background: "var(--bg-elevated)",
+                color: "var(--text)",
                 fontSize: 11,
               }}
               labelStyle={{
@@ -147,10 +146,10 @@ export function LineChart({
             {showLegend && (
               <Legend
                 verticalAlign="top"
-                height={24}
+                height={20}
                 iconType="circle"
                 wrapperStyle={{
-                  paddingBottom: 4,
+                  paddingBottom: 2,
                   fontSize: 11,
                 }}
               />
@@ -161,9 +160,7 @@ export function LineChart({
                 type="monotone"
                 dataKey={s.dataKey}
                 name={s.label ?? s.dataKey}
-                stroke={
-                  s.color ?? brandLineColors[idx % brandLineColors.length]
-                }
+                stroke={s.color ?? chartColors[idx % chartColors.length]}
                 strokeWidth={s.strokeWidth ?? 2}
                 dot={{ r: 2 }}
                 activeDot={{ r: 4 }}

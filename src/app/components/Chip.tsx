@@ -25,7 +25,7 @@ function cn(...xs: Array<string | false | null | undefined>) {
  * - Default = calm/neutral chip using semantic tokens.
  * - Outline on dark (dark:bg transparent, light border).
  * - Filled very lightly on light mode.
- * - `dense` toggles text-xs and tighter paddings for crowded rows.
+ * - `dense` toggles tighter paddings for crowded rows.
  */
 export default function Chip({
   children,
@@ -38,14 +38,24 @@ export default function Chip({
   className,
   title,
 }: ChipProps) {
+  const isInteractive = as === "button" || as === "a";
+
   const base =
-    "inline-flex items-center gap-1.5 rounded-full border border-border " +
-    "bg-card/80 text-foreground hover:bg-card " +
-    "transition";
+    "inline-flex items-center gap-1 sm:gap-1.5 whitespace-nowrap select-none rounded-xl " +
+    "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] " +
+    "transition-colors " +
+    "hover:bg-[var(--bg-subtle)] " +
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus " +
+    "active:scale-[.99]";
 
-  const size = dense ? "text-xs px-2.5 py-1" : "text-sm px-3 py-1.5";
+  // ✅ phone-first sizing (your knobs):
+  // - dense: text-[11px] px-2 py-1 on xs, restore to sm:text-xs sm:px-2.5 sm:py-1.5
+  // - default: text-xs on xs, restore to sm:text-sm
+  const size = dense
+    ? "text-[11px] px-2 py-1 leading-none sm:text-xs sm:px-2.5 sm:py-1.5"
+    : "text-xs px-2.5 py-1.5 leading-none sm:text-sm sm:px-3 sm:py-1.5";
 
-  const classes = cn(base, size, className);
+  const classes = cn(base, isInteractive && "min-h-9", size, className);
 
   if (as === "button") {
     return (

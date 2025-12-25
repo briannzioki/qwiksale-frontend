@@ -10,6 +10,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { auth } from "@/auth";
 import { extractGalleryUrls as collectUrls } from "@/app/lib/media";
+import type { SellerBadgeFields } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 /* ---------------- constants ---------------- */
 const PLACEHOLDER = "/placeholder/default.jpg";
@@ -57,7 +62,10 @@ function noStore(json: unknown, init?: ResponseInit) {
 function publicCache(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   if (IS_PROD) {
-    res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=60");
+    res.headers.set(
+      "Cache-Control",
+      "public, s-maxage=60, stale-while-revalidate=60",
+    );
   } else {
     res.headers.set("Cache-Control", "no-store");
   }
@@ -69,7 +77,7 @@ function getId(req: NextRequest): string {
   try {
     const segs = req.nextUrl.pathname.split("/");
     const idx = segs.findIndex((s) => s === "services");
-    const id = idx >= 0 ? segs[idx + 1] ?? "" : "";
+    const id = idx >= 0 ? (segs[idx + 1] ?? "") : "";
     return id.trim();
   } catch {
     return "";
@@ -88,63 +96,10 @@ function isClearlyInvalidId(id: string): boolean {
 }
 
 /* ---------------- seller/account badge helpers ---------------- */
-type FeaturedTier = "basic" | "gold" | "diamond";
-
-function normalizeFeaturedTier(v: unknown): FeaturedTier | null {
-  const pick = (x: unknown): string => {
-    if (typeof x === "string") return x;
-    if (x && typeof x === "object") {
-      const any = x as any;
-      const cand =
-        any?.tier ??
-        any?.plan ??
-        any?.level ??
-        any?.name ??
-        any?.type ??
-        any?.subscription ??
-        any?.value ??
-        "";
-      if (typeof cand === "string") return cand;
-    }
-    return "";
-  };
-
-  const raw = pick(v).trim();
-  if (!raw) return null;
-
-  const s = raw.toLowerCase();
-  if (s.includes("diamond")) return "diamond";
-  if (s.includes("gold")) return "gold";
-  if (s.includes("basic")) return "basic";
-  return null;
-}
-
-function normalizeSellerVerified(u: any): boolean | null {
-  if (!u) return null;
-
-  const direct = u?.verified ?? u?.isVerified ?? u?.accountVerified ?? u?.sellerVerified ?? null;
-  if (typeof direct === "boolean") return direct;
-
-  const at = u?.verifiedAt ?? u?.verified_on ?? u?.verifiedOn ?? u?.verificationDate ?? null;
-  if (typeof at === "string" && at.trim()) return true;
-  if (at instanceof Date) return true;
-
-  return null;
-}
-
-type SellerFlags = {
-  sellerVerified: boolean | null;
-  sellerFeaturedTier: FeaturedTier | null;
-};
-
-/**
- * Schema-safe seller flags fetch (row_to_json).
- */
-async function fetchSellerFlagsById(
+async function fetchSellerBadgeFieldsById(
   sellerId: string | null | undefined,
-): Promise<SellerFlags> {
-  if (!sellerId) return { sellerVerified: null, sellerFeaturedTier: null };
-
+): Promise<SellerBadgeFields | null> {
+  if (!sellerId) return null;
   try {
     const rows = await prisma.$queryRaw<{ u: any }[]>`
       SELECT row_to_json(u) as u
@@ -154,21 +109,18 @@ async function fetchSellerFlagsById(
     `;
     const u = rows?.[0]?.u ?? null;
 
-    const sub =
-      u?.featuredTier ??
-      u?.subscriptionTier ??
-      u?.subscription ??
-      u?.plan ??
-      u?.tier ??
-      null;
-
-    return {
-      sellerVerified: normalizeSellerVerified(u),
-      sellerFeaturedTier: normalizeFeaturedTier(sub),
-    };
+    // ✅ alignment: resolveSellerBadgeFieldsFromUserLike is emailVerified-only
+    // and returns nullable fields (unknown stays null).
+    return u ? (resolveSellerBadgeFieldsFromUserLike(u) as SellerBadgeFields) : null;
   } catch {
-    return { sellerVerified: null, sellerFeaturedTier: null };
+    return null;
   }
+}
+
+function isAnonRequest(req: NextRequest) {
+  const authz = req.headers.get("authorization");
+  const cookie = req.headers.get("cookie");
+  return !authz && !cookie;
 }
 
 /** base select for service (safe fields, includes gallery) */
@@ -315,7 +267,8 @@ export function HEAD() {
 }
 
 export function OPTIONS() {
-  const origin = process.env["NEXT_PUBLIC_APP_URL"] ?? process.env["APP_ORIGIN"] ?? "*";
+  const origin =
+    process.env["NEXT_PUBLIC_APP_URL"] ?? process.env["APP_ORIGIN"] ?? "*";
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
   res.headers.set("Vary", "Origin, Authorization, Cookie, Accept-Encoding");
@@ -329,9 +282,10 @@ export function OPTIONS() {
 /* ---------------- timeouts ---------------- */
 const TIMEOUT_MS = 1200;
 const race = <T,>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T | "timeout"> =>
-  Promise.race([p, new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms))]).catch(
-    () => "timeout" as const,
-  );
+  Promise.race([
+    p,
+    new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms)),
+  ]).catch(() => "timeout" as const);
 
 /* -------------------- GET /api/services/:id ------------------- */
 export async function GET(req: NextRequest) {
@@ -386,7 +340,9 @@ export async function GET(req: NextRequest) {
     const shaped = shapeService(base);
     const rawStatus = (base as any)?.status;
     const normalizedStatus =
-      typeof rawStatus === "string" && rawStatus.trim() ? rawStatus.trim().toUpperCase() : "ACTIVE";
+      typeof rawStatus === "string" && rawStatus.trim()
+        ? rawStatus.trim().toUpperCase()
+        : "ACTIVE";
     const isDeleted = Boolean((base as any)?.deletedAt);
     const isDevLike = !IS_PROD;
 
@@ -429,7 +385,9 @@ export async function GET(req: NextRequest) {
       }
 
       const viewerIsOwner =
-        !!resolvedUserId && !!base?.sellerId && String(base.sellerId) === String(resolvedUserId);
+        !!resolvedUserId &&
+        !!base?.sellerId &&
+        String(base.sellerId) === String(resolvedUserId);
 
       if (!viewerIsOwner && !isAdmin) {
         track("service_read_unauthorized_owner_check", { reqId, serviceId });
@@ -449,17 +407,28 @@ export async function GET(req: NextRequest) {
     const norm = normalizeCoverAndGallery(shaped, fullRow, relUrls);
     const gallery = norm.gallery;
 
-    const sellerFlagsRaw = await race(fetchSellerFlagsById(shaped?.sellerId), 650);
-    const sellerFlags = sellerFlagsRaw !== "timeout" ? (sellerFlagsRaw as SellerFlags) : null;
+    const sellerFieldsRaw = await race(fetchSellerBadgeFieldsById(shaped?.sellerId), 650);
+    const sellerFields =
+      sellerFieldsRaw !== "timeout"
+        ? (sellerFieldsRaw as SellerBadgeFields | null)
+        : null;
 
-    const verified = sellerFlags?.sellerVerified ?? false;
-    const tier = sellerFlags?.sellerFeaturedTier ?? "basic";
+    // ✅ no invented defaults: unknown stays null
+    const badges = sellerFields ?? buildSellerBadgeFields(null, null);
+
+    // ✅ explicit canonical keys
+    const sellerBadges = badges.sellerBadges;
+    const sellerVerified = badges.sellerVerified;
+    const sellerFeaturedTier = badges.sellerFeaturedTier;
 
     const payload = {
       ...shaped,
-      sellerVerified: verified,
-      sellerFeaturedTier: tier,
-      sellerBadges: { verified, tier },
+
+      // canonical badge keys (explicit)
+      sellerBadges,
+      sellerVerified,
+      sellerFeaturedTier,
+
       image: norm.cover,
       gallery,
       imageUrls: gallery,
@@ -468,7 +437,8 @@ export async function GET(req: NextRequest) {
     };
 
     const isPublicResponse = allowedAsPublic && !isDevLike;
-    const res = isPublicResponse ? publicCache(payload) : noStore(payload);
+    const res =
+      isPublicResponse && isAnonRequest(req) ? publicCache(payload) : noStore(payload);
 
     if (fullRowRaw === "timeout" || relUrlsRaw === "timeout") {
       res.headers.set("x-api-fallback", "timed-out");
@@ -527,11 +497,22 @@ export async function DELETE(req: NextRequest) {
     const isOwner = userId && existing.sellerId === userId;
     if (!isOwner && !isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
 
-    // Delete gallery images + service
-    await prisma.$transaction([
-      prisma.serviceImage.deleteMany({ where: { serviceId: existing.id } }),
-      Service.delete({ where: { id: existing.id } }),
-    ]);
+    // ✅ Schema-tolerant delete of related images (no hard dependency on prisma.serviceImage)
+    const ImageModel = getServiceImageModel();
+
+    const ops: any[] = [];
+    if (ImageModel && typeof (ImageModel as any).deleteMany === "function") {
+      ops.push((ImageModel as any).deleteMany({ where: { serviceId: existing.id } }));
+    } else {
+      const anyPrisma = prisma as any;
+      if (anyPrisma?.serviceImage?.deleteMany) {
+        ops.push(anyPrisma.serviceImage.deleteMany({ where: { serviceId: existing.id } }));
+      }
+    }
+
+    ops.push(Service.delete({ where: { id: existing.id } }));
+
+    await prisma.$transaction(ops);
 
     return noStore({ ok: true });
   } catch (e) {

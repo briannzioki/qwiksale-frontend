@@ -50,6 +50,11 @@ export default function BillingPage() {
   const abortRef = useRef<AbortController | null>(null);
   const price = useMemo(() => PRICES[tier], [tier]);
 
+  const muted = "text-[var(--text-muted)]";
+  const body = "text-[var(--text)]";
+  const focusRing = "focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const helperText = "text-xs leading-relaxed text-[var(--text-muted)]";
+
   // Prefill from localStorage or NEXT_PUBLIC_TEST_MSISDN
   useEffect(() => {
     try {
@@ -181,46 +186,50 @@ export default function BillingPage() {
     | undefined;
 
   return (
-    <div className="container-page py-8">
-      <div className="max-w-3xl mx-auto space-y-6">
+    <div className="container-page py-8 text-[var(--text)]">
+      <div className="mx-auto max-w-3xl space-y-6">
         <header className="space-y-1">
-          <h1 className="text-2xl font-semibold text-balance">
+          <h1 className="text-2xl font-extrabold tracking-tight text-balance text-[var(--text)]">
             Upgrade subscription
           </h1>
-          <p className="text-sm text-gray-600 dark:text-slate-400">
+          <p className={`text-sm leading-relaxed ${muted}`}>
             Secure M-Pesa STK push. Choose a tier below and confirm on your
             phone.
           </p>
         </header>
 
         {/* Session card */}
-        <section className="card p-4 flex items-center justify-between gap-4">
-          <div className="text-sm">
+        <section className="card flex items-center justify-between gap-4 p-4">
+          <div className={`text-sm ${body}`}>
             {signedIn ? (
               <>
-                <div>
+                <div className={muted}>
                   Signed in as{" "}
-                  <span className="font-medium">{session?.user?.email}</span>
+                  <span className="font-semibold text-[var(--text)]">
+                    {session?.user?.email}
+                  </span>
                 </div>
                 {currentTier && (
-                  <div className="mt-0.5">
+                  <div className={`mt-0.5 ${muted}`}>
                     Current tier:{" "}
-                    <span className="font-medium">{currentTier}</span>
+                    <span className="font-semibold text-[var(--text)]">
+                      {currentTier}
+                    </span>
                   </div>
                 )}
               </>
             ) : sessionStatus === "loading" ? (
               <div className="skeleton h-4 w-56 rounded" />
             ) : (
-              <div className="text-gray-600 dark:text-slate-400">
-                Not signed in.
-              </div>
+              <div className={muted}>Not signed in.</div>
             )}
           </div>
 
           {!signedIn && (
             <button
-              onClick={() => signIn(undefined, { callbackUrl: "/settings/billing" })}
+              onClick={() =>
+                signIn(undefined, { callbackUrl: "/settings/billing" })
+              }
               className="btn-gradient-primary"
             >
               Sign in
@@ -229,7 +238,7 @@ export default function BillingPage() {
         </section>
 
         {/* Plans */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <PlanCard
             title="Gold"
             price={PRICES.GOLD}
@@ -253,7 +262,7 @@ export default function BillingPage() {
         </section>
 
         {/* Payment form */}
-        <form onSubmit={submit} className="card p-5 space-y-4">
+        <form onSubmit={submit} className="card space-y-4 p-5">
           <div className="grid grid-cols-1 gap-3">
             <div className="flex flex-col gap-1">
               <label htmlFor="phone" className="label">
@@ -268,17 +277,22 @@ export default function BillingPage() {
                 autoComplete="tel"
                 className="input"
                 required
-                aria-invalid={phone ? !validMsisdn(normalizeMsisdn(phone)) : undefined}
+                aria-invalid={
+                  phone ? !validMsisdn(normalizeMsisdn(phone)) : undefined
+                }
               />
-              <div className="text-xs text-gray-500 dark:text-slate-400">
+              <div className={helperText}>
                 We’ll send an STK push to this number. Use{" "}
-                <code className="font-mono">2547XXXXXXXX</code> format.
+                <code className="font-mono text-[var(--text)]">
+                  2547XXXXXXXX
+                </code>{" "}
+                format.
               </div>
               {TEST_MSISDN ? (
                 <button
                   type="button"
                   onClick={() => setPhone(TEST_MSISDN)}
-                  className="btn-outline w-fit mt-1 text-xs"
+                  className="btn-outline mt-1 w-fit text-xs"
                   title="Use test number from env"
                 >
                   Use test number ({TEST_MSISDN})
@@ -321,12 +335,12 @@ export default function BillingPage() {
             <button
               type="button"
               onClick={() => setShowAdvanced((s) => !s)}
-              className="btn-outline"
+              className={`btn-outline ${focusRing}`}
             >
               {showAdvanced ? "Hide" : "Details"}
             </button>
 
-            <p className="text-xs text-gray-500 dark:text-slate-400">
+            <p className={helperText}>
               You’ll be redirected only if sign-in is required. Payments are
               handled securely by Safaricom (Daraja).
             </p>
@@ -334,12 +348,14 @@ export default function BillingPage() {
 
           {/* Status + errors */}
           {showAdvanced && (
-            <div className="mt-2 rounded-lg bg-gray-50 dark:bg-slate-800/60 p-3 text-xs text-gray-600 dark:text-slate-300">
-              <ul className="list-disc ml-5 space-y-1">
+            <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-xs text-[var(--text-muted)]">
+              <ul className="ml-5 list-disc space-y-1">
                 <li>
                   We send{" "}
-                  <span className="font-mono">CustomerPayBillOnline</span> STK
-                  to your number.
+                  <span className="font-mono text-[var(--text)]">
+                    CustomerPayBillOnline
+                  </span>{" "}
+                  STK to your number.
                 </li>
                 <li>
                   On success, our callback updates your subscription
@@ -354,11 +370,15 @@ export default function BillingPage() {
           )}
 
           {status && (
-            <div className="text-sm text-gray-700 dark:text-slate-200">
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2 text-sm text-[var(--text)]">
               {status}
             </div>
           )}
-          {error && <div className="text-sm text-red-600">{error}</div>}
+          {error && (
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2 text-sm font-medium text-[var(--text)]">
+              {error}
+            </div>
+          )}
         </form>
       </div>
     </div>
@@ -384,42 +404,50 @@ function PlanCard({
   selected?: boolean;
   onSelect: () => void;
 }) {
+  const containerCls = [
+    "card p-5 flex flex-col gap-3 transition",
+    "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft",
+    highlighted ? "bg-[var(--bg-subtle)] border-[var(--border)]" : "",
+    selected ? "outline outline-2 outline-[var(--border)]" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div
-      className={[
-        "card p-5 flex flex-col gap-3 transition",
-        highlighted ? "ring-1 ring-brandBlue/30" : "",
-        selected ? "outline outline-2 outline-brandBlue/60" : "",
-      ].join(" ")}
-      role="group"
-    >
-      <div className="flex items-start justify-between">
+    <div className={containerCls} role="group">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <div className="text-2xl font-bold mt-1">
+          <h3 className="text-lg font-extrabold tracking-tight text-[var(--text)]">
+            {title}
+          </h3>
+          <div className="mt-1 text-2xl font-extrabold tracking-tight text-[var(--text)]">
             KES {price.toLocaleString()}
-            <span className="text-sm font-normal text-gray-500 dark:text-slate-400">
+            <span className="text-sm font-normal text-[var(--text-muted)]">
               {" "}
               / month
             </span>
           </div>
         </div>
+
         {selected ? (
-          <span className="badge-verified" aria-label="Selected plan">
+          <span
+            className="inline-flex items-center rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-semibold text-[var(--text)]"
+            aria-label="Selected plan"
+          >
             Selected
           </span>
         ) : (
-          <span className="badge bg-white dark:bg-slate-900 border text-xs">
+          <span className="inline-flex items-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
             {features.length} perks
           </span>
         )}
       </div>
 
-      <ul className="mt-1 space-y-2 text-sm text-gray-700 dark:text-slate-200">
+      <ul className="mt-1 space-y-2 text-sm text-[var(--text-muted)]">
         {features.map((f) => (
           <li key={f} className="flex items-start gap-2">
             <CheckIcon />
-            <span>{f}</span>
+            <span className="leading-relaxed">{f}</span>
           </li>
         ))}
       </ul>
@@ -441,7 +469,7 @@ function PlanCard({
 function CheckIcon() {
   return (
     <svg
-      className="mt-0.5 h-4 w-4 text-brandGreen"
+      className="mt-0.5 h-4 w-4 text-[var(--text)]"
       viewBox="0 0 20 20"
       fill="currentColor"
       aria-hidden

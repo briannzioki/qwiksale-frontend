@@ -19,7 +19,11 @@ import { AddReviewForm } from "@/app/components/AddReviewForm";
 import { useListingReviews } from "@/app/hooks/useListingReviews";
 import SellerInfo from "@/app/components/SellerInfo";
 
-type FeaturedTier = "basic" | "gold" | "diamond";
+import type { FeaturedTier } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 export type ServiceWire = {
   id: string;
@@ -63,12 +67,20 @@ export type ServiceWire = {
         memberSince?: string | null;
         rating?: number | null;
         sales?: number | null;
+
+        // NOTE: these are *not* authoritative for seller badges in UI
         verified?: boolean | null;
         storeLocationUrl?: string | null;
 
         featuredTier?: FeaturedTier | string | null;
         featured_tier?: string | null;
         tier?: string | null;
+
+        // NextAuth-ish / legacy-ish keys that may appear
+        emailVerified?: unknown;
+        email_verified?: unknown;
+        emailVerifiedAt?: unknown;
+        email_verified_at?: unknown;
       }
     | null;
 
@@ -78,6 +90,12 @@ export type ServiceWire = {
   /** Optional seller/account flags */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
+
+  /** Optional consolidated badges */
+  sellerBadges?: {
+    verified?: boolean | null;
+    tier?: FeaturedTier | string | null;
+  } | null;
 };
 
 type StoreRow = ReturnType<typeof useServices> extends { services: infer U }
@@ -120,21 +138,59 @@ function isPlaceholder(u?: string | null) {
   return s === PLACEHOLDER || s.endsWith("/placeholder/default.jpg");
 }
 
-function pickFirstBool(...xs: unknown[]): boolean | null {
-  for (const x of xs) {
-    if (typeof x === "boolean") return x;
-  }
-  return null;
-}
+/**
+ * Seller badges must be derived via shared resolver (emailVerified-only verification),
+ * BUT we allow the API's explicit derived fields:
+ * - sellerBadges.verified
+ * - sellerVerified
+ *
+ * We do NOT trust legacy/random boolean fields on nested seller objects (e.g. seller.verified).
+ */
+function resolveSellerBadgeFieldsFromAny(raw: any) {
+  const seller =
+    raw?.seller && typeof raw.seller === "object" && !Array.isArray(raw.seller) ? raw.seller : null;
 
-function coerceFeaturedTier(v: unknown): FeaturedTier | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim().toLowerCase();
-  if (!s) return null;
-  if (s.includes("diamond")) return "diamond";
-  if (s.includes("gold")) return "gold";
-  if (s.includes("basic")) return "basic";
-  return null;
+  const base = seller ?? (raw && typeof raw === "object" ? raw : {});
+
+  const tierHint =
+    raw?.sellerFeaturedTier ??
+    raw?.seller_featured_tier ??
+    raw?.sellerBadges?.tier ??
+    raw?.featuredTier ??
+    raw?.featured_tier ??
+    null;
+
+  // ✅ Only accept the API's explicit derived verification fields (not nested legacy booleans).
+  const verifiedHint =
+    typeof raw?.sellerBadges?.verified === "boolean"
+      ? raw.sellerBadges.verified
+      : typeof raw?.sellerVerified === "boolean"
+        ? raw.sellerVerified
+        : typeof raw?.seller_verified === "boolean"
+          ? raw.seller_verified
+          : null;
+
+  // ✅ Prevent legacy boolean fields from influencing verification resolution.
+  const baseClean: any = { ...(base as any) };
+  delete baseClean.verified;
+  delete baseClean.isVerified;
+  delete baseClean.accountVerified;
+  delete baseClean.sellerVerified;
+  delete baseClean.isSellerVerified;
+  delete baseClean.verifiedSeller;
+  delete baseClean.isAccountVerified;
+  delete baseClean.verifiedAt;
+  delete baseClean.verified_on;
+  delete baseClean.verifiedOn;
+  delete baseClean.verificationDate;
+
+  const userLike = tierHint != null ? { ...baseClean, featuredTier: tierHint } : baseClean;
+
+  const resolved = resolveSellerBadgeFieldsFromUserLike(userLike);
+
+  const finalVerified = typeof verifiedHint === "boolean" ? verifiedHint : resolved.sellerVerified;
+
+  return buildSellerBadgeFields(finalVerified, resolved.sellerFeaturedTier);
 }
 
 /**
@@ -189,45 +245,10 @@ function coerceValidUserId(raw: unknown): string | null {
   return s;
 }
 
-function SellerBadgesRow({
-  verified,
-  tier,
-}: {
-  verified: boolean;
-  tier: FeaturedTier;
-}) {
-  return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="seller-badges-row">
-      {verified ? (
-        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
-          <span aria-hidden>✓</span>
-          <span>Verified</span>
-        </span>
-      ) : (
-        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
-          <span aria-hidden>!</span>
-          <span>Unverified</span>
-        </span>
-      )}
-
-      {tier === "gold" ? (
-        <span className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-gradient-to-r from-yellow-200 via-yellow-100 to-yellow-300 px-2 py-0.5 text-[11px] font-semibold text-yellow-950 dark:border-yellow-900/40 dark:from-yellow-900/30 dark:via-yellow-900/10 dark:to-yellow-900/30 dark:text-yellow-100">
-          <span aria-hidden>★</span>
-          <span>Featured Gold</span>
-        </span>
-      ) : tier === "diamond" ? (
-        <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-gradient-to-r from-sky-200 via-indigo-100 to-violet-200 px-2 py-0.5 text-[11px] font-semibold text-slate-950 dark:border-indigo-900/40 dark:from-indigo-900/30 dark:via-indigo-900/10 dark:to-indigo-900/30 dark:text-slate-100">
-          <span aria-hidden>💎</span>
-          <span>Featured Diamond</span>
-        </span>
-      ) : (
-        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground">
-          <span aria-hidden>★</span>
-          <span>Featured Basic</span>
-        </span>
-      )}
-    </div>
-  );
+function normalizeTier(v: unknown): FeaturedTier | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  return t === "basic" || t === "gold" || t === "diamond" ? (t as FeaturedTier) : null;
 }
 
 export default function ServicePageClient({
@@ -474,12 +495,12 @@ export default function ServicePageClient({
   if (gone) {
     return (
       <div className="mx-auto max-w-2xl">
-        <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-          <div className="mx-auto mb-3 grid h-10 w-10 place-content-center rounded-lg bg-[#161748] text-white">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 text-center text-[var(--text)] shadow-soft sm:p-6">
+          <div className="mx-auto mb-2 grid h-9 w-9 place-content-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)] sm:mb-3 sm:h-10 sm:w-10">
             404
           </div>
-          <h1 className="text-lg font-semibold text-foreground">Service unavailable</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-lg font-semibold text-[var(--text)]">Service unavailable</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             This service was removed or isn’t available anymore.
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
@@ -497,24 +518,8 @@ export default function ServicePageClient({
 
   const displayMaybe = (fetched || service) as Detail | undefined;
 
-  // ✅ Always resolve to a real boolean + tier (no “missing badges” on partial data)
-  const resolvedVerified =
-    pickFirstBool(
-      (displayMaybe as any)?.sellerVerified,
-      (displayMaybe as any)?.verified,
-      (displayMaybe as any)?.seller?.verified,
-      (displayMaybe as any)?.seller?.isVerified,
-    ) ?? false;
-
-  const resolvedTier: FeaturedTier =
-    coerceFeaturedTier((displayMaybe as any)?.sellerFeaturedTier) ??
-    coerceFeaturedTier((displayMaybe as any)?.seller_featured_tier) ??
-    coerceFeaturedTier((displayMaybe as any)?.featuredTier) ??
-    coerceFeaturedTier((displayMaybe as any)?.featured_tier) ??
-    coerceFeaturedTier((displayMaybe as any)?.seller?.featuredTier) ??
-    coerceFeaturedTier((displayMaybe as any)?.seller?.featured_tier) ??
-    coerceFeaturedTier((displayMaybe as any)?.seller?.tier) ??
-    "basic";
+  // ✅ seller verification from resolver + explicit API derived fields
+  const sellerBadgeFields = resolveSellerBadgeFieldsFromAny(displayMaybe);
 
   const display: Detail = {
     id: displayMaybe?.id ?? id ?? "unknown",
@@ -535,7 +540,8 @@ export default function ServicePageClient({
     sellerPhone: displayMaybe?.sellerPhone ?? null,
     sellerLocation: displayMaybe?.sellerLocation ?? null,
     sellerMemberSince: displayMaybe?.sellerMemberSince ?? null,
-    sellerRating: typeof displayMaybe?.sellerRating === "number" ? displayMaybe.sellerRating : null,
+    sellerRating:
+      typeof displayMaybe?.sellerRating === "number" ? displayMaybe.sellerRating : null,
     sellerSales: typeof displayMaybe?.sellerSales === "number" ? displayMaybe.sellerSales : null,
     seller: displayMaybe?.seller ?? null,
     ...(displayMaybe && "status" in displayMaybe && displayMaybe.status != null
@@ -544,9 +550,8 @@ export default function ServicePageClient({
     sellerStoreLocationUrl:
       displayMaybe?.sellerStoreLocationUrl ?? (displayMaybe as any)?.storeLocationUrl ?? null,
 
-    // ✅ stable flags
-    sellerVerified: resolvedVerified,
-    sellerFeaturedTier: resolvedTier,
+    // ✅ stable consolidated badges + alias fields
+    ...sellerBadgeFields,
   };
 
   const galleryToRender = useMemo(() => {
@@ -567,6 +572,12 @@ export default function ServicePageClient({
     [galleryToRender],
   );
 
+  // ✅ Ensure we ALWAYS render at least one visible <img> inside [data-gallery-wrap]
+  const staticHeroSrc = useMemo(() => {
+    const src = galleryToRender?.[0] || PLACEHOLDER;
+    return src || PLACEHOLDER;
+  }, [galleryToRender]);
+
   const seller = useMemo(() => {
     const nested: any = (display as any)?.seller || {};
     const username = (nested?.username || "").trim() || null;
@@ -580,16 +591,10 @@ export default function ServicePageClient({
             ? (display as any).storeLocationUrl
             : null;
 
-    // ✅ force boolean + tier for consistent visible badges
-    const verified =
-      pickFirstBool(nested?.verified, nested?.isVerified, (display as any)?.sellerVerified) ?? false;
+    const uiVerified =
+      typeof (display as any)?.sellerVerified === "boolean" ? (display as any).sellerVerified : null;
 
-    const featuredTier: FeaturedTier =
-      coerceFeaturedTier(nested?.featuredTier) ??
-      coerceFeaturedTier(nested?.featured_tier) ??
-      coerceFeaturedTier(nested?.tier) ??
-      coerceFeaturedTier((display as any)?.sellerFeaturedTier) ??
-      "basic";
+    const uiTier = normalizeTier((display as any)?.sellerFeaturedTier);
 
     return {
       id: nested?.id ?? display?.sellerId ?? null,
@@ -612,12 +617,12 @@ export default function ServicePageClient({
             ? display?.sellerSales
             : null,
       storeLocationUrl,
-      verified,
-      featuredTier,
+
+      verified: uiVerified,
+      featuredTier: uiTier,
     };
   }, [display]);
 
-  // ✅ compute a *real* seller user id for ownership + store links (never Sto-xxxxx)
   const sellerUserIdForStore = useMemo(() => {
     const nestedId = (display as any)?.seller?.id;
     const candidates = [nestedId, seller.id, display.sellerId];
@@ -630,8 +635,6 @@ export default function ServicePageClient({
 
   const isOwner = Boolean(viewerId && sellerUserIdForStore && viewerId === sellerUserIdForStore);
 
-  // ✅ FIX: prefer a VALID username handle; otherwise fall back to u-<real user id>.
-  // Never allow store-code-ish tokens like Sto-83535 to become the store slug.
   const displaySellerUsername = (display as any)?.sellerUsername as unknown;
   const displayUsername = (display as any)?.username as unknown;
 
@@ -653,6 +656,26 @@ export default function ServicePageClient({
   }, [storeSlug]);
 
   const sellerIdForDonate: string | null = sellerUserIdForStore;
+
+  const listingTier: FeaturedTier | null =
+    seller.featuredTier ?? (display.featured ? "basic" : null);
+
+  const overlayTier: FeaturedTier | null = listingTier;
+  const overlayTestId = overlayTier ? `featured-tier-${overlayTier}` : null;
+  const overlayLabel = overlayTier ? `Featured tier ${overlayTier}` : "";
+  const overlayIcon = overlayTier === "diamond" ? "💎" : "★";
+
+  const toneTier: FeaturedTier = overlayTier ?? "basic";
+
+  const featuredOverlayClass =
+    toneTier === "gold"
+      ? "border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+      : toneTier === "diamond"
+        ? "border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]"
+        : "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]";
+
+  const featuredOverlayRing =
+    toneTier === "diamond" ? "ring-1 ring-[var(--border)]" : "ring-1 ring-[var(--border-subtle)]";
 
   const seo = useMemo(() => {
     const nonPlaceholder = galleryToRender.filter((u) => u && u !== PLACEHOLDER);
@@ -746,28 +769,51 @@ export default function ServicePageClient({
         />
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-5">
         {/* Media */}
         <div className="lg:col-span-3">
-          <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm" data-gallery-wrap>
+          <div
+            className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft"
+            data-gallery-wrap
+          >
             <div className="relative" style={{ aspectRatio: "16 / 10" }}>
-              {display.featured && (
-                <span className="absolute left-3 top-3 z-20 rounded-md bg-[#161748] px-2 py-1 text-xs text-white shadow">
-                  Featured
+              {overlayTier && overlayTestId && (
+                <span
+                  data-testid={overlayTestId}
+                  aria-label={overlayLabel}
+                  title={overlayLabel}
+                  className={[
+                    "pointer-events-none absolute left-2 top-2 z-20 inline-flex items-center justify-center rounded-xl px-2 py-1 text-[11px] shadow-sm backdrop-blur-sm sm:left-3 sm:top-3 sm:text-xs",
+                    featuredOverlayClass,
+                    featuredOverlayRing,
+                  ].join(" ")}
+                >
+                  <span aria-hidden>{overlayIcon}</span>
                 </span>
               )}
 
-              <Gallery images={galleryToRender} sizes={GALLERY_SIZES} lightbox={enableLightbox} />
+              {!enableLightbox ? (
+                <img
+                  src={staticHeroSrc}
+                  alt={display.name || "Service"}
+                  className="h-full w-full object-cover"
+                  loading="eager"
+                  decoding="async"
+                  draggable={false}
+                />
+              ) : (
+                <Gallery images={galleryToRender} sizes={GALLERY_SIZES} lightbox={enableLightbox} />
+              )}
 
-              <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-black/5 dark:ring-white/10" />
+              <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-[var(--border-subtle)]" />
             </div>
 
             {/* Overlay controls */}
-            <div className="absolute right-3 top-3 z-[80] flex gap-2">
+            <div className="absolute right-2 top-2 z-[80] flex gap-2 sm:right-3 sm:top-3">
               <button
                 type="button"
                 onClick={copyLink}
-                className="btn-gradient-primary inline-flex items-center gap-1 px-2 py-1 text-xs"
+                className="btn-gradient-primary inline-flex min-h-9 items-center gap-1 px-3 text-xs"
                 title="Copy link"
                 aria-label="Copy link"
               >
@@ -781,7 +827,7 @@ export default function ServicePageClient({
                   <Link
                     href={`/service/${display.id}/edit`}
                     prefetch={false}
-                    className="btn-gradient-primary inline-flex items-center gap-1 px-2 py-1 text-xs"
+                    className="btn-gradient-primary inline-flex min-h-9 items-center gap-1 px-3 text-xs"
                     title="Edit service"
                     aria-label="Edit service"
                   >
@@ -801,7 +847,7 @@ export default function ServicePageClient({
             </div>
 
             {(fetching || fetchErr) && (
-              <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[75] bg-background/80 p-2 text-center text-xs text-foreground">
+              <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[75] border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-center text-[11px] text-[var(--text)] shadow-sm sm:text-xs">
                 {fetching ? "Loading…" : fetchErr || "Showing limited info"}
               </div>
             )}
@@ -809,15 +855,17 @@ export default function ServicePageClient({
         </div>
 
         {/* Details */}
-        <div className="space-y-4 lg:col-span-2">
+        <div className="space-y-3 sm:space-y-4 lg:col-span-2">
           {/* Header / title */}
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-brandBlue/80 dark:text-brandBlue">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Service
               </p>
-              <h1 className="mt-1 text-2xl font-bold text-foreground">{display.name || "Service"}</h1>
-              {/* Hidden ID for tests */}
+              <h1 className="mt-1 text-xl font-bold text-[var(--text)] sm:text-2xl">
+                <span className="sr-only">Service </span>
+                {display.name || "Service"}
+              </h1>
               <span className="sr-only" data-testid="service-id">
                 {display.id}
               </span>
@@ -825,33 +873,31 @@ export default function ServicePageClient({
           </div>
 
           {/* Rate / meta */}
-          <div className="space-y-1 rounded-xl border border-border bg-card p-4">
-            <p className="text-2xl font-bold text-[#161748] dark:text-brandBlue">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:p-4">
+            <p className="text-xl font-bold text-[var(--text)] sm:text-2xl">
               {fmtKES(display.price)} {rateSuffix(display.rateType ?? null)}
             </p>
             {display.serviceArea && (
-              <p className="text-sm text-muted-foreground">Service Area: {display.serviceArea}</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">
+                Service Area: {display.serviceArea}
+              </p>
             )}
             {display.location && (
-              <p className="text-sm text-muted-foreground">Base Location: {display.location}</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">
+                Base Location: {display.location}
+              </p>
             )}
           </div>
 
           {/* Description */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h2 className="mb-2 font-semibold text-foreground">Description</h2>
-            <p className="whitespace-pre-line text-foreground">
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:p-4">
+            <h2 className="mb-1 font-semibold text-[var(--text)] sm:mb-2">Description</h2>
+            <p className="whitespace-pre-line text-sm text-[var(--text)] sm:text-base">
               {display.description || "No description provided."}
             </p>
           </div>
 
-          {/* ✅ Explicit visible badges (no more missing Verified/Unverified text) */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-sm font-semibold text-foreground">Provider badges</div>
-            <SellerBadgesRow verified={seller.verified} tier={seller.featuredTier} />
-          </div>
-
-          {/* Provider / Contact / Store / Donate */}
+          {/* Provider / Contact */}
           <SellerInfo
             label="Provider"
             sellerId={sellerUserIdForStore}
@@ -863,10 +909,10 @@ export default function ServicePageClient({
             memberSince={seller.memberSince ?? null}
             rating={typeof seller.rating === "number" ? seller.rating : null}
             salesCount={typeof seller.sales === "number" ? seller.sales : null}
-            verified={seller.verified}
-            featuredTier={seller.featuredTier}
             storeHref={storeHref}
             donateSellerId={sellerIdForDonate}
+            verified={seller.verified}
+            featuredTier={listingTier}
             contactSlot={
               <ContactModalService
                 className="btn-gradient-primary"
@@ -881,14 +927,17 @@ export default function ServicePageClient({
 
           {/* Reviews */}
           <div
-            className="rounded-xl border border-border bg-card p-4"
+            className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:p-4"
             data-section="reviews"
             {...(reviewSummary
-              ? { "data-review-avg": reviewSummary.average ?? undefined, "data-review-count": reviewSummary.count }
+              ? {
+                  "data-review-avg": reviewSummary.average ?? undefined,
+                  "data-review-count": reviewSummary.count,
+                }
               : {})}
           >
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-semibold text-foreground">Reviews</h3>
+              <h3 className="font-semibold text-[var(--text)]">Reviews</h3>
               <ReviewSummary
                 reviews={reviews as any[]}
                 average={reviewSummary?.average ?? null}

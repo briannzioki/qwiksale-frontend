@@ -1,4 +1,3 @@
-// src/app/_components/HomeClient.tsx
 "use client";
 
 import * as React from "react";
@@ -8,9 +7,13 @@ import { useSearchParams } from "next/navigation";
 import HomeTabs from "@/app/components/HomeTabs";
 import FavoriteButton from "@/app/components/favorites/FavoriteButton";
 import type { HomeSeedProps } from "./HomeClientNoSSR";
+import type { FeaturedTier, SellerBadgeFields } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 type Mode = "all" | "products" | "services";
-type FeaturedTier = "basic" | "gold" | "diamond";
 
 type ProductItem = {
   type: "product";
@@ -29,6 +32,7 @@ type ProductItem = {
   /** Seller/account flags for public UI */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
+  sellerBadges?: SellerBadgeFields["sellerBadges"] | null;
 };
 
 type ServiceItem = {
@@ -46,6 +50,7 @@ type ServiceItem = {
   /** Seller/account flags for public UI */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
+  sellerBadges?: SellerBadgeFields["sellerBadges"] | null;
 };
 
 type AnyItem = ProductItem | ServiceItem;
@@ -85,12 +90,12 @@ function shimmer(width: number, height: number) {
   <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
     <defs>
       <linearGradient id="g">
-        <stop stop-color="#eee" offset="20%" />
-        <stop stop-color="#ddd" offset="50%" />
-        <stop stop-color="#eee" offset="70%" />
+        <stop stop-color="rgb(238 238 238)" offset="20%" />
+        <stop stop-color="rgb(221 221 221)" offset="50%" />
+        <stop stop-color="rgb(238 238 238)" offset="70%" />
       </linearGradient>
     </defs>
-    <rect width="${width}" height="${height}" fill="#eee" />
+    <rect width="${width}" height="${height}" fill="rgb(238 238 238)" />
     <rect id="r" width="${width}" height="${height}" fill="url(#g)" />
     <animate xlink:href="#r" attributeName="x" from="-${width}" to="${width}" dur="1.2s" repeatCount="indefinite" />
   </svg>`;
@@ -125,90 +130,124 @@ function useDebounced<T>(value: T, delay = DEBOUNCE_MS): T {
   return debounced;
 }
 
-function coerceFeaturedTier(v: unknown): FeaturedTier | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim().toLowerCase();
+/**
+ * Parse a tier only when it is actually present/meaningful.
+ * Do NOT default to "basic" for missing/unknown values (prevents wrong-defaulting).
+ */
+function parseFeaturedTier(v: unknown): FeaturedTier | null {
+  if (v == null) return null;
+
+  const s = String(v).trim().toLowerCase();
   if (!s) return null;
+
   if (s.includes("diamond")) return "diamond";
   if (s.includes("gold")) return "gold";
-  if (s.includes("basic")) return "basic";
+
+  // Only treat "basic" as real when explicitly indicated
+  if (s === "basic" || s.includes(" basic") || s.includes("basic ")) return "basic";
+
   return null;
 }
 
-function pickSellerVerified(raw: any): boolean | null {
-  if (!raw || typeof raw !== "object") return null;
+/**
+ * Home feed items can come from multiple endpoints/shapes.
+ * We prefer API-provided badges (sellerBadges first; otherwise sellerVerified/sellerFeaturedTier),
+ * otherwise we resolve from a user-like object (emailVerified-only verification).
+ *
+ * IMPORTANT: If a flag is unknown, return null/undefined for that flag.
+ * Do NOT coerce to false/"basic" (prevents wrong-defaulting + flicker).
+ */
+function resolveBadgesFromAny(raw: any): SellerBadgeFields {
+  // Prefer sellerBadges as the source of truth when present.
+  const rawBadges: any =
+    raw?.sellerBadges &&
+    typeof raw.sellerBadges === "object" &&
+    !Array.isArray(raw.sellerBadges)
+      ? raw.sellerBadges
+      : null;
+
+  const badgesVerified =
+    rawBadges && typeof rawBadges.verified === "boolean"
+      ? (rawBadges.verified as boolean)
+      : null;
+
+  const badgesTier = parseFeaturedTier(rawBadges?.tier);
+
+  const directVerified =
+    badgesVerified !== null
+      ? badgesVerified
+      : typeof raw?.sellerVerified === "boolean"
+        ? (raw.sellerVerified as boolean)
+        : null;
+
+  const directTierRaw =
+    badgesTier ??
+    parseFeaturedTier(
+      raw?.sellerFeaturedTier ??
+        raw?.featuredTier ??
+        raw?.featured_tier ??
+        raw?.seller_featured_tier ??
+        null,
+    );
+
+  const directTier = directTierRaw;
+
+  // If BOTH are known, use the shared builder so the shape stays consistent.
+  if (directVerified !== null && directTier !== null) {
+    return buildSellerBadgeFields(directVerified, directTier);
+  }
+
+  // If only one is known, preserve ONLY what we know; don't default the other.
+  // IMPORTANT: SellerBadgeFields requires legacy alias keys too (verified/isVerified/seller_verified).
+  if (directVerified !== null || directTier !== null) {
+    return {
+      sellerVerified: directVerified,
+      sellerFeaturedTier: directTier,
+      sellerBadges: rawBadges,
+      verified: directVerified,
+      isVerified: directVerified,
+      seller_verified: directVerified,
+    };
+  }
 
   const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
+  const sellerObj =
+    seller && typeof seller === "object" && !Array.isArray(seller) ? seller : null;
 
-  const candidates: unknown[] = [
-    raw?.sellerVerified,
-    raw?.seller_verified,
-    raw?.accountVerified,
-    raw?.account_verified,
-    seller?.verified,
-    seller?.isVerified,
-    seller?.sellerVerified,
-    seller?.accountVerified,
-  ];
+  const base = sellerObj ?? (raw && typeof raw === "object" ? raw : {});
 
-  for (const c of candidates) {
-    if (typeof c === "boolean") return c;
-  }
+  // allow tier hints on the object the resolver expects (but don't force defaults)
+  const tierHint =
+    raw?.featuredTier ??
+    raw?.featured_tier ??
+    raw?.sellerFeaturedTier ??
+    raw?.seller_featured_tier ??
+    null;
 
-  const hasSellerContext = Boolean(
-    raw?.sellerId ||
-      raw?.sellerName ||
-      raw?.seller ||
-      raw?.user ||
-      raw?.owner ||
-      seller,
-  );
+  const parsedTierHint = parseFeaturedTier(tierHint);
+  const userLike =
+    parsedTierHint != null
+      ? { ...(base as any), featuredTier: parsedTierHint }
+      : (base as any);
 
-  if (hasSellerContext && typeof raw?.verified === "boolean") {
-    return raw.verified;
-  }
-
-  return null;
+  return resolveSellerBadgeFieldsFromUserLike(userLike);
 }
 
-function pickSellerFeaturedTier(raw: any): FeaturedTier | null {
-  if (!raw || typeof raw !== "object") return null;
-
-  const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
-
-  const candidates: unknown[] = [
-    seller?.featuredTier,
-    seller?.featured_tier,
-    seller?.tier,
-    seller?.featuredLevel,
-    raw?.sellerFeaturedTier,
-    raw?.seller_featured_tier,
-    raw?.accountFeaturedTier,
-    raw?.account_featured_tier,
-    raw?.featuredTier,
-    raw?.featured_tier,
-  ];
-
-  for (const c of candidates) {
-    const t = coerceFeaturedTier(c);
-    if (t) return t;
-  }
-
-  return null;
-}
-
-/* ------------------------ Seller pill UI (brand-consistent) ------------------------ */
+/* ------------------------ Seller pill UI (tokenized) ------------------------ */
 
 function VerifiedPill({ verified }: { verified: boolean }) {
   return (
     <span
+      data-testid={verified ? "verified-badge" : "unverified-badge"}
       className={[
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        "inline-flex items-center gap-1 rounded-xl border shadow-sm",
+        "px-2 py-1 text-[11px] font-semibold sm:px-2.5 sm:py-1.5 sm:text-xs",
         verified
-          ? "border-emerald-500/30 bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-          : "border-border bg-muted text-muted-foreground",
+          ? "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]"
+          : "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]",
       ].join(" ")}
       aria-label={verified ? "Verified seller" : "Unverified seller"}
+      title={verified ? "Verified" : "Unverified"}
     >
       <span className="text-[10px]" aria-hidden="true">
         {verified ? "✓" : "✕"}
@@ -219,13 +258,17 @@ function VerifiedPill({ verified }: { verified: boolean }) {
 }
 
 function TierPill({ tier }: { tier: FeaturedTier }) {
+  const testId = `featured-tier-${tier}`;
   const base =
-    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold";
+    "inline-flex items-center gap-1 rounded-xl border shadow-sm px-2 py-1 text-[11px] font-semibold sm:px-2.5 sm:py-1.5 sm:text-xs";
+
   if (tier === "gold") {
     return (
       <span
-        className={`${base} border-amber-400/40 bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 text-amber-950 dark:border-amber-900/40 dark:from-amber-900/25 dark:via-amber-900/10 dark:to-amber-900/25 dark:text-amber-100`}
+        data-testid={testId}
+        className={`${base} border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]`}
         aria-label="Featured tier gold"
+        title="Featured: gold"
       >
         <span className="text-[10px]" aria-hidden="true">
           ★
@@ -238,8 +281,10 @@ function TierPill({ tier }: { tier: FeaturedTier }) {
   if (tier === "diamond") {
     return (
       <span
-        className={`${base} border-sky-300/50 bg-gradient-to-r from-sky-200 via-cyan-100 to-indigo-200 text-slate-900 dark:border-sky-900/40 dark:from-sky-900/25 dark:via-sky-900/10 dark:to-sky-900/25 dark:text-slate-100`}
+        data-testid={testId}
+        className={`${base} border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text)]`}
         aria-label="Featured tier diamond"
+        title="Featured: diamond"
       >
         <span className="text-[10px]" aria-hidden="true">
           ◆
@@ -251,8 +296,10 @@ function TierPill({ tier }: { tier: FeaturedTier }) {
 
   return (
     <span
-      className={`${base} border-border bg-muted text-foreground`}
+      data-testid={testId}
+      className={`${base} border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)]`}
       aria-label="Featured tier basic"
+      title="Featured: basic"
     >
       <span className="text-[10px]" aria-hidden="true">
         ★
@@ -275,7 +322,7 @@ function SellerBadges({
   if (!showVerified && !showTier) return null;
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <div className="mt-1.5 flex flex-wrap items-center gap-1 sm:mt-2 sm:gap-1.5">
       {showVerified ? <VerifiedPill verified={Boolean(verified)} /> : null}
       {tier ? <TierPill tier={tier} /> : null}
     </div>
@@ -295,8 +342,9 @@ function coerceItems(json: any): PageResponse<AnyItem> {
     .map((x): AnyItem | null => {
       if (!x || !x.id) return null;
 
-      const type: string =
-        x.type || x.kind || (x.serviceArea ? "service" : "product");
+      const type: string = x.type || x.kind || (x.serviceArea ? "service" : "product");
+
+      const badges = resolveBadgesFromAny(x);
 
       const common = {
         id: String(x.id),
@@ -309,11 +357,7 @@ function coerceItems(json: any): PageResponse<AnyItem> {
             : typeof x.amount === "number"
               ? x.amount
               : null,
-        image:
-          x.image ||
-          x.thumbnail ||
-          (Array.isArray(x.images) ? x.images[0] : null) ||
-          null,
+        image: x.image || x.thumbnail || (Array.isArray(x.images) ? x.images[0] : null) || null,
         featured:
           typeof x.featured === "boolean"
             ? x.featured
@@ -323,8 +367,9 @@ function coerceItems(json: any): PageResponse<AnyItem> {
         location: x.location ?? x.city ?? null,
         createdAt: x.createdAt ?? x.created_at ?? null,
 
-        sellerVerified: pickSellerVerified(x),
-        sellerFeaturedTier: pickSellerFeaturedTier(x),
+        sellerVerified: badges.sellerVerified,
+        sellerFeaturedTier: badges.sellerFeaturedTier,
+        sellerBadges: badges.sellerBadges,
       };
 
       if (type === "service") {
@@ -350,11 +395,9 @@ function coerceItems(json: any): PageResponse<AnyItem> {
         ? json.total
         : items.length;
 
-  const pageSize =
-    typeof base?.pageSize === "number" ? base.pageSize : PAGE_SIZE;
+  const pageSize = typeof base?.pageSize === "number" ? base.pageSize : PAGE_SIZE;
 
-  const page =
-    typeof base?.page === "number" && base.page > 0 ? base.page : 1;
+  const page = typeof base?.page === "number" && base.page > 0 ? base.page : 1;
 
   const totalPages =
     typeof base?.totalPages === "number" && base.totalPages > 0
@@ -383,16 +426,12 @@ export default function HomeClient(seed?: HomeSeedProps) {
 
   const initialServices = seed?.initialServices;
   const hasSeedServices =
-    mode === "services" &&
-    Array.isArray(initialServices) &&
-    initialServices.length > 0;
+    mode === "services" && Array.isArray(initialServices) && initialServices.length > 0;
 
   // Local filters from URL (no client-driven URL mutations)
   const [q, setQ] = React.useState(sp.get("q") || "");
   const [category, setCategory] = React.useState(sp.get("category") || "");
-  const [subcategory, setSubcategory] = React.useState(
-    sp.get("subcategory") || "",
-  );
+  const [subcategory, setSubcategory] = React.useState(sp.get("subcategory") || "");
   const [brand, setBrand] = React.useState(sp.get("brand") || "");
   const [condition, setCondition] = React.useState(sp.get("condition") || "");
   const [minPrice, setMinPrice] = React.useState(sp.get("minPrice") || "");
@@ -431,6 +470,8 @@ export default function HomeClient(seed?: HomeSeedProps) {
 
     const mapped: AnyItem[] = initialServices.map((svc) => {
       const anySvc = svc as any;
+      const badges = resolveBadgesFromAny(anySvc);
+
       return {
         type: "service",
         id: String(svc.id),
@@ -468,8 +509,9 @@ export default function HomeClient(seed?: HomeSeedProps) {
               : null,
         createdAt: null,
 
-        sellerVerified: pickSellerVerified(anySvc),
-        sellerFeaturedTier: pickSellerFeaturedTier(anySvc),
+        sellerVerified: badges.sellerVerified,
+        sellerFeaturedTier: badges.sellerFeaturedTier,
+        sellerBadges: badges.sellerBadges,
       } as ServiceItem;
     });
 
@@ -540,14 +582,12 @@ export default function HomeClient(seed?: HomeSeedProps) {
           headers: { Accept: "application/json" },
         });
 
-        const jsonRaw: any =
-          (await r.json().catch(() => ({} as ErrorResponse))) || {};
+        const jsonRaw: any = (await r.json().catch(() => ({} as ErrorResponse))) || {};
 
         const hasError =
           !r.ok ||
           (typeof (jsonRaw as any).error === "string" && (jsonRaw as any).error) ||
-          (typeof (jsonRaw as any).message === "string" &&
-            !Array.isArray((jsonRaw as any).items));
+          (typeof (jsonRaw as any).message === "string" && !Array.isArray((jsonRaw as any).items));
 
         if (hasError) {
           if (
@@ -564,9 +604,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
           }
 
           const msg =
-            (jsonRaw as any).error ||
-            (jsonRaw as any).message ||
-            `Request failed (${r.status})`;
+            (jsonRaw as any).error || (jsonRaw as any).message || `Request failed (${r.status})`;
 
           if (active) {
             setErr(msg);
@@ -578,10 +616,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
         let pageJson = coerceItems(jsonRaw);
 
         // If we fetched "all" as fallback, filter locally for tab visuals.
-        if (
-          (dmode === "products" || dmode === "services") &&
-          fallbackMode === "all"
-        ) {
+        if ((dmode === "products" || dmode === "services") && fallbackMode === "all") {
           const want = dmode === "products" ? "product" : "service";
           const filtered = (pageJson.items || []).filter((x) => x.type === want);
           pageJson = {
@@ -665,17 +700,13 @@ export default function HomeClient(seed?: HomeSeedProps) {
   if (featuredOnly) activeChips.push("Featured only");
   if (sort && sort !== "newest")
     activeChips.push(
-      sort === "price_asc"
-        ? "Price ↑"
-        : sort === "price_desc"
-          ? "Price ↓"
-          : "Featured first",
+      sort === "price_asc" ? "Price ↑" : sort === "price_desc" ? "Price ↓" : "Featured first",
     );
 
   const makeChip = (label: string) => (
     <span
       key={label}
-      className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-foreground shadow-sm"
+      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-xs font-medium text-[var(--text)] shadow-sm"
     >
       {label}
     </span>
@@ -684,20 +715,23 @@ export default function HomeClient(seed?: HomeSeedProps) {
   /* ------------------------ render ------------------------ */
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       {/* Tabs: All / Products / Services */}
-      <div className="sticky top-[64px] z-30 card-surface p-2" aria-label="Browse type tabs">
+      <div
+        className="sticky top-[56px] z-30 card-surface p-1.5 sm:top-[64px] sm:p-2"
+        aria-label="Browse type tabs"
+      >
         <HomeTabs />
       </div>
 
       {/* Filters row */}
       <section
-        className="card-surface z-20 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:sticky md:top-[112px]"
+        className="card-surface z-20 p-3 backdrop-blur supports-[backdrop-filter]:bg-[var(--bg-elevated)] sm:p-4 md:sticky md:top-[112px]"
         aria-label="Filters"
       >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12 md:gap-3">
           <div className="md:col-span-4">
-            <label className="block text-xs font-semibold text-muted-foreground">
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
               Keywords
             </label>
             <input
@@ -707,11 +741,11 @@ export default function HomeClient(seed?: HomeSeedProps) {
                 setPage(1);
               }}
               placeholder="Search products & services…"
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+              className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
               Category
             </label>
             <input
@@ -721,11 +755,11 @@ export default function HomeClient(seed?: HomeSeedProps) {
                 setPage(1);
               }}
               placeholder="Any"
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+              className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
               Subcategory
             </label>
             <input
@@ -735,14 +769,14 @@ export default function HomeClient(seed?: HomeSeedProps) {
                 setPage(1);
               }}
               placeholder="Any"
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+              className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
           <div className="md:col-span-2 flex items-end">
             <button
               type="button"
               onClick={clearAll}
-              className="inline-flex w-full items-center justify-center rounded-lg border border-border bg-muted px-3 py-2 text-xs font-medium text-foreground transition hover:bg-muted/80 focus:outline-none focus:ring-2 ring-focus"
+              className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-elevated)] focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
             >
               Clear filters
             </button>
@@ -750,11 +784,11 @@ export default function HomeClient(seed?: HomeSeedProps) {
         </div>
 
         {/* Advanced / mode-specific filters */}
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
+        <div className="mt-3 grid grid-cols-1 gap-2.5 md:grid-cols-12 md:gap-3">
           {mode === "products" && (
             <>
               <div className="md:col-span-3">
-                <label className="block text-xs font-semibold text-muted-foreground">
+                <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
                   Brand
                 </label>
                 <input
@@ -764,11 +798,11 @@ export default function HomeClient(seed?: HomeSeedProps) {
                     setPage(1);
                   }}
                   placeholder="e.g. Samsung"
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+                  className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 />
               </div>
               <div className="md:col-span-3">
-                <label className="block text-xs font-semibold text-muted-foreground">
+                <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
                   Condition
                 </label>
                 <select
@@ -777,7 +811,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
                     setCondition(e.target.value);
                     setPage(1);
                   }}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+                  className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 >
                   <option value="">Any</option>
                   <option value="brand new">Brand New</option>
@@ -788,7 +822,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
           )}
 
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
               Min price (KES)
             </label>
             <input
@@ -799,11 +833,11 @@ export default function HomeClient(seed?: HomeSeedProps) {
                 setPage(1);
               }}
               inputMode="numeric"
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+              className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
               Max price (KES)
             </label>
             <input
@@ -814,12 +848,12 @@ export default function HomeClient(seed?: HomeSeedProps) {
                 setPage(1);
               }}
               inputMode="numeric"
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+              className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
 
           <div className="md:col-span-3 flex items-end">
-            <label className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
               <input
                 type="checkbox"
                 checked={featuredOnly}
@@ -827,14 +861,14 @@ export default function HomeClient(seed?: HomeSeedProps) {
                   setFeaturedOnly(e.target.checked);
                   setPage(1);
                 }}
-                className="h-4 w-4 rounded border border-border text-primary focus:outline-none focus:ring-2 ring-focus"
+                className="h-4 w-4 rounded border border-[var(--border-subtle)] accent-[var(--text)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
               />
               Featured only
             </label>
           </div>
 
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
               Sort
             </label>
             <select
@@ -843,7 +877,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
                 setSort(e.target.value);
                 setPage(1);
               }}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 ring-focus"
+              className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             >
               <option value="newest">Newest</option>
               <option value="featured">Featured first</option>
@@ -855,8 +889,8 @@ export default function HomeClient(seed?: HomeSeedProps) {
 
         {/* Active filter chips */}
         {activeChips.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground">
+          <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible sm:pb-0">
+            <span className="shrink-0 text-xs font-semibold text-[var(--text-muted)]">
               Active:
             </span>
             {activeChips.map(makeChip)}
@@ -867,7 +901,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
       {/* Results */}
       {err ? (
         <div
-          className="card-surface border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"
+          className="card-surface border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text)] sm:p-4"
           role="status"
         >
           {err}
@@ -875,13 +909,13 @@ export default function HomeClient(seed?: HomeSeedProps) {
       ) : loading && !hasItems ? (
         <SkeletonGrid />
       ) : !hasItems ? (
-        <div className="card-surface p-6 text-sm text-muted-foreground">
+        <div className="card-surface p-4 text-sm leading-relaxed text-[var(--text-muted)] sm:p-6">
           No {mode === "all" ? "items" : mode} found. Try adjusting your filters.
         </div>
       ) : (
         <section
           id="search-results"
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 sm:gap-6"
+          className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 sm:gap-6"
           aria-label="Home feed results"
           aria-busy={loading ? "true" : "false"}
         >
@@ -918,40 +952,50 @@ export default function HomeClient(seed?: HomeSeedProps) {
                 data-product-id={isProduct ? it.id : undefined}
                 data-service-id={!isProduct ? it.id : undefined}
               >
-                <div className="card-surface relative overflow-hidden rounded-xl border border-border shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                <div className="card-surface relative overflow-hidden rounded-xl border border-[var(--border-subtle)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft">
                   <div className="relative">
                     {featured && (
-                      <span className="absolute left-2 top-2 z-10 rounded-md bg-[#161748] px-2 py-1 text-xs font-semibold text-white shadow">
+                      <span className="absolute left-2 top-2 z-10 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-1 text-[11px] font-semibold text-[var(--text)] shadow-sm sm:px-2.5 sm:py-1.5 sm:text-xs">
                         Featured
                       </span>
                     )}
+
                     <Image
                       alt={title}
                       src={imageUrl}
                       width={800}
                       height={440}
-                      className="h-44 w-full bg-muted object-cover transition-transform duration-300 group-hover:scale-105"
+                      className="h-36 w-full bg-[var(--bg-subtle)] object-cover transition-transform duration-300 group-hover:scale-105 sm:h-44"
                       placeholder="blur"
                       blurDataURL={blur}
                       loading="lazy"
                       onError={makeOnImgError(FALLBACK_IMG)}
                     />
-                    {isProduct && (
-                      <div className="absolute right-2 top-2 z-10">
+
+                    {/* ✅ show favorites for BOTH products and services */}
+                    <div className="absolute right-2 top-2 z-10">
+                      {isProduct ? (
                         <FavoriteButton productId={it.id} />
-                      </div>
-                    )}
+                      ) : (
+                        <FavoriteButton serviceId={it.id} />
+                      )}
+                    </div>
                   </div>
-                  <div className="p-3">
-                    <h3 className="line-clamp-1 font-semibold text-foreground">{title}</h3>
-                    <p className="line-clamp-1 text-xs text-muted-foreground">{categoryText}</p>
+
+                  <div className="p-2.5 sm:p-3">
+                    <h3 className="line-clamp-1 font-semibold tracking-tight text-[var(--text)]">
+                      {title}
+                    </h3>
+                    <p className="line-clamp-1 text-xs text-[var(--text-muted)]">
+                      {categoryText}
+                    </p>
 
                     <SellerBadges
                       verified={it.sellerVerified ?? null}
                       tier={it.sellerFeaturedTier ?? null}
                     />
 
-                    <p className="mt-1 text-sm font-bold text-[#39a0ca] dark:text-[#7dd3fc]">
+                    <p className="mt-1 text-sm font-extrabold tabular-nums tracking-tight text-[var(--text)]">
                       {fmtKES(price)}
                     </p>
                   </div>
@@ -964,36 +1008,42 @@ export default function HomeClient(seed?: HomeSeedProps) {
 
       {/* Local pagination (does not touch URL) */}
       <section className="flex items-center justify-between" aria-live="polite">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-[var(--text-muted)]">
           {loading
             ? "Loading…"
             : err
               ? "Error loading listings."
               : `${total} items • Page ${pageNum} of ${totalPages}`}
         </p>
+
         <div className="flex items-center gap-2">
           <button
             type="button"
             disabled={loading || pageNum <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className={`rounded-lg border px-3 py-1.5 text-xs transition ${
+            className={[
+              "rounded-xl border px-2.5 py-1.5 text-xs font-semibold shadow-sm transition sm:px-3",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]",
               !loading && pageNum > 1
-                ? "border-border bg-card hover:bg-muted"
-                : "border-border bg-muted/60 cursor-not-allowed opacity-50"
-            }`}
+                ? "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] hover:bg-[var(--bg-subtle)]"
+                : "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-muted)] cursor-not-allowed opacity-50",
+            ].join(" ")}
             aria-label="Previous page"
           >
             ← Prev
           </button>
+
           <button
             type="button"
             disabled={loading || pageNum >= totalPages}
             onClick={() => setPage((p) => p + 1)}
-            className={`rounded-lg border px-3 py-1.5 text-xs transition ${
+            className={[
+              "rounded-xl border px-2.5 py-1.5 text-xs font-semibold shadow-sm transition sm:px-3",
+              "focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]",
               !loading && pageNum < totalPages
-                ? "border-border bg-card hover:bg-muted"
-                : "border-border bg-muted/60 cursor-not-allowed opacity-50"
-            }`}
+                ? "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] hover:bg-[var(--bg-subtle)]"
+                : "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-muted)] cursor-not-allowed opacity-50",
+            ].join(" ")}
             aria-label="Next page"
           >
             Next →
@@ -1009,19 +1059,19 @@ export default function HomeClient(seed?: HomeSeedProps) {
 function SkeletonGrid() {
   return (
     <section
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 sm:gap-6"
+      className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 sm:gap-6"
       aria-hidden="true"
     >
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
-          className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+          className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-sm"
         >
-          <div className="h-44 w-full animate-pulse bg-muted" />
-          <div className="space-y-2 p-4">
-            <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-            <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+          <div className="h-36 w-full animate-pulse bg-[var(--skeleton)] sm:h-44" />
+          <div className="space-y-2 p-3 sm:p-4">
+            <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--skeleton)]" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-[var(--skeleton)]" />
+            <div className="h-4 w-1/3 animate-pulse rounded bg-[var(--skeleton)]" />
           </div>
         </div>
       ))}

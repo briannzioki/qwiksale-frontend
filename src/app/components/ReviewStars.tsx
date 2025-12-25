@@ -7,7 +7,7 @@ import { Icon } from "@/app/components/Icon";
 type Size = "xs" | "sm" | "md" | "lg";
 
 export type ReviewStarsProps = {
-  /** Current rating value (0–5, decimals allowed). */
+  /** Current rating value (0-5, decimals allowed). */
   rating?: number | null;
   /** Maximum number of stars. Defaults to 5. */
   outOf?: number;
@@ -24,7 +24,7 @@ export type ReviewStarsProps = {
   interactive?: boolean;
   /** Force read-only even if interactive=true. */
   readOnly?: boolean;
-  /** Called when user selects a star (1–outOf). */
+  /** Called when user selects a star (1-outOf). */
   onChangeAction?: (value: number) => void;
 
   /** Optional custom aria-label for screen readers. */
@@ -95,13 +95,14 @@ export default function ReviewStars({
         {Array.from({ length: max }).map((_, idx) => {
           const i = idx + 1;
           const filled = i <= value;
+
           const icon = (
             <Icon
               name="star"
               aria-hidden
               className={cn(
                 sizeClasses[size],
-                filled ? "text-amber-400" : "text-muted-foreground/40",
+                filled ? "text-[var(--text)]" : "text-[var(--text-muted)] opacity-40",
               )}
             />
           );
@@ -123,7 +124,11 @@ export default function ReviewStars({
               onKeyDown={handleKeyDown}
               role="radio"
               aria-checked={i === Math.round(value)}
-              className="cursor-pointer rounded-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-brandBlue/70 focus-visible:ring-offset-2"
+              className={[
+                "cursor-pointer rounded-sm transition",
+                "active:scale-[.99]",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+              ].join(" ")}
             >
               {icon}
               <span className="sr-only">
@@ -135,12 +140,10 @@ export default function ReviewStars({
       </div>
 
       {showLabel && (
-        <span className="text-xs font-medium text-muted-foreground">
+        <span className="text-xs font-medium text-[var(--text-muted)]">
           {value.toFixed(1).replace(/\.0$/, "")}
           {typeof count === "number" && count >= 0
-            ? ` • ${count.toLocaleString()} review${
-                count === 1 ? "" : "s"
-              }`
+            ? ` • ${count.toLocaleString()} review${count === 1 ? "" : "s"}`
             : ""}
         </span>
       )}

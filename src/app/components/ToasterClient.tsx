@@ -2,12 +2,7 @@
 // src/app/components/ToasterClient.tsx
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Toaster,
-  toast,
-  type ToasterProps,
-  type DefaultToastOptions,
-} from "react-hot-toast";
+import { Toaster, toast, type ToasterProps, type DefaultToastOptions } from "react-hot-toast";
 import { usePathname } from "next/navigation";
 
 type Props = {
@@ -19,11 +14,7 @@ type Props = {
   extraToastOptions?: Partial<DefaultToastOptions>;
 };
 
-export default function ToasterClient({
-  dismissOnNavigate = true,
-  position,
-  extraToastOptions,
-}: Props) {
+export default function ToasterClient({ dismissOnNavigate = true, position, extraToastOptions }: Props) {
   const pathname = usePathname();
 
   // Dismiss on navigation (prevents stale success/error messages sticking around)
@@ -46,11 +37,10 @@ export default function ToasterClient({
   }, []);
 
   // Choose position responsively; update on resize
-  const [autoPos, setAutoPos] =
-    useState<NonNullable<ToasterProps["position"]>>(() => {
-      if (typeof window === "undefined") return "top-right";
-      return window.innerWidth < 640 ? "top-center" : "top-right";
-    });
+  const [autoPos, setAutoPos] = useState<NonNullable<ToasterProps["position"]>>(() => {
+    if (typeof window === "undefined") return "top-right";
+    return window.innerWidth < 640 ? "top-center" : "top-right";
+  });
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onResize = () => {
@@ -65,30 +55,35 @@ export default function ToasterClient({
     () => ({
       duration: reducedMotion ? 2200 : 3200,
       className:
-        "glass rounded-xl shadow-soft px-3 py-2 text-[0.9rem] text-[var(--text)]",
+        "glass rounded-xl shadow-soft px-3 py-2 text-sm sm:text-[0.9rem] text-[var(--text)]",
       style: {
-        lineHeight: 1.4,
-        maxWidth: "min(calc(100vw - 2rem), 420px)",
+        lineHeight: 1.35,
+        maxWidth: "min(calc(100vw - 1.5rem), 420px)",
         backdropFilter: "blur(10px)",
         WebkitBackdropFilter: "blur(10px)",
       },
       success: {
         duration: reducedMotion ? 1800 : 2600,
         className:
-          "rounded-xl px-3 py-2 shadow-soft bg-brandGreen-50 text-brandGreen-900 border border-brandGreen-200 " +
-          "dark:bg-brandGreen-600/15 dark:text-brandGreen-50 dark:border-brandGreen-700",
-        iconTheme: { primary: "#478559", secondary: "#ffffff" }, // brandGreen
+          "rounded-xl px-3 py-2 shadow-soft bg-[var(--bg-elevated)] text-[var(--text)] border border-[var(--border-subtle)] text-sm sm:text-[0.9rem]",
+        iconTheme: {
+          // Use CSS vars to avoid hardcoded hex + keep theme-aligned
+          primary: "var(--text)",
+          secondary: "var(--bg)",
+        } as any,
       },
       error: {
         duration: reducedMotion ? 2600 : 4200,
         className:
-          "rounded-xl px-3 py-2 shadow-soft bg-rose-50 text-rose-900 border border-rose-200 " +
-          "dark:bg-rose-900/20 dark:text-rose-50 dark:border-rose-800",
-        iconTheme: { primary: "#ef4444", secondary: "#ffffff" },
+          "rounded-xl px-3 py-2 shadow-soft bg-[var(--bg-elevated)] text-[var(--text)] border border-[var(--border)] text-sm sm:text-[0.9rem]",
+        iconTheme: {
+          primary: "var(--text)",
+          secondary: "var(--bg)",
+        } as any,
       },
       loading: {
         className:
-          "glass rounded-xl px-3 py-2 shadow-soft text-[0.9rem] text-[var(--text)] border border-[var(--border-subtle)]",
+          "glass rounded-xl px-3 py-2 shadow-soft text-sm sm:text-[0.9rem] text-[var(--text)] border border-[var(--border-subtle)]",
       },
     }),
     [reducedMotion],
@@ -116,7 +111,7 @@ export default function ToasterClient({
       toastOptions={mergedToastOptions}
       containerStyle={{
         zIndex: 70, // z-toast
-        inset: 12,
+        inset: 10,
         pointerEvents: "none",
       }}
     />

@@ -1,4 +1,5 @@
-﻿import {
+﻿// src/app/dashboard/loading.tsx
+import {
   Skeleton,
   SkeletonLine,
   ButtonSkeleton,
@@ -8,7 +9,7 @@ export default function Loading() {
   return (
     <main
       id="main"
-      className="container-page py-6"
+      className="container-page py-4 sm:py-6"
       aria-busy="true"
       aria-live="polite"
       role="status"
@@ -23,29 +24,20 @@ export default function Loading() {
       </div>
 
       {/* table-ish card */}
-      <div className="mt-4 rounded-2xl border bg-white p-4 dark:bg-slate-900/40 dark:border-slate-800">
+      <div className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-4 sm:p-4">
         {/* header row */}
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-6 gap-2 sm:gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton
-              key={i}
-              className="h-4 w-full rounded-md"
-            />
+            <Skeleton key={i} className="h-4 w-full rounded-md" />
           ))}
         </div>
 
         {/* rows */}
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 space-y-2 sm:space-y-3">
           {Array.from({ length: 6 }).map((_, r) => (
-            <div
-              key={r}
-              className="grid grid-cols-6 gap-3"
-            >
+            <div key={r} className="grid grid-cols-6 gap-2 sm:gap-3">
               {Array.from({ length: 6 }).map((__, c) => (
-                <Skeleton
-                  key={c}
-                  className="h-4 w-full rounded-md"
-                />
+                <Skeleton key={c} className="h-4 w-full rounded-md" />
               ))}
             </div>
           ))}

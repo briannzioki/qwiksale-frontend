@@ -26,11 +26,7 @@ function isDarkFor(mode: ThemeMode, mql: MediaQueryList | null): boolean {
 }
 
 /** Apply mode to <html>, and optionally persist */
-function applyTheme(
-  mode: ThemeMode,
-  mql: MediaQueryList | null,
-  shouldPersist: boolean,
-) {
+function applyTheme(mode: ThemeMode, mql: MediaQueryList | null, shouldPersist: boolean) {
   const root = document.documentElement;
   const dark = isDarkFor(mode, mql);
 
@@ -77,9 +73,7 @@ export default function ThemeToggle({
 
   const emitChange = useCallback((newMode: ThemeMode) => {
     try {
-      window.dispatchEvent(
-        new CustomEvent("theme:change", { detail: { mode: newMode } }),
-      );
+      window.dispatchEvent(new CustomEvent("theme:change", { detail: { mode: newMode } }));
       (globalThis as any).__onThemeModeChange?.(newMode);
     } catch {}
   }, []);
@@ -159,25 +153,26 @@ export default function ThemeToggle({
     [emitChange, persist],
   );
 
-  const handleClick = useCallback(
-    () => handleSetMode(nextMode),
-    [handleSetMode, nextMode],
-  );
+  const handleClick = useCallback(() => handleSetMode(nextMode), [handleSetMode, nextMode]);
 
-  // Pre-mount placeholder (avoids layout shift, keeps hover calm)
+  const baseBtn = [
+    "inline-flex min-h-9 items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium transition sm:gap-1.5 sm:text-sm",
+    "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm",
+    "hover:bg-[var(--bg-subtle)]",
+    "active:scale-[.99]",
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+    "disabled:opacity-60 disabled:cursor-not-allowed",
+    className,
+  ].join(" ");
+
+  // Pre-mount placeholder (avoids layout shift)
   if (!mounted) {
     return (
-      <button
-        aria-hidden
-        className={[
-          "rounded-xl p-2 transition",
-          "hover:bg-black/5 dark:hover:bg-white/10",
-          "focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900 focus-visible:ring-2 ring-focus",
-          className,
-        ].join(" ")}
-        title="Toggle theme"
-      >
-        <span className="inline-block h-2 w-2 rounded-full bg-white/70" />
+      <button aria-hidden className={baseBtn} title="Toggle theme">
+        <span
+          className="inline-block h-2 w-2 rounded-full bg-[var(--text-muted)] sm:h-2.5 sm:w-2.5"
+          aria-hidden="true"
+        />
       </button>
     );
   }
@@ -185,24 +180,17 @@ export default function ThemeToggle({
   return (
     <button
       onClick={handleClick}
-      className={[
-        "inline-flex items-center gap-2 rounded-xl p-2 text-sm transition",
-        "hover:bg-black/5 dark:hover:bg-white/10",
-        "focus:outline-none ring-offset-2 ring-offset-white dark:ring-offset-slate-900 focus-visible:ring-2 ring-focus",
-        className,
-      ].join(" ")}
+      className={baseBtn}
       // `switch` is boolean; keep button semantics + rich label for 3-state
       role="button"
       aria-label={`Theme: ${label}. Click to switch to ${nextMode}.`}
-      title={`Theme: ${label} — click to switch to ${nextMode}`}
+      title={`Theme: ${label} - click to switch to ${nextMode}`}
     >
       {mode === "dark" ? (
         // Sun icon (dark mode active)
         <svg
-          width="20"
-          height="20"
           viewBox="0 0 24 24"
-          className="text-yellow-300"
+          className="h-[18px] w-[18px] text-[var(--text)] sm:h-5 sm:w-5"
           fill="none"
           aria-hidden
         >
@@ -212,21 +200,13 @@ export default function ThemeToggle({
             strokeWidth="2"
             strokeLinecap="round"
           />
-          <circle
-            cx="12"
-            cy="12"
-            r="4"
-            stroke="currentColor"
-            strokeWidth="2"
-          />
+          <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
         </svg>
       ) : mode === "light" ? (
         // Moon icon (light mode active)
         <svg
-          width="20"
-          height="20"
           viewBox="0 0 24 24"
-          className="text-[var(--text)]"
+          className="h-[18px] w-[18px] text-[var(--text)] sm:h-5 sm:w-5"
           fill="none"
           aria-hidden
         >
@@ -240,31 +220,26 @@ export default function ThemeToggle({
       ) : (
         // Monitor icon (system mode)
         <svg
-          width="20"
-          height="20"
           viewBox="0 0 24 24"
-          className="text-[var(--text)]"
+          className="h-[18px] w-[18px] text-[var(--text)] sm:h-5 sm:w-5"
           fill="none"
           aria-hidden
         >
-          <rect
-            x="3"
-            y="4"
-            width="18"
-            height="12"
-            rx="2"
-            stroke="currentColor"
-            strokeWidth="2"
-          />
-          <path
-            d="M2 20h20"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
+          <rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="2" />
+          <path d="M2 20h20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       )}
-      {showLabel && <span className="select-none">{label}</span>}
+
+      {showLabel ? <span className="select-none">{label}</span> : null}
+
+      {/* Subtle state pip */}
+      <span
+        className={[
+          "ml-1 inline-block h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2",
+          mode === "system" ? "bg-[var(--text-muted)]" : "bg-[var(--text)]",
+        ].join(" ")}
+        aria-hidden="true"
+      />
     </button>
   );
 }

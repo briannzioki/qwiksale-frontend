@@ -88,18 +88,18 @@ export default function UpgradeWatcher({
   }, [emit, error, isPolling, onDoneAction, paymentId]);
 
   return (
-    <div className="text-sm text-muted-foreground">
+    <div className="text-sm text-[var(--text-muted)]">
       <span ref={announceRef} className="sr-only" aria-live="polite" />
 
       <div className="flex items-center gap-2">
         <StatusDot running={isPolling} status={status} />
         <div>
-          Status: <span className="font-medium">{status}</span>
+          Status: <span className="font-medium text-[var(--text)]">{status}</span>
         </div>
       </div>
 
       <div
-        className="mt-2 h-2 w-full max-w-xs overflow-hidden rounded-full border border-border bg-muted/60"
+        className="mt-2 h-2 w-full max-w-xs overflow-hidden rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)]"
         role="progressbar"
         aria-valuenow={pct}
         aria-valuemin={0}
@@ -116,11 +116,10 @@ export default function UpgradeWatcher({
       {showDetails && (
         <div className="mt-2 space-y-0.5">
           <div>
-            Checks: <span className="tabular-nums">{attempts}</span> /{" "}
-            {maxAttempts}
+            Checks: <span className="tabular-nums">{attempts}</span> / {maxAttempts}
           </div>
           {error && (
-            <div className="text-red-600 dark:text-red-400">
+            <div className="text-[var(--danger)]">
               Note: {String(error)}
             </div>
           )}
@@ -131,16 +130,19 @@ export default function UpgradeWatcher({
 }
 
 function StatusDot({ running, status }: { running: boolean; status: string }) {
-  const cls = running
-    ? "bg-amber-500"
-    : status === "SUCCESS"
-    ? "bg-emerald-500"
-    : status === "FAILED"
-    ? "bg-rose-500"
-    : "bg-gray-400";
+  const bg =
+    running
+      ? "var(--text-muted)"
+      : status === "SUCCESS"
+        ? "var(--text)"
+        : status === "FAILED"
+          ? "var(--danger)"
+          : "var(--text-muted)";
+
   return (
     <span
-      className={`inline-block h-2.5 w-2.5 rounded-full ${cls}`}
+      className={`inline-block h-2.5 w-2.5 rounded-full ${running ? "motion-safe:animate-pulse" : ""}`}
+      style={{ backgroundColor: bg }}
       aria-hidden="true"
     />
   );

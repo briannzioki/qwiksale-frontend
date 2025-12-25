@@ -12,6 +12,11 @@ import { auth } from "@/auth";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { extractGalleryUrls as collectUrls } from "@/app/lib/media";
 import { isAdminUser } from "@/app/lib/authz";
+import type { SellerBadgeFields } from "@/app/lib/sellerVerification";
+import {
+  buildSellerBadgeFields,
+  resolveSellerBadgeFieldsFromUserLike,
+} from "@/app/lib/sellerVerification";
 
 /* ---------------- constants ---------------- */
 const PLACEHOLDER = "/placeholder/default.jpg";
@@ -97,76 +102,10 @@ function isClearlyInvalidId(id: string): boolean {
 }
 
 /* ---------------- seller/account badge helpers ---------------- */
-type FeaturedTier = "basic" | "gold" | "diamond";
-
-function normalizeFeaturedTier(v: unknown): FeaturedTier | null {
-  const pick = (x: unknown): string => {
-    if (typeof x === "string") return x;
-    if (x && typeof x === "object") {
-      const any = x as any;
-      const cand =
-        any?.tier ??
-        any?.plan ??
-        any?.level ??
-        any?.name ??
-        any?.type ??
-        any?.subscription ??
-        any?.value ??
-        "";
-      if (typeof cand === "string") return cand;
-    }
-    return "";
-  };
-
-  const raw = pick(v).trim();
-  if (!raw) return null;
-
-  const s = raw.toLowerCase();
-  if (s.includes("diamond")) return "diamond";
-  if (s.includes("gold")) return "gold";
-  if (s.includes("basic")) return "basic";
-  return null;
-}
-
-function normalizeSellerVerified(u: any): boolean | null {
-  if (!u) return null;
-
-  const direct =
-    u?.verified ??
-    u?.isVerified ??
-    u?.accountVerified ??
-    u?.sellerVerified ??
-    null;
-
-  if (typeof direct === "boolean") return direct;
-
-  const at =
-    u?.verifiedAt ??
-    u?.verified_on ??
-    u?.verifiedOn ??
-    u?.verificationDate ??
-    null;
-
-  if (typeof at === "string" && at.trim()) return true;
-  if (at instanceof Date) return true;
-
-  return null;
-}
-
-type SellerFlags = {
-  sellerVerified: boolean | null;
-  sellerFeaturedTier: FeaturedTier | null;
-};
-
-/**
- * Schema-safe seller flags fetch:
- * - Uses row_to_json(u) so we don't hard-depend on specific columns existing.
- */
-async function fetchSellerFlagsById(
+async function fetchSellerBadgeFieldsById(
   sellerId: string | null | undefined,
-): Promise<SellerFlags> {
-  if (!sellerId) return { sellerVerified: null, sellerFeaturedTier: null };
-
+): Promise<SellerBadgeFields | null> {
+  if (!sellerId) return null;
   try {
     const rows = await prisma.$queryRaw<{ u: any }[]>`
       SELECT row_to_json(u) as u
@@ -176,21 +115,20 @@ async function fetchSellerFlagsById(
     `;
     const u = rows?.[0]?.u ?? null;
 
-    const sub =
-      u?.featuredTier ??
-      u?.subscriptionTier ??
-      u?.subscription ??
-      u?.plan ??
-      u?.tier ??
-      null;
-
-    return {
-      sellerVerified: normalizeSellerVerified(u),
-      sellerFeaturedTier: normalizeFeaturedTier(sub),
-    };
+    // ✅ alignment: resolveSellerBadgeFieldsFromUserLike is emailVerified-only
+    // and returns nullable fields (unknown stays null).
+    return u
+      ? (resolveSellerBadgeFieldsFromUserLike(u) as SellerBadgeFields)
+      : null;
   } catch {
-    return { sellerVerified: null, sellerFeaturedTier: null };
+    return null;
   }
+}
+
+function isAnonRequest(req: NextRequest) {
+  const authz = req.headers.get("authorization");
+  const cookie = req.headers.get("cookie");
+  return !authz && !cookie;
 }
 
 /* ----------------------------- HEAD / CORS ----------------------------- */
@@ -204,7 +142,8 @@ export function HEAD() {
 }
 
 export function OPTIONS() {
-  const origin = process.env["NEXT_PUBLIC_APP_URL"] ?? process.env["APP_ORIGIN"] ?? "*";
+  const origin =
+    process.env["NEXT_PUBLIC_APP_URL"] ?? process.env["APP_ORIGIN"] ?? "*";
   const res = new NextResponse(null, { status: 204 });
   res.headers.set("Access-Control-Allow-Origin", origin);
   res.headers.set("Vary", "Origin, Authorization, Cookie, Accept-Encoding");
@@ -249,7 +188,9 @@ function shapeProduct(p: any) {
   const rel = (p as any)?.favorites;
   const isFavoritedByMe = Array.isArray(rel) && rel.length > 0;
   const createdAt =
-    p?.createdAt instanceof Date ? p.createdAt.toISOString() : String(p?.createdAt ?? "");
+    p?.createdAt instanceof Date
+      ? p.createdAt.toISOString()
+      : String(p?.createdAt ?? "");
   const sellerUsername = p?.seller?.username ?? null;
   const { _count: _c, favorites: _f, ...rest } = p || {};
   return {
@@ -324,7 +265,9 @@ function isPlaceholder(u?: string | null) {
 function normalizeCoverAndGallery(primary: any, fullRow: any, extraUrls: string[] = []) {
   const merged = { ...(fullRow || {}), ...(primary || {}) };
   const collected = (collectUrls(merged, undefined) ?? []).slice(0, 50);
-  const extra = extraUrls.map((u) => (u ?? "").toString().trim()).filter(Boolean);
+  const extra = extraUrls
+    .map((u) => (u ?? "").toString().trim())
+    .filter(Boolean);
   const rawCandidates = [
     merged?.image,
     merged?.coverImage,
@@ -339,7 +282,9 @@ function normalizeCoverAndGallery(primary: any, fullRow: any, extraUrls: string[
   const cover = firstReal || PLACEHOLDER;
 
   const realGallery = rawCandidates.filter((u) => !isPlaceholder(u));
-  const gallery = realGallery.length ? Array.from(new Set([cover, ...realGallery])) : [PLACEHOLDER];
+  const gallery = realGallery.length
+    ? Array.from(new Set([cover, ...realGallery]))
+    : [PLACEHOLDER];
 
   return { cover, gallery: gallery.slice(0, 50) };
 }
@@ -348,9 +293,10 @@ function normalizeCoverAndGallery(primary: any, fullRow: any, extraUrls: string[
 const TIMEOUT_MS = 1200;
 
 const race = <T,>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T | "timeout"> =>
-  Promise.race([p, new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms))]).catch(
-    () => "timeout" as const,
-  );
+  Promise.race([
+    p,
+    new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms)),
+  ]).catch(() => "timeout" as const);
 
 /* ---- accepted alt id fields when resolving a row ---- */
 const ALT_ID_FIELDS = ["id", "productId", "product_id", "uid", "uuid", "slug"] as const;
@@ -396,7 +342,8 @@ export async function GET(req: NextRequest) {
       }),
       TIMEOUT_MS,
     );
-    const activeItem = activeItemRaw && activeItemRaw !== "timeout" ? (activeItemRaw as any) : null;
+    const activeItem =
+      activeItemRaw && activeItemRaw !== "timeout" ? (activeItemRaw as any) : null;
 
     // Attempt B (DEV/Preview only): allow any status for public read
     let devLooseItem: any = null;
@@ -425,20 +372,32 @@ export async function GET(req: NextRequest) {
       const norm = normalizeCoverAndGallery(shaped, fullRow, relUrls);
 
       const normGallery = norm.gallery;
-      const isPurePlaceholderGallery = normGallery.length === 1 && normGallery[0] === PLACEHOLDER;
+      const isPurePlaceholderGallery =
+        normGallery.length === 1 && normGallery[0] === PLACEHOLDER;
       const gallery = isPurePlaceholderGallery ? [] : normGallery;
 
-      const sellerFlagsRaw = await race(fetchSellerFlagsById(shaped?.sellerId), 650);
-      const sellerFlags = sellerFlagsRaw !== "timeout" ? (sellerFlagsRaw as SellerFlags) : null;
+      const sellerFieldsRaw = await race(fetchSellerBadgeFieldsById(shaped?.sellerId), 650);
+      const sellerFields =
+        sellerFieldsRaw !== "timeout"
+          ? (sellerFieldsRaw as SellerBadgeFields | null)
+          : null;
 
-      const verified = sellerFlags?.sellerVerified ?? false;
-      const tier = sellerFlags?.sellerFeaturedTier ?? "basic";
+      // ✅ no invented defaults: unknown stays null
+      const badges = sellerFields ?? buildSellerBadgeFields(null, null);
+
+      // ✅ explicit canonical keys (helps scanners + prevents drift)
+      const sellerBadges = badges.sellerBadges;
+      const sellerVerified = badges.sellerVerified;
+      const sellerFeaturedTier = badges.sellerFeaturedTier;
 
       const payload = {
         ...shaped,
-        sellerVerified: verified,
-        sellerFeaturedTier: tier,
-        sellerBadges: { verified, tier },
+
+        // canonical badge keys (explicit)
+        sellerBadges,
+        sellerVerified,
+        sellerFeaturedTier,
+
         image: norm.cover,
         gallery,
         imageUrls: gallery,
@@ -452,7 +411,9 @@ export async function GET(req: NextRequest) {
         favoritesCount: (publicItem as any)?.["_count"]?.favorites ?? 0,
         devLoose: !!devLooseItem && !activeItem,
       });
-      return publicCache(payload);
+
+      // ✅ public caching stays for anon; authenticated requests return no-store (avoid sticky badges)
+      return isAnonRequest(req) ? publicCache(payload) : noStore(payload);
     }
 
     // Owner-gated read as fallback
@@ -495,7 +456,8 @@ export async function GET(req: NextRequest) {
       }),
       TIMEOUT_MS,
     );
-    const ownerItem = ownerItemRaw && ownerItemRaw !== "timeout" ? (ownerItemRaw as any) : null;
+    const ownerItem =
+      ownerItemRaw && ownerItemRaw !== "timeout" ? (ownerItemRaw as any) : null;
 
     if (!ownerItem) {
       track("product_read_not_found", {
@@ -521,17 +483,28 @@ export async function GET(req: NextRequest) {
       ownerNormGallery.length === 1 && ownerNormGallery[0] === PLACEHOLDER;
     const ownerGallery = ownerPurePlaceholder ? [] : ownerNormGallery;
 
-    const sellerFlagsRaw = await race(fetchSellerFlagsById(shapedOwner?.sellerId), 650);
-    const sellerFlags = sellerFlagsRaw !== "timeout" ? (sellerFlagsRaw as SellerFlags) : null;
+    const sellerFieldsRaw = await race(fetchSellerBadgeFieldsById(shapedOwner?.sellerId), 650);
+    const sellerFields =
+      sellerFieldsRaw !== "timeout"
+        ? (sellerFieldsRaw as SellerBadgeFields | null)
+        : null;
 
-    const verified = sellerFlags?.sellerVerified ?? false;
-    const tier = sellerFlags?.sellerFeaturedTier ?? "basic";
+    // ✅ no invented defaults: unknown stays null
+    const badges = sellerFields ?? buildSellerBadgeFields(null, null);
+
+    // ✅ explicit canonical keys
+    const sellerBadges = badges.sellerBadges;
+    const sellerVerified = badges.sellerVerified;
+    const sellerFeaturedTier = badges.sellerFeaturedTier;
 
     const ownerPayload = {
       ...shapedOwner,
-      sellerVerified: verified,
-      sellerFeaturedTier: tier,
-      sellerBadges: { verified, tier },
+
+      // canonical badge keys (explicit)
+      sellerBadges,
+      sellerVerified,
+      sellerFeaturedTier,
+
       image: normOwner.cover,
       gallery: ownerGallery,
       imageUrls: ownerGallery,
@@ -543,10 +516,7 @@ export async function GET(req: NextRequest) {
     return noStore(ownerPayload);
   } catch (e) {
     console.warn("[products/:id GET] error:", e);
-    track("product_read_error", {
-      reqId,
-      message: (e as any)?.message ?? String(e),
-    });
+    track("product_read_error", { reqId, message: (e as any)?.message ?? String(e) });
     return noStore({ error: "Server error" }, { status: 500 });
   }
 }
@@ -719,18 +689,29 @@ export async function PATCH(req: NextRequest) {
       revalidatePath(`/listing/${existing.id}`);
     } catch {}
 
-    const sellerFlagsRaw = await race(fetchSellerFlagsById(shaped?.sellerId), 650);
-    const sellerFlags = sellerFlagsRaw !== "timeout" ? (sellerFlagsRaw as SellerFlags) : null;
+    const sellerFieldsRaw = await race(fetchSellerBadgeFieldsById(shaped?.sellerId), 650);
+    const sellerFields =
+      sellerFieldsRaw !== "timeout"
+        ? (sellerFieldsRaw as SellerBadgeFields | null)
+        : null;
 
-    const verified = sellerFlags?.sellerVerified ?? false;
-    const tier = sellerFlags?.sellerFeaturedTier ?? "basic";
+    // ✅ no invented defaults: unknown stays null
+    const badges = sellerFields ?? buildSellerBadgeFields(null, null);
+
+    // ✅ explicit canonical keys
+    const sellerBadges = badges.sellerBadges;
+    const sellerVerified = badges.sellerVerified;
+    const sellerFeaturedTier = badges.sellerFeaturedTier;
 
     const payload = {
       ...shaped,
       id: String(existing.id),
-      sellerVerified: verified,
-      sellerFeaturedTier: tier,
-      sellerBadges: { verified, tier },
+
+      // canonical badge keys (explicit)
+      sellerBadges,
+      sellerVerified,
+      sellerFeaturedTier,
+
       image: norm.cover,
       gallery,
       imageUrls: gallery,
@@ -806,7 +787,10 @@ export async function DELETE(req: NextRequest) {
       return noStore({ error: "Forbidden" }, { status: 403 });
     }
 
-    await prisma.$transaction([prisma.favorite.deleteMany({ where: { productId: existing.id } }), Product.delete({ where: { id: existing.id } })]);
+    await prisma.$transaction([
+      prisma.favorite.deleteMany({ where: { productId: existing.id } }),
+      Product.delete({ where: { id: existing.id } }),
+    ]);
 
     try {
       revalidateTag("home:active");

@@ -1,4 +1,3 @@
-// src/app/requests/_components/RequestCard.tsx
 "use client";
 
 import * as React from "react";
@@ -56,22 +55,46 @@ export default function RequestCard({
   href,
   isAuthed,
   className = "",
+  // Optional: lets parent close drawers/menus on navigation without wrapper click hacks.
+  onNavigateAction,
+  onNavigate,
 }: {
   item: SafeRequestCardItem;
   href?: string;
   isAuthed?: boolean;
   className?: string;
+  // Use the *Action suffix to satisfy Next's serializable-props rule.
+  // Keep `onNavigate` as unknown for backward compatibility without tripping the rule.
+  onNavigateAction?: () => void;
+  onNavigate?: unknown;
 }) {
   const id = String(item.id || "");
   const kind = String(item.kind || "request");
-  const title = String(item.title || "Untitled");
+  const title = String(item.title || "Untitled"); // must render verbatim (including bracket prefixes)
   const desc = item.description ? String(item.description) : "";
   const boosted = isBoosted(item.boostUntil);
   const exp = expiryLabel(item.expiresAt);
 
   const to = href || `/requests/${encodeURIComponent(id)}`;
-
   const tags = normalizeTags(item.tags).slice(0, 6);
+
+  const navigate = React.useCallback(() => {
+    const fn =
+      onNavigateAction ??
+      (typeof onNavigate === "function" ? (onNavigate as () => void) : undefined);
+    fn?.();
+  }, [onNavigateAction, onNavigate]);
+
+  const hasNavigate = Boolean(onNavigateAction) || typeof onNavigate === "function";
+
+  const clickProps = React.useMemo(() => {
+    if (!hasNavigate) return {};
+    const onClick: React.MouseEventHandler<HTMLAnchorElement> = () => {
+      // Close after the click is processed so it doesn't interfere with navigation.
+      Promise.resolve().then(navigate);
+    };
+    return { onClick };
+  }, [hasNavigate, navigate]);
 
   return (
     <Link
@@ -79,18 +102,19 @@ export default function RequestCard({
       prefetch={false}
       aria-label={`Request: ${title}`}
       data-testid="request-card"
+      {...clickProps}
       className={[
-        "group block h-full rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-sm transition",
-        "hover:shadow hover:border-brandBlue/70",
+        "group block h-full rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 shadow-soft transition sm:p-4",
+        "hover:bg-[var(--bg-subtle)] hover:border-[var(--border)]",
         "focus-visible:outline-none focus-visible:ring-2 ring-focus",
         className,
       ].join(" ")}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
             {kind}
-            {boosted ? " • boosted" : ""}
+            {boosted ? " · boosted" : ""}
           </div>
 
           <div className="mt-1 line-clamp-2 text-sm font-semibold text-[var(--text)]">
@@ -100,18 +124,11 @@ export default function RequestCard({
 
         <div className="shrink-0 text-right">
           {exp ? (
-            <span
-              className={[
-                "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold",
-                exp === "Expired"
-                  ? "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-900/20 dark:text-red-200 dark:ring-red-900/40"
-                  : "bg-muted/50 text-[var(--text-muted)]",
-              ].join(" ")}
-            >
+            <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] font-semibold text-[var(--text-muted)]">
               {exp}
             </span>
           ) : (
-            <span className="inline-flex items-center rounded-full bg-muted/50 px-2 py-1 text-[11px] font-semibold text-[var(--text-muted)]">
+            <span className="inline-flex items-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] font-semibold text-[var(--text-muted)]">
               {String(item.status || "ACTIVE")}
             </span>
           )}
@@ -119,7 +136,7 @@ export default function RequestCard({
       </div>
 
       {desc ? (
-        <p className="mt-2 line-clamp-3 text-sm text-[var(--text-muted)]">
+        <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-[var(--text-muted)] sm:mt-2 sm:line-clamp-3 sm:text-sm">
           {desc}
         </p>
       ) : null}
@@ -134,11 +151,11 @@ export default function RequestCard({
       </div>
 
       {tags.length ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <div className="mt-3 flex gap-1.5 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible sm:whitespace-normal">
           {tags.map((t) => (
             <span
               key={t}
-              className="rounded-full bg-muted/50 px-2 py-1 text-[11px] text-[var(--text-muted)]"
+              className="shrink-0 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] text-[var(--text-muted)]"
             >
               {t}
             </span>
@@ -147,7 +164,7 @@ export default function RequestCard({
       ) : null}
 
       {isAuthed === false ? (
-        <div className="mt-3 text-[11px] text-[var(--text-muted)]">
+        <div className="mt-2 text-[11px] text-[var(--text-muted)]">
           Sign in to view full details
         </div>
       ) : null}

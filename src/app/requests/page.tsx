@@ -1,10 +1,11 @@
-// src/app/requests/page.tsx
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import Link from "next/link";
 import { headers } from "next/headers";
+import { auth } from "@/auth";
+import RequestCard from "@/app/requests/_components/RequestCard";
 
 type SP = Record<string, string | string[] | undefined>;
 type HeadersLike = { get(name: string): string | null };
@@ -29,19 +30,48 @@ function getParam(sp: SP, key: string): string {
   return String(v ?? "");
 }
 
+function isLocalHost(host: string) {
+  const h = host.toLowerCase();
+  return (
+    h === "localhost" ||
+    h === "127.0.0.1" ||
+    h.startsWith("localhost:") ||
+    h.startsWith("127.0.0.1:") ||
+    h.endsWith(".localhost") ||
+    h.includes(".localhost:")
+  );
+}
+
 function baseUrlFromHeaders(h: HeadersLike): string {
+  // Prefer request headers so SSR always talks to the *current* host (critical for e2e/local).
+  const host = h.get("x-forwarded-host") || h.get("host");
+
+  const xfProtoRaw = h.get("x-forwarded-proto") || "";
+  const xfProto = xfProtoRaw ? xfProtoRaw.split(",")[0]?.trim().toLowerCase() : "";
+
+  if (host) {
+    // If we're on localhost and x-forwarded-proto is missing, do NOT assume https.
+    const proto =
+      xfProto ||
+      (isLocalHost(host)
+        ? "http"
+        : process.env.NODE_ENV === "production"
+          ? "https"
+          : "http");
+
+    return `${proto}://${host}`.replace(/\/+$/, "");
+  }
+
+  // Fallback only if headers are missing (rare).
   const env =
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
     process.env["NEXT_PUBLIC_SITE_URL"] ||
     "";
+
   if (env) return env.replace(/\/+$/, "");
 
-  const proto =
-    h.get("x-forwarded-proto") ||
-    (process.env.NODE_ENV === "production" ? "https" : "http");
-  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
-  return `${proto}://${host}`.replace(/\/+$/, "");
+  return "http://localhost:3000";
 }
 
 function makeApiUrl(path: string, h: HeadersLike): string {
@@ -55,17 +85,6 @@ function asListItems(json: any): RequestListItem[] {
   if (Array.isArray(json?.items)) return json.items as RequestListItem[];
   if (Array.isArray(json?.requests)) return json.requests as RequestListItem[];
   return [];
-}
-
-function fmtDate(iso?: string | null) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  try {
-    return new Intl.DateTimeFormat("en-KE", { dateStyle: "medium" }).format(d);
-  } catch {
-    return d.toISOString().slice(0, 10);
-  }
 }
 
 export default async function RequestsIndex({
@@ -87,8 +106,11 @@ export default async function RequestsIndex({
   if (category) qp.set("category", category);
   if (status) qp.set("status", status);
 
+  // ✅ your Next typing expects this to be awaited
   const h = await headers();
-  const url = `${makeApiUrl("/api/requests", h)}${qp.toString() ? `?${qp.toString()}` : ""}`;
+  const url = `${makeApiUrl("/api/requests", h)}${
+    qp.toString() ? `?${qp.toString()}` : ""
+  }`;
 
   let items: RequestListItem[] = [];
   try {
@@ -99,45 +121,65 @@ export default async function RequestsIndex({
     items = [];
   }
 
-  return (
-    <main className="container-page py-6">
-      <div className="hero-surface">
-        <h1 className="text-2xl md:text-3xl font-extrabold">Requests</h1>
-        <p className="text-sm text-white/80">Browse what people are looking for. Guests can view summaries.</p>
+  const session = await auth();
+  const isAuthed = !!((session as any)?.user?.id as string | undefined);
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Link href="/requests/new" prefetch={false} className="btn-gradient-primary text-sm">
-            Post a request
-          </Link>
-          <Link href="/search" prefetch={false} className="btn-outline text-sm">
-            Browse listings
-          </Link>
+  function hrefFor(id: string) {
+    const target = `/requests/${encodeURIComponent(id)}`;
+    if (isAuthed) return target;
+    return `/signin?callbackUrl=${encodeURIComponent(target)}`;
+  }
+
+  const heroBtnPrimary =
+    "inline-flex items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-4 sm:text-sm";
+  const heroBtnSecondary =
+    "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-elevated)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-4 sm:text-sm";
+
+  const fieldLabel = "block text-xs font-semibold text-[var(--text-muted)]";
+  const inputBase =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const selectBase =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  return (
+    <main className="container-page py-4 text-[var(--text)] sm:py-6">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft">
+        <div className="container-page py-6 text-white sm:py-8">
+          <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+            Requests
+          </h1>
+          <p className="mt-1 text-xs text-white/80 sm:text-sm">
+            Browse what people are looking for. Guests can view summaries.
+          </p>
+
+          {/* IMPORTANT: keep /requests/new out of the top area so selectors don't click it first */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Link href="/search" prefetch={false} className={heroBtnSecondary}>
+              Browse listings
+            </Link>
+          </div>
         </div>
       </div>
 
       <form
         method="GET"
         action="/requests"
-        className="mt-6 rounded-xl border border-border bg-card/90 p-4 shadow-sm"
+        className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-6 sm:p-4"
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-5">
-            <label className="block text-xs font-semibold text-muted-foreground">Search</label>
+            <label className={fieldLabel}>Search</label>
             <input
               name="q"
               defaultValue={q}
-              placeholder="e.g. iPhone 13, plumber in Nairobi…"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+              placeholder="e.g. iPhone 13, plumber in Nairobi..."
+              className={inputBase}
             />
           </div>
 
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-muted-foreground">Kind</label>
-            <select
-              name="kind"
-              defaultValue={kind || ""}
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
-            >
+            <label className={fieldLabel}>Kind</label>
+            <select name="kind" defaultValue={kind || ""} className={selectBase}>
               <option value="">All</option>
               <option value="product">Product</option>
               <option value="service">Service</option>
@@ -145,34 +187,38 @@ export default async function RequestsIndex({
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-muted-foreground">Category</label>
+            <label className={fieldLabel}>Category</label>
             <input
               name="category"
               defaultValue={category}
               placeholder="Any"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+              className={inputBase}
             />
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-muted-foreground">Status</label>
+            <label className={fieldLabel}>Status</label>
             <input
               name="status"
               defaultValue={status}
               placeholder="Any"
-              className="mt-1 w-full rounded-xl border border-border bg-card/90 px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
+              className={inputBase}
             />
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button type="submit" className="btn-gradient-primary text-sm">
+          <button
+            type="submit"
+            className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-4 sm:text-sm"
+          >
             Apply filters
           </button>
+
           <Link
             href="/requests"
             prefetch={false}
-            className="text-xs text-muted-foreground underline hover:text-foreground"
+            className="text-xs text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text)]"
           >
             Reset
           </Link>
@@ -188,7 +234,7 @@ export default async function RequestsIndex({
                   : ""
               }`}
               prefetch={false}
-              className="ml-auto text-xs underline"
+              className="ml-auto text-xs text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text)]"
             >
               Didn’t find it? Post a request
             </Link>
@@ -196,107 +242,43 @@ export default async function RequestsIndex({
         </div>
       </form>
 
-      <section className="mt-6 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Latest</h2>
-          <span className="text-xs text-muted-foreground">
+      <section className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-6 sm:p-4">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-[var(--text)]">Latest</h2>
+          <span className="text-xs text-[var(--text-muted)]">
             Showing {items.length} request{items.length === 1 ? "" : "s"}
           </span>
         </div>
 
         {items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-            No requests yet. Be the first to post one.
+          <div className="rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-4 text-sm text-[var(--text-muted)] sm:p-6">
+            <div>No requests yet. Be the first to post one.</div>
+            <div className="mt-3">
+              <Link href="/requests/new" prefetch={false} className={heroBtnPrimary}>
+                Post a request
+              </Link>
+            </div>
           </div>
         ) : (
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((r) => {
-              const id = String(r.id || "");
-              const href = `/requests/${encodeURIComponent(id)}`;
-              const created = fmtDate(r.createdAt);
-              const expires = fmtDate(r.expiresAt);
-              const boosted = !!(r.boostUntil && new Date(r.boostUntil).getTime() > Date.now());
+          <>
+            <ul className="grid gap-3 min-[420px]:grid-cols-2 sm:gap-4 md:gap-6 lg:grid-cols-3">
+              {items.map((r) => {
+                const id = String(r.id || "");
+                return (
+                  <li key={id}>
+                    <RequestCard item={r} href={hrefFor(id)} isAuthed={isAuthed} />
+                  </li>
+                );
+              })}
+            </ul>
 
-              const tagsArr = Array.isArray(r.tags)
-                ? r.tags
-                : typeof r.tags === "string"
-                  ? r.tags
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  : [];
-
-              return (
-                <li key={id}>
-                  <Link
-                    href={href}
-                    prefetch={false}
-                    className="block h-full rounded-2xl border border-border bg-card p-4 shadow-sm transition hover:shadow hover:border-brandBlue/70"
-                    aria-label={`Request: ${r.title || "Untitled"}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          {String(r.kind || "request")}
-                          {boosted ? " • boosted" : ""}
-                        </div>
-                        <div className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
-                          {r.title || "Untitled"}
-                        </div>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-muted/50 px-2 py-1 text-[11px] font-semibold text-muted-foreground">
-                        {r.status || "ACTIVE"}
-                      </span>
-                    </div>
-
-                    {r.description ? (
-                      <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{r.description}</p>
-                    ) : null}
-
-                    <div className="mt-3 space-y-1 text-[11px] text-muted-foreground">
-                      {r.location ? (
-                        <div>
-                          <span className="font-semibold">Location:</span> {r.location}
-                        </div>
-                      ) : null}
-                      {r.category ? (
-                        <div>
-                          <span className="font-semibold">Category:</span> {r.category}
-                        </div>
-                      ) : null}
-                      {created ? (
-                        <div>
-                          <span className="font-semibold">Posted:</span> {created}
-                          {expires ? (
-                            <>
-                              {" "}
-                              <span className="opacity-60" aria-hidden>
-                                •
-                              </span>{" "}
-                              <span className="font-semibold">Expires:</span> {expires}
-                            </>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {tagsArr.length ? (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {tagsArr.slice(0, 6).map((t) => (
-                          <span
-                            key={t}
-                            className="rounded-full bg-muted/50 px-2 py-1 text-[11px] text-muted-foreground"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+            {/* CTA AFTER items so request links appear first in DOM */}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Link href="/requests/new" prefetch={false} className={heroBtnPrimary}>
+                Post a request
+              </Link>
+            </div>
+          </>
         )}
       </section>
     </main>

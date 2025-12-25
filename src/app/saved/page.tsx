@@ -1,4 +1,3 @@
-// src/app/saved/page.tsx
 "use client";
 
 import * as React from "react";
@@ -45,8 +44,7 @@ function fmtKES(n?: number | null) {
 }
 
 const makeImageOnError =
-  (fallback: string) =>
-  (e: React.SyntheticEvent<HTMLImageElement>) => {
+  (fallback: string) => (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     if (img && img.src !== fallback) img.src = fallback;
   };
@@ -70,9 +68,7 @@ export default function SavedPage() {
     setLoading(true);
     setErr(null);
     try {
-      const data = await getJson<ApiResponse>(
-        "/api/favorites?format=full&limit=100",
-      );
+      const data = await getJson<ApiResponse>("/api/favorites?format=full&limit=100");
       setFavItems(Array.isArray(data?.items) ? data.items : []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load favorites");
@@ -89,11 +85,8 @@ export default function SavedPage() {
       setErr(null);
       setFavItems(null);
       try {
-        const data = await getJson<ApiResponse>(
-          "/api/favorites?format=full&limit=100",
-        );
-        if (!cancelled)
-          setFavItems(Array.isArray(data?.items) ? data.items : []);
+        const data = await getJson<ApiResponse>("/api/favorites?format=full&limit=100");
+        if (!cancelled) setFavItems(Array.isArray(data?.items) ? data.items : []);
       } catch (e: any) {
         if (!cancelled) setErr(e?.message || "Failed to load favorites");
       } finally {
@@ -145,29 +138,27 @@ export default function SavedPage() {
   }
 
   return (
-    <div className="container-page space-y-6 py-6">
-      <div className="rounded-2xl bg-gradient-to-r from-brandBlue via-brandGreen to-brandNavy p-8 text-primary-foreground shadow-soft">
-        <h1 className="text-2xl font-extrabold md:text-3xl">Saved Items</h1>
-        <p className="text-primary-foreground/90">
-          Your favorites live here. {count ? `(${count})` : ""}
-        </p>
+    <div className="container-page space-y-4 py-4 sm:space-y-6 sm:py-6">
+      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft">
+        <div className="container-page py-5 text-white sm:py-8">
+          <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
+            Saved Items
+          </h1>
+          <p className="mt-1 text-xs text-white/80 sm:text-sm">
+            Your favorites live here. {count ? `(${count})` : ""}
+          </p>
+        </div>
       </div>
 
       {/* Re-triable fetch error banner (non-blocking; we still render any fallbacks below) */}
-      {err ? (
-        <ErrorBanner
-          message={err}
-          onRetryAction={loadFavorites}
-          className="mt-0"
-        />
-      ) : null}
+      {err ? <ErrorBanner message={err} onRetryAction={loadFavorites} className="mt-0" /> : null}
 
       {sessionStatus === "loading" ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-6 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="card p-4">
-              <div className="skeleton h-44 w-full rounded-lg" />
-              <div className="mt-3 space-y-2">
+            <div key={i} className="card p-2.5 sm:p-4">
+              <div className="skeleton h-36 w-full rounded-lg sm:h-44" />
+              <div className="mt-2 space-y-1.5 sm:mt-3 sm:space-y-2">
                 <div className="skeleton h-4 w-3/4 rounded" />
                 <div className="skeleton h-3 w-1/2 rounded" />
                 <div className="skeleton h-4 w-1/3 rounded" />
@@ -176,32 +167,26 @@ export default function SavedPage() {
           ))}
         </div>
       ) : sessionStatus === "unauthenticated" ? (
-        <div className="card flex items-center justify-between p-6">
+        <div className="card flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <div className="text-sm text-muted-foreground">
-            You’re not signed in. Sign in to see your saved items synced across
-            devices.
+            You’re not signed in. Sign in to see your saved items synced across devices.
           </div>
-          <a
-            className="btn-gradient-primary"
-            href={`/signin?callbackUrl=${encodeURIComponent("/saved")}`}
-          >
+          <a className="btn-gradient-primary" href={`/signin?callbackUrl=${encodeURIComponent("/saved")}`}>
             Sign in
           </a>
         </div>
       ) : loading ? (
-        <div className="text-muted-foreground">
-          Loading your favorites…
-        </div>
+        <div className="text-sm text-muted-foreground">Loading your favorites…</div>
       ) : list.length === 0 ? (
-        <div className="card flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-muted-foreground">
+        <div className="card flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div className="text-sm text-muted-foreground">
             No saved items yet. Browse the{" "}
             <Link href="/" className="link">
               homepage
             </Link>{" "}
             and tap the heart ❤️.
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link href="/" className="btn-outline">
               Browse listings
             </Link>
@@ -212,28 +197,23 @@ export default function SavedPage() {
         </div>
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+          <section className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-6 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
             {list.map((fav) => {
               const p = fav.product;
               const fallback = "/placeholder/default.jpg";
               const imgUrl = p.image || fallback;
 
               return (
-                <Link
-                  key={p.id}
-                  href={`/product/${p.id}`}
-                  className="group relative"
-                  prefetch={false}
-                >
+                <Link key={p.id} href={`/product/${p.id}`} className="group relative" prefetch={false}>
                   <div className="relative cursor-pointer overflow-hidden rounded-xl border border-border bg-card shadow transition hover:shadow-lg">
                     <div className="relative">
                       {p.featured ? (
-                        <span className="absolute left-2 top-2 z-10 rounded-md bg-brandNavy px-2 py-1 text-xs text-primary-foreground shadow">
+                        <span className="absolute left-2 top-2 z-10 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/90 px-2 py-1 text-[11px] font-semibold text-[var(--text)] shadow backdrop-blur-sm sm:text-xs">
                           Featured
                         </span>
                       ) : null}
 
-                      <div className="relative h-44 w-full">
+                      <div className="relative h-36 w-full sm:h-44">
                         <Image
                           src={imgUrl}
                           alt={p.name}
@@ -264,19 +244,19 @@ export default function SavedPage() {
                       </div>
                     </div>
 
-                    <div className="p-4">
-                      <h3 className="line-clamp-1 font-semibold text-foreground">
+                    <div className="p-2.5 sm:p-4">
+                      <h3 className="line-clamp-1 text-sm font-semibold text-foreground sm:text-base">
                         {p.name}
                       </h3>
-                      <p className="line-clamp-1 text-sm text-muted-foreground">
+                      <p className="line-clamp-1 text-[11px] text-muted-foreground sm:text-sm">
                         {p.category} • {p.subcategory}
                       </p>
                       {p.brand && (
-                        <p className="mt-0.5 text-xs text-muted-foreground">
+                        <p className="mt-0.5 text-[11px] text-muted-foreground sm:text-xs">
                           Brand: {p.brand}
                         </p>
                       )}
-                      <p className="mt-2 font-bold text-brandBlue">
+                      <p className="mt-2 text-sm font-extrabold text-[var(--text)] sm:text-base">
                         {fmtKES(p.price)}
                       </p>
                     </div>
@@ -286,7 +266,7 @@ export default function SavedPage() {
             })}
           </section>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Link href="/" className="btn-outline">
               Continue browsing
             </Link>

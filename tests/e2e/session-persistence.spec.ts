@@ -6,7 +6,7 @@ async function expectSignedInUI(page: Page): Promise<void> {
 }
 
 test("session persists across home ⇄ dashboard", async ({ page, request }) => {
-  const me = await request.get("/api/me", { failOnStatusCode: false });
+  const me = await page.request.get("/api/me", { failOnStatusCode: false, timeout: 30_000 });
   test.skip(me.status() !== 200, "Requires logged-in storage; set E2E_USER_* and rerun.");
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
