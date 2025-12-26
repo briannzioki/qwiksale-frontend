@@ -379,6 +379,19 @@ export default function ProfileClient() {
             </p>
           </div>
         </div>
+
+        {/* Password link */}
+        <p className="mt-3 text-xs leading-relaxed text-[var(--text-muted)]">
+          Want to change your password?{" "}
+          <Link
+            href={`/reset-password?return=${encodeURIComponent("/account/profile")}`}
+            prefetch={false}
+            className="text-[var(--text)] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
+          >
+            Reset password
+          </Link>
+          .
+        </p>
       </div>
 
       {/* Profile photo */}

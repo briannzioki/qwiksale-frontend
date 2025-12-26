@@ -513,6 +513,19 @@ export default function CompleteProfileClient() {
                 )}
               </div>
             </div>
+
+            {/* Password link (simple text link) */}
+            <p className="text-[11px] sm:text-xs leading-relaxed text-[var(--text-muted)]">
+              Need to change your password?{" "}
+              <Link
+                href={`/reset-password?return=${encodeURIComponent(ret)}`}
+                prefetch={false}
+                className="text-[var(--text)] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 ring-focus rounded"
+              >
+                Reset password
+              </Link>
+              .
+            </p>
           </section>
 
           {/* Profile photo */}

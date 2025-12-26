@@ -5,6 +5,61 @@ import * as React from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 
+function EyeIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function EyeOffIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M3 3l18 18"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M10.6 10.6a2.5 2.5 0 0 0 2.8 2.8"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.8 5.4A9.6 9.6 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3 4.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.6 6.6C3.9 8.6 2.5 12 2.5 12s3.5 7 9.5 7a9.7 9.7 0 0 0 4.3-1"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /**
  * Credentials sign-in form (client-only).
  *
@@ -25,6 +80,7 @@ export function CredsFormClient({
 }) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [showPassword, setShowPassword] = React.useState(false);
 
   const emailRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -139,18 +195,42 @@ export function CredsFormClient({
           >
             Password
           </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            className="input"
-            placeholder="••••••••"
-            autoComplete="current-password"
-            minLength={6}
-            required
-            aria-required="true"
-            disabled={loading}
-          />
+
+          <div className="relative">
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              className="input pr-12"
+              placeholder="••••••••"
+              autoComplete="current-password"
+              minLength={6}
+              required
+              aria-required="true"
+              disabled={loading}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              className={[
+                "absolute right-1.5 top-1/2 -translate-y-1/2",
+                "inline-flex h-9 w-9 items-center justify-center rounded-lg",
+                "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                "active:scale-[.99]",
+              ].join(" ")}
+              aria-pressed={showPassword}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              disabled={loading}
+            >
+              {showPassword ? (
+                <EyeOffIcon className="h-5 w-5" aria-hidden />
+              ) : (
+                <EyeIcon className="h-5 w-5" aria-hidden />
+              )}
+            </button>
+          </div>
+
           <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
             Minimum 6 characters.
           </p>
