@@ -25,6 +25,61 @@ function strengthLabel(pw: string) {
   return labels[Math.min(score, labels.length - 1)];
 }
 
+function EyeIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function EyeOffIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M3 3l18 18"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M10.6 10.6a2.5 2.5 0 0 0 2.8 2.8"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.8 5.4A9.6 9.6 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3 4.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.6 6.6C3.9 8.6 2.5 12 2.5 12s3.5 7 9.5 7a9.7 9.7 0 0 0 4.3-1"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Inner client component                                             */
 /* ------------------------------------------------------------------ */
@@ -231,7 +286,7 @@ function ResetPasswordPageInner() {
                 <input
                   id="password"
                   type={showPwd ? "text" : "password"}
-                  className="input pr-24 border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
+                  className="input pr-12 border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                   placeholder="At least 6 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -240,12 +295,22 @@ function ResetPasswordPageInner() {
                 />
                 <button
                   type="button"
-                  className="btn-outline absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
+                  className={[
+                    "absolute right-1.5 top-1/2 -translate-y-1/2",
+                    "inline-flex h-9 w-9 items-center justify-center rounded-lg",
+                    "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    "active:scale-[.99]",
+                  ].join(" ")}
                   onClick={() => setShowPwd((s) => !s)}
                   aria-pressed={showPwd}
                   aria-label={showPwd ? "Hide password" : "Show password"}
                 >
-                  {showPwd ? "Hide" : "Show"}
+                  {showPwd ? (
+                    <EyeOffIcon className="h-5 w-5" aria-hidden />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" aria-hidden />
+                  )}
                 </button>
               </div>
 
@@ -271,7 +336,7 @@ function ResetPasswordPageInner() {
               </label>
               <input
                 id="confirm"
-                type="password"
+                type={showPwd ? "text" : "password"}
                 className="input border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 placeholder="Repeat password"
                 value={confirm}
