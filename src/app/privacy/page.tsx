@@ -258,9 +258,38 @@ export default function PrivacyPage() {
           <li>
             We don’t sell personal information for money. If we ever use
             targeted advertising that constitutes “sharing,” you can opt out
-            here: <a href="/privacy/do-not-sell-or-share">Do Not Sell or Share</a>.
+            here:{" "}
+            <a href="/privacy#do-not-sell-or-share" className="underline">
+              Do Not Sell or Share
+            </a>
+            .
           </li>
         </ul>
+
+        <h2 id="do-not-sell-or-share">Do Not Sell or Share (CPRA)</h2>
+        <p>
+          QwikSale does not sell personal information for money. If we ever use advertising
+          or analytics that qualifies as “sharing” under CPRA (for example, cross-context
+          behavioral advertising), you will be able to opt out here.
+        </p>
+        <ul>
+          <li>
+            <strong>Opt-out request:</strong> Email{" "}
+            <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a> with subject{" "}
+            <em>“CPRA Opt Out”</em>.
+          </li>
+          <li>
+            <strong>What to include:</strong> the email address tied to your account and the
+            request (“opt out of sharing”).
+          </li>
+          <li>
+            <strong>Verification:</strong> we may verify your identity to protect your account.
+          </li>
+        </ul>
+        <p>
+          If we introduce a self-serve toggle inside the app, this section will be updated
+          with clear instructions.
+        </p>
 
         <h2 id="cookies">8) Cookies &amp; analytics</h2>
         <ul>
@@ -325,8 +354,12 @@ export default function PrivacyPage() {
         <h2 id="account">14) Account deletion &amp; data portability</h2>
         <ul>
           <li>
-            You can delete your account in <a href="/settings">Settings</a> or
-            ask us at <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a>.
+            You can delete your account in{" "}
+            <a href="/account/profile" className="underline">
+              Account settings
+            </a>{" "}
+            or ask us at{" "}
+            <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a>.
           </li>
           <li>
             Some records (e.g., fraud prevention, tax/financial) may be retained
@@ -362,7 +395,8 @@ export default function PrivacyPage() {
         <h2 id="contact">18) Contact, appeals &amp; complaints</h2>
         <ul>
           <li>
-            Email: <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a>
+            Email:{" "}
+            <a href="mailto:privacy@qwiksale.sale">privacy@qwiksale.sale</a>
           </li>
           <li>
             Web: <a href="/contact">/contact</a>
