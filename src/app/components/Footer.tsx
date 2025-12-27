@@ -302,24 +302,16 @@ export default function Footer() {
                 </a>
               </li>
               <li>
-                <a
-                  className={linkClass}
-                  href={`${base}/blog`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Blog
-                </a>
-              </li>
-              <li>
-                <a
-                  className={linkClass}
-                  href={`${base}/press`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Press
-                </a>
+                <li>
+                  <Link className={linkClass} href="/blog" prefetch={false}>
+                   Blog
+                  </Link>
+                </li>
+<li>
+  <Link className={linkClass} href="/press" prefetch={false}>
+    Press
+  </Link>
+</li>
               </li>
               <li className="pt-1">
                 <div className="mb-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
