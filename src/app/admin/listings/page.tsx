@@ -423,6 +423,16 @@ export default async function Page({ searchParams }: PageProps) {
 
   const SectionHeaderAny = SectionHeader as any;
 
+  const prevHref =
+    safePage > 1
+      ? keepQuery("/admin/listings", sp, { page: String(safePage - 1) })
+      : null;
+
+  const nextHref =
+    safePage < totalPages
+      ? keepQuery("/admin/listings", sp, { page: String(safePage + 1) })
+      : null;
+
   return (
     <div className="space-y-6 text-[var(--text)]">
       <SectionHeaderAny
@@ -695,29 +705,33 @@ export default async function Page({ searchParams }: PageProps) {
               className="flex items-center justify-between border-t border-[var(--border-subtle)] px-4 py-3 text-sm"
               aria-label="Pagination"
             >
-              <Link
-                href={
-                  safePage > 1
-                    ? keepQuery("/admin/listings", sp, {
-                        page: String(safePage - 1),
-                      })
-                    : "#"
-                }
-                prefetch={false}
-                aria-disabled={safePage <= 1}
-                className={[
-                  "inline-flex items-center justify-center",
-                  "rounded-xl px-3 py-1.5 font-semibold",
-                  "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
-                  "transition",
-                  safePage > 1
-                    ? "hover:bg-[var(--bg-subtle)] active:scale-[.99]"
-                    : "opacity-50",
-                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                ].join(" ")}
-              >
-                ← Prev
-              </Link>
+              {prevHref ? (
+                <Link
+                  href={prevHref}
+                  prefetch={false}
+                  className={[
+                    "inline-flex items-center justify-center",
+                    "rounded-xl px-3 py-1.5 font-semibold",
+                    "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                    "transition hover:bg-[var(--bg-subtle)] active:scale-[.99]",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  ].join(" ")}
+                >
+                  ← Prev
+                </Link>
+              ) : (
+                <span
+                  aria-disabled="true"
+                  className={[
+                    "inline-flex items-center justify-center",
+                    "rounded-xl px-3 py-1.5 font-semibold",
+                    "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                    "opacity-50",
+                  ].join(" ")}
+                >
+                  ← Prev
+                </span>
+              )}
 
               <div className="flex items-center gap-1">
                 {Array.from({ length: Math.min(7, totalPages) }).map((_, i) => {
@@ -755,29 +769,33 @@ export default async function Page({ searchParams }: PageProps) {
                 })}
               </div>
 
-              <Link
-                href={
-                  safePage < totalPages
-                    ? keepQuery("/admin/listings", sp, {
-                        page: String(safePage + 1),
-                      })
-                    : "#"
-                }
-                prefetch={false}
-                aria-disabled={safePage >= totalPages}
-                className={[
-                  "inline-flex items-center justify-center",
-                  "rounded-xl px-3 py-1.5 font-semibold",
-                  "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
-                  "transition",
-                  safePage < totalPages
-                    ? "hover:bg-[var(--bg-subtle)] active:scale-[.99]"
-                    : "opacity-50",
-                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                ].join(" ")}
-              >
-                Next →
-              </Link>
+              {nextHref ? (
+                <Link
+                  href={nextHref}
+                  prefetch={false}
+                  className={[
+                    "inline-flex items-center justify-center",
+                    "rounded-xl px-3 py-1.5 font-semibold",
+                    "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                    "transition hover:bg-[var(--bg-subtle)] active:scale-[.99]",
+                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  ].join(" ")}
+                >
+                  Next →
+                </Link>
+              ) : (
+                <span
+                  aria-disabled="true"
+                  className={[
+                    "inline-flex items-center justify-center",
+                    "rounded-xl px-3 py-1.5 font-semibold",
+                    "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)]",
+                    "opacity-50",
+                  ].join(" ")}
+                >
+                  Next →
+                </span>
+              )}
             </nav>
           </>
         )}

@@ -14,6 +14,7 @@ type AnalyticsEvent =
   | "mpesa_stk_invalid_msisdn"
   | "mpesa_stk_payment_precreate"
   | "mpesa_stk_push_error"
+  | "mpesa_stk_missing_checkout_id"
   | "mpesa_stk_upsert"
   | "mpesa_stk_dedupe_deleted"
   | "mpesa_stk_success"
@@ -47,10 +48,18 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
+function mkReqId() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c: any = (globalThis as any).crypto;
+    return c?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  } catch {
+    return Math.random().toString(36).slice(2);
+  }
+}
+
 export async function POST(req: Request) {
-  const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+  const reqId = mkReqId();
 
   try {
     logMpesaBootOnce();
@@ -71,21 +80,20 @@ export async function POST(req: Request) {
     }
 
     const phoneRaw = String(parsed?.msisdn ?? "");
-    const phone = normalizeMsisdn(phoneRaw); // 07/01/+254/254 -> 2547/2541…
+    const phone = normalizeMsisdn(phoneRaw);
     if (!/^254(7|1)\d{8}$/.test(phone)) {
       track("mpesa_stk_invalid_msisdn", { reqId });
       return noStore(
         { error: "Invalid msisdn (use 2547XXXXXXXX or 2541XXXXXXXX)" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const accountRef = (parsed?.accountRef ?? "QWIKSALE").toString().slice(0, 12);
-    const description = (parsed?.description ?? "Qwiksale payment").toString().slice(0, 32);
+    const accountRef = String(parsed?.accountRef ?? "QWIKSALE").slice(0, 12);
+    const description = String(parsed?.description ?? "Qwiksale payment").slice(0, 32);
 
-    // ✅ ensure a concrete mode for stkPush (TS exactOptionalPropertyTypes)
-    const mode: "paybill" | "till" =
-      parsed?.mode === "till" ? "till" : "paybill";
+    // ✅ concrete mode (avoids exactOptionalPropertyTypes footguns)
+    const mode: "paybill" | "till" = parsed?.mode === "till" ? "till" : "paybill";
 
     track("mpesa_stk_attempt", {
       reqId,
@@ -111,6 +119,7 @@ export async function POST(req: Request) {
       },
       select: { id: true },
     });
+
     track("mpesa_stk_payment_precreate", { reqId, paymentId: pending.id });
 
     // ---- 2) call STK push ---------------------------------------------------
@@ -121,44 +130,64 @@ export async function POST(req: Request) {
         phone,
         accountReference: accountRef,
         description,
-        mode, // <-- pass concrete value
+        mode,
       });
     } catch (err: any) {
-    // Best effort: mark the pre-created row as FAILED so ops has a breadcrumb
-    await prisma.payment
-      .update({
-        where: { id: pending.id },
-        data: {
-          status: "FAILED",
-          // keep a lightweight error breadcrumb in the JSON column you already use
-          rawCallback: {
-            phase: "stkPush",
-            message: (err?.message ?? String(err)).slice(0, 200),
-            at: new Date().toISOString(),
-          } as any, // JSON column
-        },
-      })
-      .catch(() => {});
-    track("mpesa_stk_push_error", {
-      reqId,
-      paymentId: pending.id,
-      message: String(err?.message || err),
-    });
-    return noStore(
-      { error: err?.message || "Failed to initiate STK" },
-      { status: 502 }
-    );
+      await prisma.payment
+        .update({
+          where: { id: pending.id },
+          data: {
+            status: "FAILED",
+            rawCallback: {
+              phase: "stkPush",
+              message: String(err?.message ?? err).slice(0, 200),
+              at: new Date().toISOString(),
+            } as any,
+          },
+        })
+        .catch(() => {});
+
+      track("mpesa_stk_push_error", {
+        reqId,
+        paymentId: pending.id,
+        message: String(err?.message || err),
+      });
+
+      return noStore({ error: err?.message || "Failed to initiate STK" }, { status: 502 });
     }
 
-    // Safety: ensure IDs exist
-    const checkoutId = data?.CheckoutRequestID || "";
-    const merchantId = data?.MerchantRequestID || "";
+    const checkoutId = String(data?.CheckoutRequestID ?? "").trim();
+    const merchantId = String(data?.MerchantRequestID ?? "").trim();
+
+    // ✅ must have CheckoutRequestID (otherwise upsert may blow up / corrupt)
+    if (!checkoutId) {
+      await prisma.payment
+        .update({
+          where: { id: pending.id },
+          data: {
+            status: "FAILED",
+            rawCallback: {
+              phase: "stkPush",
+              message: "Missing CheckoutRequestID in Daraja response",
+              at: new Date().toISOString(),
+              data,
+            } as any,
+          },
+        })
+        .catch(() => {});
+
+      track("mpesa_stk_missing_checkout_id", { reqId, paymentId: pending.id });
+
+      return noStore({ error: "STK push failed (missing CheckoutRequestID)" }, { status: 502 });
+    }
 
     // ---- 3) upsert by CheckoutRequestID (handle callback race) --------------
     const saved = await prisma.payment.upsert({
       where: { checkoutRequestId: checkoutId },
       update: {
-        merchantRequestId: merchantId,
+        merchantRequestId: merchantId || null,
+        payerPhone: phone,
+        accountRef,
       },
       create: {
         status: "PENDING",
@@ -168,17 +197,18 @@ export async function POST(req: Request) {
         payerPhone: phone,
         accountRef,
         checkoutRequestId: checkoutId,
-        merchantRequestId: merchantId,
+        merchantRequestId: merchantId || null,
         productId: parsed?.productId ?? null,
         userId: parsed?.userId ?? null,
       },
       select: { id: true },
     });
+
     track("mpesa_stk_upsert", {
       reqId,
       pendingId: pending.id,
       savedId: saved.id,
-      hasCheckoutId: !!checkoutId,
+      hasCheckoutId: true,
       hasMerchantId: !!merchantId,
     });
 
@@ -190,13 +220,14 @@ export async function POST(req: Request) {
 
     // ---- 5) respond ---------------------------------------------------------
     track("mpesa_stk_success", { reqId, paymentId: saved.id });
+
     return noStore({
       ok: true,
       message: data?.CustomerMessage || "STK push sent. Confirm on your phone.",
       paymentId: saved.id,
       mpesa: {
         MerchantRequestID: merchantId || null,
-        CheckoutRequestID: checkoutId || null,
+        CheckoutRequestID: checkoutId,
         ResponseCode: data?.ResponseCode ?? null,
         ResponseDescription: data?.ResponseDescription ?? null,
         CustomerMessage: data?.CustomerMessage ?? null,
@@ -222,5 +253,3 @@ export async function HEAD() {
     headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
   });
 }
-
-

@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getAccessToken, stkPassword, yyyymmddhhmmss, MPESA } from "@/app/lib/mpesa";
+import { logMpesaBootOnce, normalizeMsisdn, stkPush } from "@/app/lib/mpesa";
 import { prisma } from "@/app/lib/prisma";
 
 /* ---------------- analytics (console-only for now) ---------------- */
@@ -15,12 +15,11 @@ type AnalyticsEvent =
   | "billing_upgrade_invalid_phone"
   | "billing_upgrade_payment_precreate"
   | "billing_upgrade_payment_precreate_skip"
-  | "billing_upgrade_mpesa_token_error"
-  | "billing_upgrade_mpesa_request_error"
-  | "billing_upgrade_mpesa_error"
-  | "billing_upgrade_mpesa_success"
-  | "billing_upgrade_payment_postupdate"
-  | "billing_upgrade_payment_postupdate_skip"
+  | "billing_upgrade_stk_error"
+  | "billing_upgrade_stk_missing_checkout_id"
+  | "billing_upgrade_upsert"
+  | "billing_upgrade_dedupe_deleted"
+  | "billing_upgrade_success"
   | "billing_upgrade_error";
 
 function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
@@ -35,8 +34,6 @@ function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
 type Tier = "GOLD" | "PLATINUM";
 const PRICE: Record<Tier, number> = { GOLD: 199, PLATINUM: 499 };
 
-// ---- helpers ---------------------------------------------------------------
-
 function noStore(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -45,37 +42,27 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-// "07xxxxxxxx" / "+2547xxxxxxxx" / "2547xxxxxxxx" -> "2547xxxxxxxx"
-function normalizeMsisdn(input: string): string {
-  let s = String(input || "").trim();
-  s = s.replace(/\s+/g, "");
-  s = s.replace(/^\+/, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
-  if (/^7\d{8}$/.test(s)) s = "254" + s; // allow bare 7xxxxxxxx
-  return s;
-}
-
-function isValidMsisdn254(s: string) {
-  return /^2547\d{8}$/.test(s);
-}
-
 function clampTier(raw: unknown): Tier {
   const t = String(raw || "GOLD").toUpperCase();
   return t === "PLATINUM" ? "PLATINUM" : "GOLD";
 }
 
-function mapTxnType(mode: "paybill" | "till") {
-  return mode === "till" ? "CustomerBuyGoodsOnline" : "CustomerPayBillOnline";
+function mkReqId() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c: any = (globalThis as any).crypto;
+    return c?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  } catch {
+    return Math.random().toString(36).slice(2);
+  }
 }
 
-// ---- route -----------------------------------------------------------------
-
 export async function POST(req: Request) {
-  const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+  const reqId = mkReqId();
 
   try {
+    logMpesaBootOnce();
+
     // --- auth ---
     const session = await auth();
     const email = (session as any)?.user?.email as string | undefined;
@@ -88,6 +75,7 @@ export async function POST(req: Request) {
       where: { email },
       select: { id: true, email: true },
     });
+
     if (!user) {
       track("billing_upgrade_unauthorized", { reqId });
       return noStore({ error: "Unauthorized" }, { status: 401 });
@@ -100,6 +88,7 @@ export async function POST(req: Request) {
     } catch {
       body = {};
     }
+
     const { tier: bodyTier, phone, mode: rawMode } = (body || {}) as {
       tier?: string;
       phone?: string;
@@ -107,10 +96,12 @@ export async function POST(req: Request) {
     };
 
     const tier = clampTier(bodyTier);
+
+    // ✅ server-trusted amount ONLY
     const amount = PRICE[tier];
+
     const msisdn = normalizeMsisdn(String(phone || ""));
     const mode: "paybill" | "till" = rawMode === "till" ? "till" : "paybill";
-    const transactionType = mapTxnType(mode);
 
     track("billing_upgrade_attempt", {
       reqId,
@@ -121,159 +112,145 @@ export async function POST(req: Request) {
       hasPhone: !!phone,
     });
 
-    if (!isValidMsisdn254(msisdn)) {
+    if (!/^254(7|1)\d{8}$/.test(msisdn)) {
       track("billing_upgrade_invalid_phone", { reqId, userId: user.id });
-      return noStore({ error: "Invalid phone (use 2547XXXXXXXX)" }, { status: 400 });
-    }
-
-    // --- optional dedupe of recent pending attempts ---
-    let existingPending: any | null = null;
-    try {
-      if ((prisma as any).payment?.findFirst) {
-        existingPending = await (prisma as any).payment.findFirst({
-          where: { userId: user.id, status: "PENDING" },
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        });
-      }
-    } catch {
-      /* no-op */
+      return noStore({ error: "Invalid phone (use 2547XXXXXXXX or 2541XXXXXXXX)" }, { status: 400 });
     }
 
     // --- pre-create Payment row (best effort) ---
-    let paymentId: string | undefined;
+    let pendingId: string | null = null;
     try {
-      const Payment = (prisma as any).payment;
-      if (Payment?.create) {
-        const created = await Payment.create({
-          data: {
-            userId: user.id,
-            payerPhone: msisdn,
-            amount,
-            status: "PENDING",
-            targetTier: tier, // if column exists
-            mode,            // if column exists
-          },
-        });
-        paymentId = created?.id;
-        track("billing_upgrade_payment_precreate", {
-          reqId,
+      const created = await (prisma as any).payment.create({
+        data: {
           userId: user.id,
-          paymentId: paymentId ?? null,
-        });
-      } else {
-        track("billing_upgrade_payment_precreate_skip", { reqId, reason: "model_missing" });
-      }
+          payerPhone: msisdn,
+          amount,
+          status: "PENDING",
+          method: "MPESA",
+          currency: "KES",
+          accountRef: "QWIKSALE",
+          // best-effort extras if present:
+          targetTier: tier,
+          mode,
+        },
+        select: { id: true },
+      });
+      pendingId = created?.id ?? null;
+      track("billing_upgrade_payment_precreate", { reqId, userId: user.id, paymentId: pendingId });
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn("[billing/upgrade] Payment pre-create skipped:", e);
       track("billing_upgrade_payment_precreate_skip", { reqId, reason: "exception" });
     }
 
-    // --- build STK request ---
-    const timestamp = yyyymmddhhmmss();
-    const password = stkPassword(MPESA.SHORTCODE, MPESA.PASSKEY, timestamp);
-
-    let token: string;
+    // --- STK push (single truth) ---
+    let data: any;
     try {
-      token = await getAccessToken();
-    } catch (e) {
-      track("billing_upgrade_mpesa_token_error", { reqId });
-      return noStore({ error: "Failed to authorize with MPesa" }, { status: 502 });
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    const stkUrl = `${MPESA.BASE_URL}/mpesa/stkpush/v1/processrequest`;
-    const res = await fetch(stkUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        BusinessShortCode: Number(MPESA.SHORTCODE),
-        Password: password,
-        Timestamp: timestamp,
-        TransactionType: transactionType,
-        Amount: amount,                 // server-trusted amount
-        PartyA: msisdn,                 // customer
-        PartyB: Number(MPESA.SHORTCODE),// your Paybill/Till
-        PhoneNumber: msisdn,
-        CallBackURL: MPESA.CALLBACK_URL,
-        // Safaricom limits AccountReference (<= 12 chars typically)
-        AccountReference: "QWIKSALE",
-        TransactionDesc: `Upgrade ${tier}`,
-      }),
-    }).catch((e) => {
-      clearTimeout(timeout);
-      track("billing_upgrade_mpesa_request_error", { reqId, message: String(e) });
-      throw e;
-    });
-
-    clearTimeout(timeout);
-
-    const data: any = await res.json().catch(() => ({}));
-
-    // --- persist STK IDs back to Payment (best effort) ---
-    try {
-      if (paymentId && (prisma as any).payment?.update) {
-        await (prisma as any).payment.update({
-          where: { id: paymentId },
-          data: {
-            checkoutRequestId: data?.CheckoutRequestID ?? null,
-            merchantRequestId: data?.MerchantRequestID ?? null,
-            // optionally: rawResponse: JSON.stringify(data)
-          },
-        });
-        track("billing_upgrade_payment_postupdate", {
-          reqId,
-          paymentId,
-          hasCheckoutId: !!data?.CheckoutRequestID,
-          hasMerchantId: !!data?.MerchantRequestID,
-        });
-      } else {
-        track("billing_upgrade_payment_postupdate_skip", {
-          reqId,
-          paymentId: paymentId ?? null,
-          reason: "model_missing_or_no_id",
-        });
+      data = await stkPush({
+        amount,
+        phone: msisdn,
+        mode,
+        accountReference: "QWIKSALE",
+        description: `Upgrade ${tier}`,
+      });
+    } catch (e: any) {
+      // mark FAILED best effort
+      if (pendingId) {
+        await (prisma as any).payment
+          .update({
+            where: { id: pendingId },
+            data: {
+              status: "FAILED",
+              rawCallback: {
+                phase: "stkPush",
+                message: String(e?.message ?? e).slice(0, 200),
+                at: new Date().toISOString(),
+              },
+            },
+          })
+          .catch(() => {});
       }
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn("[billing/upgrade] Payment post-update skipped:", e);
-      track("billing_upgrade_payment_postupdate_skip", { reqId, paymentId: paymentId ?? null, reason: "exception" });
-    }
 
-    // --- error from MPesa ---
-    if (!res.ok) {
-      track("billing_upgrade_mpesa_error", {
+      track("billing_upgrade_stk_error", {
         reqId,
         userId: user.id,
-        paymentId: paymentId ?? null,
-        status: res.status,
-        code: data?.ResponseCode ?? null,
+        paymentId: pendingId,
+        message: String(e?.message ?? e),
       });
-      return noStore(
-        {
-          ok: false,
-          error: data?.errorMessage || data?.ResponseDescription || "MPesa request failed",
-          mpesa: data || null,
-          paymentId: paymentId ?? null,
-          deduped: Boolean(existingPending),
-        },
-        { status: res.status }
-      );
+
+      return noStore({ ok: false, error: e?.message || "Failed to initiate STK", paymentId: pendingId }, { status: 502 });
     }
 
-    // --- success ---
-    track("billing_upgrade_mpesa_success", {
+    const checkoutId = String(data?.CheckoutRequestID ?? "").trim();
+    const merchantId = String(data?.MerchantRequestID ?? "").trim();
+
+    if (!checkoutId) {
+      if (pendingId) {
+        await (prisma as any).payment
+          .update({
+            where: { id: pendingId },
+            data: {
+              status: "FAILED",
+              rawCallback: {
+                phase: "stkPush",
+                message: "Missing CheckoutRequestID in Daraja response",
+                at: new Date().toISOString(),
+                data,
+              },
+            },
+          })
+          .catch(() => {});
+      }
+
+      track("billing_upgrade_stk_missing_checkout_id", { reqId, userId: user.id, paymentId: pendingId });
+
+      return noStore({ ok: false, error: "STK push failed (missing CheckoutRequestID)", paymentId: pendingId }, { status: 502 });
+    }
+
+    // --- upsert by CheckoutRequestID (callback race-safe) ---
+    const saved = await (prisma as any).payment.upsert({
+      where: { checkoutRequestId: checkoutId },
+      update: {
+        merchantRequestId: merchantId || null,
+        payerPhone: msisdn,
+        amount,
+        accountRef: "QWIKSALE",
+        // keep tier/mode if columns exist:
+        targetTier: tier,
+        mode,
+      },
+      create: {
+        status: "PENDING",
+        method: "MPESA",
+        currency: "KES",
+        amount,
+        payerPhone: msisdn,
+        accountRef: "QWIKSALE",
+        checkoutRequestId: checkoutId,
+        merchantRequestId: merchantId || null,
+        userId: user.id,
+        targetTier: tier,
+        mode,
+      },
+      select: { id: true },
+    });
+
+    track("billing_upgrade_upsert", {
       reqId,
       userId: user.id,
-      paymentId: paymentId ?? null,
-      code: data?.ResponseCode ?? null,
+      pendingId,
+      savedId: saved.id,
+      hasCheckoutId: true,
+      hasMerchantId: !!merchantId,
     });
+
+    // --- dedupe: if callback inserted first, remove the pre-created pending row ---
+    if (pendingId && saved.id !== pendingId) {
+      await (prisma as any).payment.delete({ where: { id: pendingId } }).catch(() => {});
+      track("billing_upgrade_dedupe_deleted", { reqId, userId: user.id, pendingId, savedId: saved.id });
+    }
+
+    track("billing_upgrade_success", { reqId, userId: user.id, paymentId: saved.id });
 
     return noStore({
       ok: true,
@@ -281,15 +258,14 @@ export async function POST(req: Request) {
       amount,
       mode,
       message: data?.CustomerMessage || "STK push sent. Confirm on your phone.",
+      paymentId: saved.id,
       mpesa: {
-        MerchantRequestID: data?.MerchantRequestID,
-        CheckoutRequestID: data?.CheckoutRequestID,
-        ResponseCode: data?.ResponseCode,
-        ResponseDescription: data?.ResponseDescription,
-        CustomerMessage: data?.CustomerMessage,
+        MerchantRequestID: merchantId || null,
+        CheckoutRequestID: checkoutId,
+        ResponseCode: data?.ResponseCode ?? null,
+        ResponseDescription: data?.ResponseDescription ?? null,
+        CustomerMessage: data?.CustomerMessage ?? null,
       },
-      paymentId: paymentId ?? null,
-      deduped: Boolean(existingPending),
     });
   } catch (e: any) {
     // eslint-disable-next-line no-console
@@ -298,5 +274,3 @@ export async function POST(req: Request) {
     return noStore({ error: e?.message || "Server error" }, { status: 500 });
   }
 }
-
-

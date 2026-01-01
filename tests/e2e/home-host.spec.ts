@@ -6,9 +6,12 @@ test.describe("Home link host & navigation", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
     const current = new URL(page.url(), baseURL ?? page.url());
-    const homeLink = page
-      .getByRole("link", { name: /home|qwiksale|logo/i })
-      .first();
+
+    const headerHome = page.locator('[data-testid="site-header"] a[href="/"]');
+    const homeLink =
+      (await headerHome.count()) > 0
+        ? headerHome.first()
+        : page.locator('a[href="/"]').first();
 
     const href = (await homeLink.getAttribute("href")) ?? "/";
     const resolved = new URL(href, baseURL ?? page.url());
@@ -19,7 +22,6 @@ test.describe("Home link host & navigation", () => {
   test("Clicking Home from a deeper route returns to / on the same host", async ({
     page,
   }) => {
-    // Try a simple marketing route first; fall back to /dashboard if needed.
     await page
       .goto("/help", { waitUntil: "domcontentloaded" })
       .catch(async () => {
@@ -30,11 +32,24 @@ test.describe("Home link host & navigation", () => {
 
     const startHost = new URL(page.url()).host;
 
-    const homeLink = page
-      .getByRole("link", { name: /home|qwiksale|logo/i })
-      .first();
+    const headerHome = page.locator('[data-testid="site-header"] a[href="/"]');
+    const homeLink =
+      (await headerHome.count()) > 0
+        ? headerHome.first()
+        : page.locator('a[href="/"]').first();
+
     await homeLink.click();
-    await page.waitForLoadState("domcontentloaded");
+
+    await page.waitForURL(
+      (u) => {
+        try {
+          return new URL(u).pathname === "/";
+        } catch {
+          return false;
+        }
+      },
+      { waitUntil: "domcontentloaded" },
+    );
 
     const url = new URL(page.url());
     expect(url.host).toBe(startHost);

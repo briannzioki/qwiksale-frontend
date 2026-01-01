@@ -435,51 +435,17 @@ export default function HeaderClient({ initialAuth }: Props) {
     if (homeA) {
       if (!homeA.getAttribute("data-testid")) homeA.setAttribute("data-testid", "home-link");
       if (!norm(homeA.getAttribute("aria-label"))) homeA.setAttribute("aria-label", "Home");
+      if (!norm(homeA.getAttribute("title"))) homeA.setAttribute("title", "Home");
 
       const hrefNow = (homeA.getAttribute("href") ?? "").trim();
       if (hrefNow !== "/") homeA.setAttribute("href", "/");
     }
 
-    const looksLikeHome = (a: HTMLAnchorElement) => {
-      const dt = norm(a.getAttribute("data-testid"));
-      if (dt === "home-link" || dt === "site-home-link") return true;
-
-      const href = (a.getAttribute("href") ?? "").trim();
-      if (href === "/") return true;
-
-      const aria = norm(a.getAttribute("aria-label"));
-      const title = norm(a.getAttribute("title"));
-      const text = norm(a.textContent);
-      const imgAlt = norm(a.querySelector("img")?.getAttribute("alt"));
-      const name = `${aria} ${title} ${text} ${imgAlt}`;
-
-      return name.includes("home") || name.includes("qwiksale") || name.includes("logo");
-    };
-
-    const onClickCapture = (e: MouseEvent) => {
-      const isModified =
-        e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
-      if (isModified) return;
-
-      const t = e.target as HTMLElement | null;
-      const a = (t?.closest?.("a") as HTMLAnchorElement | null) ?? null;
-      if (!a) return;
-      if (!looksLikeHome(a)) return;
-
-      if (!a.getAttribute("data-testid")) a.setAttribute("data-testid", "home-link");
-      if (!norm(a.getAttribute("aria-label"))) a.setAttribute("aria-label", "Home");
-      const hrefNow = (a.getAttribute("href") ?? "").trim();
-      if (hrefNow !== "/") a.setAttribute("href", "/");
-
-      if (pathname === "/") return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      router.push("/");
-    };
-
-    root.addEventListener("click", onClickCapture, true);
-    return () => root.removeEventListener("click", onClickCapture, true);
+    try {
+      router.prefetch("/");
+    } catch {
+      // ignore
+    }
   }, [inAdmin, pathname, router]);
 
   /* ------------------------------ Header right slot ------------------------------ */

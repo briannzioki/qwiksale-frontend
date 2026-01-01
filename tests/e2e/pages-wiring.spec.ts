@@ -16,20 +16,13 @@ test.describe("/messages – guest", () => {
   test("shows hero and Sign in CTA (no soft-error)", async ({ page }) => {
     await page.goto("/messages");
 
-    await expect(
-      page.getByRole("heading", { name: "Messages" })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
 
-    await expect(
-      page.getByText("Please sign in to view your messages.")
-    ).toBeVisible();
+    await expect(page.getByText("Please sign in to view your messages.")).toBeVisible();
 
     const signInLink = page.getByRole("link", { name: "Sign in" });
     await expect(signInLink).toBeVisible();
-    await expect(signInLink).toHaveAttribute(
-      "href",
-      /\/signin\?callbackUrl=%2Fmessages/
-    );
+    await expect(signInLink).toHaveAttribute("href", /\/signin\?callbackUrl=%2Fmessages/);
 
     await expect(page.locator('[data-soft-error="messages"]')).toHaveCount(0);
   });
@@ -41,17 +34,13 @@ test.describe("/messages – logged-in user", () => {
   test("shows hero and Conversations list, no soft-error", async ({ page }) => {
     await page.goto("/messages");
 
-    await expect(
-      page.getByRole("heading", { name: "Messages" })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
 
     // Conversations header in the main conversations region
     const conversationsRegion = page.getByRole("region", {
       name: "Conversations",
     });
-    await expect(
-      conversationsRegion.getByRole("heading", { name: "Conversations" })
-    ).toBeVisible();
+    await expect(conversationsRegion.getByRole("heading", { name: "Conversations" })).toBeVisible();
 
     await expect(page.locator('[data-soft-error="messages"]')).toHaveCount(0);
 
@@ -60,7 +49,7 @@ test.describe("/messages – logged-in user", () => {
       page
         .getByRole("form")
         .filter({ hasText: "Write a message" })
-        .or(page.getByPlaceholder("Write a message…"))
+        .or(page.getByPlaceholder("Write a message…")),
     ).toBeVisible();
   });
 });
@@ -73,21 +62,17 @@ test.describe("/onboarding – guest", () => {
   test("shows finish profile hero and sign-in prompt", async ({ page }) => {
     await page.goto("/onboarding");
 
-    await expect(
-      page.getByRole("heading", { name: /Finish your profile/i })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Finish your profile/i })).toBeVisible();
 
     // Username field should be present even for guests
     await expect(page.getByLabel(/Username/i)).toBeVisible();
 
     // Alert that asks user to sign in
-    const signInLink = page
-      .getByRole("link", { name: /sign in/i })
-      .first();
+    const signInLink = page.getByRole("link", { name: /sign in/i }).first();
     await expect(signInLink).toBeVisible();
     await expect(signInLink).toHaveAttribute(
       "href",
-      /\/signin\?callbackUrl=.*%2Fonboarding\?return=%2Fdashboard/
+      /\/signin\?callbackUrl=.*%2Fonboarding\?return=%2Fdashboard/,
     );
   });
 });
@@ -98,20 +83,14 @@ test.describe("/onboarding – logged-in user", () => {
   test("shows profile form with username + Save + Skip for now", async ({ page }) => {
     await page.goto("/onboarding");
 
-    await expect(
-      page.getByRole("heading", { name: /Finish your profile/i })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Finish your profile/i })).toBeVisible();
 
     await expect(page.getByLabel(/Username/i)).toBeVisible();
     await expect(page.getByLabel(/WhatsApp/i)).toBeVisible();
 
-    await expect(
-      page.getByRole("button", { name: /Save/i })
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /Save/i })).toBeVisible();
 
-    await expect(
-      page.getByRole("link", { name: /Skip for now/i })
-    ).toBeVisible();
+    await expect(page.getByRole("link", { name: /Skip for now/i })).toBeVisible();
   });
 });
 
@@ -123,25 +102,22 @@ test.describe("/pay – MPesa test page wiring", () => {
   test("shows hero, phone, amount, mode, and primary CTA", async ({ page }) => {
     await page.goto("/pay");
 
-    await expect(
-      page.getByRole("heading", { name: "Test M-Pesa STK Push" })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Test M-Pesa STK Push" })).toBeVisible();
 
-    await expect(
-      page.getByLabel(/Phone .*2547|2541/i)
-    ).toBeVisible();
+    await expect(page.getByLabel(/Phone .*2547|2541/i)).toBeVisible();
 
     await expect(page.getByLabel(/Amount \(KES\)/i)).toBeVisible();
 
     await expect(page.getByLabel(/Mode/i)).toBeVisible();
 
-    await expect(
-      page.getByRole("button", { name: /Send STK Push/i })
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /Send STK Push/i })).toBeVisible();
 
     const callbackLink = page.getByRole("link", { name: /Callback status/i });
     await expect(callbackLink).toBeVisible();
-    await expect(callbackLink).toHaveAttribute("href", "/api/mpesa/callback");
+
+    // Canonical: /api/pay/mpesa/callback
+    // Legacy compatibility: /api/mpesa/callback
+    await expect(callbackLink).toHaveAttribute("href", /^\/api\/(?:pay\/)?mpesa\/callback$/);
   });
 });
 
@@ -153,9 +129,7 @@ test.describe("/post – chooser page wiring", () => {
   test("shows listing hero and product/service CTAs", async ({ page }) => {
     await page.goto("/post");
 
-    await expect(
-      page.getByRole("heading", { name: /Create a listing in minutes/i })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Create a listing in minutes/i })).toBeVisible();
 
     const productCtas = page.getByRole("link", { name: /Post a product/i });
     await expect(productCtas.first()).toBeVisible();
@@ -165,13 +139,9 @@ test.describe("/post – chooser page wiring", () => {
     await expect(serviceCtas.first()).toBeVisible();
     await expect(serviceCtas.first()).toHaveAttribute("href", "/sell/service");
 
-    await expect(
-      page.getByRole("heading", { name: /Sell a Product/i })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Sell a Product/i })).toBeVisible();
 
-    await expect(
-      page.getByRole("heading", { name: /Offer a Service/i })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Offer a Service/i })).toBeVisible();
   });
 });
 
@@ -185,13 +155,9 @@ test.describe("/signup – wiring", () => {
   }) => {
     await page.goto("/signup");
 
-    await expect(
-      page.getByRole("heading", { name: /Create your QwikSale account/i })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Create your QwikSale account/i })).toBeVisible();
 
-    await expect(
-      page.getByRole("button", { name: /Continue with Google/i })
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /Continue with Google/i })).toBeVisible();
 
     await expect(page.getByLabel(/Email/i)).toBeVisible();
     await expect(page.getByLabel(/^Password$/i)).toBeVisible();
@@ -199,10 +165,7 @@ test.describe("/signup – wiring", () => {
 
     const signInLink = page.getByRole("link", { name: /Sign in/i });
     await expect(signInLink).toBeVisible();
-    await expect(signInLink).toHaveAttribute(
-      "href",
-      /\/signin\?callbackUrl=/
-    );
+    await expect(signInLink).toHaveAttribute("href", /\/signin\?callbackUrl=/);
   });
 });
 
@@ -219,7 +182,7 @@ test.describe("/sell/product – logged-in user form wiring", () => {
     await expect(
       page
         .getByRole("heading", { name: /Post a Product/i })
-        .or(page.getByRole("heading", { name: /Edit Product/i }))
+        .or(page.getByRole("heading", { name: /Edit Product/i })),
     ).toBeVisible();
 
     await expect(page.getByLabel(/^Title$/i)).toBeVisible();
@@ -233,14 +196,10 @@ test.describe("/sell/product – logged-in user form wiring", () => {
     await expect(page.getByLabel(/^Description$/i)).toBeVisible();
 
     // Gallery uploader wiring: helper text about pending files
-    await expect(
-      page.getByText(/No new files selected/i)
-    ).toBeVisible();
+    await expect(page.getByText(/No new files selected/i)).toBeVisible();
 
     // Submit button with data-testid from ProductForm
-    await expect(
-      page.getByTestId("product-form-submit")
-    ).toBeVisible();
+    await expect(page.getByTestId("product-form-submit")).toBeVisible();
   });
 });
 
@@ -257,7 +216,7 @@ test.describe("/sell/service – logged-in user form wiring", () => {
     await expect(
       page
         .getByRole("heading", { name: /Post a Service/i })
-        .or(page.getByRole("heading", { name: /Edit Service/i }))
+        .or(page.getByRole("heading", { name: /Edit Service/i })),
     ).toBeVisible();
 
     await expect(page.getByLabel(/Service name/i)).toBeVisible();
@@ -271,14 +230,12 @@ test.describe("/sell/service – logged-in user form wiring", () => {
     await expect(page.getByLabel(/Seller phone \(optional\)/i)).toBeVisible();
     await expect(page.getByLabel(/^Description$/i)).toBeVisible();
 
-    await expect(
-      page.getByText(/No new files selected/i)
-    ).toBeVisible();
+    await expect(page.getByText(/No new files selected/i)).toBeVisible();
 
     await expect(
       page
         .getByRole("button", { name: /Post service/i })
-        .or(page.getByRole("button", { name: /Save changes/i }))
+        .or(page.getByRole("button", { name: /Save changes/i })),
     ).toBeVisible();
   });
 });

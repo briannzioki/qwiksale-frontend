@@ -1,4 +1,4 @@
-// src/middleware.ts — QwikSale middleware (admin gates, protected pages, CSP, suggest RL)
+// src/middleware.ts - QwikSale middleware (admin gates, protected pages, CSP, suggest RL)
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
@@ -110,6 +110,10 @@ function rlKeyFromReq(req: NextRequest) {
   return `${ip}::${ua}`;
 }
 
+function isMpesaCallbackPath(p: string) {
+  return p === "/api/pay/mpesa/callback" || p === "/api/mpesa/callback";
+}
+
 /* ------------------------- Security / CSP ------------------------- */
 function buildSecurityHeaders(
   nonce: string,
@@ -190,7 +194,6 @@ function buildSecurityHeaders(
   headers.set("X-Frame-Options", "SAMEORIGIN");
   headers.set("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
 
-  // Only set HSTS on real prod sites and only when request is HTTPS.
   if (IS_PROD_SITE && opts?.isHttps) {
     headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
   }
@@ -240,15 +243,9 @@ function isAuthPath(p: string) {
   return p === "/signin" || p === "/signup";
 }
 function isProtectedPath(p: string) {
-  // Allow anonymous access to /sell/product (soft CTA + form),
-  // while keeping the rest of /sell and other sections gated.
   if (p === "/sell/product") {
     return false;
   }
-
-  // NOTE: /dashboard is intentionally NOT treated as protected here so that
-  // the dashboard guardrail test can hit /dashboard anonymously and see
-  // the soft-error or CTA UI rendered by the page instead of a redirect.
   return (
     p.startsWith("/sell") ||
     p.startsWith("/account") ||
@@ -304,9 +301,16 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
+  /* ---- Never block M-Pesa callbacks (server-to-server POST) ---- */
+  if (isMpesaCallbackPath(p)) {
+    res.headers.set("Cache-Control", "no-store");
+    res.headers.set("Pragma", "no-cache");
+    res.headers.set("Expires", "0");
+    return res;
+  }
+
   /* ---- Never touch NextAuth internals ---- */
   if (p.startsWith("/api/auth")) {
-    // Auth endpoints must never be cached (csrf/proxy layers included).
     res.headers.set("Cache-Control", "no-store");
     res.headers.set("Pragma", "no-cache");
     res.headers.set("Expires", "0");
@@ -478,16 +482,13 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL(target, req.url), 302);
     }
 
-    // Auth pages should never be cached (prevents weird bootstrap/csrf edge cases).
     res.headers.set("Cache-Control", "no-store");
     res.headers.set("Pragma", "no-cache");
     res.headers.set("Expires", "0");
-
-    // Allow auth pages; don’t apply strict CSP here to avoid breaking CSRF.
     return res;
   }
 
-  /* ---- Protected (non-admin) sections → require login ---- */
+  /* ---- Protected (non-admin) sections -> require login ---- */
   if (!isApi && !isLoggedIn && isProtectedPath(p) && isDocumentNav(req)) {
     const signin = new URL("/signin", req.url);
     signin.searchParams.set("callbackUrl", normalize(req.nextUrl) || "/");
@@ -544,6 +545,6 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|\\.well-known|_vercel).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|\\.well-known|_vercel|api/pay/mpesa/callback|api/mpesa/callback).*)",
   ],
 };

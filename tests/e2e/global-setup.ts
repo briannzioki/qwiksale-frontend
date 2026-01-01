@@ -20,6 +20,16 @@ async function ensureDir(dir: string) {
   await fs.promises.mkdir(dir, { recursive: true }).catch(() => {});
 }
 
+async function writeFileIfChanged(filePath: string, contents: string) {
+  try {
+    const existing = await fs.promises.readFile(filePath, "utf8");
+    if (existing === contents) return;
+  } catch {
+    // ignore missing/unreadable -> will write
+  }
+  await fs.promises.writeFile(filePath, contents, "utf8");
+}
+
 function env(name: string, fallback?: string) {
   if (name === "E2E_SUPERADMIN_EMAIL") {
     return (
@@ -185,13 +195,12 @@ async function loginAndSave(
 async function writeEmptyDefault(): Promise<void> {
   await ensureDir(AUTH_DIR);
   const emptyState = { cookies: [], origins: [] as any[] };
-  await fs.promises.writeFile(
-    DEFAULT_FILE,
-    JSON.stringify(emptyState, null, 2),
-    "utf8",
-  );
+  const body = JSON.stringify(emptyState, null, 2);
+
+  await writeFileIfChanged(DEFAULT_FILE, body);
+
   console.warn(
-    `[global-setup] wrote EMPTY default storage at ${DEFAULT_FILE} (logged-out mode)`,
+    `[global-setup] ensured EMPTY default storage at ${DEFAULT_FILE} (logged-out mode)`,
   );
 }
 
@@ -218,7 +227,7 @@ async function seedDefaultState(
   if (sourcePath) {
     try {
       const raw = await fs.promises.readFile(sourcePath, "utf8");
-      await fs.promises.writeFile(DEFAULT_FILE, raw, "utf8");
+      await writeFileIfChanged(DEFAULT_FILE, raw);
       console.log(
         `[global-setup] default storage seeded from ${path.basename(
           sourcePath,

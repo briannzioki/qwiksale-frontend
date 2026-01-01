@@ -76,24 +76,41 @@ async function seedRequest(title: string) {
   const Request = getRequestModel();
 
   const now = new Date();
-  const r = await Request.create({
-    data: {
-      ownerId: OWNER_ID,
-      kind: "product",
-      title,
-      description: "E2E drawer seed",
-      location: "Nairobi",
-      category: "electronics",
-      tags: ["phone"],
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
-      boostUntil: null,
-      // Intentionally omit contact fields (avoid enum/name drift).
-    },
-    select: { id: true, title: true },
-  });
 
-  return r as { id: string; title: string };
+  const baseData: any = {
+    ownerId: OWNER_ID,
+    kind: "product",
+    title,
+    description: "E2E drawer seed",
+    location: "Nairobi",
+    category: "electronics",
+    tags: ["phone"],
+    createdAt: now,
+    expiresAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+    boostUntil: new Date(now.getTime() + 60 * 60 * 1000), // 1h boost so it stays at the top
+    // Intentionally omit contact fields (avoid enum/name drift).
+  };
+
+  try {
+    const r = await Request.create({
+      data: baseData,
+      select: { id: true, title: true },
+    });
+
+    return r as { id: string; title: string };
+  } catch (e: any) {
+    // Fallback for schema drift (if boostUntil doesn't exist)
+    const msg = String(e?.message || "");
+    if (/PrismaClientValidationError|Unknown argument|Invalid value/i.test(msg)) {
+      const { boostUntil, ...fallback } = baseData;
+      const r2 = await Request.create({
+        data: fallback,
+        select: { id: true, title: true },
+      });
+      return r2 as { id: string; title: string };
+    }
+    throw e;
+  }
 }
 
 async function signInAsE2EAdmin(page: Page, callbackUrl = "/") {

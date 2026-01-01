@@ -55,7 +55,6 @@ function Card({
 export default function HelpCenterPage() {
   return (
     <main className="container-page py-8">
-      {/* Simple, self-contained header (no shared component assumptions) */}
       <header
         className={[
           "rounded-2xl border p-5 shadow-sm",
@@ -71,7 +70,11 @@ export default function HelpCenterPage() {
           message us and we’ll help.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/contact" prefetch={false} className="btn-gradient-primary text-sm">
+          <Link
+            href="/contact"
+            prefetch={false}
+            className="btn-gradient-primary text-sm"
+          >
             Contact Support
           </Link>
           <Link href="/report" prefetch={false} className="btn-outline text-sm">
@@ -80,7 +83,6 @@ export default function HelpCenterPage() {
         </div>
       </header>
 
-      {/* Quick links */}
       <section className="mt-6 grid gap-4 md:grid-cols-3">
         <Card title="Contact Support" href="/contact">
           Message us about account, billing, or product questions.
@@ -93,7 +95,6 @@ export default function HelpCenterPage() {
         </Card>
       </section>
 
-      {/* FAQs (native details/summary) */}
       <section className="mt-8">
         <h2 className="text-lg font-semibold text-[var(--text)]">
           Frequently Asked Questions
@@ -250,7 +251,6 @@ export default function HelpCenterPage() {
         </div>
       </section>
 
-      {/* Contact strip */}
       <section
         className={[
           "mt-8 rounded-2xl border p-5 shadow-sm",
@@ -267,7 +267,11 @@ export default function HelpCenterPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/contact" prefetch={false} className="btn-gradient-primary">
+            <Link
+              href="/contact"
+              prefetch={false}
+              className="btn-gradient-primary"
+            >
               Contact Support
             </Link>
             <Link href="/report" prefetch={false} className="btn-outline">

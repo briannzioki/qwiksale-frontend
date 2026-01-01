@@ -47,14 +47,32 @@ function cmGet(meta: StkCallback["CallbackMetadata"], key: string) {
   return found?.Value;
 }
 
+async function bestEffortUpgradeUserTier(userId: string, tier: string) {
+  // try common column names; ignore failures
+  const candidates: Array<Record<string, any>> = [
+    { tier },
+    { plan: tier },
+    { subscriptionTier: tier },
+    { subscriptionLevel: tier },
+    { accountTier: tier },
+  ];
+
+  for (const data of candidates) {
+    try {
+      await prisma.user.update({ where: { id: userId }, data: data as any });
+      return true;
+    } catch {
+      // try next
+    }
+  }
+  return false;
+}
+
 export async function POST(req: Request) {
   try {
     // --- optional shared-secret check ---
     if (CALLBACK_TOKEN) {
-      const tok =
-        req.headers.get("x-callback-token") ||
-        req.headers.get("x-callback-secret") ||
-        "";
+      const tok = req.headers.get("x-callback-token") || req.headers.get("x-callback-secret") || "";
       if (tok.trim() !== CALLBACK_TOKEN) {
         return noStore({ error: "Forbidden" }, { status: 403 });
       }
@@ -73,39 +91,30 @@ export async function POST(req: Request) {
       return noStore({ error: "Malformed payload" }, { status: 400 });
     }
 
-    const {
-      MerchantRequestID,
-      CheckoutRequestID,
-      ResultCode,
-      ResultDesc,
-      CallbackMetadata,
-    } = stk;
+    const { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = stk;
 
     if (!CheckoutRequestID && !MerchantRequestID) {
       return noStore({ error: "Missing IDs" }, { status: 400 });
     }
 
-    // --- extract metadata ---
     const amount = Number(cmGet(CallbackMetadata, "Amount") || 0) || null;
     const phone = String(cmGet(CallbackMetadata, "PhoneNumber") || "") || null;
     const receipt = String(cmGet(CallbackMetadata, "MpesaReceiptNumber") || "") || null;
     const txnDateRaw = cmGet(CallbackMetadata, "TransactionDate");
     const paidAt = parseSafaricomDate(txnDateRaw) || new Date();
 
-    // --- find payment record ---
     const Payment = (prisma as any).payment;
     if (!Payment?.findFirst) {
-      // If you don't have a Payment model, just acknowledge to MPesa
-      return noStore({ ok: true, note: "Payments not supported" });
+      return noStore({ ok: true, note: "Payments not supported" }, { status: 200 });
     }
 
     const payment =
       (await Payment.findFirst({
         where: {
           OR: [
-            { checkoutRequestId: CheckoutRequestID || "" },
-            { merchantRequestId: MerchantRequestID || "" },
-          ],
+            CheckoutRequestID ? { checkoutRequestId: String(CheckoutRequestID) } : undefined,
+            MerchantRequestID ? { merchantRequestId: String(MerchantRequestID) } : undefined,
+          ].filter(Boolean),
         },
         select: {
           id: true,
@@ -117,74 +126,74 @@ export async function POST(req: Request) {
       })) || null;
 
     if (!payment) {
-      // Still ack success so MPesa doesn't retry forever; you can alert/log
       // eslint-disable-next-line no-console
-      console.warn("[mpesa/callback] Payment not found for", {
+      console.warn("[billing/upgrade/callback] Payment not found for", {
         CheckoutRequestID,
         MerchantRequestID,
       });
-      return noStore({ ok: true, note: "Payment not found (ack)" });
+      return noStore({ ok: true, note: "Payment not found (ack)" }, { status: 200 });
     }
 
-    // --- idempotency: if already terminal, do nothing ---
-    if (payment.status === "SUCCESS" || payment.status === "FAILED") {
-      return noStore({ ok: true, idempotent: true });
+    // --- idempotency: already terminal -> do nothing ---
+    if (payment.status === "PAID" || payment.status === "FAILED") {
+      return noStore({ ok: true, idempotent: true }, { status: 200 });
     }
 
-    const success = ResultCode === 0;
+    const success = Number(ResultCode) === 0;
 
-    // --- update payment status & details ---
+    // optional: warn if amount mismatches expected
+    if (success && amount != null && payment.amount != null && Number(payment.amount) !== Number(amount)) {
+      // eslint-disable-next-line no-console
+      console.warn("[billing/upgrade/callback] Amount mismatch", {
+        paymentId: payment.id,
+        expected: payment.amount,
+        got: amount,
+      });
+    }
+
     const updated = await Payment.update({
       where: { id: payment.id },
       data: {
-        status: success ? "SUCCESS" : "FAILED",
+        status: success ? "PAID" : "FAILED",
         payerPhone: phone,
         paidAt: success ? paidAt : null,
-        receipt: receipt,
+        mpesaReceipt: receipt,
         resultCode: ResultCode ?? null,
         resultDesc: ResultDesc ?? null,
-        rawCallback: JSON.stringify(body), // optional JSON column
+        rawCallback: body, // keep as JSON if column supports it
       },
       select: {
         id: true,
         userId: true,
         status: true,
-        amount: true,
         targetTier: true,
       },
     });
 
-    // --- (best-effort) upgrade user tier on SUCCESS ---
+    // --- upgrade user tier ONLY on confirmed success ---
     if (success && updated.userId) {
-      try {
-        // If you store a subscription/tier on User (e.g. user.tier):
-        await prisma.user.update({
-          where: { id: updated.userId },
-          data: {
-            // Adjust this to your schema. Examples:
-            // tier: updated.targetTier ?? "GOLD",
-            // plan: updated.targetTier ?? "GOLD",
-            // subscriptionLevel: updated.targetTier ?? "GOLD",
-          } as any,
-        });
-      } catch {
-        // ignore if column absent
+      const tier = String(updated.targetTier ?? "").toUpperCase().trim();
+      if (tier) {
+        await bestEffortUpgradeUserTier(String(updated.userId), tier).catch(() => {});
       }
     }
 
-    // MPesa expects 200 OK; we echo minimal info
-    return noStore({
-      ok: true,
-      result: { code: ResultCode, desc: ResultDesc },
-      paymentId: updated.id,
-      status: updated.status,
-    });
+    return noStore(
+      {
+        ok: true,
+        result: { code: ResultCode ?? null, desc: ResultDesc ?? null },
+        paymentId: updated.id,
+        status: updated.status,
+      },
+      { status: 200 },
+    );
   } catch (e: any) {
     // eslint-disable-next-line no-console
     console.error("[billing/upgrade/callback] error:", e);
-    // Still return 200 so MPesa doesn’t spam retries, but include error note
-    return noStore({ ok: true, note: "Handled with error", error: e?.message ?? "error" });
+    // keep 200 so Safaricom doesn’t spam retries
+    return noStore(
+      { ok: true, note: "Handled with error", error: e?.message ?? "error" },
+      { status: 200 },
+    );
   }
 }
-
-

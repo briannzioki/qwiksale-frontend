@@ -3,14 +3,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import {
-  getAccessToken,
-  stkPassword,
-  yyyymmddhhmmss,
-  MPESA,
-  logMpesaBootOnce,
-  normalizeMsisdn,
-} from "@/app/lib/mpesa";
+import { MPESA, logMpesaBootOnce, normalizeMsisdn, stkPush } from "@/app/lib/mpesa";
 
 /* ---------------- analytics (console-only for now) ---------------- */
 type AnalyticsEvent =
@@ -20,7 +13,7 @@ type AnalyticsEvent =
   | "mpesa_stk_initiate_invalid_msisdn"
   | "mpesa_stk_initiate_config_missing"
   | "mpesa_stk_initiate_callback_insecure"
-  | "mpesa_stk_initiate_network_error"
+  | "mpesa_stk_initiate_push_error"
   | "mpesa_stk_initiate_success"
   | "mpesa_stk_initiate_error"
   | "mpesa_stk_initiate_ping";
@@ -37,10 +30,10 @@ function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
 type Mode = "paybill" | "till";
 type Body = {
   amount: number;
-  msisdn: string;       // accepts 07/01/+254/254
+  msisdn: string; // accepts 07/01/+254/254
   mode?: Mode;
-  accountRef?: string;  // optional override (<=12)
-  description?: string; // optional override (<=32)
+  accountRef?: string; // <= 12
+  description?: string; // <= 32
 };
 
 function noStore(json: unknown, init?: ResponseInit) {
@@ -64,10 +57,18 @@ function ensureHttps(url: string): boolean {
   }
 }
 
+function mkReqId() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c: any = (globalThis as any).crypto;
+    return c?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  } catch {
+    return Math.random().toString(36).slice(2);
+  }
+}
+
 export async function POST(req: Request) {
-  const reqId =
-    (globalThis as any).crypto?.randomUUID?.() ??
-    Math.random().toString(36).slice(2);
+  const reqId = mkReqId();
 
   try {
     logMpesaBootOnce();
@@ -93,33 +94,28 @@ export async function POST(req: Request) {
       track("mpesa_stk_initiate_invalid_msisdn", { reqId });
       return noStore(
         { error: "Invalid msisdn (use 2547XXXXXXXX or 2541XXXXXXXX)" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const mode = normalizeMode(parsed?.mode);
-    const accountRef = (parsed?.accountRef ?? "QWIKSALE").toString().slice(0, 12);
-    const description = (parsed?.description ?? "Qwiksale payment").toString().slice(0, 32);
+    const accountRef = String(parsed?.accountRef ?? "QWIKSALE").slice(0, 12);
+    const description = String(parsed?.description ?? "Qwiksale payment").slice(0, 32);
 
     // ---- validate env/config ------------------------------------------------
     if (!MPESA.SHORTCODE || !MPESA.PASSKEY || !MPESA.CALLBACK_URL) {
       track("mpesa_stk_initiate_config_missing", { reqId });
       return noStore(
         { error: "M-Pesa config missing (SHORTCODE/PASSKEY/CALLBACK_URL)" },
-        { status: 500 }
+        { status: 500 },
       );
     }
-    if (!ensureHttps(MPESA.CALLBACK_URL)) {
-      track("mpesa_stk_initiate_callback_insecure", { reqId });
-      return noStore({ error: "CALLBACK_URL must be HTTPS" }, { status: 500 });
-    }
 
-    const shortcode = String(MPESA.SHORTCODE);
-    const timestamp = yyyymmddhhmmss();
-    const password = stkPassword(shortcode, MPESA.PASSKEY, timestamp);
-    const token = await getAccessToken();
-    const transactionType =
-      mode === "till" ? "CustomerBuyGoodsOnline" : "CustomerPayBillOnline";
+    // strict in production, lenient in sandbox/dev
+    if (MPESA.ENV === "production" && !ensureHttps(MPESA.CALLBACK_URL)) {
+      track("mpesa_stk_initiate_callback_insecure", { reqId });
+      return noStore({ error: "CALLBACK_URL must be HTTPS in production" }, { status: 500 });
+    }
 
     track("mpesa_stk_initiate_attempt", {
       reqId,
@@ -130,86 +126,48 @@ export async function POST(req: Request) {
       amount,
     });
 
-    // ---- safe log (mask phone) ---------------------------------------------
-    const masked = phone.replace(/^(\d{6})\d{3}(\d{3})$/, "$1***$2");
-    // eslint-disable-next-line no-console
-    console.info(
-      `[mpesa] STK initiate → env=${MPESA.ENV} type=${transactionType} shortcode=${shortcode} amount=${amount} msisdn=${masked}`
-    );
-
-    // ---- build request ------------------------------------------------------
-    const payload = {
-      BusinessShortCode: Number(shortcode),
-      Password: password,
-      Timestamp: timestamp,
-      TransactionType: transactionType,
-      Amount: amount,
-      PartyA: Number(phone),
-      PartyB: Number(shortcode),
-      PhoneNumber: Number(phone),
-      CallBackURL: MPESA.CALLBACK_URL,
-      AccountReference: accountRef,
-      TransactionDesc: description,
-    };
-
-    // ---- network with timeout ----------------------------------------------
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12_000);
-
-    const res = await fetch(`${MPESA.BASE_URL}/mpesa/stkpush/v1/processrequest`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    }).catch((e) => {
-      track("mpesa_stk_initiate_network_error", { reqId, message: String(e) });
-      throw new Error(`Network error: ${e?.message || e}`);
-    });
-
-    clearTimeout(timer);
-
-    // Try JSON; fall back to text
-    let data: any = {};
+    // ---- single truth: stkPush (no duplicated Daraja request logic) ---------
+    let data: any;
     try {
-      data = await res.json();
-    } catch {
-      data = { raw: await res.text().catch(() => "") };
+      data = await stkPush({
+        amount,
+        phone,
+        mode,
+        accountReference: accountRef,
+        description,
+      });
+    } catch (e: any) {
+      track("mpesa_stk_initiate_push_error", { reqId, message: String(e?.message ?? e) });
+      return noStore({ ok: false, error: e?.message || "Failed to initiate STK" }, { status: 502 });
     }
 
-    // Safaricom success is ResponseCode "0"
-    const ok = data?.ResponseCode === "0" || data?.ResponseCode === 0;
-    const message =
-      data?.CustomerMessage ||
-      (ok ? "STK push sent. Confirm on your phone." : data?.ResponseDescription || "STK failed");
+    const checkoutId = String(data?.CheckoutRequestID ?? "").trim();
+    const merchantId = String(data?.MerchantRequestID ?? "").trim();
+    const ok = !!checkoutId;
 
     if (ok) {
       track("mpesa_stk_initiate_success", {
         reqId,
-        code: data?.ResponseCode ?? null,
-        hasCheckoutId: !!data?.CheckoutRequestID,
-        hasMerchantId: !!data?.MerchantRequestID,
+        hasCheckoutId: true,
+        hasMerchantId: !!merchantId,
       });
     }
 
     return noStore(
       {
         ok,
-        message,
+        message: data?.CustomerMessage || "STK push sent. Confirm on your phone.",
         mpesa: {
-          MerchantRequestID: data?.MerchantRequestID ?? null,
-          CheckoutRequestID: data?.CheckoutRequestID ?? null,
+          MerchantRequestID: merchantId || null,
+          CheckoutRequestID: checkoutId || null,
           ResponseCode: data?.ResponseCode ?? null,
           ResponseDescription: data?.ResponseDescription ?? null,
           CustomerMessage: data?.CustomerMessage ?? null,
         },
-        // echo (helpful for debugging client flows)
         env: MPESA.ENV,
         mode,
       },
-      { status: res.status }
+      { status: ok ? 200 : 502 },
     );
   } catch (e: any) {
     // eslint-disable-next-line no-console
@@ -231,5 +189,3 @@ export async function HEAD() {
     headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
   });
 }
-
-
