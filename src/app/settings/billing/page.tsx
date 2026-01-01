@@ -11,18 +11,26 @@ import toast from "react-hot-toast";
 
 type TierKey = "GOLD" | "PLATINUM";
 
-// Visible price points (KES). Adjust anytime.
+const IS_PROD = process.env.NODE_ENV === "production";
+
+// Visible price points (KES). Display only.
+// Server is the source of truth for what gets charged.
 const PRICES: Record<TierKey, number> = {
   GOLD: 199,
   PLATINUM: 499,
 };
 
-const TEST_MSISDN = (process.env["NEXT_PUBLIC_TEST_MSISDN"] || "").trim();
+const TEST_MSISDN = (!IS_PROD ? String(process.env["NEXT_PUBLIC_TEST_MSISDN"] || "").trim() : "");
 
 function normalizeMsisdn(input: string): string {
-  let s = (input || "").replace(/\D+/g, "");
-  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1); // 07xxxxxxxx -> 2547xxxxxxxx
-  if (/^\+2547\d{8}$/.test(s)) s = s.replace(/^\+/, "");
+  let s = String(input || "").trim();
+  s = s.replace(/\s+/g, "");
+  s = s.replace(/^\+/, "");
+  s = s.replace(/\D+/g, "");
+
+  if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
+  if (/^7\d{8}$/.test(s)) s = "254" + s;
+
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
@@ -55,7 +63,6 @@ export default function BillingPage() {
   const focusRing = "focus-visible:outline-none focus-visible:ring-2 ring-focus";
   const helperText = "text-xs leading-relaxed text-[var(--text-muted)]";
 
-  // Prefill from localStorage or NEXT_PUBLIC_TEST_MSISDN
   useEffect(() => {
     try {
       const saved = localStorage.getItem("billing:lastPhone") || "";
@@ -69,7 +76,6 @@ export default function BillingPage() {
     }
   }, []);
 
-  // Persist phone locally
   useEffect(() => {
     try {
       if (phone) localStorage.setItem("billing:lastPhone", phone);
@@ -78,7 +84,6 @@ export default function BillingPage() {
     }
   }, [phone]);
 
-  // Prevent memory leaks (abort in-flight on unmount)
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
@@ -91,7 +96,7 @@ export default function BillingPage() {
     const msisdn = normalizeMsisdn(phone);
 
     if (!validMsisdn(msisdn)) {
-      setError("Please enter a valid Kenyan number like 2547XXXXXXXX.");
+      setError("Please enter a valid number like 2547XXXXXXXX.");
       return;
     }
 
@@ -101,39 +106,45 @@ export default function BillingPage() {
       return;
     }
 
-    if (submitting) return; // double-submit guard
+    if (submitting) return;
     setSubmitting(true);
 
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
     try {
-      setStatus("Starting STK push… check your phone.");
+      setStatus("Starting STK push. Check your phone.");
+
       const res = await fetch("/api/billing/upgrade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortRef.current.signal,
         credentials: "same-origin",
-        body: JSON.stringify({ tier, phone: msisdn, amount: price }),
+        body: JSON.stringify({
+          tier,
+          phone: msisdn,
+        }),
       });
 
       const data = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
-        const msg = data?.error || `Failed to start payment (${res.status})`;
+        const msg =
+          (typeof data?.error === "string" && data.error) ||
+          "Payment initiation failed. Please try again.";
         setError(msg);
-        toast.error(msg);
+        toast.error("Payment initiation failed");
         return;
       }
 
       const msg =
-        data?.customerMessage ||
-        data?.ResponseDescription ||
+        data?.message ||
+        data?.mpesa?.CustomerMessage ||
         "STK push sent. Confirm the payment on your phone.";
-      setStatus(msg);
+
+      setStatus(String(msg));
       toast.success("STK push sent");
 
-      // Poll /api/me for subscription change (only after user action; abortable)
       const targetTier: TierKey = tier;
       let updated = false;
 
@@ -161,17 +172,15 @@ export default function BillingPage() {
       }
 
       if (updated) {
-        toast.success(`You're now on ${targetTier} 🎉`);
-        setStatus(`Subscription upgraded to ${targetTier}. Enjoy your perks!`);
+        toast.success(`You are now on ${targetTier}`);
+        setStatus(`Subscription upgraded to ${targetTier}.`);
       } else {
-        setStatus(
-          "Payment is processing. If your tier doesn’t update shortly, refresh this page.",
-        );
+        setStatus("Payment is processing. If your tier does not update shortly, refresh this page.");
       }
     } catch (err: any) {
       if (err?.name !== "AbortError") {
         setError("Network error. Please try again.");
-        toast.error("Network error. Try again.");
+        toast.error("Network error");
       }
     } finally {
       setSubmitting(false);
@@ -185,6 +194,11 @@ export default function BillingPage() {
     | "PLATINUM"
     | undefined;
 
+  const phoneInvalid = !!phone && !validMsisdn(normalizeMsisdn(phone));
+  const phoneA11yProps = phoneInvalid
+    ? ({ "aria-invalid": "true" } as const)
+    : ({} as const);
+
   return (
     <div className="container-page py-8 text-[var(--text)]">
       <div className="mx-auto max-w-3xl space-y-6">
@@ -193,12 +207,10 @@ export default function BillingPage() {
             Upgrade subscription
           </h1>
           <p className={`text-sm leading-relaxed ${muted}`}>
-            Secure M-Pesa STK push. Choose a tier below and confirm on your
-            phone.
+            Secure M-Pesa STK push. Choose a tier below and confirm on your phone.
           </p>
         </header>
 
-        {/* Session card */}
         <section className="card flex items-center justify-between gap-4 p-4">
           <div className={`text-sm ${body}`}>
             {signedIn ? (
@@ -227,9 +239,7 @@ export default function BillingPage() {
 
           {!signedIn && (
             <button
-              onClick={() =>
-                signIn(undefined, { callbackUrl: "/settings/billing" })
-              }
+              onClick={() => signIn(undefined, { callbackUrl: "/settings/billing" })}
               className="btn-gradient-primary"
             >
               Sign in
@@ -237,7 +247,6 @@ export default function BillingPage() {
           )}
         </section>
 
-        {/* Plans */}
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <PlanCard
             title="Gold"
@@ -261,7 +270,6 @@ export default function BillingPage() {
           />
         </section>
 
-        {/* Payment form */}
         <form onSubmit={submit} className="card space-y-4 p-5">
           <div className="grid grid-cols-1 gap-3">
             <div className="flex flex-col gap-1">
@@ -277,23 +285,19 @@ export default function BillingPage() {
                 autoComplete="tel"
                 className="input"
                 required
-                aria-invalid={
-                  phone ? !validMsisdn(normalizeMsisdn(phone)) : undefined
-                }
+                {...phoneA11yProps}
               />
               <div className={helperText}>
-                We’ll send an STK push to this number. Use{" "}
-                <code className="font-mono text-[var(--text)]">
-                  2547XXXXXXXX
-                </code>{" "}
-                format.
+                We will send an STK push to this number. Use{" "}
+                <code className="font-mono text-[var(--text)]">2547XXXXXXXX</code>.
               </div>
+
               {TEST_MSISDN ? (
                 <button
                   type="button"
                   onClick={() => setPhone(TEST_MSISDN)}
                   className="btn-outline mt-1 w-fit text-xs"
-                  title="Use test number from env"
+                  title="Use test number"
                 >
                   Use test number ({TEST_MSISDN})
                 </button>
@@ -310,12 +314,8 @@ export default function BillingPage() {
                 onChange={(e) => setTier(e.target.value as TierKey)}
                 className="select w-56"
               >
-                <option value="GOLD">
-                  Gold — KES {PRICES.GOLD.toLocaleString()}
-                </option>
-                <option value="PLATINUM">
-                  Platinum — KES {PRICES.PLATINUM.toLocaleString()}
-                </option>
+                <option value="GOLD">Gold - KES {PRICES.GOLD.toLocaleString()}</option>
+                <option value="PLATINUM">Platinum - KES {PRICES.PLATINUM.toLocaleString()}</option>
               </select>
             </div>
           </div>
@@ -327,9 +327,7 @@ export default function BillingPage() {
               disabled={submitting || !signedIn}
               title={!signedIn ? "Please sign in first" : "Upgrade"}
             >
-              {submitting
-                ? "Processing…"
-                : `Upgrade to ${tier} · KES ${price.toLocaleString()}`}
+              {submitting ? "Processing..." : `Upgrade to ${tier} · KES ${price.toLocaleString()}`}
             </button>
 
             <button
@@ -341,30 +339,18 @@ export default function BillingPage() {
             </button>
 
             <p className={helperText}>
-              You’ll be redirected only if sign-in is required. Payments are
-              handled securely by Safaricom (Daraja).
+              You will be redirected only if sign-in is required.
             </p>
           </div>
 
-          {/* Status + errors */}
           {showAdvanced && (
             <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-xs text-[var(--text-muted)]">
               <ul className="ml-5 list-disc space-y-1">
                 <li>
-                  We send{" "}
-                  <span className="font-mono text-[var(--text)]">
-                    CustomerPayBillOnline
-                  </span>{" "}
-                  STK to your number.
+                  We send <span className="font-mono text-[var(--text)]">CustomerPayBillOnline</span> STK to your number.
                 </li>
-                <li>
-                  On success, our callback updates your subscription
-                  automatically.
-                </li>
-                <li>
-                  If it doesn’t update immediately, refresh — callbacks can
-                  take a few seconds.
-                </li>
+                <li>On success, our callback updates your subscription automatically.</li>
+                <li>If it does not update immediately, refresh. Callbacks can take a few seconds.</li>
               </ul>
             </div>
           )}
@@ -413,6 +399,8 @@ function PlanCard({
     .filter(Boolean)
     .join(" ");
 
+  const pressedProps = ({ "aria-pressed": selected ? "true" : "false" } as const);
+
   return (
     <div className={containerCls} role="group">
       <div className="flex items-start justify-between gap-3">
@@ -457,7 +445,7 @@ function PlanCard({
           type="button"
           onClick={onSelect}
           className={selected ? "btn-outline" : "btn-gradient-primary"}
-          aria-pressed={selected}
+          {...pressedProps}
         >
           {selected ? "Selected" : "Choose plan"}
         </button>

@@ -7,7 +7,6 @@ import UpgradeWatcher from "@/components/billing/UpgradeWatcher";
 type Tier = "GOLD" | "PLATINUM";
 const TIER_PRICE: Record<Tier, number> = { GOLD: 199, PLATINUM: 499 };
 
-/* ---------------------- phone helpers (Kenya) ---------------------- */
 function normalizeKePhone(raw: string): string {
   const trimmed = (raw || "").trim();
   if (/^\+254(7|1)\d{8}$/.test(trimmed)) return trimmed.replace(/^\+/, "");
@@ -17,8 +16,10 @@ function normalizeKePhone(raw: string): string {
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
+
 function isValidKePhone(input: string) {
-  return /^254(7|1)\d{8}$/.test(normalizeKePhone(input));
+  const n = normalizeKePhone(input);
+  return /^254(7|1)\d{8}$/.test(n);
 }
 
 export default function UpgradePanel({ userEmail }: { userEmail: string }) {
@@ -31,19 +32,21 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
   const [busy, setBusy] = useState(false);
   const [statusDone, setStatusDone] = useState<"SUCCESS" | "FAILED" | "TIMEOUT" | null>(null);
 
-  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement | null>(null);
 
   const normalized = useMemo(() => (phone ? normalizeKePhone(phone) : ""), [phone]);
   const phoneValid = useMemo(() => (phone ? isValidKePhone(phone) : false), [phone]);
 
   async function startUpgrade() {
     if (busy) return;
+
     if (!userEmail) {
       setError("You must be signed in to upgrade.");
       return;
     }
+
     if (!phoneValid) {
-      setError("Enter a valid Kenyan M-Pesa number (e.g. 07XXXXXXXX or 2547XXXXXXXX).");
+      setError("Enter a valid Kenyan M-Pesa number (example 2547XXXXXXXX or 2541XXXXXXXX).");
       phoneInputRef.current?.focus();
       return;
     }
@@ -60,27 +63,39 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         credentials: "same-origin",
-        // IMPORTANT: send normalized 2547XXXXXXXX
-        body: JSON.stringify({ tier, phone: normalized, mode, email: userEmail }),
+        body: JSON.stringify({
+          tier,
+          phone: normalized,
+          mode,
+        }),
       });
 
-      let json: any = null;
+      let j: any = null;
       try {
-        json = await res.json();
+        j = await res.json();
       } catch {
-        // fall back to text if server didn't return JSON
-        const txt = await res.text().catch(() => "");
-        if (!res.ok) throw new Error(txt || `Failed (${res.status})`);
+        j = null;
       }
 
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || `Failed (${res.status})`);
+      if (!res.ok || !j?.ok) {
+        try {
+          // eslint-disable-next-line no-console
+          console.warn("[UpgradePanel] upgrade start failed", {
+            status: res.status,
+            body: j,
+          });
+        } catch {
+          /* ignore */
+        }
+
+        setError("Could not start the payment. Please try again.");
+        return;
       }
 
-      setPaymentId(json.paymentId ?? null);
-      setMessage(json.message ?? "STK push sent. Confirm on your phone.");
-    } catch (e: any) {
-      setError(e?.message || "Could not start upgrade");
+      setPaymentId(j?.paymentId ?? null);
+      setMessage(j?.message ?? "STK push sent. Confirm on your phone.");
+    } catch {
+      setError("Network error. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -117,19 +132,22 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
 
   const ctaDisabled = "border-[var(--border-subtle)] opacity-60 cursor-not-allowed";
 
+  const sectionA11yProps = busy ? ({ "aria-busy": "true" } as const) : ({} as const);
+
   return (
-    <section className={panelClass} aria-busy={busy || undefined} aria-describedby="upgrade-status">
-      {/* Tiers */}
+    <section className={panelClass} {...sectionA11yProps} aria-describedby="upgrade-status">
       <div className="grid gap-3 sm:gap-4 sm:grid-cols-2" role="group" aria-label="Choose plan">
         {(["GOLD", "PLATINUM"] as Tier[]).map((t) => {
           const isActive = tier === t;
+          const pressedProps = ({ "aria-pressed": isActive ? "true" : "false" } as const);
+
           return (
             <button
               key={t}
               type="button"
               onClick={() => setTier(t)}
-              aria-pressed={isActive}
               className={[tierBtnBase, isActive ? tierBtnActive : tierBtnInactive].join(" ")}
+              {...pressedProps}
             >
               <div className="text-base sm:text-lg font-semibold text-[var(--text)]">
                 {t === "GOLD" ? "Gold" : "Platinum"}
@@ -155,26 +173,19 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
         })}
       </div>
 
-      {/* Payment inputs */}
       <div className="mt-3 sm:mt-4 grid gap-2 sm:gap-3 sm:grid-cols-2">
         <label className={labelText}>
           <span className={labelHint}>M-Pesa Number (2547XXXXXXXX)</span>
-          <input
-            ref={phoneInputRef}
-            type="tel"
-            inputMode="numeric"
-            placeholder="07XXXXXXXX or 2547XXXXXXXX"
-            className={[inputBase, phone && !phoneValid ? inputInvalid : inputValid].join(" ")}
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            onBlur={(e) => setPhone(e.target.value.trim())}
-            aria-invalid={!!phone && !phoneValid}
-            aria-describedby="phone-help"
-            autoComplete="tel"
+          <PhoneInput
+            inputRef={phoneInputRef}
+            phone={phone}
+            setPhone={setPhone}
+            normalized={normalized}
+            phoneValid={phoneValid}
+            inputBase={inputBase}
+            inputInvalid={inputInvalid}
+            inputValid={inputValid}
           />
-          <div id="phone-help" className="mt-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
-            Will be used as <code className="font-mono">{normalized || "-"}</code>
-          </div>
         </label>
 
         <label className={labelText}>
@@ -190,7 +201,6 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
         </label>
       </div>
 
-      {/* CTA */}
       <div className="mt-4 sm:mt-5 flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs sm:text-sm text-[var(--text)]">
           Selected: <strong>{tier}</strong> - KES {TIER_PRICE[tier].toLocaleString("en-KE")}
@@ -202,22 +212,21 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
           className={[ctaBase, busy || !phoneValid ? ctaDisabled : ctaEnabled].join(" ")}
           title={!phoneValid && phone ? "Enter a valid M-Pesa number" : "Start upgrade"}
         >
-          {busy ? "Starting…" : "Upgrade"}
+          {busy ? "Starting..." : "Upgrade"}
         </button>
       </div>
 
-      {/* Messages (ARIA live region) */}
       <p id="upgrade-status" className="sr-only" aria-live="polite">
-        {busy ? "Starting upgrade…" : message || error || ""}
+        {busy ? "Starting upgrade" : message || error || ""}
       </p>
+
       {message && <p className="mt-2.5 sm:mt-3 text-xs sm:text-sm text-[var(--text)]">{message}</p>}
       {error && <p className="mt-2.5 sm:mt-3 text-xs sm:text-sm text-[var(--text)]">{error}</p>}
 
-      {/* Watcher */}
       {paymentId && (
         <div className="mt-4 sm:mt-5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3">
           <div className="text-xs sm:text-sm text-[var(--text)]">
-            Waiting for payment confirmation…
+            Waiting for payment confirmation...
           </div>
           <div className="mt-2">
             <UpgradeWatcher
@@ -225,8 +234,14 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
               onDoneAction={(s) => {
                 setStatusDone(s);
                 if (s === "SUCCESS") {
-                  setMessage("Payment confirmed! Your account will reflect the new tier shortly.");
+                  setMessage("Payment confirmed. Your account will reflect the new tier shortly.");
                   setError(null);
+                }
+                if (s === "FAILED") {
+                  setError("Payment failed. Please try again.");
+                }
+                if (s === "TIMEOUT") {
+                  setError("Timed out waiting for confirmation. Check again later.");
                 }
               }}
             />
@@ -234,10 +249,9 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
         </div>
       )}
 
-      {/* Final status */}
       {statusDone === "SUCCESS" && (
         <div className="mt-3 sm:mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 sm:p-3 text-xs sm:text-sm text-[var(--text)]">
-          Payment confirmed! Your account will reflect the new tier shortly.
+          Payment confirmed. Your account will reflect the new tier shortly.
         </div>
       )}
       {statusDone === "FAILED" && (
@@ -251,5 +265,49 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+function PhoneInput({
+  inputRef,
+  phone,
+  setPhone,
+  normalized,
+  phoneValid,
+  inputBase,
+  inputInvalid,
+  inputValid,
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  phone: string;
+  setPhone: (v: string) => void;
+  normalized: string;
+  phoneValid: boolean;
+  inputBase: string;
+  inputInvalid: string;
+  inputValid: string;
+}) {
+  const invalid = !!phone && !phoneValid;
+  const invalidProps = invalid ? ({ "aria-invalid": "true" } as const) : ({} as const);
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="tel"
+        inputMode="numeric"
+        placeholder="07XXXXXXXX or 2547XXXXXXXX"
+        className={[inputBase, invalid ? inputInvalid : inputValid].join(" ")}
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        onBlur={(e) => setPhone(e.target.value.trim())}
+        {...invalidProps}
+        aria-describedby="phone-help"
+        autoComplete="tel"
+      />
+      <div id="phone-help" className="mt-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
+        Will be used as <code className="font-mono">{normalized || "-"}</code>
+      </div>
+    </>
   );
 }

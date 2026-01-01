@@ -97,10 +97,6 @@ function safeTags(v: unknown, maxItems = 10): string[] | null {
   return out.length ? out : null;
 }
 
-/**
- * Safe-field projection for public responses (no contact fields).
- * Accepts any raw request row (Prisma or API object) and returns a stable shape.
- */
 export function projectPublicRequest(raw: any): RequestPublic {
   const id = safeString(raw?.id, 200);
   const title = safeString(raw?.title ?? raw?.name, 140) || "Untitled";
@@ -121,32 +117,220 @@ export function projectPublicRequest(raw: any): RequestPublic {
   };
 }
 
-/**
- * Projection for admin responses (includes extra fields).
- * Still keeps a stable JSON-serializable shape.
- */
 export function projectAdminRequest(raw: any): RequestAdmin {
   const base = projectPublicRequest(raw);
   return {
     ...base,
     ownerId: safeStringOrNull(raw?.ownerId, 200),
     contactEnabled:
-      typeof raw?.contactEnabled === "boolean" ? raw.contactEnabled : raw?.contactEnabled != null ? Boolean(raw.contactEnabled) : null,
+      typeof raw?.contactEnabled === "boolean"
+        ? raw.contactEnabled
+        : raw?.contactEnabled != null
+          ? Boolean(raw.contactEnabled)
+          : null,
     contactMode: safeStringOrNull(raw?.contactMode, 40),
   };
 }
 
-/**
- * Feed ordering rule: boosted first (boostUntil > now) then newest.
- * For Prisma orderBy: boostUntil desc + createdAt desc is sufficient (nulls last).
- */
 export function orderByForFeed() {
   return [{ boostUntil: "desc" as const }, { createdAt: "desc" as const }];
 }
 
-/**
- * Admin default ordering (same as feed for convenience).
- */
 export function orderByForAdminList() {
   return orderByForFeed();
+}
+
+export type ApiOk<T> = { ok: true; data: T; status: number; error: null };
+export type ApiErr = {
+  ok: false;
+  data: null;
+  status: number;
+  error: { code: string; message: string; details?: unknown };
+};
+export type ApiResult<T> = ApiOk<T> | ApiErr;
+
+export type RequestOptions = {
+  timeoutMs?: number;
+  noStore?: boolean;
+  headers?: Record<string, string>;
+  credentials?: RequestCredentials;
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  body?: unknown;
+  signal?: AbortSignal;
+};
+
+const DEFAULT_TIMEOUT_MS = 12_000;
+
+function mergeSignals(a?: AbortSignal, b?: AbortSignal): AbortSignal | undefined {
+  if (!a) return b;
+  if (!b) return a;
+
+  if (typeof (AbortSignal as any).any === "function") {
+    try {
+      return (AbortSignal as any).any([a, b]);
+    } catch {
+      return a;
+    }
+  }
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+
+  if (a.aborted || b.aborted) {
+    controller.abort();
+    return controller.signal;
+  }
+
+  a.addEventListener("abort", onAbort, { once: true });
+  b.addEventListener("abort", onAbort, { once: true });
+  return controller.signal;
+}
+
+function safeParseJson(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function isObject(v: unknown): v is Record<string, any> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function normalizeError(message: string, code = "REQUEST_FAILED", details?: unknown): ApiErr {
+  const msg = safeString(message, 240) || "Request failed";
+  return { ok: false, data: null, status: 0, error: { code, message: msg, details } };
+}
+
+function withTimeoutSignal(timeoutMs: number) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), Math.max(200, Math.trunc(timeoutMs)));
+  return { controller, cleanup: () => clearTimeout(id) };
+}
+
+export async function requestJson<T = unknown>(
+  url: string,
+  opts: RequestOptions = {},
+): Promise<ApiResult<T>> {
+  const timeoutMs = Number.isFinite(opts.timeoutMs as any)
+    ? Math.max(200, Math.trunc(opts.timeoutMs as number))
+    : DEFAULT_TIMEOUT_MS;
+
+  const { controller, cleanup } = withTimeoutSignal(timeoutMs);
+
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    ...(opts.headers || {}),
+  };
+
+  let bodyStr: string | undefined;
+  if (opts.body !== undefined) {
+    headers["content-type"] = headers["content-type"] || "application/json";
+    try {
+      bodyStr = JSON.stringify(opts.body);
+    } catch {
+      cleanup();
+      return {
+        ok: false,
+        data: null,
+        status: 0,
+        error: { code: "INVALID_BODY", message: "Could not serialize request body" },
+      };
+    }
+  }
+
+  const mergedSignal = mergeSignals(opts.signal, controller.signal);
+
+  try {
+    const init: RequestInit = {
+      method: opts.method || (bodyStr ? "POST" : "GET"),
+      headers,
+    };
+
+    if (bodyStr !== undefined) init.body = bodyStr;
+    if (mergedSignal) init.signal = mergedSignal;
+    if (opts.credentials) init.credentials = opts.credentials;
+    if (opts.noStore) init.cache = "no-store";
+
+    const res = await fetch(url, init);
+
+    const status = res.status;
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    const rawText = await res.text().catch(() => "");
+
+    const parsed = safeParseJson(rawText);
+
+    if (res.ok) {
+      if (isObject(parsed) && parsed["ok"] === true && "data" in parsed) {
+        return { ok: true, data: parsed["data"] as T, status, error: null };
+      }
+      return { ok: true, data: (parsed as T) ?? (rawText as any), status, error: null };
+    }
+
+    let msg = `Request failed (${status})`;
+    let code = "HTTP_ERROR";
+    let details: unknown = parsed ?? (rawText || null);
+
+    if (isObject(parsed)) {
+      const errAny = parsed["error"];
+      const messageAny = parsed["message"];
+      const errorMessageAny = parsed["errorMessage"];
+
+      if (typeof errAny === "string") msg = safeString(errAny, 240) || msg;
+      if (typeof messageAny === "string") msg = safeString(messageAny, 240) || msg;
+      if (typeof errorMessageAny === "string") msg = safeString(errorMessageAny, 240) || msg;
+
+      if (isObject(errAny)) {
+        const errMsg = errAny["message"];
+        const errCode = errAny["code"];
+        if (typeof errMsg === "string") msg = safeString(errMsg, 240) || msg;
+        if (typeof errCode === "string") code = safeString(errCode, 80) || code;
+      }
+    } else {
+      const rawMsg = safeString(rawText, 240);
+      if (rawMsg) msg = rawMsg;
+    }
+
+    return {
+      ok: false,
+      data: null,
+      status,
+      error: { code, message: msg, details },
+    };
+  } catch (e: any) {
+    const aborted =
+      e?.name === "AbortError" || controller.signal.aborted || !!opts.signal?.aborted;
+
+    if (aborted) {
+      cleanup();
+      return {
+        ok: false,
+        data: null,
+        status: 0,
+        error: { code: "TIMEOUT", message: "Request timed out" },
+      };
+    }
+
+    cleanup();
+    return normalizeError(e?.message || "Network error", "NETWORK_ERROR");
+  } finally {
+    cleanup();
+  }
+}
+
+export async function getJson<T = unknown>(
+  url: string,
+  opts: Omit<RequestOptions, "method" | "body"> = {},
+): Promise<ApiResult<T>> {
+  return requestJson<T>(url, { ...opts, method: "GET" });
+}
+
+export async function postJson<T = unknown>(
+  url: string,
+  body: unknown,
+  opts: Omit<RequestOptions, "method" | "body"> = {},
+): Promise<ApiResult<T>> {
+  return requestJson<T>(url, { ...opts, method: "POST", body });
 }

@@ -1,3 +1,4 @@
+// src/app/components/Footer.tsx
 "use client";
 
 import * as React from "react";
@@ -11,7 +12,6 @@ export default function Footer() {
     (process.env["NEXT_PUBLIC_APP_URL"] || "https://qwiksale.sale")
       .replace(/\/+$/, "") || "https://qwiksale.sale";
 
-  // Lightweight Organization JSON-LD for richer snippets
   const orgLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -39,7 +39,6 @@ export default function Footer() {
     "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 " +
     "focus-visible:ring-offset-2 ring-offset-[var(--bg)] ring-focus rounded-sm";
 
-  // --- Newsletter state/handlers (client-only) ---
   const [email, setEmail] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
@@ -48,7 +47,6 @@ export default function Footer() {
     if (busy) return;
 
     const trimmed = email.trim();
-    // super simple, good-enough validation
     const ok = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed);
     if (!ok) {
       toast.error("Enter a valid email address.");
@@ -69,7 +67,6 @@ export default function Footer() {
           body: JSON.stringify({ email: trimmed, source: "footer" }),
         });
         if (!r.ok) {
-          // try to show server error if present
           let msg = "Subscription failed.";
           try {
             const j = await r.json();
@@ -78,7 +75,6 @@ export default function Footer() {
           throw new Error(msg);
         }
       } else {
-        // Simulate latency so the user sees feedback even without backend wiring
         await new Promise((res) => setTimeout(res, 500));
       }
 
@@ -97,12 +93,10 @@ export default function Footer() {
       aria-labelledby="site-footer-title"
       role="contentinfo"
     >
-      {/* Organization JSON-LD */}
       <script
         id="org-jsonld"
         type="application/ld+json"
         suppressHydrationWarning
-        // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(orgLd) }}
       />
 
@@ -111,9 +105,7 @@ export default function Footer() {
           QwikSale footer
         </h2>
 
-        {/* Top: brand + nav blocks */}
         <div className="grid gap-6 py-8 text-[13px] sm:gap-8 sm:py-10 sm:text-sm sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
-          {/* Brand / blurb */}
           <div className="space-y-1.5 lg:col-span-2">
             <div className="text-base sm:text-lg font-extrabold tracking-tight text-[var(--text)]">
               QwikSale
@@ -128,13 +120,11 @@ export default function Footer() {
               Secure listings • KES pricing • Community moderation
             </p>
 
-            {/* Newsletter */}
             <form
               className="mt-3 sm:mt-4 flex items-stretch gap-2"
               onSubmit={onSubscribe}
               noValidate
             >
-              {/* Label intentionally not matching /email/i */}
               <label htmlFor="newsletter-email" className="sr-only">
                 Newsletter
               </label>
@@ -168,7 +158,6 @@ export default function Footer() {
               </Button>
             </form>
 
-            {/* Trust row */}
             <div className="mt-3 sm:mt-4 flex flex-wrap items-center gap-2.5 text-[11px] sm:text-xs text-[var(--text-muted)]">
               <span className="inline-flex items-center gap-1">
                 <ShieldIcon /> Buyer Safety
@@ -182,7 +171,6 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Company */}
           <nav aria-label="Company" className="space-y-2.5 sm:space-y-3">
             <div className="font-semibold text-[var(--text)]">Company</div>
             <ul className="space-y-1.5 sm:space-y-2">
@@ -214,7 +202,6 @@ export default function Footer() {
             </ul>
           </nav>
 
-          {/* Legal */}
           <nav aria-label="Legal" className="space-y-2.5 sm:space-y-3">
             <div className="font-semibold text-[var(--text)]">Legal</div>
             <ul className="space-y-1.5 sm:space-y-2">
@@ -241,39 +228,57 @@ export default function Footer() {
             </ul>
           </nav>
 
-          {/* Popular on QwikSale */}
           <nav aria-label="Popular categories" className="space-y-2.5 sm:space-y-3">
             <div className="font-semibold text-[var(--text)]">Popular</div>
             <ul className="space-y-1.5 sm:space-y-2">
               <li>
-                <Link className={linkClass} href="/?category=Phones" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Phones"
+                  prefetch={false}
+                >
                   Phones
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Electronics" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Electronics"
+                  prefetch={false}
+                >
                   Electronics
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Home%20%26%20Living" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Home%20%26%20Living"
+                  prefetch={false}
+                >
                   Home &amp; Living
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Fashion" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Fashion"
+                  prefetch={false}
+                >
                   Fashion
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/?category=Vehicles" prefetch={false}>
+                <Link
+                  className={linkClass}
+                  href="/?category=Vehicles"
+                  prefetch={false}
+                >
                   Vehicles
                 </Link>
               </li>
             </ul>
           </nav>
 
-          {/* Social / Press / Apps */}
           <nav aria-label="Social & Press" className="space-y-2.5 sm:space-y-3">
             <div className="font-semibold text-[var(--text)]">Social</div>
             <ul className="space-y-1.5 sm:space-y-2">
@@ -283,7 +288,7 @@ export default function Footer() {
                   href="https://www.tiktok.com/@qwiksale.sale"
                   target="_blank"
                   rel="me noopener noreferrer"
-                  aria-label="TikTok - QwikSale"
+                  aria-label="TikTok"
                 >
                   <TikTokIcon />
                   TikTok
@@ -295,24 +300,23 @@ export default function Footer() {
                   href="https://www.linkedin.com/company/qwiksale"
                   target="_blank"
                   rel="me noopener noreferrer"
-                  aria-label="LinkedIn - QwikSale"
+                  aria-label="LinkedIn"
                 >
                   <LinkedInIcon />
                   LinkedIn
                 </a>
               </li>
               <li>
-                <li>
-                  <Link className={linkClass} href="/blog" prefetch={false}>
-                   Blog
-                  </Link>
-                </li>
-<li>
-  <Link className={linkClass} href="/press" prefetch={false}>
-    Press
-  </Link>
-</li>
+                <Link className={linkClass} href="/blog" prefetch={false}>
+                  Blog
+                </Link>
               </li>
+              <li>
+                <Link className={linkClass} href="/press" prefetch={false}>
+                  Press
+                </Link>
+              </li>
+
               <li className="pt-1">
                 <div className="mb-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
                   Get the app
@@ -344,7 +348,6 @@ export default function Footer() {
           </nav>
         </div>
 
-        {/* Payment / badges strip */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] py-3 sm:py-4 text-[11px] sm:text-xs text-[var(--text-muted)]">
           <div className="flex items-center gap-3">
             <span className="opacity-80">We accept</span>
@@ -356,7 +359,6 @@ export default function Footer() {
             </span>
           </div>
 
-          {/* Language (placeholder) */}
           <div className="flex items-center gap-2">
             <GlobeIcon />
             <label htmlFor="lang" className="sr-only">
@@ -374,7 +376,6 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Bottom bar */}
         <div className="flex flex-col items-start justify-between gap-2.5 border-t border-[var(--border-subtle)] py-3 sm:py-4 text-[11px] sm:text-xs text-[var(--text-muted)] sm:flex-row sm:items-center">
           <p>
             © {year} QwikSale. All rights reserved.
@@ -391,8 +392,6 @@ export default function Footer() {
     </footer>
   );
 }
-
-/* ---------------- Icons (tiny inline SVGs to avoid extra deps) ---------------- */
 
 function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -468,8 +467,6 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-
-/* Social icons */
 function TikTokIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg

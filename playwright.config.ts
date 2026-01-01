@@ -7,12 +7,14 @@ const PORT = String(process.env.PORT || 3000);
 const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${PORT}`;
 const DETERMINISTIC = process.env.E2E_DETERMINISTIC === "1";
 
-// If using a running server (externally) or explicitly requested dev
-const USING_EXTERNAL_SERVER =
-  !!process.env.E2E_BASE_URL || process.env.USE_DEV === "1";
+// External server only when a base URL is provided
+const USING_EXTERNAL_SERVER = !!process.env.E2E_BASE_URL;
 
-// Use production start (built app) in CI or when E2E_PROD=1
-const USE_START = process.env.E2E_PROD === "1" || CI;
+// Explicitly force dev mode (but still let Playwright start it via webServer)
+const FORCE_DEV = process.env.USE_DEV === "1";
+
+// Use production start (built app) in CI or when E2E_PROD=1 (unless dev forced)
+const USE_START = !FORCE_DEV && (process.env.E2E_PROD === "1" || CI);
 
 const AUTH_DIR = path.resolve("tests/e2e/.auth");
 const STORAGE_DEFAULT = path.join(AUTH_DIR, "state.json");
@@ -28,9 +30,9 @@ export default defineConfig({
   // Hard cap for the whole run (only really matters in CI)
   globalTimeout: CI ? 60 * 60 * 1000 : undefined,
 
-   fullyParallel: DETERMINISTIC ? false : true,
-   workers: DETERMINISTIC ? 1 : CI ? 2 : 4,
-   retries: DETERMINISTIC ? 0 : CI ? 2 : 0,
+  fullyParallel: DETERMINISTIC ? false : true,
+  workers: DETERMINISTIC ? 1 : CI ? 2 : 4,
+  retries: DETERMINISTIC ? 0 : CI ? 2 : 0,
   forbidOnly: CI,
 
   expect: { timeout: 15_000 },
@@ -64,15 +66,16 @@ export default defineConfig({
   webServer: USING_EXTERNAL_SERVER
     ? undefined
     : {
-        // Pass -p directly (no extra “--” needed with pnpm)
         command: USE_START
           ? `pnpm start:e2e -p ${PORT}`
           : `pnpm dev -p ${PORT}`,
         url: BASE_URL,
         timeout: 240_000,
-        reuseExistingServer: true,
+
+        // ✅ Don't reuse servers in CI (stale server = flaky run)
+        reuseExistingServer: !CI,
+
         env: {
-          // Keep runs deterministic and domain-agnostic
           NODE_ENV: USE_START ? "production" : "development",
           NEXT_PUBLIC_E2E: "1",
           NEXT_IMAGE_UNOPTIMIZED: "1",
@@ -92,7 +95,6 @@ export default defineConfig({
 
   globalSetup: "./tests/e2e/global-setup.ts",
 
-  // Extra metadata shows up in HTML report
   metadata: {
     baseURL: BASE_URL,
     mode: USING_EXTERNAL_SERVER ? "external" : USE_START ? "start" : "dev",

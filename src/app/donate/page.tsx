@@ -7,6 +7,8 @@ import { cx, pillClass, pillGroupClass } from "@/app/components/ui/pill";
 
 /* --------------------------- Helpers & Types --------------------------- */
 
+const IS_PROD = process.env.NODE_ENV === "production";
+
 /** KES formatter (no decimals) */
 const fmtKES = (n: number) =>
   `KES ${new Intl.NumberFormat("en-KE", {
@@ -30,7 +32,6 @@ export default function DonatePage() {
   const [submitting, setSubmitting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Prefill phone from localStorage or test env var
   useEffect(() => {
     try {
       const saved = localStorage.getItem("qs_last_msisdn") || "";
@@ -41,19 +42,20 @@ export default function DonatePage() {
     } catch {
       /* ignore */
     }
-    const test =
-      typeof process !== "undefined"
-        ? (process.env["NEXT_PUBLIC_TEST_MSISDN"] as string | undefined)
-        : undefined;
-    if (test) setPhone(test);
+
+    if (!IS_PROD) {
+      const test =
+        typeof process !== "undefined"
+          ? (process.env["NEXT_PUBLIC_TEST_MSISDN"] as string | undefined)
+          : undefined;
+      if (test) setPhone(test);
+    }
   }, []);
 
-  // Keep amount in sync with preset selection
   useEffect(() => {
     if (activePreset !== null) setAmount(activePreset);
   }, [activePreset]);
 
-  // Derived “can submit”
   const canSubmit = useMemo(() => {
     const msisdn = normalizeKenyanPhone(phone) || "";
     const n = typeof amount === "number" ? amount : Number.NaN;
@@ -66,7 +68,6 @@ export default function DonatePage() {
     );
   }, [phone, amount, submitting]);
 
-  // Safely set custom amount
   function setCustomAmount(raw: string) {
     if (raw === "") {
       setAmount("");
@@ -88,9 +89,7 @@ export default function DonatePage() {
 
     const msisdn = normalizeKenyanPhone(phone) || "";
     if (!/^254(7|1)\d{8}$/.test(msisdn)) {
-      setError(
-        "Enter a valid Safaricom number like 2547XXXXXXXX or 2541XXXXXXXX.",
-      );
+      setError("Enter a valid number like 2547XXXXXXXX or 2541XXXXXXXX.");
       return;
     }
     const amt = typeof amount === "number" ? Math.round(amount) : 0;
@@ -99,21 +98,20 @@ export default function DonatePage() {
       return;
     }
 
-    // Persist last valid number
     try {
       localStorage.setItem("qs_last_msisdn", msisdn);
     } catch {
       /* ignore */
     }
 
-    // Abort any in-flight request
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
     setSubmitting(true);
-    setStatus("Starting M-Pesa STK push… check your phone.");
+    setStatus("Starting STK push. Check your phone.");
+
     try {
-      const res = await fetch("/api/mpesa/stk-initiate", {
+      const res = await fetch("/api/mpesa/stk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortRef.current.signal,
@@ -121,46 +119,36 @@ export default function DonatePage() {
           amount: amt,
           msisdn,
           mode: "paybill",
+          accountRef: "DONATE",
+          description: "Donation",
         }),
       });
 
       const data = await res.json().catch(() => ({}));
 
-      if (res.ok) {
-        const ok =
-          data?.ResponseCode === "0" ||
-          !!data?.CheckoutRequestID ||
-          !!data?.CustomerMessage;
+      const ok = res.ok && (data?.ok === true || data?.ok === undefined);
 
-        if (ok) {
-          const msg =
-            data?.CustomerMessage ||
-            "STK push sent. Approve on your phone to complete the donation.";
-          setStatus(msg);
-          toast.success("STK push sent ✨");
+      if (!ok) {
+        setError("Payment initiation failed. Please try again.");
+        toast.error("Payment initiation failed");
+        return;
+      }
 
-          try {
-            // @ts-ignore - optional analytics
-            window.plausible?.("Donation Initiated", {
-              props: { amount: amt },
-            });
-          } catch {
-            /* ignore */
-          }
-        } else {
-          setStatus(
-            "Request sent. If you didn’t receive a prompt, please try again.",
-          );
-        }
-      } else {
-        const msg =
-          data?.errorMessage ||
-          data?.CustomerMessage ||
-          data?.ResponseDescription ||
-          data?.error ||
-          `Failed to start payment (HTTP ${res.status}).`;
-        setError(msg);
-        toast.error("Failed to initiate donation");
+      const msg =
+        data?.message ||
+        data?.mpesa?.CustomerMessage ||
+        "STK push sent. Approve on your phone to complete the donation.";
+
+      setStatus(String(msg));
+      toast.success("STK push sent");
+
+      try {
+        // @ts-ignore optional analytics
+        window.plausible?.("Donation Initiated", {
+          props: { amount: amt },
+        });
+      } catch {
+        /* ignore */
       }
     } catch (err: any) {
       if (err?.name !== "AbortError") {
@@ -199,7 +187,6 @@ export default function DonatePage() {
 
   return (
     <div className="container-page max-w-xl py-4 sm:py-6">
-      {/* Header */}
       <section
         className={cx(
           "rounded-2xl px-4 py-6 text-white shadow-soft sm:px-6 sm:py-8",
@@ -215,18 +202,15 @@ export default function DonatePage() {
         </p>
       </section>
 
-      {/* Form */}
       <form
         onSubmit={donate}
         className={cx("mt-4 p-2.5 sm:mt-6 sm:p-5", panelClass)}
       >
         <p className="text-sm leading-relaxed text-[var(--text-muted)]">
-          We’re a neutral mediator. Sellers handle their own sales. Donations
-          help us tackle spam, improve trust &amp; safety, and build new
+          Donations help us tackle spam, improve trust and safety, and build new
           features for everyone.
         </p>
 
-        {/* Amount presets */}
         <div className="mt-4">
           <label className={cx("mb-1", labelClass)}>Amount</label>
 
@@ -246,7 +230,7 @@ export default function DonatePage() {
                     setAmount(v);
                   }}
                   className={pillClass({ active, size: "md" })}
-                  aria-pressed={active}
+                  aria-pressed={active ? "true" : "false"}
                 >
                   {fmtKES(v)}
                 </button>
@@ -260,13 +244,12 @@ export default function DonatePage() {
                 active: activePreset === null,
                 size: "md",
               })}
-              aria-pressed={activePreset === null}
+              aria-pressed={activePreset === null ? "true" : "false"}
             >
               Custom
             </button>
           </div>
 
-          {/* Custom amount */}
           {activePreset === null && (
             <div className="mt-2 flex flex-wrap items-center gap-2.5">
               <input
@@ -300,13 +283,9 @@ export default function DonatePage() {
           </p>
         </div>
 
-        {/* Phone number */}
         <div className="mt-4">
           <label htmlFor="donation-phone" className={labelClass}>
-            Phone (Safaricom){" "}
-            <span className="text-[11px] font-mono text-[var(--text-muted)] sm:text-xs">
-              2547/2541XXXXXXXX
-            </span>
+            Phone (2547XXXXXXXX or 2541XXXXXXXX)
           </label>
           <input
             id="donation-phone"
@@ -319,11 +298,10 @@ export default function DonatePage() {
             aria-describedby="phoneHelp"
           />
           <p id="phoneHelp" className={helpClass}>
-            We’ll send a one-time STK push to this number.
+            We will send an STK push to this number.
           </p>
         </div>
 
-        {/* Actions */}
         <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-3">
           <button
             type="submit"
@@ -333,7 +311,7 @@ export default function DonatePage() {
               canSubmit ? primaryBtnEnabled : primaryBtnDisabled,
             )}
           >
-            {submitting ? "Processing…" : "Donate via M-Pesa"}
+            {submitting ? "Processing..." : "Donate via M-Pesa"}
           </button>
 
           <button
@@ -365,7 +343,6 @@ export default function DonatePage() {
           )}
         </div>
 
-        {/* Status & errors */}
         <div className="mt-3 space-y-2">
           {status && (
             <div
@@ -388,8 +365,8 @@ export default function DonatePage() {
         </div>
 
         <div className="mt-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
-          After you approve on your phone, we’ll receive a confirmation. If
-          anything looks stuck, try again. Questions?{" "}
+          After you approve on your phone, we will receive a confirmation. If it
+          looks stuck, try again. Questions?{" "}
           <a
             className="underline underline-offset-4 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ring-focus"
             href="/help"

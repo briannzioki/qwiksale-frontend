@@ -16,7 +16,6 @@ export const metadata: Metadata = {
 
 type SubTier = "FREE" | "BASIC" | "GOLD" | "PLATINUM";
 
-/** Row shape for the billing lookup */
 type BillingRow = {
   id: string;
   subscription: SubTier | null;
@@ -37,7 +36,6 @@ function fmtDate(d?: Date | null) {
   }
 }
 
-/** tiny Promise.race timeout */
 function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   let tid: ReturnType<typeof setTimeout> | null = null;
   const t = new Promise<T>((resolve) => {
@@ -84,14 +82,13 @@ export default async function BillingPage() {
     );
   }
 
-  // Fetch current plan/expiry for context (timeout guarded)
   const me = await withTimeout<BillingRow | null>(
     prisma.user.findUnique({
       where: { email },
       select: {
         id: true,
-        subscription: true, // "FREE" | "BASIC" | "GOLD" | "PLATINUM" (nullable)
-        subscriptionUntil: true, // Date | null
+        subscription: true,
+        subscriptionUntil: true,
       },
     }),
     800,
@@ -121,36 +118,34 @@ export default async function BillingPage() {
         </p>
       </header>
 
-      {/* Current plan summary */}
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 shadow-soft">
         <div className="text-xs sm:text-sm text-[var(--text-muted)]">
-          Current plan:&nbsp;
+          Current plan:{" "}
           <strong className="font-semibold text-[var(--text)]">{tierLabel}</strong>
           {until && (
             <>
-              {" · valid until "}
+              {" "}
+              <span>valid until </span>
               <strong className="font-semibold text-[var(--text)]">{until}</strong>
             </>
           )}
         </div>
       </section>
 
-      {/* Upgrade flow */}
       <UpgradePanel userEmail={email} />
 
-      {/* Help / extras */}
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-4 shadow-soft">
         <h2 className="text-sm sm:text-base font-semibold text-[var(--text)]">Need help?</h2>
         <ul className="mt-2 list-disc pl-5 text-xs sm:text-sm text-[var(--text-muted)] leading-relaxed">
           <li>
-            If the STK prompt doesn’t arrive, confirm your phone is in{" "}
+            If the STK prompt does not arrive, confirm your phone is in{" "}
             <code className="rounded bg-[var(--bg-subtle)] px-1 font-mono text-xs text-[var(--text)]">
               2547XXXXXXXX
             </code>{" "}
             format and try again.
           </li>
           <li>
-            You can also{" "}
+            You can{" "}
             <Link
               href="/help"
               className="font-semibold text-[var(--text)] underline underline-offset-4 hover:opacity-90"
@@ -167,7 +162,7 @@ export default async function BillingPage() {
               className="font-semibold text-[var(--text)] underline underline-offset-4 hover:opacity-90"
               prefetch={false}
             >
-              billing settings &amp; history
+              billing settings and history
             </Link>{" "}
             (coming soon).
           </li>

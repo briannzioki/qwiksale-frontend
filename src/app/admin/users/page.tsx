@@ -37,6 +37,10 @@ type RoleFilter = "any" | "USER" | "MODERATOR" | "ADMIN" | "SUPERADMIN";
 
 const SSR_TIMEOUT_MS = 1200;
 const FETCH_TIMEOUT_MS = 2500;
+
+// ✅ NEW: cap Prisma fallback time so SSR doesn't hang > Playwright's 15s expect timeout
+const FALLBACK_DB_TIMEOUT_MS = 6500;
+
 const PAGE_SIZE = 50;
 const API_LIMIT = 500;
 
@@ -326,16 +330,28 @@ export default async function Page({
   let source: AdminUser[] = Array.isArray(all) ? all : [];
   let hadFallbackError = false;
 
+  // ✅ Timebox Prisma fallback so SSR can't hang indefinitely
   if (source.length === 0) {
+    let fallbackTimedOut = false;
+
     try {
-      source = await fetchUsersFallback({
-        q,
-        role,
-        limit: API_LIMIT,
-      });
+      source = await withTimeout(
+        fetchUsersFallback({
+          q,
+          role,
+          limit: API_LIMIT,
+        }),
+        FALLBACK_DB_TIMEOUT_MS,
+        () => {
+          fallbackTimedOut = true;
+          return [] as AdminUser[];
+        },
+      );
     } catch {
       hadFallbackError = true;
     }
+
+    if (fallbackTimedOut) hadFallbackError = true;
   }
 
   const softError =
@@ -813,7 +829,6 @@ function Badge({
   children: ReactNode;
   tone?: "slate" | "green" | "amber" | "rose" | "indigo";
 }) {
-  // Token-only styling (tone preserved for callsites/logic, but avoids legacy palette + raw Tailwind colors).
   const map: Record<string, string> = {
     slate:
       "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
@@ -848,7 +863,6 @@ function StatPill({
   value: number;
   tone?: "slate" | "green" | "amber" | "rose";
 }) {
-  // Token-only styling (tone preserved; visual stays consistent across light/dark).
   const styles: Record<typeof tone, string> = {
     slate: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
     green: "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
