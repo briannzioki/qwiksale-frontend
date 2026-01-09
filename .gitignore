@@ -1,17 +1,20 @@
-﻿# Local build/test outputs
+﻿# Next build output
+.next/
+tsconfig.tsbuildinfo
+
+# Env files
+.env*
+!.env.example
+
+# Vercel local env
+.vercel/*.local
+
+# Playwright / artifacts / logs
 artifacts/
 test-logs/
-triage/
-.audit/
-tmp.cookies
-
-# Playwright output (if used)
 playwright-report/
-test-results/
 tests/e2e/.artifacts/
-
-# Misc local outputs
-*.har
-*.log
-*.zip
+tmp.cookies
+.audit/
+triage/
 node_modules
