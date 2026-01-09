@@ -18,3 +18,7 @@ tmp.cookies
 .audit/
 triage/
 node_modules
+
+# local logs
+.logs/
+
