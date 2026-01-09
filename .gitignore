@@ -1,108 +1,17 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+﻿# Local build/test outputs
+artifacts/
+test-logs/
+triage/
+.audit/
+tmp.cookies
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-
-/src/generated/prisma
-
-.vercel
-*.bak
-scripts/*.ps1
-nvm-windows/
-bypass.txt
-
+# Playwright output (if used)
 playwright-report/
 test-results/
+tests/e2e/.artifacts/
 
-
-prisma.config.ts
-
-# Playwright artifacts
-/tests/e2e/.auth/
-/tests/e2e/.setup/
-/playwright-report/
-/test-results/
-/blob-report/
-
-# Sentry Config File
-.env.sentry-build-plugin
-
-.vscode/
-
-
-# local backups/logs
-.backup/
-.logs/
-.project-inventory/
-_scan/
-audit-signin-report.txt
-auth-migrate-narrow/
-auth-migrate/
-src/app/_debug/
-suspects/
-tests/e2e/_all-specs.txt
-/cookies.txt
-/full-backup.patch
-/tests/e2e/.artifacts/
-
-# --- IDE / OS junk ---
-.idea/
-*.iml
-.DS_Store
-Thumbs.db
-
-# --- Android / Gradle generated ---
-android/.idea/
-android/.gradle/
-android/**/build/
-android/local.properties
-
-# --- iOS generated ---
-ios/DerivedData/
-ios/build/
-
-# --- Local debug / scan outputs (repo root) ---
-_debug/
-tools/_reports/
-badge-misalignment-report*.txt
-badge-scan.txt
-badge-scan*.txt
-tier-text-assertions.txt
-_hits_*.txt
+# Misc local outputs
+*.har
+*.log
+*.zip
+node_modules
