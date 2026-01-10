@@ -301,7 +301,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
   }, [busy, canSubmit, phone, vehicleType, plate, vehiclePhotoKeys, docPhotoKey, station, router]);
 
   return (
-    <div className="space-y-6" aria-label="Carrier onboarding">
+    <div className="mx-auto max-w-5xl space-y-6" aria-label="Carrier onboarding">
       <header className="hero-surface rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6">
         <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
           Carrier onboarding
@@ -337,7 +337,10 @@ export default function CarrierOnboardingClient({ user }: Props) {
         </div>
       </header>
 
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-5" aria-label="Carrier registration form">
+      <section
+        className="grid grid-cols-1 gap-4 lg:grid-cols-5"
+        aria-label="Carrier registration form"
+      >
         <div className="lg:col-span-3">
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-5">
             <h2 className="text-sm font-semibold text-[var(--text)]">Details</h2>
@@ -379,17 +382,39 @@ export default function CarrierOnboardingClient({ user }: Props) {
                     id="carrier-vehicle"
                     value={vehicleType}
                     onChange={(e) => setVehicleType(e.target.value as VehicleTypeOption)}
-                    className={[
-                      inputBase,
-                      "appearance-none pr-10",
-                      "bg-[var(--bg)] text-[var(--text)]",
-                    ].join(" ")}
+                    className={[inputBase, "appearance-none pr-10"].join(" ")}
+                    style={{ colorScheme: "light dark" }}
                   >
-                    <option value="BIKE">Bike</option>
-                    <option value="MOTORBIKE">Motorbike</option>
-                    <option value="CAR">Car</option>
-                    <option value="VAN">Van</option>
-                    <option value="TRUCK">Truck</option>
+                    <option
+                      value="BIKE"
+                      style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+                    >
+                      Bike
+                    </option>
+                    <option
+                      value="MOTORBIKE"
+                      style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+                    >
+                      Motorbike
+                    </option>
+                    <option
+                      value="CAR"
+                      style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+                    >
+                      Car
+                    </option>
+                    <option
+                      value="VAN"
+                      style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+                    >
+                      Van
+                    </option>
+                    <option
+                      value="TRUCK"
+                      style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+                    >
+                      Truck
+                    </option>
                   </select>
 
                   <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
@@ -485,7 +510,8 @@ export default function CarrierOnboardingClient({ user }: Props) {
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-5">
             <h2 className="text-sm font-semibold text-[var(--text)]">Evidence</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Add at least one vehicle photo key. Uploading uses <span className="font-semibold text-[var(--text)]">/api/upload</span>{" "}
+              Add at least one vehicle photo key. Uploading uses{" "}
+              <span className="font-semibold text-[var(--text)]">/api/upload</span>{" "}
               when available.
             </p>
 
@@ -603,7 +629,8 @@ export default function CarrierOnboardingClient({ user }: Props) {
               <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-4 shadow-sm">
                 <h3 className="text-sm font-semibold text-[var(--text)]">Optional document photo</h3>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
-                  If you have a rider’s license or business permit, add a doc photo key. This can speed up verification.
+                  If you have a rider’s license or business permit, add a doc photo key. This can speed
+                  up verification.
                 </p>
 
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">

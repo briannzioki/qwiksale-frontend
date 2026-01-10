@@ -31,9 +31,13 @@ export default async function CarrierOnboardingPage() {
 
   const existing =
     carrierModel && typeof carrierModel.findUnique === "function"
-      ? await carrierModel.findUnique({ where: { userId }, select: { id: true } }).catch(() => null)
+      ? await carrierModel
+          .findUnique({ where: { userId }, select: { id: true } })
+          .catch(() => null)
       : carrierModel && typeof carrierModel.findFirst === "function"
-        ? await carrierModel.findFirst({ where: { userId }, select: { id: true } }).catch(() => null)
+        ? await carrierModel
+            .findFirst({ where: { userId }, select: { id: true } })
+            .catch(() => null)
         : null;
 
   if (existing?.id) {
@@ -41,13 +45,19 @@ export default async function CarrierOnboardingPage() {
   }
 
   // IMPORTANT: do NOT wrap in AppShell here; RootLayout already renders the site header/footer.
+  // We DO provide a consistent page container so it aligns with other pages.
   return (
-    <CarrierOnboardingClient
-      user={{
-        id: userId,
-        name: displayNameForClient(authed) ?? null,
-        email: (authed as any).email ?? null,
-      }}
-    />
+    <main
+      className="container-page py-4 text-[var(--text)] sm:py-6"
+      aria-label="Carrier onboarding page"
+    >
+      <CarrierOnboardingClient
+        user={{
+          id: userId,
+          name: displayNameForClient(authed) ?? null,
+          email: (authed as any).email ?? null,
+        }}
+      />
+    </main>
   );
 }

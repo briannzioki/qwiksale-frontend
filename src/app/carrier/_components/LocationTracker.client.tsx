@@ -35,15 +35,20 @@ function fmtWhen(ts: number | null) {
   return `${Math.floor(m / 60)}h ago`;
 }
 
-export default function LocationTracker({
-  enabled,
-  disabledReason,
-  onPing,
-}: {
+type Props = {
   enabled: boolean;
   disabledReason?: string | null;
-  onPing?: (patch: PingPatch) => void;
-}) {
+
+  /**
+   * Next.js TS plugin expects function props in client files to be named like actions.
+   * Use this in new call-sites.
+   */
+  onPingAction?: (patch: PingPatch) => void;
+} & Record<string, unknown>; // allows legacy props (e.g. onPing) without typing them
+
+export default function LocationTracker(props: Props) {
+  const { enabled, disabledReason, onPingAction } = props;
+
   const [lastSentAt, setLastSentAt] = useState<number | null>(null);
   const [state, setState] = useState<"idle" | "tracking" | "denied" | "error">("idle");
   const [busy, setBusy] = useState(false);
@@ -61,11 +66,29 @@ export default function LocationTracker({
     return "Location sharing is on.";
   }, [enabled, disabledReason, state]);
 
+  const notifyPing = useCallback(
+    (patch: PingPatch) => {
+      // Preferred prop name
+      if (typeof onPingAction === "function") {
+        onPingAction(patch);
+        return;
+      }
+
+      // Back-compat: allow older call-sites passing `onPing`
+      const legacy = (props as any)?.onPing;
+      if (typeof legacy === "function") {
+        legacy(patch);
+      }
+    },
+    [onPingAction, props],
+  );
+
   const sendPing = useCallback(async () => {
     if (!canRun || busy) return;
 
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setState("error");
+      toast.dismiss();
       toast.error("Geolocation is not available in this browser");
       return;
     }
@@ -102,6 +125,7 @@ export default function LocationTracker({
                   : status === 401
                     ? "You must be signed in."
                     : "Failed to update location.");
+              toast.dismiss();
               toast.error(msg);
               resolve();
               return;
@@ -109,13 +133,16 @@ export default function LocationTracker({
 
             const now = Date.now();
             setLastSentAt(now);
-            onPing?.({
+
+            notifyPing({
               lastLat: lat,
               lastLng: lng,
               lastSeenAt: new Date(now).toISOString(),
             });
+
             resolve();
           } catch (e: any) {
+            toast.dismiss();
             toast.error(e?.message || "Failed to update location.");
             setState("error");
             resolve();
@@ -131,7 +158,7 @@ export default function LocationTracker({
     });
 
     setBusy(false);
-  }, [canRun, busy, onPing]);
+  }, [canRun, busy, notifyPing]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -155,7 +182,6 @@ export default function LocationTracker({
       return;
     }
 
-    // Immediate ping when enabling, then keep fresh for 90s cutoff
     void sendPing();
 
     timerRef.current = window.setInterval(() => {
