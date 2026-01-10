@@ -180,7 +180,12 @@ function buildStoreHref({
   }
 
   // 6) Final: accept username again only if it's not store-code-ish.
-  if (unameRaw && STORE_TOKEN_RE.test(unameRaw) && !isJunkToken(unameRaw) && !isStoreCodeToken(unameRaw)) {
+  if (
+    unameRaw &&
+    STORE_TOKEN_RE.test(unameRaw) &&
+    !isJunkToken(unameRaw) &&
+    !isStoreCodeToken(unameRaw)
+  ) {
     return `/store/${encodeURIComponent(unameRaw)}`;
   }
 
@@ -261,12 +266,6 @@ export default function SellerInfo({
     return { verifiedCanon: resolvedVerified, tierCanon: resolvedTier };
   }, [verified, featuredTier, sellerBadges]);
 
-  const verifiedLabel = React.useMemo(() => {
-    if (verifiedCanon === true) return "Verified";
-    if (verifiedCanon === false) return "Unverified";
-    return null;
-  }, [verifiedCanon]);
-
   const showMetaRow =
     (typeof rating === "number" && rating > 0) ||
     (typeof salesCount === "number" && salesCount > 0) ||
@@ -327,21 +326,15 @@ export default function SellerInfo({
               <span className="text-[11px] text-[var(--text-muted)] sm:text-xs">{secondaryName}</span>
             ) : null}
 
-            <VerifiedBadge className="inline-flex" verified={verifiedCanon} featuredTier={tierCanon} />
-
-            {verifiedLabel ? (
-              <span
-                data-testid="seller-verified-label"
-                className={cn(
-                  "inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold leading-none sm:px-2.5 sm:py-1.5 sm:text-xs",
-                  "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
-                )}
-                aria-label={verifiedLabel}
-                title={verifiedLabel}
-              >
-                {verifiedLabel}
-              </span>
-            ) : null}
+            <VerifiedBadge
+              className={cn(
+                "inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold leading-none shadow-sm",
+                "sm:px-2.5 sm:py-1.5 sm:text-xs",
+                "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+              )}
+              verified={verifiedCanon}
+              featuredTier={tierCanon}
+            />
           </div>
 
           {locationLabel ? (

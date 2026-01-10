@@ -1,4 +1,3 @@
-// src/app/account/billing/UpgradePanel.tsx
 "use client";
 
 import { useMemo, useRef, useState } from "react";
@@ -20,6 +19,20 @@ function normalizeKePhone(raw: string): string {
 function isValidKePhone(input: string) {
   const n = normalizeKePhone(input);
   return /^254(7|1)\d{8}$/.test(n);
+}
+
+function SelectChevron({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M6 8l4 4 4-4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export default function UpgradePanel({ userEmail }: { userEmail: string }) {
@@ -105,7 +118,8 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
     "mt-4 sm:mt-6 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 sm:p-5 shadow-sm";
 
   const tierBtnBase =
-    "rounded-2xl border p-3 sm:p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 ring-focus";
+    "relative overflow-hidden rounded-2xl border p-3 sm:p-4 text-left transition " +
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus";
 
   const tierBtnInactive =
     "border-[var(--border-subtle)] bg-[var(--bg)] hover:bg-[var(--bg-subtle)]";
@@ -116,16 +130,20 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
   const labelHint = "block text-[11px] sm:text-xs text-[var(--text-muted)]";
 
   const inputBase =
-    "mt-1 w-full rounded-xl border bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm outline-none placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+    "mt-1 w-full rounded-xl border bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm outline-none " +
+    "placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
 
   const inputInvalid = "border-[var(--border)] bg-[var(--bg-subtle)]";
   const inputValid = "border-[var(--border-subtle)]";
 
-  const selectClass =
-    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus";
+  const selectBase =
+    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 pr-10 " +
+    "text-sm text-[var(--text)] shadow-sm outline-none appearance-none " +
+    "focus-visible:outline-none focus-visible:ring-2 ring-focus";
 
   const ctaBase =
-    "inline-flex min-h-9 items-center justify-center rounded-2xl border px-4 py-2 text-xs sm:text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 ring-focus";
+    "inline-flex min-h-9 items-center justify-center rounded-2xl border px-4 py-2 text-xs sm:text-sm font-semibold " +
+    "transition focus-visible:outline-none focus-visible:ring-2 ring-focus";
 
   const ctaEnabled =
     "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-sm hover:bg-[var(--bg-subtle)]";
@@ -133,6 +151,28 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
   const ctaDisabled = "border-[var(--border-subtle)] opacity-60 cursor-not-allowed";
 
   const sectionA11yProps = busy ? ({ "aria-busy": "true" } as const) : ({} as const);
+
+  function tierChrome(t: Tier) {
+    // Subtle, token-based tint overlays (works in light + dark).
+    // Uses existing CSS vars: --accent and --brand-blue (and keeps everything readable).
+    const base =
+      "before:pointer-events-none before:absolute before:inset-0 before:content-[''] " +
+      "after:pointer-events-none after:absolute after:inset-0 after:content-['']";
+
+    if (t === "GOLD") {
+      return [
+        base,
+        "before:bg-[color:var(--accent)] before:opacity-[0.10]",
+        "after:bg-[radial-gradient(120%_85%_at_0%_0%,rgba(255,255,255,0.20)_0%,transparent_60%)] after:opacity-80",
+      ].join(" ");
+    }
+
+    return [
+      base,
+      "before:bg-[color:var(--brand-blue)] before:opacity-[0.10]",
+      "after:bg-[radial-gradient(120%_85%_at_0%_0%,rgba(255,255,255,0.18)_0%,transparent_60%)] after:opacity-75",
+    ].join(" ");
+  }
 
   return (
     <section className={panelClass} {...sectionA11yProps} aria-describedby="upgrade-status">
@@ -146,28 +186,52 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
               key={t}
               type="button"
               onClick={() => setTier(t)}
-              className={[tierBtnBase, isActive ? tierBtnActive : tierBtnInactive].join(" ")}
+              className={[
+                tierBtnBase,
+                tierChrome(t),
+                isActive ? tierBtnActive : tierBtnInactive,
+              ].join(" ")}
               {...pressedProps}
             >
-              <div className="text-base sm:text-lg font-semibold text-[var(--text)]">
-                {t === "GOLD" ? "Gold" : "Platinum"}
+              <div className="relative z-10">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-base sm:text-lg font-semibold text-[var(--text)]">
+                      {t === "GOLD" ? "Gold" : "Platinum"}
+                    </div>
+                    <div className="text-xs sm:text-sm text-[var(--text-muted)]">
+                      KES {TIER_PRICE[t].toLocaleString("en-KE")}
+                    </div>
+                  </div>
+
+                  <span
+                    className={[
+                      "shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold",
+                      isActive
+                        ? "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]"
+                        : "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)]",
+                    ].join(" ")}
+                    aria-label={isActive ? "Selected plan" : "Plan option"}
+                    title={isActive ? "Selected" : "Select"}
+                  >
+                    {isActive ? "Selected" : "Choose"}
+                  </span>
+                </div>
+
+                <ul className="mt-2 list-disc pl-4 text-xs sm:text-sm text-[var(--text)]">
+                  {t === "GOLD" ? (
+                    <>
+                      <li>Priority placement</li>
+                      <li>Seller badge</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>Top placement</li>
+                      <li>Pro seller badge</li>
+                    </>
+                  )}
+                </ul>
               </div>
-              <div className="text-xs sm:text-sm text-[var(--text-muted)]">
-                KES {TIER_PRICE[t].toLocaleString("en-KE")}
-              </div>
-              <ul className="mt-1.5 sm:mt-2 list-disc pl-4 text-xs sm:text-sm text-[var(--text)]">
-                {t === "GOLD" ? (
-                  <>
-                    <li>Priority placement</li>
-                    <li>Seller badge</li>
-                  </>
-                ) : (
-                  <>
-                    <li>Top placement</li>
-                    <li>Pro seller badge</li>
-                  </>
-                )}
-              </ul>
             </button>
           );
         })}
@@ -190,14 +254,23 @@ export default function UpgradePanel({ userEmail }: { userEmail: string }) {
 
         <label className={labelText}>
           <span className={labelHint}>Pay via</span>
-          <select
-            className={selectClass}
-            value={mode}
-            onChange={(e) => setMode(e.target.value as "paybill" | "till")}
-          >
-            <option value="paybill">Paybill</option>
-            <option value="till">Buy Goods (Till)</option>
-          </select>
+          <div className="relative">
+            <select
+              className={selectBase}
+              value={mode}
+              onChange={(e) => setMode(e.target.value as "paybill" | "till")}
+              aria-label="Payment mode"
+            >
+              <option value="paybill">Paybill</option>
+              <option value="till">Buy Goods (Till)</option>
+            </select>
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+              <SelectChevron />
+            </span>
+          </div>
+          <span className="mt-1 block text-[11px] sm:text-xs text-[var(--text-muted)]">
+            Choose how the STK push should be initiated.
+          </span>
         </label>
       </div>
 
