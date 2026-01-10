@@ -227,7 +227,10 @@ export default function CarrierDashboardClient({
     status === "AVAILABLE" ? "Online" : status === "ON_TRIP" ? "On trip" : "Offline";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 sm:space-y-6" aria-label="Carrier dashboard">
+    <div
+      className="container-page mx-auto max-w-6xl space-y-4 sm:space-y-6"
+      aria-label="Carrier dashboard"
+    >
       <header
         className={[
           "relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] shadow-soft",
@@ -235,11 +238,16 @@ export default function CarrierDashboardClient({
           "p-4 text-white sm:p-6",
         ].join(" ")}
       >
-        <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" aria-hidden />
+        <div
+          className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl"
+          aria-hidden
+        />
 
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Carrier dashboard</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-white/80">
+              Carrier dashboard
+            </p>
             <h1 className="mt-1 text-xl font-extrabold tracking-tight text-white sm:text-2xl">
               {carrier.vehicleType ? `${carrier.vehicleType} carrier` : "Carrier"}
             </h1>
@@ -255,7 +263,13 @@ export default function CarrierDashboardClient({
             <Link href="/carrier/requests" prefetch={false} className={heroBtn}>
               Requests
             </Link>
-            <button type="button" onClick={() => void refreshMe()} className={heroBtn} disabled={loading} aria-disabled={loading}>
+            <button
+              type="button"
+              onClick={() => void refreshMe()}
+              className={heroBtn}
+              disabled={loading}
+              aria-disabled={loading}
+            >
               {loading ? "Refreshing…" : "Refresh"}
             </button>
           </div>
@@ -271,10 +285,16 @@ export default function CarrierDashboardClient({
           <span className={heroChip}>{isLive ? "Live" : "Stale"}</span>
         </div>
 
-        {(bannedNow || suspendedNow) ? (
-          <div className="relative mt-4 rounded-2xl border border-white/20 bg-white/10 p-4 shadow-sm" role="status" aria-live="polite">
+        {bannedNow || suspendedNow ? (
+          <div
+            className="relative mt-4 rounded-2xl border border-white/20 bg-white/10 p-4 shadow-sm"
+            role="status"
+            aria-live="polite"
+          >
             <div className="text-sm font-extrabold text-white">
-              {bannedNow ? "Your carrier profile is banned." : "Your carrier profile is suspended."}
+              {bannedNow
+                ? "Your carrier profile is banned."
+                : "Your carrier profile is suspended."}
             </div>
             <div className="mt-1 text-sm text-white/85">
               {bannedNow ? (
@@ -300,7 +320,10 @@ export default function CarrierDashboardClient({
         ) : null}
       </header>
 
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3" aria-label="Carrier quick actions">
+      <section
+        className="grid grid-cols-1 gap-4 lg:grid-cols-3"
+        aria-label="Carrier quick actions"
+      >
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-5">
           <h2 className="text-sm font-semibold text-[var(--text)]">Availability</h2>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -311,9 +334,10 @@ export default function CarrierDashboardClient({
             <GoOnlineToggle
               status={status}
               disabledReason={
-                enforcementDisabledReason || (status === "ON_TRIP" ? "You are currently marked as on a trip." : null)
+                enforcementDisabledReason ||
+                (status === "ON_TRIP" ? "You are currently marked as on a trip." : null)
               }
-              onUpdated={(nextStatus) => {
+              onUpdatedAction={(nextStatus) => {
                 setCarrier((prev) => ({ ...prev, status: nextStatus }));
               }}
             />
@@ -323,7 +347,7 @@ export default function CarrierDashboardClient({
             <LocationTracker
               enabled={isOnline}
               disabledReason={enforcementDisabledReason}
-              onPing={(patch) => {
+              onPingAction={(patch) => {
                 setCarrier((prev) => ({
                   ...prev,
                   lastLat: typeof patch.lastLat === "number" ? patch.lastLat : prev.lastLat,
@@ -344,11 +368,15 @@ export default function CarrierDashboardClient({
           <div className="mt-3 space-y-2 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[var(--text-muted)]">Phone</span>
-              <span className="font-semibold text-[var(--text)]">{carrier.phone || "Not set"}</span>
+              <span className="font-semibold text-[var(--text)]">
+                {carrier.phone || "Not set"}
+              </span>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[var(--text-muted)]">Plate</span>
-              <span className="font-semibold text-[var(--text)]">{carrier.vehiclePlate || "Not set"}</span>
+              <span className="font-semibold text-[var(--text)]">
+                {carrier.vehiclePlate || "Not set"}
+              </span>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[var(--text-muted)]">Station</span>
@@ -366,7 +394,9 @@ export default function CarrierDashboardClient({
 
           <div className="mt-4 text-xs text-[var(--text-muted)]">
             Signed in as{" "}
-            <span className="font-semibold text-[var(--text)]">{user.name || user.email || "user"}</span>
+            <span className="font-semibold text-[var(--text)]">
+              {user.name || user.email || "user"}
+            </span>
           </div>
         </div>
 
@@ -398,17 +428,27 @@ export default function CarrierDashboardClient({
           <div className="mt-3 space-y-2">
             {!requests.length ? (
               <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 text-sm text-[var(--text-muted)]">
-                {requestsLoading ? "Loading requests…" : "No recent requests yet, or the requests API is not enabled."}
+                {requestsLoading
+                  ? "Loading requests…"
+                  : "No recent requests yet, or the requests API is not enabled."}
               </div>
             ) : (
               <ul className="space-y-2">
                 {requests.slice(0, 6).map((r) => (
-                  <li key={r.id} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 shadow-sm">
+                  <li
+                    key={r.id}
+                    className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 shadow-sm"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-extrabold text-[var(--text)]">{r.type}</div>
+                        <div className="truncate text-sm font-extrabold text-[var(--text)]">
+                          {r.type}
+                        </div>
                         <div className="mt-1 text-xs text-[var(--text-muted)]">
-                          {r.status} • {r.createdAt ? r.createdAt.slice(0, 19).replace("T", " ") : "Unknown time"}
+                          {r.status} •{" "}
+                          {r.createdAt
+                            ? r.createdAt.slice(0, 19).replace("T", " ")
+                            : "Unknown time"}
                         </div>
                       </div>
                       <span className="chip rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-1 text-xs font-semibold text-[var(--text)]">

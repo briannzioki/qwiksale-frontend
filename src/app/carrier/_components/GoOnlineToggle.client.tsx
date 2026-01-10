@@ -23,15 +23,19 @@ function normalizeStatus(s: string) {
   return String(s || "").toUpperCase();
 }
 
-export default function GoOnlineToggle({
-  status,
-  disabledReason,
-  onUpdated,
-}: {
+type Props = {
   status: string;
   disabledReason?: string | null;
-  onUpdated?: (nextStatus: string) => void;
-}) {
+
+  /**
+   * Next.js TS plugin expects function props in client files to be named like actions.
+   * Use this in new call-sites.
+   */
+  onUpdatedAction?: (nextStatus: string) => void;
+} & Record<string, unknown>; // allows legacy props (e.g. onUpdated) without typing them
+
+export default function GoOnlineToggle(props: Props) {
+  const { status, disabledReason, onUpdatedAction } = props;
   const [busy, setBusy] = useState(false);
 
   const st = normalizeStatus(status);
@@ -43,6 +47,23 @@ export default function GoOnlineToggle({
   }, [st, isOnline]);
 
   const canToggle = !busy && !disabledReason && st !== "ON_TRIP";
+
+  const notifyUpdated = useCallback(
+    (nextStatus: string) => {
+      // Preferred prop name
+      if (typeof onUpdatedAction === "function") {
+        onUpdatedAction(nextStatus);
+        return;
+      }
+
+      // Back-compat: allow older call-sites passing `onUpdated`
+      const legacy = (props as any)?.onUpdated;
+      if (typeof legacy === "function") {
+        legacy(nextStatus);
+      }
+    },
+    [onUpdatedAction, props],
+  );
 
   const toggle = useCallback(async () => {
     if (!canToggle) {
@@ -56,7 +77,9 @@ export default function GoOnlineToggle({
     const next = isOnline ? "OFFLINE" : "AVAILABLE";
 
     try {
-      const { ok, status: code, json } = await postJson("/api/carrier/me/status", { status: next });
+      const { ok, status: code, json } = await postJson("/api/carrier/me/status", {
+        status: next,
+      });
 
       if (!ok) {
         const msg =
@@ -71,13 +94,13 @@ export default function GoOnlineToggle({
       }
 
       toast.success(next === "AVAILABLE" ? "You are now online" : "You are now offline");
-      onUpdated?.(next);
+      notifyUpdated(next);
     } catch (e: any) {
       toast.error(e?.message || "Failed to update status.");
     } finally {
       setBusy(false);
     }
-  }, [canToggle, disabledReason, isOnline, onUpdated]);
+  }, [canToggle, disabledReason, isOnline, notifyUpdated]);
 
   return (
     <div className="space-y-2" aria-label="Go online toggle">
@@ -92,7 +115,10 @@ export default function GoOnlineToggle({
           disabled={!canToggle}
           aria-disabled={!canToggle}
           className={isOnline ? "btn-outline" : "btn-gradient-primary"}
-          title={disabledReason || (st === "ON_TRIP" ? "You cannot change status while on a trip." : undefined)}
+          title={
+            disabledReason ||
+            (st === "ON_TRIP" ? "You cannot change status while on a trip." : undefined)
+          }
         >
           {busy ? "Updating…" : isOnline ? "Go offline" : "Go online"}
         </button>
