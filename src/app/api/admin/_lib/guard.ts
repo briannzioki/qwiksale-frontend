@@ -1,4 +1,3 @@
-// src/app/api/admin/_lib/guard.ts
 import { NextResponse } from "next/server";
 import { getSessionUser, isAdminUser } from "@/app/lib/authz";
 

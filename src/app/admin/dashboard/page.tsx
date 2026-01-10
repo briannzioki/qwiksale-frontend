@@ -28,6 +28,25 @@ type DayPoint = {
   services: number;
 };
 
+type CarrierMetrics = {
+  total: number;
+  activeOnline: number;
+  suspended: number;
+  banned: number;
+  byTier: {
+    BASIC: number;
+    GOLD: number;
+    PLATINUM: number;
+  };
+  byVerification: {
+    UNVERIFIED: number;
+    PENDING: number;
+    VERIFIED: number;
+    REJECTED: number;
+  };
+  liveCutoffSeconds: number;
+};
+
 type Metrics = {
   totals: {
     users: number;
@@ -37,6 +56,7 @@ type Metrics = {
     featured?: number | null;
     visits?: number | null;
     reviews?: number | null;
+    carriers?: CarrierMetrics | null;
   };
   last7d: DayPoint[];
 };
@@ -80,6 +100,69 @@ async function safeServiceCount(where?: any): Promise<number> {
   return 0;
 }
 
+async function safeCarrierCount(where?: any): Promise<number> {
+  const anyPrisma = prisma as any;
+  const cp = anyPrisma?.carrierProfile;
+  if (cp && typeof cp.count === "function") {
+    return safeCount(() => cp.count(where ? { where } : undefined), 0);
+  }
+  return 0;
+}
+
+function carrierModelAvailable(): boolean {
+  const anyPrisma = prisma as any;
+  const cp = anyPrisma?.carrierProfile;
+  return Boolean(cp && typeof cp.count === "function");
+}
+
+async function loadCarrierMetrics(): Promise<CarrierMetrics | null> {
+  if (!carrierModelAvailable()) return null;
+
+  const now = new Date();
+  const liveCutoffSeconds = 90;
+  const liveCutoff = new Date(now.getTime() - liveCutoffSeconds * 1000);
+
+  const [total, banned, suspended, activeOnline] = await Promise.all([
+    safeCarrierCount(),
+    safeCarrierCount({ bannedAt: { not: null } }),
+    safeCarrierCount({ suspendedUntil: { gt: now } }),
+    safeCarrierCount({
+      status: "AVAILABLE",
+      bannedAt: null,
+      OR: [{ suspendedUntil: null }, { suspendedUntil: { lte: now } }],
+      lastSeenAt: { gte: liveCutoff },
+    }),
+  ]);
+
+  const [basic, gold, platinum] = await Promise.all([
+    safeCarrierCount({ planTier: "BASIC" }),
+    safeCarrierCount({ planTier: "GOLD" }),
+    safeCarrierCount({ planTier: "PLATINUM" }),
+  ]);
+
+  const [unverified, pending, verified, rejected] = await Promise.all([
+    safeCarrierCount({ verificationStatus: "UNVERIFIED" }),
+    safeCarrierCount({ verificationStatus: "PENDING" }),
+    safeCarrierCount({ verificationStatus: "VERIFIED" }),
+    safeCarrierCount({ verificationStatus: "REJECTED" }),
+  ]);
+
+  return {
+    total,
+    activeOnline,
+    suspended,
+    banned,
+    byTier: { BASIC: basic, GOLD: gold, PLATINUM: platinum },
+    byVerification: {
+      UNVERIFIED: unverified,
+      PENDING: pending,
+      VERIFIED: verified,
+      REJECTED: rejected,
+    },
+    liveCutoffSeconds,
+  };
+}
+
 async function loadMetrics(): Promise<Metrics | null> {
   try {
     const today = new Date();
@@ -90,10 +173,11 @@ async function loadMetrics(): Promise<Metrics | null> {
       return d;
     });
 
-    const [usersTotal, productsTotal, servicesTotal] = await Promise.all([
+    const [usersTotal, productsTotal, servicesTotal, carriers] = await Promise.all([
       safeCount(() => prisma.user.count(), 0),
       safeCount(() => prisma.product.count(), 0),
       safeServiceCount(),
+      loadCarrierMetrics(),
     ]);
 
     const last7d: DayPoint[] = await Promise.all(
@@ -135,6 +219,7 @@ async function loadMetrics(): Promise<Metrics | null> {
         reveals: null,
         reviews: null,
         featured: null,
+        carriers: carriers ?? null,
       },
       last7d,
     };
@@ -229,7 +314,6 @@ export default async function Page() {
 
   const SectionHeaderAny = SectionHeader as any;
 
-  // Always render the H1 so tests can assert reliably.
   if (!metrics) {
     return (
       <div className="space-y-6 text-[var(--text)]">
@@ -273,7 +357,6 @@ export default async function Page() {
           </span>
         </div>
 
-        {/* Messages / chats widget (always rendered) */}
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className={card}>
             <div className="flex items-center justify-between gap-2">
@@ -317,6 +400,13 @@ export default async function Page() {
                 Listings
               </Link>
               <Link
+                href="/admin/carriers"
+                prefetch={false}
+                className={actionBtnClass}
+              >
+                Carriers
+              </Link>
+              <Link
                 href="/admin/moderation"
                 prefetch={false}
                 className={actionBtnClass}
@@ -348,6 +438,8 @@ export default async function Page() {
       ? metrics.totals.featured
       : null;
 
+  const carriers = metrics.totals.carriers ?? null;
+
   const compositionData: { label: string; value: number }[] = [
     { label: "Users", value: metrics.totals.users },
     { label: "Products", value: metrics.totals.products },
@@ -358,6 +450,9 @@ export default async function Page() {
   if (reveals != null)
     compositionData.push({ label: "Reveals", value: reveals });
   if (reviews != null) compositionData.push({ label: "Reviews", value: reviews });
+
+  const chip =
+    "inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-1 text-xs font-semibold text-[var(--text)]";
 
   return (
     <div className="space-y-6 text-[var(--text)]">
@@ -388,7 +483,6 @@ export default async function Page() {
         }
       />
 
-      {/* KPI cards */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Users"
@@ -446,7 +540,98 @@ export default async function Page() {
         )}
       </section>
 
-      {/* Time-series trends */}
+      <section className="space-y-3" aria-label="Carrier metrics">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-extrabold tracking-tight text-[var(--text)]">
+            Carriers
+          </h2>
+          <Link href="/admin/carriers" prefetch={false} className={actionBtnClass}>
+            Manage carriers
+          </Link>
+        </div>
+
+        {carriers ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <StatCard label="Total carriers" value={carriers.total} />
+              <StatCard label="Active online" value={carriers.activeOnline} />
+              <StatCard label="Suspended" value={carriers.suspended} />
+              <StatCard label="Banned" value={carriers.banned} />
+            </div>
+
+            <div className={card} aria-label="Carrier breakdown">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--text)]">
+                    Breakdown
+                  </h3>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Active online means status is AVAILABLE and last seen within{" "}
+                    {carriers.liveCutoffSeconds}s, excluding banned or currently suspended.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Tier
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className={chip}>
+                      PLATINUM <span className="text-[var(--text-muted)]">·</span>{" "}
+                      {carriers.byTier.PLATINUM.toLocaleString("en-KE")}
+                    </span>
+                    <span className={chip}>
+                      GOLD <span className="text-[var(--text-muted)]">·</span>{" "}
+                      {carriers.byTier.GOLD.toLocaleString("en-KE")}
+                    </span>
+                    <span className={chip}>
+                      BASIC <span className="text-[var(--text-muted)]">·</span>{" "}
+                      {carriers.byTier.BASIC.toLocaleString("en-KE")}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Verification
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className={chip}>
+                      VERIFIED <span className="text-[var(--text-muted)]">·</span>{" "}
+                      {carriers.byVerification.VERIFIED.toLocaleString("en-KE")}
+                    </span>
+                    <span className={chip}>
+                      PENDING <span className="text-[var(--text-muted)]">·</span>{" "}
+                      {carriers.byVerification.PENDING.toLocaleString("en-KE")}
+                    </span>
+                    <span className={chip}>
+                      UNVERIFIED <span className="text-[var(--text-muted)]">·</span>{" "}
+                      {carriers.byVerification.UNVERIFIED.toLocaleString("en-KE")}
+                    </span>
+                    <span className={chip}>
+                      REJECTED <span className="text-[var(--text-muted)]">·</span>{" "}
+                      {carriers.byVerification.REJECTED.toLocaleString("en-KE")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className={card} role="status" aria-live="polite">
+            <div className="text-sm font-semibold text-[var(--text)]">
+              Carriers metrics not enabled yet.
+            </div>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              Once the CarrierProfile model exists in Prisma and migrations are applied,
+              this section will auto-populate.
+            </p>
+          </div>
+        )}
+      </section>
+
       <section className={card}>
         <h2 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">
           Last 7 days - users & listings
@@ -465,7 +650,6 @@ export default async function Page() {
           showGrid
         />
 
-        {/* Detail table */}
         <div className="mt-4 overflow-auto">
           <table className="min-w-[560px] text-xs">
             <thead className="bg-[var(--bg-subtle)]">
@@ -493,7 +677,6 @@ export default async function Page() {
         </div>
       </section>
 
-      {/* Composition / breakdown */}
       <section className={card}>
         <h2 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">
           Totals breakdown
@@ -514,7 +697,6 @@ export default async function Page() {
         />
       </section>
 
-      {/* Messages / chats widget */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className={card}>
           <div className="flex items-center justify-between gap-2">
@@ -556,6 +738,13 @@ export default async function Page() {
               className={actionBtnClass}
             >
               Listings
+            </Link>
+            <Link
+              href="/admin/carriers"
+              prefetch={false}
+              className={actionBtnClass}
+            >
+              Carriers
             </Link>
             <Link
               href="/admin/moderation"

@@ -5,25 +5,36 @@ function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-export default function RoleChip({
-  role,
-  subscription,
-  className,
-}: {
+type Props = {
   role: string | null | undefined;
   subscription: string | null | undefined;
   className?: string;
-}) {
-  const r = (role ?? "").toUpperCase();
-  const plan = (subscription ?? "").toUpperCase();
+};
+
+type Plan = "BASIC" | "GOLD" | "PLATINUM";
+
+function normalizePlan(raw: unknown): Plan {
+  const v = String(raw ?? "").trim().toUpperCase();
+  if (v === "PLATINUM") return "PLATINUM";
+  if (v === "GOLD") return "GOLD";
+  // Default for missing/unknown plans should be BASIC (matches your schema default).
+  return "BASIC";
+}
+
+export default function RoleChip({ role, subscription, className }: Props) {
+  const r = String(role ?? "").trim().toUpperCase();
+  const plan = normalizePlan(subscription);
 
   const isSuper = r === "SUPERADMIN";
   const isAdmin = r === "ADMIN" || isSuper;
 
-  let label = "USER";
-  let aria = "Your role is USER";
+  // Labels:
+  // - Admins: role labels
+  // - Users: plan labels (never "USER" as the only chip; E2E expects a plan-ish label)
+  let label: string;
+  let aria: string;
 
-  // Token-only palettes (no legacy colors)
+  // Token-only palettes (no hardcoded colors)
   let palette =
     "border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-muted)]";
 
@@ -37,20 +48,15 @@ export default function RoleChip({
     aria = "Your role is ADMIN";
     palette =
       "border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]";
-  } else if (plan === "PLATINUM") {
-    label = "PLATINUM";
-    aria = "Your plan is PLATINUM";
-    palette =
-      "border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]";
-  } else if (plan === "GOLD") {
-    label = "GOLD";
-    aria = "Your plan is GOLD";
-    palette =
-      "border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]";
-  } else if (plan === "BASIC") {
-    label = "BASIC";
-    aria = "Your plan is BASIC";
-    // keep default palette
+  } else {
+    label = plan;
+    aria = `Your plan is ${plan}`;
+
+    // Slight emphasis for paid tiers, still token-based.
+    if (plan === "GOLD" || plan === "PLATINUM") {
+      palette =
+        "border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]";
+    }
   }
 
   return (
@@ -62,7 +68,6 @@ export default function RoleChip({
       )}
       aria-label={aria}
       title={aria}
-      // This is the single "session chip" the E2E tests look for inside the account button.
       data-testid="session-chip"
     >
       {label}

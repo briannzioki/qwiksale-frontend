@@ -1,4 +1,3 @@
-// src/app/signup/page.tsx
 "use client";
 
 import {
@@ -13,13 +12,17 @@ import {
 } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import { setReferralCookie } from "@/app/lib/referral-cookie";
 
 /* ----------------------------- helpers ----------------------------- */
 function isSafePath(p?: string | null): p is string {
   return !!p && /^\/(?!\/)/.test(p);
+}
+
+function safeTrim(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
 }
 
 function strengthLabel(pw: string) {
@@ -42,9 +45,16 @@ const ERR_COPY: Record<string, string> = {
 
 const REF_CODE_RE = /^[A-Za-z0-9._-]{3,64}$/;
 
+function buildOnboardingHref(returnTo: string) {
+  const qs = new URLSearchParams();
+  qs.set("callbackUrl", returnTo);
+  return `/onboarding?${qs.toString()}`;
+}
+
 /* ----------------------------- component --------------------------- */
 function SignUpPageInner() {
   const sp = useSearchParams();
+  const { data: session, status } = useSession();
 
   // Prefer explicit `return` param (e.g. ?return=/dashboard), then fall back to callbackUrl.
   const returnToRaw = sp.get("return") || sp.get("callbackUrl");
@@ -52,20 +62,27 @@ function SignUpPageInner() {
 
   const urlError = sp.get("error");
   const friendlyError = useMemo(
-    () =>
-      urlError
-        ? ERR_COPY[urlError] ?? "Sign-up failed. Please try again."
-        : null,
+    () => (urlError ? ERR_COPY[urlError] ?? "Sign-up failed. Please try again." : null),
     [urlError],
   );
 
-  const [email, setEmail] = useState("");
+  const authedEmail = safeTrim((session?.user as any)?.email).toLowerCase();
+  const isAuthed = status === "authenticated" && !!authedEmail;
+
+  // We return here after Google OAuth with ?from=google.
+  const fromGoogle =
+    (sp.get("from") || "").toLowerCase() === "google" ||
+    (sp.get("provider") || "").toLowerCase() === "google" ||
+    (sp.get("oauth") || "").toLowerCase() === "google";
+
+  const [email, setEmail] = useState<string>(() => "");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [working, setWorking] = useState<"creds" | "google" | null>(null);
+  const [working, setWorking] = useState<"creds" | "google" | "link" | null>(null);
 
   const didStoreRef = useRef(false);
+  const didPrefill = useRef(false);
 
   useEffect(() => {
     if (friendlyError) toast.error(friendlyError);
@@ -92,19 +109,68 @@ function SignUpPageInner() {
     }
   }, [sp]);
 
+  useEffect(() => {
+    // Prefill email from session after Google OAuth (or any auth), no navigation.
+    if (didPrefill.current) return;
+    if (!isAuthed || !authedEmail) return;
+
+    didPrefill.current = true;
+    setEmail(authedEmail);
+  }, [isAuthed, authedEmail]);
+
   function validate(): string | null {
-    if (!email) return "Enter your email.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      return "Enter a valid email.";
-    if (password.length < 6)
-      return "Password must be at least 6 characters.";
+    const em = safeTrim(email).toLowerCase();
+    if (!em) return "Enter your email.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return "Enter a valid email.";
+    if (password.length < 6) return "Password must be at least 6 characters.";
     if (password !== confirm) return "Passwords do not match.";
     return null;
+  }
+
+  async function setPasswordForAuthedUser(): Promise<void> {
+    const v = validate();
+    if (v) {
+      toast.error(v);
+      return;
+    }
+
+    setWorking("link");
+    try {
+      const res = await fetch("/api/me/password", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ password, confirm }),
+      });
+
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        const msg =
+          typeof j?.error === "string" ? j.error : "Could not set password. Please try again.";
+        toast.error(msg);
+        setWorking(null);
+        return;
+      }
+
+      window.location.href = buildOnboardingHref(returnTo);
+    } catch {
+      toast.error("Could not set password. Please try again.");
+      setWorking(null);
+    }
   }
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     if (working) return;
+
+    // If already signed in (typically via Google), link a password and continue.
+    if (isAuthed) {
+      await setPasswordForAuthedUser();
+      return;
+    }
 
     const v = validate();
     if (v) {
@@ -112,22 +178,31 @@ function SignUpPageInner() {
       return;
     }
 
-    // Delegate navigation to NextAuth (no client router)
     setWorking("creds");
-    await signIn("credentials", {
-      email: email.trim().toLowerCase(),
-      password,
-      callbackUrl: returnTo,
-      redirect: true,
-    });
-    setWorking(null);
+    try {
+      await signIn("credentials", {
+        email: safeTrim(email).toLowerCase(),
+        password,
+        callbackUrl: buildOnboardingHref(returnTo),
+        redirect: true,
+      });
+    } finally {
+      setWorking(null);
+    }
   }
 
   async function onGoogle() {
     if (working) return;
+
+    // Return to /signup after OAuth so user can set a password (pre-filled from session).
+    const backToSignup = `/signup?from=google&return=${encodeURIComponent(returnTo)}`;
+
     setWorking("google");
-    await signIn("google", { callbackUrl: returnTo, redirect: true });
-    setWorking(null);
+    try {
+      await signIn("google", { callbackUrl: backToSignup, redirect: true });
+    } finally {
+      setWorking(null);
+    }
   }
 
   const pwStrength = strengthLabel(password);
@@ -144,18 +219,23 @@ function SignUpPageInner() {
               ? 85
               : 100;
 
+  const lockEmail = isAuthed && !!authedEmail;
+
+  const ctaLabel = isAuthed ? "Set password & continue" : "Create account";
+  const ctaBusy =
+    working === "link" ? "Saving password…" : working === "creds" ? "Creating account…" : ctaLabel;
+
   return (
     <div className="container-page py-4 text-[var(--text)] sm:py-8">
       <div className="mx-auto max-w-2xl">
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft dark:shadow-none">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[var(--brand-navy)] via-[var(--brand-green)] to-[var(--brand-blue)] text-white shadow-soft dark:shadow-none">
           <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-[var(--bg)] opacity-10 blur-3xl" />
           <div className="container-page py-5 text-white sm:py-8">
             <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
               Create your QwikSale account
             </h1>
             <p className="mt-1 text-[11px] leading-relaxed text-white/80 sm:text-sm">
-              Buy & sell with confidence across Kenya. It takes less than a
-              minute.
+              Buy & sell with confidence across Kenya. It takes less than a minute.
             </p>
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/85 sm:mt-4 sm:gap-3">
@@ -173,66 +253,94 @@ function SignUpPageInner() {
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-4 sm:mt-8 sm:gap-6">
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft transition hover:shadow-sm sm:p-5">
-            <button
-              onClick={onGoogle}
-              disabled={!!working}
-              className={[
-                "flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)]",
-                "bg-[var(--bg-elevated)] px-4 py-3 text-xs font-semibold text-[var(--text)] sm:text-sm",
-                "hover:bg-[var(--bg-subtle)] active:scale-[.99]",
-                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                "disabled:opacity-60",
-              ].join(" ")}
-              aria-label="Continue with Google"
-              type="button"
-            >
-              <GoogleIcon className="h-5 w-5" />
-              {working === "google" ? "Opening Google…" : "Continue with Google"}
-            </button>
-            <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
-              We’ll never post without your permission.
+        {isAuthed ? (
+          <section
+            className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-6 sm:p-6"
+            aria-label="Finish account setup"
+          >
+            <h2 className="text-sm font-semibold text-[var(--text)] sm:text-base">Finish setup</h2>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
+              You’re signed in as{" "}
+              <span className="font-semibold text-[var(--text)]">{authedEmail}</span>
+              {fromGoogle ? " via Google." : "."} Create a password to enable email & password sign-in, then we’ll send
+              you to onboarding.
             </p>
-          </div>
+          </section>
+        ) : null}
 
-          <div className="relative my-1.5 flex items-center justify-center sm:my-2">
-            <div className="h-px w-full bg-[var(--border-subtle)]" />
-            <span className="absolute -top-2.5 bg-[var(--bg)] px-3 text-xs text-[var(--text-muted)]">
-              or use email
-            </span>
-          </div>
+        <div className="mt-5 grid gap-4 sm:mt-8 sm:gap-6">
+          {!isAuthed ? (
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft transition hover:shadow-sm sm:p-5">
+              <button
+                onClick={onGoogle}
+                disabled={!!working}
+                className={[
+                  "flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)]",
+                  "bg-[var(--bg-elevated)] px-4 py-3 text-xs font-semibold text-[var(--text)] sm:text-sm",
+                  "hover:bg-[var(--bg-subtle)] active:scale-[.99]",
+                  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                  "disabled:opacity-60",
+                ].join(" ")}
+                aria-label="Continue with Google"
+                type="button"
+              >
+                <GoogleIcon className="h-5 w-5" />
+                {working === "google" ? "Opening Google…" : "Continue with Google"}
+              </button>
+              <p className="mt-2 text-center text-xs leading-relaxed text-[var(--text-muted)]">
+                We’ll never post without your permission.
+              </p>
+            </div>
+          ) : null}
+
+          {!isAuthed ? (
+            <div className="relative my-1.5 flex items-center justify-center sm:my-2">
+              <div className="h-px w-full bg-[var(--border-subtle)]" />
+              <span className="absolute -top-2.5 bg-[var(--bg)] px-3 text-xs text-[var(--text-muted)]">
+                or use email
+              </span>
+            </div>
+          ) : null}
 
           <form
             onSubmit={onCreate}
             className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft transition hover:shadow-sm sm:p-6"
             noValidate
+            aria-label="Create account or set password"
           >
             <div className="space-y-3 sm:space-y-4">
-              {/* Email */}
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-[var(--text)] sm:text-sm">
+              <div>
+                <label
+                  htmlFor="signup-email"
+                  className="mb-1 block text-xs font-semibold text-[var(--text)] sm:text-sm"
+                >
                   Email
-                </span>
+                </label>
                 <input
+                  id="signup-email"
+                  data-testid="signup-email"
                   type="email"
                   className={[
                     "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
                     "text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none",
                     "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    lockEmail ? "opacity-90" : "",
                   ].join(" ")}
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                   required
+                  readOnly={lockEmail}
+                  aria-readonly={lockEmail ? "true" : "false"}
                 />
-                <span className="mt-1 block text-xs leading-relaxed text-[var(--text-muted)]">
-                  We’ll send important notifications here.
-                </span>
-              </label>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+                  {lockEmail
+                    ? "This email is from your signed-in Google account."
+                    : "We’ll send important notifications here."}
+                </p>
+              </div>
 
-              {/* Password */}
               <div>
                 <label
                   htmlFor="signup-password"
@@ -243,6 +351,7 @@ function SignUpPageInner() {
                 <div className="relative">
                   <input
                     id="signup-password"
+                    data-testid="signup-password"
                     type={showPassword ? "text" : "password"}
                     className={[
                       "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 pr-12",
@@ -255,6 +364,7 @@ function SignUpPageInner() {
                     autoComplete="new-password"
                     minLength={6}
                     required
+                    disabled={!!working}
                   />
                   <button
                     type="button"
@@ -282,11 +392,7 @@ function SignUpPageInner() {
                     <div
                       className={[
                         "h-full rounded-full bg-[var(--text)] transition-all",
-                        pwBarPct < 35
-                          ? "opacity-30"
-                          : pwBarPct < 65
-                            ? "opacity-55"
-                            : "opacity-80",
+                        pwBarPct < 35 ? "opacity-30" : pwBarPct < 65 ? "opacity-55" : "opacity-80",
                       ].join(" ")}
                       style={{ width: `${pwBarPct}%` }}
                     />
@@ -297,7 +403,6 @@ function SignUpPageInner() {
                 </div>
               </div>
 
-              {/* Confirm password */}
               <div>
                 <label
                   htmlFor="signup-confirm-password"
@@ -308,6 +413,7 @@ function SignUpPageInner() {
                 <div className="relative">
                   <input
                     id="signup-confirm-password"
+                    data-testid="signup-confirm-password"
                     type={showPassword ? "text" : "password"}
                     className={[
                       "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 pr-12",
@@ -320,6 +426,7 @@ function SignUpPageInner() {
                     autoComplete="new-password"
                     minLength={6}
                     required
+                    disabled={!!working}
                   />
                   <button
                     type="button"
@@ -347,17 +454,14 @@ function SignUpPageInner() {
                 type="submit"
                 disabled={!!working}
                 className="btn-gradient-primary mt-1 w-full text-sm active:scale-[.99] disabled:opacity-60 sm:text-base"
+                data-testid="signup-set-password-cta"
               >
-                {working === "creds" ? "Creating account…" : "Create account"}
+                {ctaBusy}
               </button>
 
               <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-                By creating an account, you agree to QwikSale’s{" "}
-                <Link
-                  className="text-[var(--text)] underline underline-offset-2"
-                  href="/terms"
-                  prefetch={false}
-                >
+                By continuing, you agree to QwikSale’s{" "}
+                <Link className="text-[var(--text)] underline underline-offset-2" href="/terms" prefetch={false}>
                   Terms
                 </Link>{" "}
                 and{" "}
@@ -385,17 +489,13 @@ function SignUpPageInner() {
           </form>
 
           <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-6">
-            <h2 className="text-sm font-semibold text-[var(--text)] sm:text-base">
-              Why people stay with QwikSale
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--text)] sm:text-base">Why people stay with QwikSale</h2>
             <ul className="mt-3 grid gap-2 text-[13px] leading-relaxed text-[var(--text-muted)] sm:gap-3 sm:text-sm md:grid-cols-2">
               <li className="flex items-start gap-2">
-                <Spark /> Smart visibility: verified listings get prime
-                placement.
+                <Spark /> Smart visibility: verified listings get prime placement.
               </li>
               <li className="flex items-start gap-2">
-                <Spark /> Safe contact: your details stay private until you
-                choose.
+                <Spark /> Safe contact: your details stay private until you choose.
               </li>
               <li className="flex items-start gap-2">
                 <Spark /> Local deals first: find buyers & sellers near you.
@@ -445,12 +545,7 @@ function GoogleIcon(props: SVGProps<SVGSVGElement>) {
 
 function Spark() {
   return (
-    <svg
-      viewBox="0 0 20 20"
-      className="mt-0.5 h-4 w-4 text-[var(--text-muted)]"
-      fill="currentColor"
-      aria-hidden
-    >
+    <svg viewBox="0 0 20 20" className="mt-0.5 h-4 w-4 text-[var(--text-muted)]" fill="currentColor" aria-hidden>
       <path d="M10 2l1.8 4.2L16 8l-4.2 1.8L10 14l-1.8-4.2L4 8l4.2-1.8L10 2z" />
     </svg>
   );
@@ -480,12 +575,7 @@ function EyeIcon(props: SVGProps<SVGSVGElement>) {
 function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M3 3l18 18"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
+      <path d="M3 3l18 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path
         d="M10.6 10.6a2.5 2.5 0 0 0 2.8 2.8"
         stroke="currentColor"

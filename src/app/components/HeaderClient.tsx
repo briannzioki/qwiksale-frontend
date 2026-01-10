@@ -1,4 +1,3 @@
-// src/app/components/HeaderClient.tsx
 "use client";
 
 import * as React from "react";
@@ -33,17 +32,11 @@ type FeedItem = {
 const FEED_TIMEOUT_MS = 12_000;
 
 // Avoid SSR warnings while still running "early" on the client.
-const useIsoLayoutEffect =
-  typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
+const useIsoLayoutEffect = typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
 
 function RequestsIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={className}
-      fill="currentColor"
-    >
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
       <path d="M7 3h10a2 2 0 0 1 2 2v14.5a1.5 1.5 0 0 1-2.4 1.2l-3.7-2.78a1.5 1.5 0 0 0-1.8 0l-3.7 2.78A1.5 1.5 0 0 1 5 19.5V5a2 2 0 0 1 2-2Zm0 2v14.1l3.1-2.33a3.5 3.5 0 0 1 4.2 0L17 19.1V5H7Zm2.5 3.5h5a1 1 0 1 1 0 2h-5a1 1 0 1 1 0-2Zm0 4h6a1 1 0 1 1 0 2h-6a1 1 0 1 1 0-2Z" />
     </svg>
   );
@@ -117,8 +110,7 @@ function RequestsDrawer({
 
         if (!r.ok) {
           const msg =
-            (j && typeof j?.error === "string" && j.error) ||
-            `Failed to load (${r.status})`;
+            (j && typeof j?.error === "string" && j.error) || `Failed to load (${r.status})`;
           throw new Error(msg);
         }
 
@@ -128,8 +120,7 @@ function RequestsDrawer({
             const id = String(x?.id ?? "");
             const title = String(x?.title ?? x?.name ?? "");
             const kindRaw = String(x?.kind ?? "").toLowerCase();
-            const kind: "product" | "service" =
-              kindRaw === "service" ? "service" : "product";
+            const kind: "product" | "service" = kindRaw === "service" ? "service" : "product";
             if (!id || !title) return null;
             return {
               id,
@@ -186,9 +177,7 @@ function RequestsDrawer({
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
           <div className="min-w-0">
             <div className="text-sm font-extrabold tracking-tight">Requests</div>
-            <div className="text-xs text-[var(--text-muted)]">
-              Latest gigs &amp; buyer needs
-            </div>
+            <div className="text-xs text-[var(--text-muted)]">Latest gigs &amp; buyer needs</div>
           </div>
           <button
             type="button"
@@ -204,6 +193,12 @@ function RequestsDrawer({
             <span aria-hidden>×</span>
           </button>
         </div>
+
+        {!isAuthedHint ? (
+          <div className="border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-4 py-2 text-xs text-[var(--text-muted)]">
+            Guests can browse. Opening a request will ask you to sign in.
+          </div>
+        ) : null}
 
         <div className="flex-1 overflow-auto p-3">
           {loading ? (
@@ -223,13 +218,10 @@ function RequestsDrawer({
           ) : (
             <ul className="space-y-2">
               {items.map((it) => {
-                const detail = `/requests/${encodeURIComponent(it.id)}`;
-                const href = isAuthedHint
-                  ? detail
-                  : `/signin?callbackUrl=${encodeURIComponent(detail)}`;
+                if (!it?.id) return null;
 
-                const when =
-                  fmtRelativeIso(it.createdAt) || fmtRelativeIso(it.boostUntil) || null;
+                const href = `/requests/${encodeURIComponent(it.id)}`;
+                const when = fmtRelativeIso(it.createdAt) || fmtRelativeIso(it.boostUntil) || null;
 
                 return (
                   <li key={it.id}>
@@ -329,7 +321,6 @@ export default function HeaderClient({ initialAuth }: Props) {
     };
   }
 
-  /* -------------------------- Hotkey: Slash & Cmd+K -------------------------- */
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = typeof e.key === "string" ? e.key : "";
@@ -359,7 +350,6 @@ export default function HeaderClient({ initialAuth }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /* -------------------- Hardening: Home/Logo must be a real "/" link -------------------- */
   useIsoLayoutEffect(() => {
     if (inAdmin) return;
 
@@ -448,12 +438,10 @@ export default function HeaderClient({ initialAuth }: Props) {
     }
   }, [inAdmin, pathname, router]);
 
-  /* ------------------------------ Header right slot ------------------------------ */
   const rightSlot = (
     <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
       {!inAdmin && (
         <>
-          {/* Requests: icon-only on xs, label from sm+ */}
           <button
             type="button"
             onClick={() => setRequestsOpen(true)}
@@ -474,7 +462,6 @@ export default function HeaderClient({ initialAuth }: Props) {
 
           {isAuthedHint && (
             <>
-              {/* Hide these on xs to prevent header crowding; user still has Saved inside Account menu */}
               <Link
                 href="/saved"
                 prefetch={false}

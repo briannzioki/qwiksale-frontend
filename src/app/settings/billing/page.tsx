@@ -5,10 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 import toast from "react-hot-toast";
 
-/* ------------------------------------------------------------------ */
-/* Constants & helpers                                                */
-/* ------------------------------------------------------------------ */
-
 type TierKey = "GOLD" | "PLATINUM";
 
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -20,7 +16,9 @@ const PRICES: Record<TierKey, number> = {
   PLATINUM: 499,
 };
 
-const TEST_MSISDN = (!IS_PROD ? String(process.env["NEXT_PUBLIC_TEST_MSISDN"] || "").trim() : "");
+const TEST_MSISDN = !IS_PROD
+  ? String(process.env["NEXT_PUBLIC_TEST_MSISDN"] || "").trim()
+  : "";
 
 function normalizeMsisdn(input: string): string {
   let s = String(input || "").trim();
@@ -39,11 +37,40 @@ function validMsisdn(s: string) {
   return /^2547\d{8}$/.test(s);
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+function safeInternalCallbackUrl(input: unknown, fallback: string) {
+  const raw = String(input ?? "").trim();
+  if (!raw) return fallback;
 
-/* ------------------------------------------------------------------ */
-/* Component                                                          */
-/* ------------------------------------------------------------------ */
+  // Block protocol-relative and obvious external forms.
+  if (raw.startsWith("//")) return fallback;
+
+  // If an absolute URL is ever passed in, allow only same-origin and convert to path.
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const u = new URL(raw);
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      if (origin && u.origin === origin) {
+        const next = `${u.pathname}${u.search}${u.hash}`;
+        return safeInternalCallbackUrl(next, fallback);
+      }
+    } catch {
+      // ignore
+    }
+    return fallback;
+  }
+
+  // Only allow internal absolute paths.
+  if (!raw.startsWith("/")) return fallback;
+
+  // Never allow nesting back into signin or NextAuth internals.
+  if (raw.startsWith("/signin")) return fallback;
+  if (raw.startsWith("/api/auth")) return fallback;
+
+  return raw;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function BillingPage() {
   const { data: session, status: sessionStatus } = useSession();
@@ -80,7 +107,7 @@ export default function BillingPage() {
     try {
       if (phone) localStorage.setItem("billing:lastPhone", phone);
     } catch {
-      /* ignore */
+      // ignore
     }
   }, [phone]);
 
@@ -175,7 +202,9 @@ export default function BillingPage() {
         toast.success(`You are now on ${targetTier}`);
         setStatus(`Subscription upgraded to ${targetTier}.`);
       } else {
-        setStatus("Payment is processing. If your tier does not update shortly, refresh this page.");
+        setStatus(
+          "Payment is processing. If your tier does not update shortly, refresh this page.",
+        );
       }
     } catch (err: any) {
       if (err?.name !== "AbortError") {
@@ -207,7 +236,8 @@ export default function BillingPage() {
             Upgrade subscription
           </h1>
           <p className={`text-sm leading-relaxed ${muted}`}>
-            Secure M-Pesa STK push. Choose a tier below and confirm on your phone.
+            Secure M-Pesa STK push. Choose a tier below and confirm on your
+            phone.
           </p>
         </header>
 
@@ -239,7 +269,14 @@ export default function BillingPage() {
 
           {!signedIn && (
             <button
-              onClick={() => signIn(undefined, { callbackUrl: "/settings/billing" })}
+              onClick={() =>
+                signIn(undefined, {
+                  callbackUrl: safeInternalCallbackUrl(
+                    "/settings/billing",
+                    "/settings/billing",
+                  ),
+                })
+              }
               className="btn-gradient-primary"
             >
               Sign in
@@ -314,8 +351,12 @@ export default function BillingPage() {
                 onChange={(e) => setTier(e.target.value as TierKey)}
                 className="select w-56"
               >
-                <option value="GOLD">Gold - KES {PRICES.GOLD.toLocaleString()}</option>
-                <option value="PLATINUM">Platinum - KES {PRICES.PLATINUM.toLocaleString()}</option>
+                <option value="GOLD">
+                  Gold - KES {PRICES.GOLD.toLocaleString()}
+                </option>
+                <option value="PLATINUM">
+                  Platinum - KES {PRICES.PLATINUM.toLocaleString()}
+                </option>
               </select>
             </div>
           </div>
@@ -327,7 +368,9 @@ export default function BillingPage() {
               disabled={submitting || !signedIn}
               title={!signedIn ? "Please sign in first" : "Upgrade"}
             >
-              {submitting ? "Processing..." : `Upgrade to ${tier} · KES ${price.toLocaleString()}`}
+              {submitting
+                ? "Processing..."
+                : `Upgrade to ${tier} · KES ${price.toLocaleString()}`}
             </button>
 
             <button
@@ -338,19 +381,27 @@ export default function BillingPage() {
               {showAdvanced ? "Hide" : "Details"}
             </button>
 
-            <p className={helperText}>
-              You will be redirected only if sign-in is required.
-            </p>
+            <p className={helperText}>You will be redirected only if sign-in is required.</p>
           </div>
 
           {showAdvanced && (
             <div className="mt-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-3 text-xs text-[var(--text-muted)]">
               <ul className="ml-5 list-disc space-y-1">
                 <li>
-                  We send <span className="font-mono text-[var(--text)]">CustomerPayBillOnline</span> STK to your number.
+                  We send{" "}
+                  <span className="font-mono text-[var(--text)]">
+                    CustomerPayBillOnline
+                  </span>{" "}
+                  STK to your number.
                 </li>
-                <li>On success, our callback updates your subscription automatically.</li>
-                <li>If it does not update immediately, refresh. Callbacks can take a few seconds.</li>
+                <li>
+                  On success, our callback updates your subscription
+                  automatically.
+                </li>
+                <li>
+                  If it does not update immediately, refresh. Callbacks can take
+                  a few seconds.
+                </li>
               </ul>
             </div>
           )}
@@ -370,10 +421,6 @@ export default function BillingPage() {
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* Subcomponents                                                      */
-/* ------------------------------------------------------------------ */
 
 function PlanCard({
   title,
@@ -399,7 +446,9 @@ function PlanCard({
     .filter(Boolean)
     .join(" ");
 
-  const pressedProps = ({ "aria-pressed": selected ? "true" : "false" } as const);
+  const pressedProps = ({
+    "aria-pressed": selected ? "true" : "false",
+  } as const);
 
   return (
     <div className={containerCls} role="group">

@@ -22,8 +22,10 @@ function createdMs(createdAt?: string | null) {
 
 function hrefFor(id: string, isAuthed: boolean) {
   const target = `/requests/${encodeURIComponent(id)}`;
-  if (isAuthed) return target;
-  return `/signin?callbackUrl=${encodeURIComponent(target)}`;
+  // Do not rely on client auth hints for correctness.
+  // The server detail page enforces auth and will redirect guests to signin.
+  void isAuthed;
+  return target;
 }
 
 export default function RequestsFeedList({
@@ -61,10 +63,7 @@ export default function RequestsFeedList({
   }, [onNavigateAction, onNavigate]);
 
   return (
-    <div
-      className="space-y-2 sm:space-y-3"
-      data-testid="requests-feed-list"
-    >
+    <div className="space-y-2 sm:space-y-3" data-testid="requests-feed-list">
       {ordered.map((it) => {
         const id = String(it.id || "");
         const href = hrefFor(id, isAuthed);

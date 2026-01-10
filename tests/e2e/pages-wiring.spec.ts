@@ -159,13 +159,14 @@ test.describe("/signup – wiring", () => {
 
     await expect(page.getByRole("button", { name: /Continue with Google/i })).toBeVisible();
 
-    await expect(page.getByLabel(/Email/i)).toBeVisible();
-    await expect(page.getByLabel(/^Password$/i)).toBeVisible();
-    await expect(page.getByLabel(/Confirm password/i)).toBeVisible();
+    // Use testids to avoid strict-mode collisions with footer newsletter email input.
+    await expect(page.getByTestId("signup-email")).toBeVisible();
+    await expect(page.getByTestId("signup-password")).toBeVisible();
+    await expect(page.getByTestId("signup-confirm-password")).toBeVisible();
 
-    const signInLink = page.getByRole("link", { name: /Sign in/i });
-    await expect(signInLink).toBeVisible();
-    await expect(signInLink).toHaveAttribute("href", /\/signin\?callbackUrl=/);
+    const signInLink = page.getByRole("link", { name: /Log in/i }).or(page.getByRole("link", { name: /Sign in/i }));
+    await expect(signInLink.first()).toBeVisible();
+    await expect(signInLink.first()).toHaveAttribute("href", /\/signin\?callbackUrl=/);
   });
 });
 

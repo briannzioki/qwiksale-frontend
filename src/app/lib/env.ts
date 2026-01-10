@@ -4,6 +4,10 @@
  * Centralized environment resolution.
  * - Safe to import from both server and client.
  * - Provides DB URL, app URL, cookie domain, Cloudinary, M-Pesa, and admin allowlists.
+ *
+ * Phase 1 changes:
+ * - Added envStr/envBool helpers (trim + real boolean parsing).
+ * - Made DB URL resolution safe for Edge runtime (middleware) by not throwing there.
  */
 
 const isServer = typeof window === "undefined";
@@ -18,6 +22,33 @@ function trimTrailingSlash(u: string): string {
   return u.replace(/\/+$/, "");
 }
 
+/**
+ * Tri-state boolean parser:
+ * - true:  1/true/yes/on
+ * - false: 0/false/no/off
+ * - undefined: "", undefined, or anything else
+ */
+export function envBool(name: string): boolean | undefined {
+  const raw = process.env[name];
+  if (typeof raw !== "string") return undefined;
+  const s = raw.trim().toLowerCase();
+  if (!s) return undefined;
+
+  if (["1", "true", "yes", "on"].includes(s)) return true;
+  if (["0", "false", "no", "off"].includes(s)) return false;
+
+  return undefined;
+}
+
+/** Trimmed env string (undefined if missing/blank). */
+export function envStr(name: string): string | undefined {
+  const v = process.env[name];
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t ? t : undefined;
+}
+
+/** Backwards compatible boolean-with-fallback helper. */
 function toBool(v: unknown, fallback = false): boolean {
   if (typeof v === "boolean") return v;
   if (typeof v === "string") {
@@ -111,12 +142,16 @@ function warnOnce(key: string, msg: string): void {
 /* --------------------------- Database URL -------------------------- */
 /* ------------------------------------------------------------------ */
 
+const IS_EDGE_RUNTIME = process.env["NEXT_RUNTIME"] === "edge";
+
 /**
  * Prefer explicit hosted URLs.
  * On the client, this returns an empty string so imports are safe.
+ * On Edge runtime, return empty string (Edge cannot use Prisma anyway).
  */
 function resolveDatabaseUrl(): string {
   if (!isServer) return "";
+  if (IS_EDGE_RUNTIME) return "";
 
   const candidates = [
     process.env["NEON_DATABASE_URL"],

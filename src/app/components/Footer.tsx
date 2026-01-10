@@ -7,10 +7,12 @@ import { Button } from "@/app/components/Button";
 import { toast } from "@/app/components/ToasterClient";
 
 export default function Footer() {
-  const year = new Date().getFullYear();
+  // Use UTC year to avoid rare year-boundary hydration differences between server/client timezones.
+  const year = new Date().getUTCFullYear();
+
   const base =
-    (process.env["NEXT_PUBLIC_APP_URL"] || "https://qwiksale.sale")
-      .replace(/\/+$/, "") || "https://qwiksale.sale";
+    (process.env["NEXT_PUBLIC_APP_URL"] || "https://qwiksale.sale").replace(/\/+$/, "") ||
+    "https://qwiksale.sale";
 
   const orgLd = {
     "@context": "https://schema.org",
@@ -18,12 +20,7 @@ export default function Footer() {
     name: "QwikSale",
     url: `${base}/`,
     slogan: "Buy & sell, faster. Made in Kenya.",
-    sameAs: [
-      `${base}/`,
-      `${base}/press`,
-      "https://www.tiktok.com/@qwiksale.sale",
-      "https://www.linkedin.com/company/qwiksale",
-    ],
+    sameAs: [`${base}/`, `${base}/press`, "https://www.tiktok.com/@qwiksale.sale", "https://www.linkedin.com/company/qwiksale"],
     contactPoint: [
       {
         "@type": "ContactPoint",
@@ -39,14 +36,18 @@ export default function Footer() {
     "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 " +
     "focus-visible:ring-offset-2 ring-offset-[var(--bg)] ring-focus rounded-sm";
 
-  const [email, setEmail] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const emailRef = React.useRef<HTMLInputElement | null>(null);
 
-  async function onSubscribe(e: React.FormEvent) {
+  async function onSubscribe(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
 
+    const fd = new FormData(e.currentTarget);
+    const raw = fd.get("email");
+    const email = typeof raw === "string" ? raw : "";
     const trimmed = email.trim();
+
     const ok = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed);
     if (!ok) {
       toast.error("Enter a valid email address.");
@@ -63,23 +64,30 @@ export default function Footer() {
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
+            "cache-control": "no-store",
           },
           body: JSON.stringify({ email: trimmed, source: "footer" }),
         });
+
         if (!r.ok) {
           let msg = "Subscription failed.";
           try {
             const j = await r.json();
             if (j?.error) msg = String(j.error);
-          } catch {}
+          } catch {
+            // ignore
+          }
           throw new Error(msg);
         }
       } else {
+        // Dev-friendly stub (no real endpoint configured)
         await new Promise((res) => setTimeout(res, 500));
       }
 
       toast.success("Subscribed! We’ll keep you posted.");
-      setEmail("");
+
+      // Clear input without turning it into a controlled field (prevents hydration/autofill issues).
+      if (emailRef.current) emailRef.current.value = "";
     } catch (err: any) {
       toast.error(err?.message || "Could not subscribe. Try again.");
     } finally {
@@ -112,24 +120,21 @@ export default function Footer() {
             </div>
 
             <p className="leading-relaxed text-[var(--text-muted)]">
-              Buy & sell, faster.{" "}
-              <span className="whitespace-nowrap">Made in Kenya.</span>
+              Buy & sell, faster. <span className="whitespace-nowrap">Made in Kenya.</span>
             </p>
 
             <p className="text-[11px] sm:text-xs text-[var(--text-muted)]">
               Secure listings • KES pricing • Community moderation
             </p>
 
-            <form
-              className="mt-3 sm:mt-4 flex items-stretch gap-2"
-              onSubmit={onSubscribe}
-              noValidate
-            >
+            <form className="mt-3 sm:mt-4 flex items-stretch gap-2" onSubmit={onSubscribe} noValidate>
               <label htmlFor="newsletter-email" className="sr-only">
-                Newsletter
+                Newsletter email
               </label>
               <input
                 id="newsletter-email"
+                ref={emailRef}
+                name="email"
                 type="email"
                 inputMode="email"
                 placeholder="Email for deals & tips"
@@ -142,10 +147,12 @@ export default function Footer() {
                   "focus-visible:outline-none focus-visible:ring-2 ring-focus",
                   "disabled:cursor-not-allowed disabled:opacity-60",
                 ].join(" ")}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                defaultValue=""
                 disabled={busy}
                 autoComplete="email"
+                // Some browsers/extensions inject inline styles before hydration (autofill).
+                // This suppresses the noisy hydration warning without changing behavior.
+                suppressHydrationWarning
               />
               <Button
                 type="submit"
@@ -232,47 +239,27 @@ export default function Footer() {
             <div className="font-semibold text-[var(--text)]">Popular</div>
             <ul className="space-y-1.5 sm:space-y-2">
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Phones"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Phones" prefetch={false}>
                   Phones
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Electronics"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Electronics" prefetch={false}>
                   Electronics
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Home%20%26%20Living"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Home%20%26%20Living" prefetch={false}>
                   Home &amp; Living
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Fashion"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Fashion" prefetch={false}>
                   Fashion
                 </Link>
               </li>
               <li>
-                <Link
-                  className={linkClass}
-                  href="/?category=Vehicles"
-                  prefetch={false}
-                >
+                <Link className={linkClass} href="/?category=Vehicles" prefetch={false}>
                   Vehicles
                 </Link>
               </li>
@@ -318,9 +305,7 @@ export default function Footer() {
               </li>
 
               <li className="pt-1">
-                <div className="mb-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
-                  Get the app
-                </div>
+                <div className="mb-1 text-[11px] sm:text-xs text-[var(--text-muted)]">Get the app</div>
                 <div className="flex gap-2">
                   <a
                     href="#"
@@ -369,6 +354,7 @@ export default function Footer() {
               aria-label="Language"
               className="rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-2 py-1 text-[11px] sm:text-xs text-[var(--text-muted)]"
               defaultValue="en"
+              suppressHydrationWarning
             >
               <option value="en">English (KE)</option>
               <option value="sw">Kiswahili</option>
@@ -377,7 +363,7 @@ export default function Footer() {
         </div>
 
         <div className="flex flex-col items-start justify-between gap-2.5 border-t border-[var(--border-subtle)] py-3 sm:py-4 text-[11px] sm:text-xs text-[var(--text-muted)] sm:flex-row sm:items-center">
-          <p>
+          <p suppressHydrationWarning>
             © {year} QwikSale. All rights reserved.
             <span className="ml-2 opacity-80">Built in Nairobi, Kenya.</span>
           </p>
@@ -396,21 +382,12 @@ export default function Footer() {
 function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M12 3l7 3v6a9 9 0 0 1-7 8 9 9 0 0 1-7-8V6l7-3z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-      />
-      <path
-        d="M9 12l2 2 4-4"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        fill="none"
-      />
+      <path d="M12 3l7 3v6a9 9 0 0 1-7 8 9 9 0 0 1-7-8V6l7-3z" stroke="currentColor" strokeWidth="1.8" fill="none" />
+      <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" fill="none" />
     </svg>
   );
 }
+
 function StarIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -418,6 +395,7 @@ function StarIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
 function BoltIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -425,6 +403,7 @@ function BoltIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
 function PlayIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -432,6 +411,7 @@ function PlayIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
 function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -439,6 +419,7 @@ function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
 function MpesaIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -447,6 +428,7 @@ function MpesaIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
 function CardIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -455,42 +437,27 @@ function CardIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
 function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
-      <path
-        d="M3 12h18M12 3c3 4 3 14 0 18M12 3c-3 4-3 14 0 18"
-        stroke="currentColor"
-        strokeWidth="1.2"
-      />
+      <path d="M3 12h18M12 3c3 4 3 14 0 18M12 3c-3 4-3 14 0 18" stroke="currentColor" strokeWidth="1.2" />
     </svg>
   );
 }
+
 function TikTokIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 48 48"
-      fill="currentColor"
-      aria-hidden="true"
-      {...props}
-    >
+    <svg width="14" height="14" viewBox="0 0 48 48" fill="currentColor" aria-hidden="true" {...props}>
       <path d="M33.6 12.1c2.4 1.8 5.2 3 8.3 3.3v6.6c-3.5-.1-6.9-1.2-9.8-3.1v12.3c0 7-5.7 12.6-12.6 12.6S6.9 38.2 6.9 31.3c0-6.9 5.6-12.6 12.6-12.6 1 0 2 .1 2.9.4v6.9a6 6 0 00-2.9-.7c-3.2 0-5.7 2.6-5.7 5.8s2.6 5.8 5.7 5.8 5.8-2.6 5.8-5.8V5h6.3c.2 2.7 1.1 5 2.9 7.1z" />
     </svg>
   );
 }
+
 function LinkedInIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-      {...props}
-    >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
       <path d="M4.98 3.5C4.98 4.88 3.86 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1 4.98 2.12 4.98 3.5zM.5 8.5h4V23h-4V8.5zM8.5 8.5h3.8v2h.1c.5-.9 1.8-2.2 3.9-2.2 4.2 0 5 2.8 5 6.5V23h-4v-6.5c0-1.5 0-3.5-2.2-3.5s-2.5 1.7-2.5 3.4V23h-4V8.5z" />
     </svg>
   );

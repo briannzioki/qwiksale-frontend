@@ -1,280 +1,243 @@
-// src/app/signin/_components/CredentialsForm.client.tsx
 "use client";
 
-import * as React from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import Link from "next/link";
 
-function EyeIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+type Props = {
+  callbackUrl: string;
+  defaultEmail?: string;
+  defaultPassword?: string;
+};
+
+const DEFAULT_AFTER_SIGNIN = "/dashboard";
+
+function safeTrim(v: unknown) {
+  return typeof v === "string" ? v.trim() : "";
 }
 
-function EyeOffIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M3 3l18 18"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <path
-        d="M10.6 10.6a2.5 2.5 0 0 0 2.8 2.8"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M9.8 5.4A9.6 9.6 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3 4.2"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M6.6 6.6C3.9 8.6 2.5 12 2.5 12s3.5 7 9.5 7a9.7 9.7 0 0 0 4.3-1"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+function isSafePath(p?: string | null): p is string {
+  return !!p && /^\/(?!\/)/.test(p);
+}
+
+function decodeMaybe(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+
+function decodeUpToTwo(v: string): string {
+  const once = decodeMaybe(v);
+  const twice = decodeMaybe(once);
+  return twice;
+}
+
+function toInternalHref(urlLike: string, fallback: string): string {
+  const raw = String(urlLike || "").trim();
+  if (!raw) return fallback;
+
+  if (raw.startsWith("/")) return raw;
+
+  try {
+    const u = new URL(raw);
+    if (typeof window !== "undefined" && u.origin === window.location.origin) {
+      const out = `${u.pathname}${u.search}${u.hash}`;
+      return out.startsWith("/") ? out : fallback;
+    }
+  } catch {
+    // ignore
+  }
+
+  return fallback;
+}
+
+function sanitizeCallback(raw: string, fallback: string): string {
+  const internal = toInternalHref(raw, fallback);
+  const path = isSafePath(internal) ? internal : fallback;
+
+  const lower = path.toLowerCase();
+  if (lower === "/signin" || lower.startsWith("/signin?")) return fallback;
+  if (lower.startsWith("/api/auth")) return fallback;
+
+  return path;
+}
+
+function mapAuthErrorToMessage(err: string | null): string | null {
+  if (!err) return null;
+  const e = String(err).trim();
+  if (!e) return null;
+
+  if (/credentialssignin/i.test(e)) return "Sign-in failed. Please try again.";
+  if (/oauthsignin|oauthcallback|oauthaccountnotlinked/i.test(e)) return "Sign-in failed. Please try again.";
+  if (/accessdenied/i.test(e)) return "Access denied.";
+  if (/configuration/i.test(e)) return "Auth is misconfigured on the server.";
+
+  return "Sign-in failed. Please try again.";
 }
 
 /**
- * Credentials sign-in form (client-only).
- *
- * Key behavior:
- * - We ALWAYS use next-auth's signIn() helper in JS-enabled browsers so the
- *   CSRF cookie+token are created in the real browser session (prevents MissingCSRF).
- * - We still render a real <form action=... method="post"> as a hard fallback.
- *   (If JS is disabled, the browser will POST normally to the action.)
+ * IMPORTANT (E2E stability):
+ * These inputs are intentionally UNCONTROLLED (defaultValue, no React value binding).
+ * This prevents React hydration from overwriting Playwright's early `.fill()` calls,
+ * which is the root cause of the flaky auth-ui test.
  */
-export function CredsFormClient({
-  action,
-  callbackUrl,
-  csrfFromServer = "",
-}: {
-  action: string;
-  callbackUrl: string;
-  csrfFromServer?: string;
-}) {
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [showPassword, setShowPassword] = React.useState(false);
+export function CredsFormClient({ callbackUrl, defaultEmail, defaultPassword }: Props) {
+  const sp = useSearchParams();
 
-  const emailRef = React.useRef<HTMLInputElement | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  React.useEffect(() => {
-    emailRef.current?.focus();
+  const initialEmail = useMemo(() => safeTrim(defaultEmail), [defaultEmail]);
+  const initialPassword = useMemo(() => safeTrim(defaultPassword), [defaultPassword]);
+
+  useEffect(() => {
+    // Security + test hygiene: never keep credentials in the URL (even if someone pasted them).
+    try {
+      const u = new URL(window.location.href);
+      const hadEmail = u.searchParams.has("email");
+      const hadPw = u.searchParams.has("password");
+      if (!hadEmail && !hadPw) return;
+
+      u.searchParams.delete("email");
+      u.searchParams.delete("password");
+
+      const next = `${u.pathname}${u.search}${u.hash}`;
+      window.history.replaceState({}, "", next);
+    } catch {
+      // ignore
+    }
   }, []);
 
-  const onSubmit = React.useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      if (loading) {
-        e.preventDefault();
-        return;
-      }
+  useEffect(() => {
+    const msg = mapAuthErrorToMessage(sp?.get("error") ?? null);
+    if (msg) setErr(msg);
+  }, [sp]);
 
-      const form = e.currentTarget;
+  const safeCallback = useMemo(() => {
+    const raw = decodeUpToTwo(String(callbackUrl || DEFAULT_AFTER_SIGNIN).trim());
+    return sanitizeCallback(raw, DEFAULT_AFTER_SIGNIN);
+  }, [callbackUrl]);
 
-      // JS-enabled path: intercept and use next-auth helper (it will fetch CSRF and set cookies).
-      e.preventDefault();
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (submitting) return;
 
-      const fd = new FormData(form);
-      const email = String(fd.get("email") ?? "").trim();
-      const password = String(fd.get("password") ?? "");
+    const fd = new FormData(e.currentTarget);
 
-      if (!email || !password) {
-        if (form.reportValidity) form.reportValidity();
-        return;
-      }
+    const em = safeTrim(fd.get("email"));
+    const pwRaw = fd.get("password");
+    const pw = typeof pwRaw === "string" ? pwRaw : "";
+    const pwCheck = pw.trim();
 
-      const safeCb =
-        typeof callbackUrl === "string" && callbackUrl.startsWith("/")
-          ? callbackUrl
-          : "/dashboard";
+    if (!em || !pwCheck) {
+      setErr("Please enter your email and password.");
+      return;
+    }
 
-      setError(null);
-      setLoading(true);
-      try {
-        /**
-         * Auth.js v5 / next-auth v5:
-         * signIn(provider, { redirect: true, callbackUrl }) triggers a real
-         * document navigation. Playwright "waitForNavigation" expectations are satisfied.
-         */
-        const res = await signIn("credentials", {
-          redirect: true,
-          callbackUrl: safeCb,
-          email,
-          password,
-        });
+    setErr(null);
+    setSubmitting(true);
 
-        // Safety: if redirect didn't happen, but next-auth returned a URL, navigate.
-        const nextUrl = (res as any)?.url;
-        if (typeof nextUrl === "string" && nextUrl) {
-          window.location.href = nextUrl;
-          return;
-        }
-
-        // If it returned an error without redirect, show a friendly message.
-        const err = (res as any)?.error;
-        if (typeof err === "string" && err) {
-          setError(
-            err === "CredentialsSignin"
-              ? "Email or password is incorrect."
-              : "Sign-in failed. Please try again.",
-          );
-        }
-      } catch {
-        setError("Sign-in failed. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [callbackUrl, loading],
-  );
+    try {
+      await signIn("credentials", {
+        email: em,
+        password: pw,
+        callbackUrl: safeCallback || DEFAULT_AFTER_SIGNIN,
+        redirect: true,
+      });
+      // With redirect:true, the browser will leave /signin on success.
+    } catch {
+      setErr("Sign-in failed. Please try again.");
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      action={action}
-      method="post"
-      className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-sm sm:p-5"
-      noValidate
-    >
-      {/* Hard fallback fields for native POST if JS is disabled */}
-      {csrfFromServer ? (
-        <input type="hidden" name="csrfToken" value={csrfFromServer} readOnly />
-      ) : null}
-      <input type="hidden" name="callbackUrl" value={callbackUrl} readOnly />
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-5">
+      <h2 className="text-sm font-semibold text-[var(--text)] sm:text-base">Email and password</h2>
 
-      <div className="space-y-3">
-        <div>
-          <label htmlFor="email" className="label text-xs font-semibold sm:text-sm">
+      {err && (
+        <div
+          role="alert"
+          className="mt-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2 text-xs font-medium text-[var(--text)]"
+        >
+          {err}
+        </div>
+      )}
+
+      <form
+        data-testid="signin-form"
+        onSubmit={onSubmit}
+        className="mt-3 grid gap-3"
+        aria-label="Sign in form"
+        noValidate
+        method="post"
+      >
+        <div className="grid gap-1">
+          <label htmlFor="signin-email" className="text-xs font-semibold text-[var(--text)]">
             Email
           </label>
           <input
-            ref={emailRef}
-            id="email"
+            data-testid="signin-email"
+            id="signin-email"
             name="email"
             type="email"
-            className="input"
-            placeholder="you@example.com"
-            autoComplete="email"
             inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
             required
-            aria-required="true"
-            disabled={loading}
+            defaultValue={initialEmail}
+            onInput={() => {
+              if (err) setErr(null);
+            }}
+            placeholder="Email"
+            className="h-10 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 text-sm text-[var(--text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--border)]"
+            aria-label="Email"
+            disabled={submitting}
           />
         </div>
 
-        <div>
-          <label
-            htmlFor="password"
-            className="label text-xs font-semibold sm:text-sm"
-          >
+        <div className="grid gap-1">
+          <label htmlFor="signin-password" className="text-xs font-semibold text-[var(--text)]">
             Password
           </label>
-
-          <div className="relative">
-            <input
-              id="password"
-              name="password"
-              type={showPassword ? "text" : "password"}
-              className="input pr-12"
-              placeholder="••••••••"
-              autoComplete="current-password"
-              minLength={6}
-              required
-              aria-required="true"
-              disabled={loading}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((s) => !s)}
-              className={[
-                "absolute right-1.5 top-1/2 -translate-y-1/2",
-                "inline-flex h-9 w-9 items-center justify-center rounded-lg",
-                "text-[var(--text-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text)]",
-                "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                "active:scale-[.99]",
-              ].join(" ")}
-              aria-pressed={showPassword}
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              disabled={loading}
-            >
-              {showPassword ? (
-                <EyeOffIcon className="h-5 w-5" aria-hidden />
-              ) : (
-                <EyeIcon className="h-5 w-5" aria-hidden />
-              )}
-            </button>
-          </div>
-
-          <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
-            Minimum 6 characters.
-          </p>
+          <input
+            data-testid="signin-password"
+            id="signin-password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            defaultValue={initialPassword}
+            onInput={() => {
+              if (err) setErr(null);
+            }}
+            placeholder="Password"
+            className="h-10 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 text-sm text-[var(--text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--border)]"
+            aria-label="Password"
+            disabled={submitting}
+          />
         </div>
-
-        {error ? (
-          <div
-            role="alert"
-            className="rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-sm font-medium text-[var(--text)] shadow-sm"
-          >
-            {error}
-          </div>
-        ) : null}
 
         <button
+          data-testid="signin-submit"
           type="submit"
-          className="btn-gradient-primary mt-2 w-full text-sm sm:text-base"
-          disabled={loading}
-          aria-busy={loading ? "true" : "false"}
-          aria-disabled={loading ? "true" : "false"}
+          className="btn-gradient-primary h-10 w-full disabled:opacity-60"
+          disabled={submitting}
+          aria-label="Sign in"
         >
-          {loading ? "Signing in…" : "Sign in"}
+          {submitting ? "Signing in…" : "Sign in"}
         </button>
 
-        <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-          <span>
-            New here?{" "}
-            <Link
-              href="/signup"
-              prefetch={false}
-              className="text-[var(--text)] underline underline-offset-2"
-            >
-              Create an account
-            </Link>
-          </span>
-          <Link
-            href="/reset-password"
-            prefetch={false}
-            className="text-[var(--text)] underline underline-offset-2"
-          >
-            Forgot password?
-          </Link>
+        <div className="text-center text-[12px] leading-relaxed text-[var(--text-muted)]">
+          Forgot your password?{" "}
+          <a className="text-[var(--text)] underline underline-offset-2" href="/reset-password">
+            Reset it
+          </a>
         </div>
-      </div>
-    </form>
+      </form>
+    </div>
   );
 }

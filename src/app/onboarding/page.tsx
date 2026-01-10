@@ -1,14 +1,7 @@
 // src/app/onboarding/page.tsx
 "use client";
 
-import {
-  Suspense,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -38,6 +31,7 @@ function OnboardingPageInner() {
   const { status } = useSession();
   const sp = useSearchParams();
 
+  // ✅ Canonical: accept both `return` and `callbackUrl` (your flows now use callbackUrl).
   const retRaw = sp.get("return") || sp.get("callbackUrl") || "/dashboard";
   const returnTo = isSafePath(retRaw) ? retRaw : "/dashboard";
 
@@ -61,24 +55,20 @@ function OnboardingPageInner() {
   const [saved, setSaved] = useState(false);
 
   // username availability
-  const [unameStatus, setUnameStatus] =
-    useState<"idle" | "checking" | "ok" | "taken" | "invalid">("idle");
+  const [unameStatus, setUnameStatus] = useState<"idle" | "checking" | "ok" | "taken" | "invalid">("idle");
   const [unameMsg, setUnameMsg] = useState<string>("");
   const unameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unameAbort = useRef<AbortController | null>(null);
 
   const heroClass =
-    "rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft";
+    "rounded-2xl bg-gradient-to-r from-[var(--brand-navy)] via-[var(--brand-green)] to-[var(--brand-blue)] text-white shadow-soft";
 
-  // phone-first: tighter padding, restore on sm+
   const panelClass =
     "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3.5 shadow-soft sm:p-5";
 
-  const fieldLabelClass =
-    "mb-1 block text-sm font-semibold text-[var(--text)]";
+  const fieldLabelClass = "mb-1 block text-sm font-semibold text-[var(--text)]";
 
-  const helperTextClass =
-    "mt-1 text-xs leading-relaxed text-[var(--text-muted)]";
+  const helperTextClass = "mt-1 text-xs leading-relaxed text-[var(--text-muted)]";
 
   const inputClass =
     "w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus-visible:outline-none focus-visible:ring-2 ring-focus";
@@ -88,7 +78,6 @@ function OnboardingPageInner() {
 
   const secondaryBtnClass = "btn-outline min-h-9 text-xs sm:text-sm";
 
-  // Initial profile load (skip entirely unless authenticated)
   useEffect(() => {
     let alive = true;
     const ctrl = new AbortController();
@@ -107,7 +96,6 @@ function OnboardingPageInner() {
     }
 
     if (status !== "authenticated") {
-      // still loading session; don't hit /api/me/profile yet
       return cleanup;
     }
 
@@ -123,9 +111,7 @@ function OnboardingPageInner() {
         });
 
         if (r.status === 401) {
-          if (alive) {
-            setUnauthorized(true);
-          }
+          if (alive) setUnauthorized(true);
           return;
         }
 
@@ -152,7 +138,6 @@ function OnboardingPageInner() {
     return cleanup;
   }, [status]);
 
-  // Debounced username check (no router, no effect-based nav)
   const onUsernameChange = (next: string) => {
     setForm((f) => ({ ...f, username: next }));
     const raw = next;
@@ -168,9 +153,7 @@ function OnboardingPageInner() {
     const u = canonicalUsername(raw);
     if (!USERNAME_RE.test(u)) {
       setUnameStatus("invalid");
-      setUnameMsg(
-        "3-24 chars; letters, numbers, . or _ (no .., no leading/trailing . or _).",
-      );
+      setUnameMsg("3-24 chars; letters, numbers, . or _ (no .., no leading/trailing . or _).");
       return;
     }
 
@@ -224,14 +207,11 @@ function OnboardingPageInner() {
     if (!form.whatsapp) return;
     if (!normalizedWa) return;
     const pretty = `+${normalizedWa}`;
-    if (form.whatsapp !== pretty) {
-      setForm((f) => ({ ...f, whatsapp: pretty }));
-    }
+    if (form.whatsapp !== pretty) setForm((f) => ({ ...f, whatsapp: pretty }));
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    // Guests (unauthorized) see the form but can't actually submit
     if (saving || unauthorized) return;
 
     const username = canonicalUsername(form.username);
@@ -247,9 +227,7 @@ function OnboardingPageInner() {
     const waRaw = form.whatsapp.trim();
     const wa = waRaw ? normalizeKenyanPhone(waRaw) : null;
     if (waRaw && !wa) {
-      toast.error(
-        "Enter a valid Kenyan WhatsApp number (07XXXXXXXX or +2547XXXXXXX).",
-      );
+      toast.error("Enter a valid Kenyan WhatsApp number (07XXXXXXXX or +2547XXXXXXX).");
       return;
     }
 
@@ -276,7 +254,7 @@ function OnboardingPageInner() {
         return;
       }
       toast.success("Profile saved!");
-      setSaved(true); // no auto-redirect - allow explicit continue
+      setSaved(true);
     } catch {
       toast.error("Network error. Please try again.");
     } finally {
@@ -349,13 +327,7 @@ function OnboardingPageInner() {
           </div>
         ) : null}
 
-        {/* Form is always visible so guests see the username field */}
-        <form
-          onSubmit={onSubmit}
-          className={`mt-4 space-y-4 sm:mt-6 ${panelClass}`}
-          noValidate
-        >
-          {/* Username */}
+        <form onSubmit={onSubmit} className={`mt-4 space-y-4 sm:mt-6 ${panelClass}`} noValidate>
           <div>
             <label htmlFor="username" className={fieldLabelClass}>
               Username <span className="text-[var(--text-muted)]">*</span>
@@ -388,7 +360,6 @@ function OnboardingPageInner() {
             </p>
           </div>
 
-          {/* WhatsApp */}
           <div>
             <label htmlFor="whatsapp" className={fieldLabelClass}>
               WhatsApp (optional)
@@ -398,9 +369,7 @@ function OnboardingPageInner() {
               className={inputClass}
               placeholder="07XXXXXXXX or +2547XXXXXXX"
               value={form.whatsapp}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, whatsapp: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, whatsapp: e.target.value }))}
               onBlur={snapNormalizeWhatsapp}
               inputMode="tel"
             />
@@ -418,13 +387,10 @@ function OnboardingPageInner() {
                 )}
               </p>
             ) : (
-              <p className={helperTextClass}>
-                Buyers can reach you faster if you add WhatsApp.
-              </p>
+              <p className={helperTextClass}>Buyers can reach you faster if you add WhatsApp.</p>
             )}
           </div>
 
-          {/* City/Country */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="city" className={fieldLabelClass}>
@@ -435,9 +401,7 @@ function OnboardingPageInner() {
                 className={inputClass}
                 placeholder="Nairobi"
                 value={form.city}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, city: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
               />
             </div>
             <div>
@@ -449,14 +413,11 @@ function OnboardingPageInner() {
                 className={inputClass}
                 placeholder="Kenya"
                 value={form.country}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, country: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
               />
             </div>
           </div>
 
-          {/* Postal/Address */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="postal" className={fieldLabelClass}>
@@ -467,9 +428,7 @@ function OnboardingPageInner() {
                 className={inputClass}
                 placeholder="00100"
                 value={form.postalCode}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, postalCode: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))}
                 inputMode="numeric"
               />
             </div>
@@ -482,14 +441,11 @@ function OnboardingPageInner() {
                 className={inputClass}
                 placeholder="Street, building, etc."
                 value={form.address}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, address: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
               />
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="submit"

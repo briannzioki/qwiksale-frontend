@@ -1,5 +1,27 @@
 // src/app/lib/auth-cookies.ts
-import type { NextAuthConfig } from "next-auth";
+import "server-only";
+
+/**
+ * Centralizes Auth.js cookie policy.
+ *
+ * Primary goal:
+ * - Local/dev/e2e on http://localhost MUST NOT use secure cookies, otherwise
+ *   browsers (and Playwright request contexts) will reject Set-Cookie and you
+ *   get stuck in /signin loops.
+ *
+ * Secondary goal:
+ * - Real deployed production SHOULD use secure cookie prefixes.
+ */
+
+type CookiePolicy = {
+  secure: boolean;
+  isProdSite: boolean;
+  prefix: {
+    secure: string; // "__Secure-" when secure, otherwise ""
+    host: string; // "__Host-" when secure, otherwise ""
+  };
+  reason: string;
+};
 
 function envStr(name: string): string | undefined {
   const v = process.env[name];
@@ -8,13 +30,13 @@ function envStr(name: string): string | undefined {
   return t ? t : undefined;
 }
 
-function siteUrlFromEnv(): string | undefined {
-  return (
-    envStr("NEXTAUTH_URL") ??
-    envStr("NEXT_PUBLIC_SITE_URL") ??
-    envStr("NEXT_PUBLIC_APP_URL") ??
-    envStr("NEXT_PUBLIC_BASE_URL")
-  );
+function envBool(name: string): boolean | undefined {
+  const v = envStr(name);
+  if (!v) return undefined;
+  const s = v.toLowerCase();
+  if (s === "1" || s === "true" || s === "yes" || s === "on") return true;
+  if (s === "0" || s === "false" || s === "no" || s === "off") return false;
+  return undefined;
 }
 
 function isLocalHost(hostname: string): boolean {
@@ -22,121 +44,186 @@ function isLocalHost(hostname: string): boolean {
   return h === "localhost" || h === "127.0.0.1" || h.endsWith(".localhost");
 }
 
-/**
- * "Prod site" = real deployed production (not just NODE_ENV=production).
- * This prevents "next start" on http://localhost from behaving like real prod.
- */
-function isProdSite(): boolean {
-  if (process.env["VERCEL_ENV"] != null) {
-    return process.env["VERCEL_ENV"] === "production";
-  }
+function isE2Eish(): boolean {
+  return (
+    envBool("NEXT_PUBLIC_E2E") === true ||
+    envBool("E2E") === true ||
+    envBool("E2E_MODE") === true ||
+    envBool("PLAYWRIGHT") === true ||
+    envBool("PLAYWRIGHT_TEST") === true ||
+    envBool("PW_TEST") === true
+  );
+}
 
-  if (process.env.NODE_ENV !== "production") return false;
-
-  const url = siteUrlFromEnv();
-  if (!url) return true; // misconfigured prod: treat as prod to fail loud elsewhere
-
-  try {
-    const host = new URL(url).hostname;
-    return !isLocalHost(host);
-  } catch {
-    return true;
-  }
+function siteUrlFromEnv(): string | undefined {
+  // Prefer canonical Auth envs first. Then fall back to test/base URL hints.
+  return (
+    envStr("NEXTAUTH_URL") ??
+    envStr("NEXTAUTH_URL_INTERNAL") ??
+    envStr("AUTH_URL") ??
+    envStr("NEXT_PUBLIC_SITE_URL") ??
+    envStr("NEXT_PUBLIC_APP_URL") ??
+    envStr("NEXT_PUBLIC_BASE_URL") ??
+    envStr("E2E_BASE_URL") ??
+    envStr("PLAYWRIGHT_BASE_URL") ??
+    envStr("NEXT_PUBLIC_PLAYWRIGHT_BASE_URL")
+  );
 }
 
 /**
- * Cookies must NOT be `secure: true` on http://localhost even if NODE_ENV=production
- * (common with `next start`). Derive from NEXTAUTH_URL (or friends).
+ * "Prod site" = real deployed production (not just NODE_ENV=production).
+ * We intentionally keep local `next start` on http://localhost behaving like local.
  */
-function computeCookieSecure(): boolean {
-  const forced = envStr("AUTH_COOKIE_SECURE");
-  if (forced === "1") return true;
-  if (forced === "0") return false;
+function isProdSiteResolved(): { isProdSite: boolean; reason: string } {
+  if (isE2Eish()) return { isProdSite: false, reason: "e2e" };
+
+  if (process.env["VERCEL_ENV"] != null) {
+    return {
+      isProdSite: process.env["VERCEL_ENV"] === "production",
+      reason: `vercel:${process.env["VERCEL_ENV"]}`,
+    };
+  }
+
+  if (process.env.NODE_ENV !== "production") return { isProdSite: false, reason: "node_env" };
 
   const url = siteUrlFromEnv();
-  if (!url) return process.env.NODE_ENV === "production";
+  if (!url) return { isProdSite: false, reason: "no_url" };
 
   try {
     const u = new URL(url);
-    return u.protocol === "https:";
+    if (isLocalHost(u.hostname)) return { isProdSite: false, reason: "localhost_url" };
+    return { isProdSite: true, reason: "node_env+non_local_url" };
   } catch {
-    return process.env.NODE_ENV === "production";
+    // If URL parsing fails but NODE_ENV is production, treat as prod-like.
+    return { isProdSite: true, reason: "node_env+unparseable_url" };
   }
 }
 
-/**
- * Compute a cookie domain that:
- * - Is only applied on real production sites (or when PRIMARY_DOMAIN_ENFORCE !== "0")
- * - Is never applied on localhost / 127.0.0.1 / *.localhost
- * - Strips leading "www." so cookies work across apex + www
- *
- * This keeps dev/E2E sane while allowing production cross-subdomain sessions.
- */
-function computeCookieDomain(): string | undefined {
-  const enforce = (process.env["PRIMARY_DOMAIN_ENFORCE"] ?? "1") !== "0";
+function computeSecureCookieFlag(): { secure: boolean; isProdSite: boolean; reason: string } {
+  // Hard rule: E2E runs use http://localhost by default => secure cookies break Playwright.
+  if (isE2Eish()) return { secure: false, isProdSite: false, reason: "e2e_forces_insecure" };
 
-  if (!enforce || !isProdSite()) {
-    return undefined;
-  }
+  const prod = isProdSiteResolved();
+  if (!prod.isProdSite) return { secure: false, isProdSite: false, reason: prod.reason };
 
   const url = siteUrlFromEnv();
-  if (!url) return undefined;
+  if (!url) return { secure: true, isProdSite: true, reason: "prod_no_url_assume_https" };
 
   try {
-    const host = new URL(url).hostname.replace(/^www\./, "");
-    if (isLocalHost(host) || !host.includes(".")) return undefined;
-    return `.${host}`;
+    const u = new URL(url);
+    if (isLocalHost(u.hostname)) {
+      return { secure: false, isProdSite: false, reason: "localhost_url" };
+    }
+    return { secure: u.protocol === "https:", isProdSite: true, reason: `prod_${u.protocol}` };
   } catch {
-    return undefined;
+    return { secure: true, isProdSite: true, reason: "prod_unparseable_url_assume_https" };
   }
 }
 
 /**
- * Centralized cookie definitions for Auth.js (NextAuth v5).
- * We stick close to the v5 defaults but add:
- * - Proper "__Secure-" prefix only when actually HTTPS
- * - Single, optional domain for cross-subdomain sessions on real prod sites
+ * Public API used by src/auth.config.ts
  */
-export function authCookies(): NonNullable<NextAuthConfig["cookies"]> {
-  const domain = computeCookieDomain();
-  const secure = computeCookieSecure();
+export function authCookiePolicy(): CookiePolicy {
+  const { secure, isProdSite, reason } = computeSecureCookieFlag();
+  return {
+    secure,
+    isProdSite,
+    prefix: {
+      secure: secure ? "__Secure-" : "",
+      host: secure ? "__Host-" : "",
+    },
+    reason,
+  };
+}
 
-  const base = {
-    sameSite: "lax" as const,
+type CookieOptions = {
+  httpOnly?: boolean;
+  sameSite?: "lax" | "strict" | "none";
+  path?: string;
+  secure?: boolean;
+  domain?: string;
+  maxAge?: number;
+};
+
+function baseOpts(secure: boolean): CookieOptions {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
     path: "/",
     secure,
   };
+}
+
+/**
+ * Auth.js cookie map.
+ * Typed as `any` to stay compatible across Auth.js / NextAuth minor changes.
+ */
+export function authCookies(): any {
+  const policy = authCookiePolicy();
+  const secure = policy.secure;
+
+  // Auth.js v5 defaults are `authjs.*` (not `next-auth.*`).
+  // We keep that convention, only adding secure prefixes when appropriate.
+  const name = (raw: string) => `${policy.prefix.secure}${raw}`;
+  const hostName = (raw: string) => `${policy.prefix.host}${raw}`;
+
+  const sessionTokenName = name("authjs.session-token");
+  const callbackUrlName = name("authjs.callback-url");
+  const csrfTokenName = hostName("authjs.csrf-token");
+  const pkceName = name("authjs.pkce.code_verifier");
+  const stateName = name("authjs.state");
+  const nonceName = name("authjs.nonce");
 
   return {
     sessionToken: {
-      name: secure ? "__Secure-authjs.session-token" : "authjs.session-token",
+      name: sessionTokenName,
       options: {
-        ...base,
+        ...baseOpts(secure),
+        // Session token should always be httpOnly
         httpOnly: true,
-        ...(domain ? { domain } : {}),
       },
     },
-    csrfToken: {
-      name: "authjs.csrf-token",
-      options: {
-        ...base,
-        httpOnly: true,
-        ...(domain ? { domain } : {}),
-      },
-    },
+
     callbackUrl: {
-      name: "authjs.callback-url",
+      name: callbackUrlName,
       options: {
-        ...base,
-        ...(domain ? { domain } : {}),
+        ...baseOpts(secure),
+        // NextAuth may read this in the browser in some flows
+        httpOnly: false,
       },
     },
-    state: {
-      name: "authjs.state",
+
+    csrfToken: {
+      name: csrfTokenName,
       options: {
-        ...base,
+        ...baseOpts(secure),
+        // NextAuth uses double-submit; keep it httpOnly (server reads it)
         httpOnly: true,
-        ...(domain ? { domain } : {}),
+        // __Host- requires path=/ and no domain, which we satisfy.
+      },
+    },
+
+    pkceCodeVerifier: {
+      name: pkceName,
+      options: {
+        ...baseOpts(secure),
+        httpOnly: true,
+      },
+    },
+
+    state: {
+      name: stateName,
+      options: {
+        ...baseOpts(secure),
+        httpOnly: true,
+      },
+    },
+
+    nonce: {
+      name: nonceName,
+      options: {
+        ...baseOpts(secure),
+        httpOnly: true,
       },
     },
   };

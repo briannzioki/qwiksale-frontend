@@ -13,7 +13,8 @@ const prisma = new PrismaClient();
    SEED_RESET=1             -> enable cleanup mode
    SEED_RESET_ALL=1         -> delete ALL marketplace rows (dangerous)
    SEED_PURGE_DEMO=1        -> delete known demo/test artifacts (safe-ish)
-   SEED_DEMO=1              -> populate minimal demo data (users + 1 product + 1 service)
+   SEED_DEMO=1              -> populate minimal demo data (users + 1 product + 1 service + demo carriers)
+   SEED_CARRIERS_DEMO=1     -> populate only demo carriers (no listings)
    SEED_DEMO_USER_EMAIL     -> email to use for demo seller (default seller@qwiksale.test)
    SEED_ALLOW_PROD=1        -> allow RESET/PURGE/DEMO in production (DANGER)
 */
@@ -21,7 +22,8 @@ const prisma = new PrismaClient();
 const SEED_RESET = process.env.SEED_RESET === "1";
 const SEED_RESET_ALL = process.env.SEED_RESET_ALL === "1";
 const SEED_PURGE_DEMO = process.env.SEED_PURGE_DEMO === "1";
-const SEED_DEMO = process.env.SEED_DEMO === "1"; // NEW
+const SEED_DEMO = process.env.SEED_DEMO === "1";
+const SEED_CARRIERS_DEMO = process.env.SEED_CARRIERS_DEMO === "1";
 const DEMO_EMAIL = process.env.SEED_DEMO_USER_EMAIL || "seller@qwiksale.test";
 
 /* ============
@@ -38,6 +40,9 @@ async function purgeDemoArtifacts() {
     reportsDeleted: 0,
     paymentsDeleted: 0,
     contactRevealsDeleted: 0,
+    deliveryRequestsDeleted: 0,
+    carrierVehiclesDeleted: 0,
+    carrierProfilesDeleted: 0,
     userDeleted: 0,
   };
 
@@ -48,6 +53,12 @@ async function purgeDemoArtifacts() {
 
   if (demoUser?.id) {
     result.demoUserId = demoUser.id;
+
+    try {
+      result.deliveryRequestsDeleted += (
+        await prisma.deliveryRequest.deleteMany({ where: { requesterId: demoUser.id } })
+      ).count;
+    } catch {}
 
     result.favoritesDeleted += (
       await prisma.favorite.deleteMany({ where: { userId: demoUser.id } })
@@ -76,6 +87,21 @@ async function purgeDemoArtifacts() {
     result.paymentsDeleted += (
       await prisma.payment.deleteMany({ where: { userId: demoUser.id } })
     ).count;
+
+    try {
+      const carrier = await prisma.carrierProfile.findUnique({
+        where: { userId: demoUser.id },
+        select: { id: true },
+      });
+      if (carrier?.id) {
+        result.carrierVehiclesDeleted += (
+          await prisma.carrierVehicle.deleteMany({ where: { carrierId: carrier.id } })
+        ).count;
+        result.carrierProfilesDeleted += (
+          await prisma.carrierProfile.deleteMany({ where: { id: carrier.id } })
+        ).count;
+      }
+    } catch {}
 
     result.userDeleted += (await prisma.user.deleteMany({ where: { id: demoUser.id } })).count;
   }
@@ -112,6 +138,9 @@ async function resetAllData() {
     messagesDeleted: 0,
     threadsDeleted: 0,
     reviewsDeleted: 0,
+    deliveryRequestsDeleted: 0,
+    carrierVehiclesDeleted: 0,
+    carrierProfilesDeleted: 0,
     productsDeleted: 0,
     servicesDeleted: 0,
   };
@@ -135,6 +164,16 @@ async function resetAllData() {
   } catch {}
 
   result.paymentsDeleted += (await prisma.payment.deleteMany({})).count;
+
+  try {
+    result.deliveryRequestsDeleted += (await prisma.deliveryRequest.deleteMany({})).count;
+  } catch {}
+
+  try {
+    result.carrierVehiclesDeleted += (await prisma.carrierVehicle.deleteMany({})).count;
+    result.carrierProfilesDeleted += (await prisma.carrierProfile.deleteMany({})).count;
+  } catch {}
+
   result.productsDeleted += (await prisma.product.deleteMany({})).count;
 
   try {
@@ -166,7 +205,7 @@ async function ensureUser({ username, email, name }) {
       createdAt: new Date(),
       updatedAt: new Date(),
     },
-    select: { id: true, username: true },
+    select: { id: true, username: true, email: true },
   });
 }
 
@@ -254,6 +293,133 @@ async function ensureServiceFor(user, overrides = {}) {
   });
 }
 
+async function ensureCarrierProfileForUser(args) {
+  const existing = await prisma.carrierProfile.findUnique({
+    where: { userId: args.userId },
+    select: { id: true },
+  });
+  if (existing?.id) return existing;
+
+  const now = new Date();
+  return prisma.carrierProfile.create({
+    data: {
+      userId: args.userId,
+      phone: args.phone,
+      planTier: args.planTier,
+      verificationStatus: args.verificationStatus,
+      status: args.status,
+      stationLabel: args.stationLabel,
+      stationLat: args.stationLat,
+      stationLng: args.stationLng,
+      lastSeenAt: now,
+      lastSeenLat: args.lastSeenLat,
+      lastSeenLng: args.lastSeenLng,
+      createdAt: now,
+      updatedAt: now,
+    },
+    select: { id: true },
+  });
+}
+
+async function ensureCarrierVehicle(args) {
+  const existing = await prisma.carrierVehicle.findFirst({
+    where: { carrierId: args.carrierId },
+    select: { id: true },
+  });
+  if (existing?.id) return existing;
+
+  const now = new Date();
+  return prisma.carrierVehicle.create({
+    data: {
+      carrierId: args.carrierId,
+      type: args.type,
+      registration: args.registration,
+      photoKeys: args.photoKeys || [],
+      createdAt: now,
+      updatedAt: now,
+    },
+    select: { id: true },
+  });
+}
+
+async function populateDemoCarriers() {
+  console.log("🚚 Populating demo carriers…");
+
+  const carriers = [
+    {
+      username: "demo-carrier",
+      email: "carrier@qwiksale.test",
+      name: "Demo Carrier",
+      planTier: "BASIC",
+      verificationStatus: "PENDING",
+      status: "AVAILABLE",
+      vehicleType: "MOTORBIKE",
+      registration: "KMG 123A",
+      stationLabel: "Nairobi CBD",
+      stationLat: -1.286389,
+      stationLng: 36.817223,
+      lastSeenLat: -1.2858,
+      lastSeenLng: 36.8184,
+    },
+    {
+      username: "gold-rider",
+      email: "gold.rider@qwiksale.test",
+      name: "Gold Rider",
+      planTier: "GOLD",
+      verificationStatus: "VERIFIED",
+      status: "AVAILABLE",
+      vehicleType: "CAR",
+      registration: "KDL 778B",
+      stationLabel: "Westlands",
+      stationLat: -1.2680,
+      stationLng: 36.8119,
+      lastSeenLat: -1.2672,
+      lastSeenLng: 36.8132,
+    },
+    {
+      username: "platinum-van",
+      email: "platinum.van@qwiksale.test",
+      name: "Platinum Van",
+      planTier: "PLATINUM",
+      verificationStatus: "VERIFIED",
+      status: "AVAILABLE",
+      vehicleType: "VAN",
+      registration: "KDN 440C",
+      stationLabel: "Kilimani",
+      stationLat: -1.2921,
+      stationLng: 36.7899,
+      lastSeenLat: -1.2916,
+      lastSeenLng: 36.7912,
+    },
+  ];
+
+  for (const c of carriers) {
+    const u = await ensureUser({ username: c.username, email: c.email, name: c.name });
+    const carrier = await ensureCarrierProfileForUser({
+      userId: u.id,
+      phone: "+254700000000",
+      planTier: c.planTier,
+      verificationStatus: c.verificationStatus,
+      status: c.status,
+      stationLabel: c.stationLabel,
+      stationLat: c.stationLat,
+      stationLng: c.stationLng,
+      lastSeenLat: c.lastSeenLat,
+      lastSeenLng: c.lastSeenLng,
+    });
+
+    await ensureCarrierVehicle({
+      carrierId: carrier.id,
+      type: c.vehicleType,
+      registration: c.registration,
+      photoKeys: ["/placeholder/default.jpg"],
+    });
+  }
+
+  const total = await prisma.carrierProfile.count();
+  console.log(`✅ Demo carriers ready. Total carriers: ${total}`);
+}
+
 async function populateDemo() {
   console.log("🌱 Populating minimal demo data…");
 
@@ -272,11 +438,21 @@ async function populateDemo() {
   await ensureProductFor(demoSeller);
   await ensureServiceFor(svcSeller);
 
-  const [productCount, serviceCount] = await Promise.all([
+  // carriers for /delivery testing
+  try {
+    await populateDemoCarriers();
+  } catch (e) {
+    console.log("ℹ️  Carriers demo skipped:", e?.message || e);
+  }
+
+  const [productCount, serviceCount, carrierCount] = await Promise.all([
     prisma.product.count(),
     prisma.service?.count?.() ?? 0,
+    prisma.carrierProfile?.count?.() ?? 0,
   ]);
-  console.log(`✅ Demo populate complete. Totals -> products: ${productCount}, services: ${serviceCount}`);
+  console.log(
+    `✅ Demo populate complete. Totals -> products: ${productCount}, services: ${serviceCount}, carriers: ${carrierCount}`
+  );
 }
 
 /* ============
@@ -286,16 +462,15 @@ async function main() {
   console.log("🔧 Seed (prod-safe): starting…");
 
   // By default: NO-OP (safe in prod)
-  if (!SEED_RESET && !SEED_PURGE_DEMO && !SEED_DEMO) {
-    console.log("✅ No-op. (Set SEED_DEMO=1 to add demo data, or SEED_RESET=1 / SEED_PURGE_DEMO=1 to modify data.)");
+  if (!SEED_RESET && !SEED_PURGE_DEMO && !SEED_DEMO && !SEED_CARRIERS_DEMO) {
+    console.log(
+      "✅ No-op. (Set SEED_DEMO=1 to add demo data, SEED_CARRIERS_DEMO=1 to add carriers only, or SEED_RESET=1 / SEED_PURGE_DEMO=1 to modify data.)"
+    );
     return;
   }
 
   // Guard destructive/modify ops in production unless explicitly allowed
-  if (
-    process.env.NODE_ENV === "production" &&
-    process.env.SEED_ALLOW_PROD !== "1"
-  ) {
+  if (process.env.NODE_ENV === "production" && process.env.SEED_ALLOW_PROD !== "1") {
     throw new Error(
       "Refusing to modify data in production. Set SEED_ALLOW_PROD=1 to proceed (DANGER)."
     );
@@ -319,11 +494,14 @@ async function main() {
 
   if (SEED_DEMO) {
     await populateDemo();
+  } else if (SEED_CARRIERS_DEMO) {
+    await populateDemoCarriers();
   }
 
   const productCount = await prisma.product.count();
   const serviceCount = (await prisma.service?.count?.()) ?? 0;
-  console.log(`📊 Totals -> products: ${productCount}, services: ${serviceCount}`);
+  const carrierCount = (await prisma.carrierProfile?.count?.()) ?? 0;
+  console.log(`📊 Totals -> products: ${productCount}, services: ${serviceCount}, carriers: ${carrierCount}`);
   console.log("✅ Seed: complete.");
 }
 

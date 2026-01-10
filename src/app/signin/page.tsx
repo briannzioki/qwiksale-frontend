@@ -1,4 +1,3 @@
-// src/app/signin/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CredsFormClient } from "@/app/signin/_components/CredentialsForm.client";
@@ -19,84 +18,115 @@ export const metadata: Metadata = {
   },
 };
 
+const DEFAULT_AFTER_SIGNIN = "/dashboard";
+
 function isSafePath(p?: string | null): p is string {
   return !!p && /^\/(?!\/)/.test(p);
 }
 
-function hasGoogleConfigured(): boolean {
-  // Keep this conservative: in production only show if env suggests Google is set.
-  // (Exact names vary by setup, so we check common ones.)
-  const keys = [
-    "GOOGLE_CLIENT_ID",
-    "AUTH_GOOGLE_ID",
-    "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
-  ] as const;
-
-  for (const k of keys) {
-    const v = process.env[k];
-    if (typeof v === "string" && v.trim()) return true;
+function decodeMaybe(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
   }
-  return false;
 }
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams15>;
-}) {
+function decodeUpToTwo(v: string): string {
+  const once = decodeMaybe(v);
+  const twice = decodeMaybe(once);
+  return twice;
+}
+
+function toInternalHref(urlLike: string, fallback: string): string {
+  const raw = String(urlLike || "").trim();
+  if (!raw) return fallback;
+
+  if (raw.startsWith("/")) return raw;
+
+  try {
+    const u = new URL(raw);
+    const out = `${u.pathname}${u.search}${u.hash}`;
+    return out.startsWith("/") ? out : fallback;
+  } catch {
+    // ignore
+  }
+
+  return fallback;
+}
+
+function sanitizeCallback(raw: string, fallback: string): string {
+  const internal = toInternalHref(raw, fallback);
+  const path = isSafePath(internal) ? internal : fallback;
+
+  const lower = path.toLowerCase();
+  if (lower === "/signin" || lower.startsWith("/signin?")) return fallback;
+  if (lower.startsWith("/api/auth")) return fallback;
+
+  return path;
+}
+
+function first(sp: SearchParams15, key: string): string {
+  const v = (sp as any)?.[key];
+  if (Array.isArray(v)) return String(v[0] ?? "");
+  if (typeof v === "string") return v;
+  return "";
+}
+
+function hasGoogleEnvConfigured(): boolean {
+  const idKeys = ["GOOGLE_CLIENT_ID", "AUTH_GOOGLE_ID", "NEXT_PUBLIC_GOOGLE_CLIENT_ID"] as const;
+  const secretKeys = ["GOOGLE_CLIENT_SECRET", "AUTH_GOOGLE_SECRET"] as const;
+
+  const hasId = idKeys.some((k) => {
+    const v = process.env[k];
+    return typeof v === "string" && v.trim().length > 0;
+  });
+
+  const hasSecret = secretKeys.some((k) => {
+    const v = process.env[k];
+    return typeof v === "string" && v.trim().length > 0;
+  });
+
+  return hasId && hasSecret;
+}
+
+export default async function Page({ searchParams }: { searchParams: Promise<SearchParams15> }) {
   const sp = await searchParams;
 
-  const rawCb =
-    (Array.isArray(sp["callbackUrl"])
-      ? sp["callbackUrl"][0]
-      : sp["callbackUrl"]) ?? "/";
-  const callbackUrl = isSafePath(rawCb) ? rawCb : "/";
+  const rawCb = first(sp, "callbackUrl");
+  const decodedCb = decodeUpToTwo(rawCb);
+  const callbackUrl = sanitizeCallback(decodedCb, DEFAULT_AFTER_SIGNIN);
 
-  const rawErr =
-    (Array.isArray(sp["error"]) ? sp["error"][0] : sp["error"]) ?? null;
+  // Keep errors generic for Playwright and security (do not leak account existence or auth method).
+  const rawErr = first(sp, "error") || null;
+  const friendly = rawErr ? "Sign-in failed. Please try again." : null;
 
-  const friendly =
-    rawErr === "CredentialsSignin"
-      ? 'Email or password is incorrect. If you registered with Google, use “Continue with Google”.'
-      : rawErr === "OAuthSignin"
-        ? "We couldn't start Google sign-in. Please try again."
-        : rawErr === "OAuthCallback"
-          ? "Google sign-in failed. Please try again."
-          : rawErr === "OAuthAccountNotLinked"
-            ? "This email is already linked to another login method. Use your original sign-in method."
-            : rawErr === "AccessDenied"
-              ? "Access denied for this account."
-              : rawErr === "Configuration"
-                ? "Auth is temporarily misconfigured. Please try again shortly."
-                : rawErr === "CallbackRouteError"
-                  ? "Sign-in callback failed. Please retry."
-                  : rawErr
-                    ? "Sign-in failed. Please try again."
-                    : null;
+  // In non-production, keep Google visible (even if env vars are missing).
+  // In production, only show Google when configured.
+  const showGoogle = process.env.NODE_ENV !== "production" || hasGoogleEnvConfigured();
 
-  const credsAction = `/api/auth/callback/credentials?callbackUrl=${encodeURIComponent(
+  // Convenience only; CredentialsForm removes any email/password params from the URL on mount.
+  const emailFromQuery = first(sp, "email").trim();
+  const defaultEmail = emailFromQuery ? emailFromQuery : undefined;
+
+  // exactOptionalPropertyTypes: do not pass `undefined` explicitly for optional props.
+  const credsProps: { callbackUrl: string; defaultEmail?: string } = {
     callbackUrl,
-  )}`;
+    ...(defaultEmail ? { defaultEmail } : {}),
+  };
 
-  // ✅ No server-side /api/auth/csrf fetch.
-  // CSRF cookies/tokens must be created in the browser session; the client submit
-  // flow handles that (prevents MissingCSRF redirects in Playwright).
-  //
-  // ✅ Don’t server-fetch /providers (it causes duplication with client auth flows).
-  // In dev/test, always show Google to avoid brittle setups.
-  const hasGoogle =
-    process.env.NODE_ENV !== "production" || hasGoogleConfigured();
+  const signupHref = `/signup?return=${encodeURIComponent(callbackUrl)}`;
 
   return (
     <div className="container-page py-4 text-[var(--text)] sm:py-8">
-      <div className="mx-auto max-w-xl">
-        <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft">
+      <div className="mx-auto max-w-xl" aria-label="Sign in page">
+        <div className="rounded-2xl bg-gradient-to-r from-[var(--brand-navy)] via-[var(--brand-green)] to-[var(--brand-blue)] text-white shadow-soft">
           <div className="container-page py-5 text-white sm:py-8">
             <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
               Sign in to QwikSale
             </h1>
             <p className="mt-1 text-[11px] leading-relaxed text-white/80 sm:text-sm">
-              {hasGoogle
+              {showGoogle
                 ? "Use your email & password, or continue with Google."
                 : "Use your email & password to sign in."}
             </p>
@@ -113,13 +143,9 @@ export default async function Page({
         )}
 
         <div className="mt-5 grid gap-4 sm:mt-6 sm:gap-6">
-          <CredsFormClient
-            action={credsAction}
-            callbackUrl={callbackUrl}
-            csrfFromServer=""
-          />
+          <CredsFormClient {...credsProps} />
 
-          {hasGoogle && (
+          {showGoogle && (
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-5">
               <GoogleSignInButton callbackUrl={callbackUrl} />
               <p className="mt-2 text-[12px] leading-relaxed text-[var(--text-muted)]">
@@ -143,23 +169,25 @@ export default async function Page({
               </p>
               <div className="mt-2 text-[12px] leading-relaxed text-[var(--text-muted)] sm:mt-3">
                 Returning from a protected page? You’ll be sent back to{" "}
-                <code className="font-mono text-[var(--text)]">
-                  {callbackUrl}
-                </code>
-                .
+                <code className="font-mono text-[var(--text)]">{callbackUrl}</code>.
               </div>
             </div>
           )}
 
-          <div className="text-center text-xs leading-relaxed text-[var(--text-muted)]">
-            Prefer to browse first?{" "}
-            <Link
-              href="/"
-              prefetch={false}
-              className="text-[var(--text)] underline underline-offset-2"
-            >
-              Continue as guest
-            </Link>
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-center shadow-soft sm:p-5">
+            <div className="text-sm font-semibold text-[var(--text)]">New to QwikSale?</div>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+              Create an account in under a minute. You’ll be sent back to{" "}
+              <code className="font-mono text-[var(--text)]">{callbackUrl}</code> after signup.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <Link href={signupHref} prefetch={false} className="btn-outline">
+                Create an account
+              </Link>
+              <Link href="/" prefetch={false} className="btn-outline">
+                Continue as guest
+              </Link>
+            </div>
           </div>
         </div>
       </div>

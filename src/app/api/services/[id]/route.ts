@@ -1,4 +1,3 @@
-// src/app/api/services/[id]/route.ts
 import "server-only";
 
 export const runtime = "nodejs";
@@ -16,21 +15,19 @@ import {
   resolveSellerBadgeFieldsFromUserLike,
 } from "@/app/lib/sellerVerification";
 
-/* ---------------- constants ---------------- */
 const PLACEHOLDER = "/placeholder/default.jpg";
 const IS_PROD = process.env.NODE_ENV === "production";
 
-// Dev-seed hosts we never want to count in the API gallery
 const DEV_SEED_HOSTS = ["picsum.photos", "images.unsplash.com", "plus.unsplash.com"];
 
-/* ---------------- analytics (console-only) ---------------- */
 type AnalyticsEvent =
   | "service_read_attempt"
   | "service_read_public_hit"
   | "service_read_owner_hit"
   | "service_read_not_found"
   | "service_read_unauthorized_owner_check"
-  | "service_read_error";
+  | "service_read_error"
+  | "service_read_timeout";
 
 function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
   try {
@@ -43,7 +40,6 @@ function track(event: AnalyticsEvent, props?: Record<string, unknown>) {
   }
 }
 
-/* -------------------------- helpers -------------------------- */
 function baseHeaders(h = new Headers()) {
   h.set("Vary", "Authorization, Cookie, Accept-Encoding, Origin");
   return h;
@@ -58,14 +54,10 @@ function noStore(json: unknown, init?: ResponseInit) {
   return res;
 }
 
-/** Prod-only public cache for ACTIVE public hits (dev/preview = no-store). */
 function publicCache(json: unknown, init?: ResponseInit) {
   const res = NextResponse.json(json, init);
   if (IS_PROD) {
-    res.headers.set(
-      "Cache-Control",
-      "public, s-maxage=60, stale-while-revalidate=60",
-    );
+    res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=60");
   } else {
     res.headers.set("Cache-Control", "no-store");
   }
@@ -84,7 +76,6 @@ function getId(req: NextRequest): string {
   }
 }
 
-/** Quick heuristic: some IDs are clearly invalid and shouldn't hit DB. */
 function isClearlyInvalidId(id: string): boolean {
   const v = (id || "").trim();
   if (!v) return true;
@@ -95,7 +86,6 @@ function isClearlyInvalidId(id: string): boolean {
   return false;
 }
 
-/* ---------------- seller/account badge helpers ---------------- */
 async function fetchSellerBadgeFieldsById(
   sellerId: string | null | undefined,
 ): Promise<SellerBadgeFields | null> {
@@ -108,9 +98,6 @@ async function fetchSellerBadgeFieldsById(
       LIMIT 1
     `;
     const u = rows?.[0]?.u ?? null;
-
-    // ✅ alignment: resolveSellerBadgeFieldsFromUserLike is emailVerified-only
-    // and returns nullable fields (unknown stays null).
     return u ? (resolveSellerBadgeFieldsFromUserLike(u) as SellerBadgeFields) : null;
   } catch {
     return null;
@@ -123,7 +110,6 @@ function isAnonRequest(req: NextRequest) {
   return !authz && !cookie;
 }
 
-/** base select for service (safe fields, includes gallery) */
 const serviceBaseSelect = {
   id: true,
   name: true,
@@ -159,13 +145,11 @@ function shapeService(s: any) {
   return { ...rest, createdAt, sellerUsername };
 }
 
-/* ---------- model helpers (handle Service/Services naming) ------------ */
 function getServiceModel() {
   const any = prisma as any;
   return any.service ?? any.services ?? any.Service ?? any.Services ?? null;
 }
 
-/* ---------- relation model helpers (ServiceImage[]) ------------ */
 function getServiceImageModel() {
   const any = prisma as any;
   const candidates = ["serviceImage", "serviceImages", "ServiceImage", "ServiceImages"];
@@ -176,10 +160,6 @@ function getServiceImageModel() {
   return null;
 }
 
-/**
- * Fetch related image rows WITHOUT selecting non-existent fields.
- * Prefer to use when main Service.gallery is empty.
- */
 async function fetchServiceRelationUrls(serviceId: string): Promise<string[]> {
   try {
     const Model = getServiceImageModel();
@@ -211,7 +191,6 @@ async function fetchServiceRelationUrls(serviceId: string): Promise<string[]> {
   }
 }
 
-/* -------- media helpers -------- */
 function isPlaceholder(u?: string | null) {
   if (!u) return false;
   const s = String(u).trim();
@@ -225,12 +204,6 @@ function isDevSeedHost(u?: string | null) {
   return DEV_SEED_HOSTS.some((h) => s.includes(h));
 }
 
-/**
- * Normalize the cover + gallery:
- * - cover can be any non-placeholder (even dev seeds like Unsplash).
- * - gallery for the API ONLY counts "real" media:
- *   no placeholders and no dev-seed hosts (Unsplash/Picsum).
- */
 function normalizeCoverAndGallery(primary: any, fullRow: any, extraUrls: string[] = []) {
   const merged = { ...(fullRow || {}), ...(primary || {}) };
   const collected = (collectUrls(merged, undefined) ?? []).slice(0, 50);
@@ -246,17 +219,14 @@ function normalizeCoverAndGallery(primary: any, fullRow: any, extraUrls: string[
     .map((u: any) => (u ?? "").toString().trim())
     .filter(Boolean);
 
-  // Hero cover: any non-placeholder, even if it's an Unsplash/Picsum dev image.
   const cover = rawCandidates.find((u) => !isPlaceholder(u)) || PLACEHOLDER;
 
-  // API gallery: only "real" media; drop placeholders + dev-seed hosts.
   const galleryReal = rawCandidates.filter((u) => !isPlaceholder(u) && !isDevSeedHost(u));
   const gallery = Array.from(new Set(galleryReal)).slice(0, 50);
 
   return { cover, gallery };
 }
 
-/* ----------------------------- HEAD / CORS ----------------------------- */
 export function HEAD() {
   const h = baseHeaders(new Headers());
   h.set("Allow", "GET, OPTIONS, HEAD");
@@ -279,7 +249,6 @@ export function OPTIONS() {
   return res;
 }
 
-/* ---------------- timeouts ---------------- */
 const TIMEOUT_MS = 1200;
 const race = <T,>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T | "timeout"> =>
   Promise.race([
@@ -287,7 +256,34 @@ const race = <T,>(p: Promise<T>, ms = TIMEOUT_MS): Promise<T | "timeout"> =>
     new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms)),
   ]).catch(() => "timeout" as const);
 
-/* -------------------- GET /api/services/:id ------------------- */
+function normalizeStatus(raw: unknown): string {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  return s ? s.toUpperCase() : "ACTIVE";
+}
+
+function isPubliclyViewableStatus(status: string): boolean {
+  // Repo-wide expectation: public pages only expose ACTIVE listings.
+  // Empty/missing values are treated as ACTIVE for backwards compatibility.
+  return normalizeStatus(status) === "ACTIVE";
+}
+
+async function resolveViewerIdFromSession(session: any): Promise<string | null> {
+  const user = session?.user as any;
+  const userId = typeof user?.id === "string" ? user.id.trim() : "";
+  if (userId) return userId;
+
+  const email = typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
+  if (!email) return null;
+
+  const uRaw = await race(
+    prisma.user.findUnique({ where: { email }, select: { id: true } }),
+    600,
+  );
+  const u = uRaw && uRaw !== "timeout" ? (uRaw as any) : null;
+  const resolved = typeof u?.id === "string" ? u.id.trim() : u?.id ? String(u.id).trim() : "";
+  return resolved || null;
+}
+
 export async function GET(req: NextRequest) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -314,75 +310,50 @@ export async function GET(req: NextRequest) {
 
     track("service_read_attempt", { reqId, serviceId });
 
-    const selectPublic: any = { ...serviceBaseSelect };
-
     const baseRaw = await race(
       Service.findUnique({
         where: { id: serviceId },
-        select: selectPublic,
+        select: { ...serviceBaseSelect },
       }),
       TIMEOUT_MS,
     );
 
-    const base = baseRaw && baseRaw !== "timeout" ? (baseRaw as any) : null;
-
-    if (!base) {
-      track("service_read_not_found", {
-        reqId,
-        serviceId,
-        reason: baseRaw === "timeout" ? "base_timeout_or_missing" : "not_found",
-      });
-      const res = noStore({ error: "Not found" }, { status: 404 });
-      if (baseRaw === "timeout") res.headers.set("x-api-fallback", "timed-out");
+    if (baseRaw === "timeout") {
+      track("service_read_timeout", { reqId, serviceId, stage: "base" });
+      const res = noStore({ error: "Temporarily unavailable" }, { status: 503 });
+      res.headers.set("x-api-fallback", "timed-out");
       return res;
     }
 
-    const shaped = shapeService(base);
-    const rawStatus = (base as any)?.status;
-    const normalizedStatus =
-      typeof rawStatus === "string" && rawStatus.trim()
-        ? rawStatus.trim().toUpperCase()
-        : "ACTIVE";
-    const isDeleted = Boolean((base as any)?.deletedAt);
-    const isDevLike = !IS_PROD;
+    const base = baseRaw ? (baseRaw as any) : null;
 
-    // Access mode
-    let allowedAsPublic = false;
-    let requiresOwnerCheck = false;
-
-    if (isDevLike) {
-      // In dev/preview, allow any existing, non-deleted row
-      allowedAsPublic = !isDeleted;
-      requiresOwnerCheck = false;
-    } else {
-      const nonPublicStatuses = new Set(["DRAFT", "HIDDEN"]);
-      if (!isDeleted && !nonPublicStatuses.has(normalizedStatus)) {
-        allowedAsPublic = true;
-      } else {
-        requiresOwnerCheck = true;
-      }
+    if (!base) {
+      track("service_read_not_found", { reqId, serviceId, reason: "not_found" });
+      return noStore({ error: "Not found" }, { status: 404 });
     }
 
-    if (requiresOwnerCheck) {
+    const shaped = shapeService(base);
+
+    const normalizedStatus = normalizeStatus((base as any)?.status);
+    const isDeleted = Boolean((base as any)?.deletedAt);
+
+    const publicViewable = !isDeleted && isPubliclyViewableStatus(normalizedStatus);
+
+    // If it is not publicly viewable and there is no auth context, do not even attempt owner checks.
+    if (!publicViewable && isAnonRequest(req)) {
+      track("service_read_unauthorized_owner_check", { reqId, serviceId, reason: "anon_private" });
+      return noStore({ error: "Not found" }, { status: 404 });
+    }
+
+    if (!publicViewable) {
       const sessionRaw = await race(auth(), 500);
       const session = sessionRaw === "timeout" ? null : (sessionRaw as any);
       const user = session?.user as any;
-      const userId = user?.id as string | undefined;
-      const isAdmin = user?.role === "ADMIN" || user?.isAdmin === true;
 
-      let resolvedUserId: string | null = userId ?? null;
+      const roleRaw = typeof user?.role === "string" ? user.role : "";
+      const isAdmin = roleRaw.toUpperCase() === "ADMIN" || user?.isAdmin === true;
 
-      if (!resolvedUserId && user?.email) {
-        const uRaw = await race(
-          prisma.user.findUnique({
-            where: { email: user.email as string },
-            select: { id: true },
-          }),
-          600,
-        );
-        const u = uRaw && uRaw !== "timeout" ? (uRaw as any) : null;
-        resolvedUserId = u?.id ?? null;
-      }
+      const resolvedUserId = await resolveViewerIdFromSession(session);
 
       const viewerIsOwner =
         !!resolvedUserId &&
@@ -395,7 +366,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Media normalization (full row + related images)
     const [fullRowRaw, relUrlsRaw] = await Promise.all([
       race(Service.findUnique({ where: { id: serviceId } }).catch(() => null), 600),
       race(fetchServiceRelationUrls(serviceId), 600),
@@ -413,22 +383,13 @@ export async function GET(req: NextRequest) {
         ? (sellerFieldsRaw as SellerBadgeFields | null)
         : null;
 
-    // ✅ no invented defaults: unknown stays null
     const badges = sellerFields ?? buildSellerBadgeFields(null, null);
-
-    // ✅ explicit canonical keys
-    const sellerBadges = badges.sellerBadges;
-    const sellerVerified = badges.sellerVerified;
-    const sellerFeaturedTier = badges.sellerFeaturedTier;
 
     const payload = {
       ...shaped,
-
-      // canonical badge keys (explicit)
-      sellerBadges,
-      sellerVerified,
-      sellerFeaturedTier,
-
+      sellerBadges: badges.sellerBadges,
+      sellerVerified: badges.sellerVerified,
+      sellerFeaturedTier: badges.sellerFeaturedTier,
       image: norm.cover,
       gallery,
       imageUrls: gallery,
@@ -436,21 +397,20 @@ export async function GET(req: NextRequest) {
       photos: gallery,
     };
 
-    const isPublicResponse = allowedAsPublic && !isDevLike;
     const res =
-      isPublicResponse && isAnonRequest(req) ? publicCache(payload) : noStore(payload);
+      publicViewable && isAnonRequest(req) ? publicCache(payload) : noStore(payload);
 
     if (fullRowRaw === "timeout" || relUrlsRaw === "timeout") {
       res.headers.set("x-api-fallback", "timed-out");
     }
 
-    track(isPublicResponse ? "service_read_public_hit" : "service_read_owner_hit", {
+    track(publicViewable ? "service_read_public_hit" : "service_read_owner_hit", {
       reqId,
       serviceId,
       env: IS_PROD ? "prod" : "dev",
       status: normalizedStatus,
       deleted: isDeleted,
-      ownerView: !isPublicResponse,
+      ownerView: !publicViewable,
     });
 
     return res;
@@ -461,7 +421,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/* ------------------ DELETE /api/services/:id ------------------ */
 export async function DELETE(req: NextRequest) {
   const reqId =
     (globalThis as any).crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -476,11 +435,11 @@ export async function DELETE(req: NextRequest) {
     const session = await auth();
     const user = session?.user as any;
     const userId = user?.id;
-    const isAdmin = user?.role === "ADMIN" || user?.isAdmin === true;
+    const roleRaw = typeof user?.role === "string" ? user.role : "";
+    const isAdmin = roleRaw.toUpperCase() === "ADMIN" || user?.isAdmin === true;
 
     if (!userId && !isAdmin) return noStore({ error: "Unauthorized" }, { status: 401 });
 
-    // Resolve row (accept alt id fields just like products)
     const ALT_ID_FIELDS = ["id", "serviceId", "service_id", "uid", "uuid", "slug"] as const;
 
     let existing: any = null;
@@ -489,7 +448,9 @@ export async function DELETE(req: NextRequest) {
         const where = { [field]: idParam } as any;
         existing = await Service.findUnique({ where, select: { id: true, sellerId: true } });
         if (existing) break;
-      } catch {}
+      } catch {
+        // try next
+      }
     }
 
     if (!existing) return noStore({ error: "Not found" }, { status: 404 });
@@ -497,7 +458,6 @@ export async function DELETE(req: NextRequest) {
     const isOwner = userId && existing.sellerId === userId;
     if (!isOwner && !isAdmin) return noStore({ error: "Forbidden" }, { status: 403 });
 
-    // ✅ Schema-tolerant delete of related images (no hard dependency on prisma.serviceImage)
     const ImageModel = getServiceImageModel();
 
     const ops: any[] = [];

@@ -1,8 +1,8 @@
-// src/middleware.ts - QwikSale middleware (admin gates, protected pages, CSP, suggest RL)
 import { NextResponse, type NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 
-/* ------------------- Env helpers (empty string = unset) ------------------- */
+type NextAuthAuthedRequest = NextRequest & { auth?: any };
+
 function envStr(name: string): string | undefined {
   const v = process.env[name];
   if (typeof v !== "string") return undefined;
@@ -25,8 +25,8 @@ function isLocalHost(hostname: string): boolean {
 }
 
 /**
- * Real prod deployment detector (not just NODE_ENV=production).
- * Keep "next start" on http://localhost from acting like real prod.
+ * "Prod site" = real deployed production (not just NODE_ENV=production).
+ * This prevents local `next start` on http://localhost from behaving like deployed prod.
  */
 function isProdSite(): boolean {
   if (process.env["VERCEL_ENV"] != null) {
@@ -36,7 +36,7 @@ function isProdSite(): boolean {
   if (process.env.NODE_ENV !== "production") return false;
 
   const url = siteUrlFromEnv();
-  if (!url) return true;
+  if (!url) return false;
 
   try {
     const host = new URL(url).hostname;
@@ -48,31 +48,18 @@ function isProdSite(): boolean {
 
 const IS_PROD_SITE = isProdSite();
 
-/* ------------------- Auth secret (match auth.config.ts) ------------------- */
-/**
- * IMPORTANT:
- * This must mirror src/auth.config.ts so that NextAuth and getToken()
- * use the same secret.
- *
- * Empty-string env vars must be treated as "unset".
- */
-const AUTH_SECRET =
-  envStr("AUTH_SECRET") ??
-  envStr("NEXTAUTH_SECRET") ??
-  (!IS_PROD_SITE ? "dev-secret-change-me" : undefined);
-
-/* ------------------- Edge-safe helpers ------------------- */
 function makeNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s);
 }
+
 function makeUUID(): string {
-  return (crypto as any)?.randomUUID?.() ?? `${Date.now().toString(36)}-${makeNonce()}`;
+  const rnd = (crypto as any)?.randomUUID;
+  return typeof rnd === "function" ? rnd.call(crypto) : `${Date.now().toString(36)}-${makeNonce()}`;
 }
 
-/* ---------- Detect HTML navigations ---------- */
 function isDocumentNav(req: NextRequest): boolean {
   const accept = (req.headers.get("accept") || "").toLowerCase();
   const dest = (req.headers.get("sec-fetch-dest") || "").toLowerCase();
@@ -88,9 +75,9 @@ function isHttpsRequest(req: NextRequest): boolean {
   return req.nextUrl.protocol === "https:";
 }
 
-/* ------------------ Suggest soft limiter ------------------ */
 const SUGGEST_WINDOW_MS = Number(process.env["SUGGEST_WINDOW_MS"] ?? 10_000);
 const SUGGEST_LIMIT = Number(process.env["SUGGEST_LIMIT"] ?? 12);
+
 type StampStore = Map<string, number[]>;
 const g = globalThis as unknown as { __QS_SUGGEST_RL__?: StampStore };
 const SUGGEST_STORE: StampStore = g.__QS_SUGGEST_RL__ ?? new Map();
@@ -99,6 +86,7 @@ if (!g.__QS_SUGGEST_RL__) g.__QS_SUGGEST_RL__ = SUGGEST_STORE;
 function isSuggestApiPath(p: string) {
   return p.startsWith("/api/") && /(?:^|\/)suggest(?:\/|$)/i.test(p);
 }
+
 function rlKeyFromReq(req: NextRequest) {
   const ip =
     (req as any).ip ||
@@ -114,11 +102,7 @@ function isMpesaCallbackPath(p: string) {
   return p === "/api/pay/mpesa/callback" || p === "/api/mpesa/callback";
 }
 
-/* ------------------------- Security / CSP ------------------------- */
-function buildSecurityHeaders(
-  nonce: string,
-  opts?: { allowUnsafeEval?: boolean; isHttps?: boolean },
-) {
+function buildSecurityHeaders(nonce: string, opts?: { allowUnsafeEval?: boolean; isHttps?: boolean }) {
   const imgSrc = [
     "'self'",
     "data:",
@@ -163,14 +147,13 @@ function buildSecurityHeaders(
     "https://www.google-analytics.com",
   ];
 
-  if (opts?.allowUnsafeEval) {
-    scriptSrcParts.push("'unsafe-eval'");
-  }
+  if (opts?.allowUnsafeEval) scriptSrcParts.push("'unsafe-eval'");
 
   const scriptSrc = scriptSrcParts.join(" ");
 
   const frameSrc = ["'self'", "https://accounts.google.com"].join(" ");
   const formAction = ["'self'", "https://accounts.google.com"].join(" ");
+  const workerSrc = ["'self'", "blob:"].join(" ");
 
   const csp =
     [
@@ -185,6 +168,7 @@ function buildSecurityHeaders(
       `script-src ${scriptSrc}`,
       `frame-src ${frameSrc}`,
       `form-action ${formAction}`,
+      `worker-src ${workerSrc}`,
     ].join("; ") + ";";
 
   const headers = new Headers();
@@ -201,7 +185,6 @@ function buildSecurityHeaders(
   return headers;
 }
 
-/* -------------------- Origin allow-list for mutating API -------------------- */
 function isAllowedOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return true;
@@ -213,8 +196,7 @@ function isAllowedOrigin(req: NextRequest): boolean {
     return false;
   }
 
-  const raw =
-    process.env["CORS_ALLOW_ORIGINS"] || process.env["NEXT_PUBLIC_APP_URL"] || "";
+  const raw = process.env["CORS_ALLOW_ORIGINS"] || process.env["NEXT_PUBLIC_APP_URL"] || "";
   const list = raw
     .split(",")
     .map((s) => s.trim())
@@ -229,7 +211,6 @@ function isAllowedOrigin(req: NextRequest): boolean {
   });
 }
 
-/* -------------------- Utilities -------------------- */
 function normalize(href: URL | string): string {
   const u = href instanceof URL ? href : new URL(String(href), "http://localhost");
   let pathname = u.pathname || "/";
@@ -239,23 +220,50 @@ function normalize(href: URL | string): string {
   const qs = new URLSearchParams(entries).toString();
   return `${pathname}${qs ? `?${qs}` : ""}`;
 }
+
+function isSafeInternalPath(p: string): boolean {
+  const v = String(p || "").trim();
+  return !!v && /^\/(?!\/)/.test(v);
+}
+
+function sanitizeSigninCallbackValue(raw: string, fallback: string): string {
+  const v = String(raw || "").trim();
+  if (!v) return fallback;
+  if (!isSafeInternalPath(v)) return fallback;
+
+  const lower = v.toLowerCase();
+  if (lower === "/signin" || lower.startsWith("/signin?")) return fallback;
+  if (lower === "/signup" || lower.startsWith("/signup?")) return fallback;
+  if (lower.startsWith("/api/auth")) return fallback;
+
+  return v;
+}
+
 function isAuthPath(p: string) {
   return p === "/signin" || p === "/signup";
 }
+
 function isProtectedPath(p: string) {
-  if (p === "/sell/product") {
-    return false;
-  }
-  return (
-    p.startsWith("/sell") ||
-    p.startsWith("/account") ||
-    p.startsWith("/saved") ||
-    p.startsWith("/settings")
-  );
+  if (p === "/sell/product") return false;
+  return p.startsWith("/sell") || p.startsWith("/account") || p.startsWith("/saved") || p.startsWith("/settings");
 }
+
+function isDeliveryPath(p: string) {
+  return p === "/delivery" || p.startsWith("/delivery/");
+}
+
+function isCarrierPath(p: string) {
+  return p === "/carrier" || p.startsWith("/carrier/");
+}
+
+function isCarrierDeliveryApiPath(p: string) {
+  return p.startsWith("/api/carriers") || p.startsWith("/api/carrier") || p.startsWith("/api/delivery");
+}
+
 function isAdminDataPath(p: string): boolean {
   return /^\/_next\/data\/[^/]+\/admin(?:\/.*)?\.json$/.test(p);
 }
+
 function parseAllow(env?: string | null) {
   return new Set(
     (env ?? "")
@@ -265,20 +273,48 @@ function parseAllow(env?: string | null) {
   );
 }
 
-/* -------------------- Read token safely -------------------- */
-async function readToken(req: NextRequest) {
+// Compute allowlists once (env won’t change at runtime in Next.js deployments)
+const ADMIN_ALLOW = parseAllow(process.env["ADMIN_EMAILS"]);
+const SUPERADMIN_ALLOW = parseAllow(process.env["SUPERADMIN_EMAILS"]);
+
+function callbackFromRequestUrl(nextUrl: URL, fallback: string): string {
   try {
-    if (AUTH_SECRET) {
-      return await getToken({ req, secret: AUTH_SECRET });
-    }
-    return await getToken({ req } as any);
+    const u = new URL(nextUrl.toString());
+
+    // Prevent nested callbackUrl recursion and avoid leaking test creds into callbackUrl.
+    u.searchParams.delete("callbackUrl");
+    u.searchParams.delete("redirectTo");
+    u.searchParams.delete("email");
+    u.searchParams.delete("password");
+
+    // If we are already on an auth page, never use it as callbackUrl.
+    const p = (u.pathname || "/").toLowerCase();
+    if (p === "/signin" || p === "/signup") return fallback;
+
+    const norm = normalize(u);
+    return sanitizeSigninCallbackValue(norm, fallback);
   } catch {
-    return null;
+    return fallback;
   }
 }
 
-/* -------------------------------- Main middleware -------------------------------- */
-export async function middleware(req: NextRequest) {
+function wantsSignupGoogleFlow(req: NextRequest): boolean {
+  if (req.nextUrl.pathname !== "/signup") return false;
+  const from = (req.nextUrl.searchParams.get("from") || "").trim().toLowerCase();
+  if (from === "google") return true;
+  const provider = (req.nextUrl.searchParams.get("provider") || "").trim().toLowerCase();
+  if (provider === "google") return true;
+  return false;
+}
+
+function applyNoStore(headers: Headers) {
+  headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  headers.set("Pragma", "no-cache");
+  headers.set("Expires", "0");
+  headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+}
+
+export default auth(async function middleware(req: NextRequest) {
   const p = req.nextUrl.pathname;
   const adminData = isAdminDataPath(p);
   const isApi = p.startsWith("/api/");
@@ -286,7 +322,11 @@ export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   res.headers.set("X-QS-MW", "1");
 
-  /* ---- Infra / static bypass ---- */
+  // We need this so /signin and /signup can still get CSP/nonce (document block below),
+  // while also enforcing no-store.
+  let forceNoStoreForHtml = false;
+
+  // Fast-path excludes
   if (
     req.method === "OPTIONS" ||
     p === "/api/monitoring" ||
@@ -301,23 +341,13 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  /* ---- Never block M-Pesa callbacks (server-to-server POST) ---- */
-  if (isMpesaCallbackPath(p)) {
-    res.headers.set("Cache-Control", "no-store");
-    res.headers.set("Pragma", "no-cache");
-    res.headers.set("Expires", "0");
+  // Never cache M-Pesa callbacks or auth endpoints
+  if (isMpesaCallbackPath(p) || p.startsWith("/api/auth")) {
+    applyNoStore(res.headers);
     return res;
   }
 
-  /* ---- Never touch NextAuth internals ---- */
-  if (p.startsWith("/api/auth")) {
-    res.headers.set("Cache-Control", "no-store");
-    res.headers.set("Pragma", "no-cache");
-    res.headers.set("Expires", "0");
-    return res;
-  }
-
-  /* ---- JSON guard for specific POSTs ---- */
+  // Basic content-type enforcement for sensitive POSTs
   if (
     (p === "/api/billing/upgrade" && req.method === "POST") ||
     (p.startsWith("/api/products/") && p.endsWith("/promote") && req.method === "POST")
@@ -326,28 +356,22 @@ export async function middleware(req: NextRequest) {
     if (!ct.includes("application/json")) {
       return new NextResponse(JSON.stringify({ error: "Bad request" }), {
         status: 400,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-        },
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
   }
 
-  /* ---- Origin allow-list for mutating API ---- */
+  // CORS guard for mutating API calls
   if (isApi && ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
     if (!isAllowedOrigin(req)) {
       return new NextResponse(JSON.stringify({ error: "Origin not allowed" }), {
         status: 403,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-        },
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
   }
 
-  /* ---- Soft rate-limit for /api/.../suggest ---- */
+  // Suggest rate limit
   if (isApi && isSuggestApiPath(p)) {
     const key = rlKeyFromReq(req);
     const now = Date.now();
@@ -361,69 +385,74 @@ export async function middleware(req: NextRequest) {
       const retryMs = Math.max(2000, SUGGEST_WINDOW_MS - (now - oldest));
       const retrySec = Math.max(1, Math.ceil(retryMs / 1000));
 
-      return new NextResponse(
-        JSON.stringify({ error: "Too many requests. Please slow down." }),
-        {
-          status: 429,
-          headers: {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-store",
-            "Retry-After": String(retrySec),
-            "X-RateLimit-Limit": String(SUGGEST_LIMIT),
-            "X-RateLimit-Remaining": "0",
-            "X-RateLimit-Policy": `${SUGGEST_LIMIT};w=${Math.round(
-              SUGGEST_WINDOW_MS / 1000,
-            )}`,
-            "X-RateLimit-Bucket": "suggest",
-          },
+      return new NextResponse(JSON.stringify({ error: "Too many requests. Please slow down." }), {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "Retry-After": String(retrySec),
+          "X-RateLimit-Limit": String(SUGGEST_LIMIT),
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Policy": `${SUGGEST_LIMIT};w=${Math.round(SUGGEST_WINDOW_MS / 1000)}`,
+          "X-RateLimit-Bucket": "suggest",
         },
-      );
+      });
     }
 
     arr.push(now);
     SUGGEST_STORE.set(key, arr);
   }
 
-  /* ---- Session / role via JWT ---- */
-  const token = await readToken(req);
-  const isLoggedIn = !!token;
-  const role = String((token as any)?.role ?? (token as any)?.user?.role ?? "").toUpperCase();
-  const email =
-    (((token as any)?.email ?? (token as any)?.user?.email) || "")?.toLowerCase() || null;
+  // NextAuth v5 wrapper provides req.auth (no getToken, no secureCookie drift)
+  const session = (req as NextAuthAuthedRequest).auth ?? null;
+  const user: any = session?.user ?? null;
 
-  const adminList = parseAllow(process.env["ADMIN_EMAILS"]);
-  const superList = parseAllow(process.env["SUPERADMIN_EMAILS"]);
-  const allowSuper = !!email && superList.has(email);
-  const allowAdmin = !!email && (adminList.has(email) || allowSuper);
-  const isAdmin = role === "ADMIN" || role === "SUPERADMIN" || allowAdmin;
+  const isLoggedIn = !!user;
+  const role = String(user?.role ?? "").toUpperCase();
+  const email = typeof user?.email === "string" ? user.email.toLowerCase() : null;
 
-  /* ---- Admin _next data routes ---- */
+  const allowSuper = !!email && SUPERADMIN_ALLOW.has(email);
+  const allowAdmin = !!email && (ADMIN_ALLOW.has(email) || allowSuper);
+
+  const isAdmin =
+    user?.isAdmin === true ||
+    user?.isSuperAdmin === true ||
+    role === "ADMIN" ||
+    role === "SUPERADMIN" ||
+    allowAdmin;
+
+  // Coarse auth gate for carrier/delivery APIs (Phase 5 will add server-side guards too)
+  if (isApi && isCarrierDeliveryApiPath(p)) {
+    if (!isLoggedIn) {
+      return new NextResponse(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+  }
+
+  // Protect /_next/data/.../admin*.json
   if (adminData) {
     if (!isLoggedIn) {
       return new NextResponse(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-        },
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
     if (!isAdmin) {
       return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-        },
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
   }
 
-  /* ---- Admin HTML gate (document nav only) ---- */
+  // Admin pages (document navigations only)
   if (!isApi && p.startsWith("/admin") && isDocumentNav(req)) {
     if (!isLoggedIn) {
       const signin = new URL("/signin", req.url);
-      signin.searchParams.set("callbackUrl", normalize(req.nextUrl));
+      const cb = callbackFromRequestUrl(req.nextUrl, "/admin");
+      signin.searchParams.set("callbackUrl", cb);
       return NextResponse.redirect(signin, 302);
     }
     if (!isAdmin) {
@@ -431,75 +460,93 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  /* ---- Admin API gate ---- */
+  // Admin APIs
   if (isApi && p.startsWith("/api/admin")) {
     if (!isLoggedIn) {
       return new NextResponse(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-        },
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
     if (!isAdmin) {
       return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-        },
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
   }
 
-  /* ---- /signin & /signup ---- */
+  // Auth pages:
+  // - Always no-store
+  // - Bounce logged-in users away from /signin
+  // - Allow logged-in users to access /signup ONLY for Google return flow (?from=google)
   if (!isApi && isAuthPath(p)) {
+    forceNoStoreForHtml = true;
+
     if (isLoggedIn) {
-      const cbRaw = req.nextUrl.searchParams.get("callbackUrl") || "";
-      let target = isAdmin ? "/admin" : "/dashboard";
-      if (cbRaw) {
-        try {
-          const cb = new URL(cbRaw, req.nextUrl);
-          if (cb.origin === req.nextUrl.origin) {
-            const path = cb.pathname;
-            if (path === "/signup") {
-              target = isAdmin ? "/admin" : "/dashboard";
-            } else if (path.startsWith("/admin")) {
-              target = isAdmin ? normalize(cb) : "/dashboard";
-            } else if (!path.startsWith("/api/auth") && path !== "/signin") {
-              target = normalize(cb);
+      if (p === "/signup" && wantsSignupGoogleFlow(req)) {
+        // ✅ Allow /signup?from=google for authenticated users so they can set a password.
+        // Do not redirect; let the page render.
+      } else {
+        const cbRaw = req.nextUrl.searchParams.get("callbackUrl") || "";
+        let target = isAdmin ? "/admin" : "/dashboard";
+
+        if (cbRaw) {
+          try {
+            const cb = new URL(cbRaw, req.nextUrl);
+            if (cb.origin === req.nextUrl.origin) {
+              const path = cb.pathname;
+              if (path === "/signup" || path === "/signin") {
+                target = isAdmin ? "/admin" : "/dashboard";
+              } else if (path.startsWith("/admin")) {
+                target = isAdmin ? normalize(cb) : "/dashboard";
+              } else if (!path.startsWith("/api/auth")) {
+                target = normalize(cb);
+              }
+            }
+          } catch {
+            if (isSafeInternalPath(cbRaw)) {
+              const lower = cbRaw.toLowerCase();
+              if (
+                lower === "/signup" ||
+                lower.startsWith("/signup?") ||
+                lower === "/signin" ||
+                lower.startsWith("/signin?")
+              ) {
+                target = isAdmin ? "/admin" : "/dashboard";
+              } else if (cbRaw.startsWith("/admin")) {
+                target = isAdmin ? cbRaw : "/dashboard";
+              } else if (!cbRaw.startsWith("/api/auth")) {
+                target = cbRaw;
+              }
             }
           }
-        } catch {
-          if (cbRaw.startsWith("/")) {
-            if (cbRaw === "/signup") target = isAdmin ? "/admin" : "/dashboard";
-            else if (cbRaw.startsWith("/admin")) target = isAdmin ? cbRaw : "/dashboard";
-            else if (!cbRaw.startsWith("/api/auth") && cbRaw !== "/signin") target = cbRaw;
-          }
         }
-      }
-      return NextResponse.redirect(new URL(target, req.url), 302);
-    }
 
-    res.headers.set("Cache-Control", "no-store");
-    res.headers.set("Pragma", "no-cache");
-    res.headers.set("Expires", "0");
-    return res;
+        return NextResponse.redirect(new URL(target, req.url), 302);
+      }
+    }
   }
 
-  /* ---- Protected (non-admin) sections -> require login ---- */
+  // Generic protected pages
   if (!isApi && !isLoggedIn && isProtectedPath(p) && isDocumentNav(req)) {
     const signin = new URL("/signin", req.url);
-    signin.searchParams.set("callbackUrl", normalize(req.nextUrl) || "/");
+    const cb = callbackFromRequestUrl(req.nextUrl, "/");
+    signin.searchParams.set("callbackUrl", cb);
     return NextResponse.redirect(signin, 302);
   }
 
-  /* ---- Security headers + device id for HTML navigations ---- */
+  // Carrier / Delivery sections
+  if (!isApi && !isLoggedIn && (isDeliveryPath(p) || isCarrierPath(p)) && isDocumentNav(req)) {
+    const signin = new URL("/signin", req.url);
+    const cb = callbackFromRequestUrl(req.nextUrl, "/");
+    signin.searchParams.set("callbackUrl", cb);
+    return NextResponse.redirect(signin, 302);
+  }
+
+  // HTML document: CSP + nonce + device id cookie
   if (isDocumentNav(req)) {
-    const preview =
-      process.env["VERCEL_ENV"] === "preview" ||
-      process.env["NEXT_PUBLIC_NOINDEX"] === "1";
+    const preview = process.env["VERCEL_ENV"] === "preview" || process.env["NEXT_PUBLIC_NOINDEX"] === "1";
     const isDevLike = process.env["NODE_ENV"] !== "production" || preview;
     const useReportOnly = isDevLike || process.env["CSP_REPORT_ONLY"] === "1";
 
@@ -509,6 +556,10 @@ export async function middleware(req: NextRequest) {
 
     const htmlRes = NextResponse.next({ request: { headers: forwarded } });
     htmlRes.headers.set("X-QS-MW", "1");
+
+    if (forceNoStoreForHtml) {
+      applyNoStore(htmlRes.headers);
+    }
 
     const sec = buildSecurityHeaders(nonce, {
       allowUnsafeEval: isDevLike,
@@ -541,10 +592,10 @@ export async function middleware(req: NextRequest) {
   }
 
   return res;
-}
+});
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|\\.well-known|_vercel|api/pay/mpesa/callback|api/mpesa/callback).*)",
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|\\.well-known|_vercel|api/pay/mpesa/callback|api/mpesa/callback).*)",
   ],
 };
