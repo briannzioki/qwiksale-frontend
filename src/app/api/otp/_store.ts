@@ -1,4 +1,4 @@
-// src/app/api/auth/otp/_store.ts
+// src/app/api/otp/_store.ts
 // Helper module (NOT a route): simple in-memory OTP store with TTL.
 
 type OtpRecord = { code: string; expiresAt: number; meta?: Record<string, unknown> };

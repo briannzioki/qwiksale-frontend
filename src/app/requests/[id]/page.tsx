@@ -4,51 +4,84 @@ export const revalidate = 0;
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { headers, cookies } from "next/headers";
 import { auth } from "@/auth";
-import SectionHeader from "@/app/components/SectionHeader";
+import { prisma } from "@/app/lib/prisma";
 
-type HeadersLike = { get(name: string): string | null };
-
-function baseUrlFromHeaders(h: HeadersLike): string {
-  const env =
-    process.env["NEXT_PUBLIC_APP_URL"] ||
-    process.env["APP_URL"] ||
-    process.env["NEXT_PUBLIC_SITE_URL"] ||
-    "";
-  if (env) return env.replace(/\/+$/, "");
-
-  const proto =
-    h.get("x-forwarded-proto") ||
-    (process.env.NODE_ENV === "production" ? "https" : "http");
-  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
-  return `${proto}://${host}`.replace(/\/+$/, "");
+function isPrismaValidationError(err: unknown) {
+  const e = err as any;
+  const name = typeof e?.name === "string" ? e.name : "";
+  const msg = typeof e?.message === "string" ? e.message : "";
+  return (
+    name === "PrismaClientValidationError" ||
+    msg.includes("PrismaClientValidationError") ||
+    msg.includes("Invalid value for argument") ||
+    msg.includes("Unknown argument")
+  );
 }
 
-function makeApiUrl(path: string, h: HeadersLike): string {
-  const base = baseUrlFromHeaders(h);
-  if (!path.startsWith("/")) return `${base}/${path}`;
-  return `${base}${path}`;
-}
-
-async function cookieHeaderFromNextCookies(): Promise<string> {
+function toIso(v: any) {
   try {
-    const jar = await cookies();
-    const all = jar.getAll();
-    return all
-      .map((c: { name: string; value: string }) => `${c.name}=${c.value}`)
-      .join("; ");
+    if (!v) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    const t = d.getTime();
+    if (!Number.isFinite(t)) return null;
+    return d.toISOString();
   } catch {
-    return "";
+    return null;
   }
 }
 
-function asItem(json: any) {
-  if (!json) return null;
-  if (json?.item) return json.item;
-  if (json?.request) return json.request;
-  if (json?.data) return json.data;
-  return json;
+async function loadRequestById(id: string) {
+  const requestModel = (prisma as any).request;
+
+  // Prefer a richer select when available, but never crash on schema drift.
+  const fullSelect = {
+    id: true,
+    kind: true,
+    title: true,
+    description: true,
+    location: true,
+    category: true,
+    tags: true,
+    createdAt: true,
+    expiresAt: true,
+    status: true,
+    boostUntil: true,
+    ownerId: true,
+    owner: {
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        image: true,
+      },
+    },
+  };
+
+  const minimalSelect = {
+    id: true,
+    kind: true,
+    title: true,
+    description: true,
+    location: true,
+    category: true,
+    tags: true,
+    createdAt: true,
+    expiresAt: true,
+    status: true,
+    boostUntil: true,
+    ownerId: true,
+  };
+
+  try {
+    return await requestModel?.findUnique?.({ where: { id }, select: fullSelect });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("[/requests/[id]] prisma findUnique error (will fallback):", e);
+
+    if (!isPrismaValidationError(e)) throw e;
+    return await requestModel?.findUnique?.({ where: { id }, select: minimalSelect });
+  }
 }
 
 export default async function RequestDetailPage({
@@ -59,65 +92,72 @@ export default async function RequestDetailPage({
   const p = await params;
   const id = String((p as any)?.id || "").trim();
 
-  const session = await auth();
-  const meId = (session as any)?.user?.id as string | undefined;
-
-  const target = `/requests/${encodeURIComponent(id)}`;
-  if (!meId) {
-    redirect(`/signin?callbackUrl=${encodeURIComponent(target)}`);
+  if (!id) {
+    redirect("/requests");
   }
 
-  const h = await headers();
-  const url = makeApiUrl(`/api/requests/${encodeURIComponent(id)}`, h);
-  const cookieHeader = await cookieHeaderFromNextCookies();
+  const session = await auth();
+  const userAny = (session as any)?.user ?? null;
+
+  // Canonical auth signal: session exists with a user identity.
+  const isAuthed = Boolean(userAny && (userAny.id || userAny.email));
+
+  const target = `/requests/${encodeURIComponent(id)}`;
+  if (!isAuthed) {
+    redirect(`/signin?callbackUrl=${encodeURIComponent(target)}`);
+  }
 
   let item: any = null;
   let loadError: string | null = null;
 
   try {
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-      },
-    });
-
-    const j = await res.json().catch(() => null);
-
-    if (!res.ok || (j as any)?.error) {
-      loadError =
-        (j as any)?.error ||
-        (j as any)?.message ||
-        `Could not load request (HTTP ${res.status}).`;
+    const r = await loadRequestById(id);
+    if (!r) {
+      loadError = "Request not found.";
     } else {
-      const raw = asItem(j);
-      if (raw?.id) item = raw;
-      if (!item) loadError = "Could not load request.";
+      item = {
+        ...r,
+        createdAt: toIso(r?.createdAt),
+        expiresAt: toIso(r?.expiresAt),
+        boostUntil: toIso(r?.boostUntil),
+      };
     }
   } catch {
     loadError = "Network error while loading request.";
   }
 
   const title = item?.title ? String(item.title) : "Request";
+  const subtitle =
+    item?.kind || item?.location
+      ? [item?.kind ? String(item.kind) : null, item?.location ? String(item.location) : null]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
 
   return (
-    <main className="container-page py-4 text-[var(--text)] sm:py-6">
-      <SectionHeader
-        title={title}
-        subtitle={
-          item?.kind || item?.location
-            ? [
-                item?.kind ? String(item.kind) : null,
-                item?.location ? String(item.location) : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")
-            : null
-        }
-        gradient="none"
-        as="h1"
-      />
+    <main className="container-page py-4 text-[var(--text)] sm:py-6" aria-label="Request detail">
+      <header className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-5">
+        <div className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Request
+        </div>
+
+        <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl break-words">
+          {title}
+        </h1>
+
+        {subtitle ? (
+          <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">{subtitle}</p>
+        ) : null}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Link href="/requests" prefetch={false} className="btn-outline text-xs sm:text-sm">
+            Back to requests
+          </Link>
+          <Link href="/requests/new" prefetch={false} className="btn-gradient-primary text-xs sm:text-sm">
+            Post a request
+          </Link>
+        </div>
+      </header>
 
       {loadError ? (
         <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-3 text-sm text-[var(--text)] shadow-sm sm:mt-4 sm:px-4">
@@ -126,9 +166,7 @@ export default async function RequestDetailPage({
       ) : (
         <section className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-4 sm:p-5">
           {item?.description ? (
-            <p className="text-sm leading-relaxed text-[var(--text)]">
-              {String(item.description)}
-            </p>
+            <p className="text-sm leading-relaxed text-[var(--text)]">{String(item.description)}</p>
           ) : (
             <p className="text-sm leading-relaxed text-[var(--text-muted)]">
               No description provided.
@@ -138,23 +176,15 @@ export default async function RequestDetailPage({
           <div className="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
             {item?.category ? (
               <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] p-2.5 shadow-sm sm:p-3">
-                <div className="text-xs font-semibold text-[var(--text-muted)]">
-                  Category
-                </div>
-                <div className="mt-1 font-semibold text-[var(--text)]">
-                  {String(item.category)}
-                </div>
+                <div className="text-xs font-semibold text-[var(--text-muted)]">Category</div>
+                <div className="mt-1 font-semibold text-[var(--text)]">{String(item.category)}</div>
               </div>
             ) : null}
 
             {item?.status ? (
               <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] p-2.5 shadow-sm sm:p-3">
-                <div className="text-xs font-semibold text-[var(--text-muted)]">
-                  Status
-                </div>
-                <div className="mt-1 font-semibold text-[var(--text)]">
-                  {String(item.status)}
-                </div>
+                <div className="text-xs font-semibold text-[var(--text-muted)]">Status</div>
+                <div className="mt-1 font-semibold text-[var(--text)]">{String(item.status)}</div>
               </div>
             ) : null}
           </div>
@@ -171,16 +201,6 @@ export default async function RequestDetailPage({
               ))}
             </div>
           ) : null}
-
-          <div className="mt-4 flex flex-wrap items-center gap-2 sm:mt-5">
-            <Link
-              href="/requests"
-              prefetch={false}
-              className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-4 sm:text-sm"
-            >
-              Back to requests
-            </Link>
-          </div>
         </section>
       )}
     </main>

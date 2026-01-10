@@ -1,4 +1,3 @@
-// src/app/components/Navbar.tsx
 "use client";
 
 import * as React from "react";
@@ -44,6 +43,7 @@ export default function Navbar({
   );
 
   const browseActive = isActive("/search");
+  const deliveryActive = isActive("/delivery");
 
   return (
     <header
@@ -115,6 +115,16 @@ export default function Navbar({
               <NavLink href="/" active={isActive("/")} ariaLabel="Home" title="Home">
                 <Icon name="home" />
                 <span className="hidden sm:inline">Home</span>
+              </NavLink>
+
+              <NavLink
+                href="/delivery"
+                active={deliveryActive}
+                ariaLabel="Delivery"
+                title="Delivery"
+              >
+                <Icon name="search" />
+                <span className="hidden sm:inline">Delivery</span>
               </NavLink>
 
               {showSaved && (

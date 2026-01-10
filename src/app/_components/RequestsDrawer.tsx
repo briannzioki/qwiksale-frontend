@@ -1,57 +1,92 @@
-// src/app/_components/RequestsDrawer.tsx
 "use client";
 
 import * as React from "react";
 import Link from "next/link";
-import RequestsFeedList, {
-  type RequestsFeedItem,
-} from "@/app/_components/RequestsFeedList";
+import RequestsFeedList, { type RequestsFeedItem } from "@/app/_components/RequestsFeedList";
 
 type Props = {
   open: boolean;
-  // Use the *Action suffix to satisfy Next's serializable-props rule.
-  // Keep `onClose` as unknown for backward compatibility without tripping the rule.
   onCloseAction?: () => void;
   onClose?: unknown;
   isAuthed: boolean;
 };
 
 const FEED_TIMEOUT_MS = 10_000;
+const SESSION_PROBE_TIMEOUT_MS = 3_500;
 
-function hasNextAuthSessionCookie(): boolean {
-  if (typeof document === "undefined") return false;
-  const c = document.cookie || "";
-  // NextAuth session cookie name varies by secure context:
-  // - next-auth.session-token
-  // - __Secure-next-auth.session-token
-  return /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token=/.test(c);
-}
-
-export default function RequestsDrawer({
-  open,
-  onCloseAction,
-  onClose,
-  isAuthed,
-}: Props) {
+export default function RequestsDrawer({ open, onCloseAction, onClose, isAuthed }: Props) {
   const [loading, setLoading] = React.useState(false);
   const [items, setItems] = React.useState<RequestsFeedItem[]>([]);
   const [error, setError] = React.useState<string | null>(null);
-  const [cookieAuthed, setCookieAuthed] = React.useState(false);
+
+  // Canonical session probe (no cookie-name assumptions).
+  const [authedProbe, setAuthedProbe] = React.useState(false);
 
   const close = React.useCallback(() => {
     const fn =
-      onCloseAction ??
-      (typeof onClose === "function" ? (onClose as () => void) : undefined);
+      onCloseAction ?? (typeof onClose === "function" ? (onClose as () => void) : undefined);
     fn?.();
   }, [onCloseAction, onClose]);
 
-  // Prevent transient "guest" gating when session cookies exist (suite-only flake).
-  React.useEffect(() => {
-    if (!open) return;
-    setCookieAuthed(hasNextAuthSessionCookie());
-  }, [open]);
+  // Close after the current click tick so Link navigation is not interrupted by unmounting.
+  const closeAfterTick = React.useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => close());
+  }, [close]);
 
-  const isAuthedStable = isAuthed || cookieAuthed;
+  React.useEffect(() => {
+    if (!open) {
+      setAuthedProbe(false);
+      return;
+    }
+    if (isAuthed) {
+      setAuthedProbe(false);
+      return;
+    }
+
+    let alive = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SESSION_PROBE_TIMEOUT_MS);
+
+    (async () => {
+      try {
+        const r = await fetch("/api/auth/session", {
+          cache: "no-store",
+          credentials: "include",
+          signal: controller.signal,
+          headers: { Accept: "application/json" },
+        });
+
+        if (!alive) return;
+        if (!r.ok) return;
+
+        let j: any = null;
+        try {
+          j = await r.json();
+        } catch {
+          j = null;
+        }
+
+        if (!alive) return;
+
+        const hasUser = Boolean(j && typeof j === "object" && j.user);
+        const hasExpires = Boolean(j && typeof j?.expires === "string" && j.expires.trim());
+        if (hasUser || hasExpires) setAuthedProbe(true);
+      } catch {
+        // ignore
+      } finally {
+        clearTimeout(timer);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, isAuthed]);
+
+  const isAuthedStable = isAuthed || authedProbe;
 
   React.useEffect(() => {
     if (!open) return;
@@ -84,6 +119,7 @@ export default function RequestsDrawer({
 
         const res = await fetch("/api/requests/feed", {
           cache: "no-store",
+          credentials: "include",
           headers: { Accept: "application/json" },
           signal: controller.signal,
         });
@@ -141,17 +177,16 @@ export default function RequestsDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-[999] flex"
+      className="fixed inset-0 z-[999] isolate flex"
       role="dialog"
       aria-modal="true"
       aria-label="Requests"
       data-testid="requests-drawer"
     >
-      {/* Backdrop */}
       <button
         type="button"
         className={[
-          "absolute inset-0",
+          "absolute inset-0 z-0",
           "bg-[color:var(--bg)]/70",
           "backdrop-blur-[2px] backdrop-brightness-75",
           "supports-[backdrop-filter]:bg-[color:var(--bg)]/40",
@@ -160,10 +195,9 @@ export default function RequestsDrawer({
         onClick={close}
       />
 
-      {/* Panel */}
       <aside
         className={[
-          "relative ml-0 h-full w-[min(420px,90vw)]",
+          "relative z-10 ml-0 h-full w-[min(420px,90vw)] pointer-events-auto",
           "bg-[var(--bg-elevated)] text-[var(--text)]",
           "border-r border-[var(--border-subtle)] shadow-soft",
           "p-3 sm:p-4",
@@ -214,18 +248,13 @@ export default function RequestsDrawer({
             <RequestsFeedList
               items={items}
               isAuthed={isAuthedStable}
-              onNavigateAction={close}
+              onNavigateAction={closeAfterTick}
             />
           )}
         </div>
 
-        {/* CTAs AFTER the list so broad selectors don't hit /requests/new first */}
         <div className="mt-3 sm:mt-4 flex flex-wrap items-center gap-2">
-          <Link
-            href="/requests"
-            prefetch={false}
-            className="btn-outline text-xs sm:text-sm"
-          >
+          <Link href="/requests" prefetch={false} className="btn-outline text-xs sm:text-sm">
             Open directory
           </Link>
           <Link

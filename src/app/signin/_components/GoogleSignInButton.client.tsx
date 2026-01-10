@@ -1,4 +1,3 @@
-// src/app/signin/_components/GoogleSignInButton.client.tsx
 "use client";
 
 import * as React from "react";
@@ -8,55 +7,58 @@ type GoogleSignInButtonProps = {
   callbackUrl: string;
 };
 
+const DEFAULT_AFTER_SIGNIN = "/dashboard";
+
+function isSafePath(p?: string | null): p is string {
+  return !!p && /^\/(?!\/)/.test(p);
+}
+
+function sanitizeCallback(raw: string, fallback: string): string {
+  const v = String(raw || "").trim();
+  const path = isSafePath(v) ? v : fallback;
+
+  const lower = path.toLowerCase();
+  if (lower === "/signin" || lower.startsWith("/signin?")) return fallback;
+  if (lower.startsWith("/api/auth")) return fallback;
+
+  return path;
+}
+
 /**
  * Google sign-in entry:
- * - Keeps <a> semantics (Playwright expects a LINK).
- * - Styled to match signup page button (icon + rounded-xl + border + hover states).
- * - Uses next-auth/react signIn("google") so live + local behave the same as /signup.
- * - Keeps href as a fallback for non-standard clicks (open-in-new-tab, etc).
+ * - MUST be an <a> (role="link").
+ * - Uses next-auth/react signIn("google") with redirect:true to leave /signin on success.
+ * - Keeps href as a hard fallback.
  */
 export function GoogleSignInButton({ callbackUrl }: GoogleSignInButtonProps) {
   const [loading, setLoading] = React.useState(false);
 
-  const safeCallback =
-    callbackUrl && callbackUrl.startsWith("/") ? callbackUrl : "/dashboard";
-
-  // Keep href for link semantics + fallback navigation.
-  const href = `/api/auth/signin/google?callbackUrl=${encodeURIComponent(
-    safeCallback,
-  )}`;
+  const safeCallback = sanitizeCallback(callbackUrl, DEFAULT_AFTER_SIGNIN);
+  const href = `/api/auth/signin/google?callbackUrl=${encodeURIComponent(safeCallback)}`;
 
   const handleClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    // Allow open-in-new-tab / modified clicks to behave like a normal link.
-    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
-      return;
-    }
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
 
     if (loading) {
       e.preventDefault();
       return;
     }
 
-    // We drive auth via signIn() to avoid live-only GET issues.
     e.preventDefault();
     setLoading(true);
 
     try {
-      const res = await signIn("google", {
-        redirect: true,
-        callbackUrl: safeCallback,
-      });
-
-      // Safety: if redirect didn't happen but next-auth returned a URL, navigate.
-      const nextUrl = (res as any)?.url;
-      if (typeof nextUrl === "string" && nextUrl) {
-        window.location.href = nextUrl;
-      }
+      await signIn(
+        "google",
+        {
+          redirect: true,
+          callbackUrl: safeCallback,
+          redirectTo: safeCallback,
+        } as any,
+      );
     } catch {
-      // Fall back to hard navigation if signIn throws (rare, but safer on live).
       window.location.href = href;
     } finally {
-      // In the normal case, redirect will occur and this won't matter.
       setLoading(false);
     }
   };
@@ -71,7 +73,7 @@ export function GoogleSignInButton({ callbackUrl }: GoogleSignInButtonProps) {
         "flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)] px-4 py-3 font-semibold",
         "bg-[var(--bg-elevated)] text-[var(--text)] text-xs sm:text-sm",
         "hover:bg-[var(--bg-subtle)] active:scale-[.99]",
-        "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border)]",
         loading ? "pointer-events-none opacity-60" : "",
       ].join(" ")}
     >

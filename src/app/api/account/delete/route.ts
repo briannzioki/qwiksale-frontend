@@ -64,7 +64,7 @@ let _throttleOnce: Promise<ThrottleFn | null> | null = null;
 
 async function getThrottle(): Promise<ThrottleFn | null> {
   if (_throttleOnce) return _throttleOnce;
-  _throttleOnce = import("@/app/api/auth/otp/_store")
+  _throttleOnce = import("@/app/api/otp/_store")
     .then((m: any) =>
       typeof m?.throttle === "function" ? (m.throttle as ThrottleFn) : null
     )

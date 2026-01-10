@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/app/lib/prisma";
 import {
@@ -27,6 +27,7 @@ function noStore(json: unknown, init?: ResponseInit) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("Pragma", "no-cache");
   res.headers.set("Expires", "0");
+  res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
   return res;
 }
 
@@ -63,6 +64,7 @@ function normalizeName(input: unknown): string | undefined {
   if (!s) return ""; // allow clearing
   return s.length > 80 ? s.slice(0, 80) : s;
 }
+
 function normalizeImageUrl(input: unknown): string | null | undefined {
   if (input === null) return null;
   if (typeof input !== "string") return undefined;
@@ -87,6 +89,28 @@ function normalizeKePhone(raw: unknown): string | undefined {
   return s;
 }
 const looksLikeValidKePhone = (s?: string) => !!s && /^254(7|1)\d{8}$/.test(s);
+
+function looksLikeGoogleMapsUrl(input: string): boolean {
+  const s = String(input || "").trim();
+  if (!s) return false;
+
+  let url: URL;
+  try {
+    url = new URL(s);
+  } catch {
+    return false;
+  }
+
+  const host = url.hostname.toLowerCase();
+  const path = url.pathname.toLowerCase();
+
+  return (
+    host === "maps.google.com" ||
+    (host.endsWith(".google.com") && path.includes("/maps")) ||
+    (host === "goo.gl" && path.startsWith("/maps")) ||
+    (host.endsWith(".goo.gl") && path.includes("/maps"))
+  );
+}
 
 /* ---------------------------------- GET ---------------------------------- */
 export async function GET() {
@@ -134,10 +158,8 @@ export async function GET() {
     const normalizedWhatsapp = normalizeKePhone(user.whatsapp ?? "") || null;
     const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
 
-    // ✅ Canonical seller verification: derived from emailVerified (single source of truth)
     const sellerVerified = sellerVerifiedFromEmailVerified(user.emailVerified);
 
-    // ✅ No forced tier defaults (unknown stays null)
     let badges: any = buildSellerBadgeFields(sellerVerified, null);
     try {
       const rows = await prisma.$queryRaw<{ u: any }[]>`
@@ -161,14 +183,12 @@ export async function GET() {
     return noStore({
       user: {
         ...user,
-        // Force legacy boolean to match the canonical rule (prevents UI drift)
-        verified: badgeOut.sellerVerified,
+        // Keep legacy mirrors for other UI that expects these fields
         sellerVerified: badgeOut.sellerVerified,
         sellerFeaturedTier: badgeOut.sellerFeaturedTier,
         sellerBadges: badgeOut.sellerBadges,
         isVerified: badgeOut.isVerified,
         seller_verified: badgeOut.seller_verified,
-        // Back-compat alias (some UI code checks for snake_case)
         email_verified: user.emailVerified,
         whatsapp: normalizedWhatsapp,
         profileComplete,
@@ -181,7 +201,7 @@ export async function GET() {
 }
 
 /* --------------------------------- PATCH --------------------------------- */
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
   try {
     const session = await auth().catch(() => null);
     const sessionUser = (session as any)?.user || null;
@@ -224,7 +244,6 @@ export async function PATCH(req: Request) {
       city?: string | null;
       country?: string | null;
       storeLocationUrl?: string | null;
-      // NOTE: verified is intentionally NOT accepted here.
     };
 
     const data: Record<string, unknown> = {};
@@ -232,7 +251,6 @@ export async function PATCH(req: Request) {
     const normName = normalizeName(body?.name ?? undefined);
     if (normName !== undefined) data["name"] = normName || null;
 
-    // email
     if (typeof body?.email === "string") {
       const nextEmail = body.email.trim().toLowerCase();
       if (!looksLikeEmail(nextEmail)) {
@@ -257,13 +275,10 @@ export async function PATCH(req: Request) {
         data["email"] = nextEmail;
         if (typeof me.emailVerified !== "undefined") {
           data["emailVerified"] = null;
-          // Keep the legacy mirror consistent with the single source of truth
-          data["verified"] = false;
         }
       }
     }
 
-    // username
     if (typeof body?.username === "string") {
       const username = body.username.trim();
 
@@ -296,11 +311,9 @@ export async function PATCH(req: Request) {
       data["username"] = username;
     }
 
-    // image
     const normImage = normalizeImageUrl(body?.image);
     if (normImage !== undefined) data["image"] = normImage;
 
-    // whatsapp
     if (body?.whatsapp !== undefined) {
       const norm = normalizeKePhone(body.whatsapp);
       if (norm && !looksLikeValidKePhone(norm)) {
@@ -317,49 +330,42 @@ export async function PATCH(req: Request) {
     if (body?.city !== undefined) data["city"] = body.city?.trim() || null;
     if (body?.country !== undefined) data["country"] = body.country?.trim() || null;
 
-    // storeLocationUrl – must be a Google Maps link
     if (typeof body?.storeLocationUrl === "string") {
       const raw = body.storeLocationUrl.trim();
-
       if (!raw) {
         data["storeLocationUrl"] = null;
       } else {
-        let url: URL;
-        try {
-          url = new URL(raw);
-        } catch {
-          return noStore(
-            { error: "Store location URL must be a valid Google Maps link." },
-            { status: 400 },
-          );
-        }
-
-        const host = url.hostname.toLowerCase();
-        const path = url.pathname.toLowerCase();
-
-        const allowed =
-          host === "maps.google.com" ||
-          (host.endsWith(".google.com") && path.includes("/maps")) ||
-          (host === "goo.gl" && path.startsWith("/maps")) ||
-          (host.endsWith(".goo.gl") && path.includes("/maps"));
-
-        if (!allowed) {
+        if (!looksLikeGoogleMapsUrl(raw)) {
           return noStore(
             { error: "Store location URL must be a Google Maps link (maps.google.com or goo.gl/maps)." },
             { status: 400 },
           );
         }
-
-        const full = url.toString();
-        data["storeLocationUrl"] = full.length > 2048 ? full.slice(0, 2048) : full;
+        data["storeLocationUrl"] = raw.length > 2048 ? raw.slice(0, 2048) : raw;
       }
     }
 
-    // NOTE: `verified` is intentionally *not* writable here.
-    // It remains strictly server/admin-controlled.
-
+    // ✅ If no changes, still return current user (so UI can show a success/notice if you want)
     if (Object.keys(data).length === 0) {
-      return noStore({ error: "Nothing to update." }, { status: 400 });
+      const current = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          emailVerified: true,
+          username: true,
+          name: true,
+          image: true,
+          whatsapp: true,
+          address: true,
+          postalCode: true,
+          city: true,
+          country: true,
+          storeLocationUrl: true,
+          verified: true,
+        },
+      });
+      return noStore({ ok: true, user: current }, { status: 200 });
     }
 
     const user = await prisma.user.update({
@@ -382,28 +388,11 @@ export async function PATCH(req: Request) {
       },
     });
 
-    // Best-effort session refresh (safe no-op if unsupported)
-    try {
-      const s = await auth();
-      if ((s as any)?.update) {
-        await (s as any).update({
-          user: {
-            email: user.email ?? undefined,
-            name: user.username ?? user.name ?? undefined,
-            image: user.image ?? undefined,
-          },
-        });
-      }
-    } catch {
-      // ignore
-    }
-
     const normalizedWhatsapp = normalizeKePhone(user.whatsapp ?? "") || null;
     const profileComplete = Boolean(user.email) && Boolean(normalizedWhatsapp);
 
     const sellerVerified = sellerVerifiedFromEmailVerified(user.emailVerified);
 
-    // ✅ No forced tier defaults (unknown stays null)
     let badges: any = buildSellerBadgeFields(sellerVerified, null);
     try {
       const rows = await prisma.$queryRaw<{ u: any }[]>`
@@ -428,13 +417,11 @@ export async function PATCH(req: Request) {
       ok: true,
       user: {
         ...user,
-        verified: badgeOut.sellerVerified,
         sellerVerified: badgeOut.sellerVerified,
         sellerFeaturedTier: badgeOut.sellerFeaturedTier,
         sellerBadges: badgeOut.sellerBadges,
         isVerified: badgeOut.isVerified,
         seller_verified: badgeOut.seller_verified,
-        // Back-compat alias
         email_verified: user.emailVerified,
         whatsapp: normalizedWhatsapp,
         profileComplete,
@@ -444,4 +431,17 @@ export async function PATCH(req: Request) {
     warn("[/api/me/profile PATCH] error:", e);
     return noStore({ error: "Server error" }, { status: 500 });
   }
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+      Vary: "Authorization, Cookie, Accept-Encoding",
+      Allow: "GET,PATCH,OPTIONS",
+    },
+  });
 }

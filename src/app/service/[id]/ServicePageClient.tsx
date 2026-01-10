@@ -20,10 +20,7 @@ import { useListingReviews } from "@/app/hooks/useListingReviews";
 import SellerInfo from "@/app/components/SellerInfo";
 
 import type { FeaturedTier } from "@/app/lib/sellerVerification";
-import {
-  buildSellerBadgeFields,
-  resolveSellerBadgeFieldsFromUserLike,
-} from "@/app/lib/sellerVerification";
+import { buildSellerBadgeFields, resolveSellerBadgeFieldsFromUserLike } from "@/app/lib/sellerVerification";
 
 export type ServiceWire = {
   id: string;
@@ -68,7 +65,6 @@ export type ServiceWire = {
         rating?: number | null;
         sales?: number | null;
 
-        // NOTE: these are *not* authoritative for seller badges in UI
         verified?: boolean | null;
         storeLocationUrl?: string | null;
 
@@ -76,7 +72,6 @@ export type ServiceWire = {
         featured_tier?: string | null;
         tier?: string | null;
 
-        // NextAuth-ish / legacy-ish keys that may appear
         emailVerified?: unknown;
         email_verified?: unknown;
         emailVerifiedAt?: unknown;
@@ -84,26 +79,15 @@ export type ServiceWire = {
       }
     | null;
 
-  /** Optional store-location URL from API */
   sellerStoreLocationUrl?: string | null;
 
-  /** Optional seller/account flags */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
 
-  /** Optional consolidated badges */
-  sellerBadges?: {
-    verified?: boolean | null;
-    tier?: FeaturedTier | string | null;
-  } | null;
+  sellerBadges?: { verified?: boolean | null; tier?: FeaturedTier | string | null } | null;
 };
 
-type StoreRow = ReturnType<typeof useServices> extends { services: infer U }
-  ? U extends (infer V)[]
-    ? V
-    : never
-  : never;
-
+type StoreRow = ReturnType<typeof useServices> extends { services: infer U } ? (U extends (infer V)[] ? V : never) : never;
 type Detail = Partial<StoreRow> & ServiceWire;
 
 type ReviewSummaryPayload = {
@@ -124,32 +108,25 @@ function fmtKES(n?: number | null) {
     return `KES ${n}`;
   }
 }
+
 function rateSuffix(rt?: "hour" | "day" | "fixed" | null) {
   if (rt === "hour") return "/hr";
   if (rt === "day") return "/day";
   return "";
 }
+
 function normRateType(rt: unknown): "hour" | "day" | "fixed" {
   return rt === "hour" || rt === "day" || rt === "fixed" ? rt : "hour";
 }
+
 function isPlaceholder(u?: string | null) {
   if (!u) return false;
   const s = String(u).trim();
   return s === PLACEHOLDER || s.endsWith("/placeholder/default.jpg");
 }
 
-/**
- * Seller badges must be derived via shared resolver (emailVerified-only verification),
- * BUT we allow the API's explicit derived fields:
- * - sellerBadges.verified
- * - sellerVerified
- *
- * We do NOT trust legacy/random boolean fields on nested seller objects (e.g. seller.verified).
- */
 function resolveSellerBadgeFieldsFromAny(raw: any) {
-  const seller =
-    raw?.seller && typeof raw.seller === "object" && !Array.isArray(raw.seller) ? raw.seller : null;
-
+  const seller = raw?.seller && typeof raw.seller === "object" && !Array.isArray(raw.seller) ? raw.seller : null;
   const base = seller ?? (raw && typeof raw === "object" ? raw : {});
 
   const tierHint =
@@ -160,7 +137,6 @@ function resolveSellerBadgeFieldsFromAny(raw: any) {
     raw?.featured_tier ??
     null;
 
-  // ✅ Only accept the API's explicit derived verification fields (not nested legacy booleans).
   const verifiedHint =
     typeof raw?.sellerBadges?.verified === "boolean"
       ? raw.sellerBadges.verified
@@ -170,7 +146,6 @@ function resolveSellerBadgeFieldsFromAny(raw: any) {
           ? raw.seller_verified
           : null;
 
-  // ✅ Prevent legacy boolean fields from influencing verification resolution.
   const baseClean: any = { ...(base as any) };
   delete baseClean.verified;
   delete baseClean.isVerified;
@@ -185,19 +160,12 @@ function resolveSellerBadgeFieldsFromAny(raw: any) {
   delete baseClean.verificationDate;
 
   const userLike = tierHint != null ? { ...baseClean, featuredTier: tierHint } : baseClean;
-
   const resolved = resolveSellerBadgeFieldsFromUserLike(userLike);
-
   const finalVerified = typeof verifiedHint === "boolean" ? verifiedHint : resolved.sellerVerified;
 
   return buildSellerBadgeFields(finalVerified, resolved.sellerFeaturedTier);
 }
 
-/**
- * Keep store slugs compatible with src/app/store/[username]/page.tsx:
- * - username must match /^[a-z0-9._-]{2,128}$/i
- * - otherwise always fall back to u-<userId>
- */
 function normalizeStoreHandle(raw: unknown): string {
   if (typeof raw !== "string") return "";
   let s = raw.trim();
@@ -224,10 +192,7 @@ function isStoreCodeToken(raw: unknown): boolean {
 function coerceValidStoreUsername(raw: unknown): string | null {
   const s = normalizeStoreHandle(raw);
   if (!s) return null;
-
-  // ✅ critical: reject store-code-ish tokens like Sto-83535/store-83535/83535
   if (isStoreCodeToken(s)) return null;
-
   return /^[a-z0-9._-]{2,128}$/i.test(s) ? s : null;
 }
 
@@ -237,10 +202,7 @@ function coerceValidUserId(raw: unknown): string | null {
   if (!s) return null;
   const lower = s.toLowerCase();
   if (lower === "undefined" || lower === "null" || lower === "nan") return null;
-
-  // ✅ critical: do not treat store codes as user ids
   if (isStoreCodeToken(s)) return null;
-
   if (s.length > 120) return null;
   return s;
 }
@@ -251,13 +213,7 @@ function normalizeTier(v: unknown): FeaturedTier | null {
   return t === "basic" || t === "gold" || t === "diamond" ? (t as FeaturedTier) : null;
 }
 
-export default function ServicePageClient({
-  id,
-  initialData,
-}: {
-  id: string;
-  initialData: ServiceWire | null;
-}) {
+export default function ServicePageClient({ id, initialData }: { id: string; initialData: ServiceWire | null }) {
   const { data: session } = useSession();
   const viewerId = (session?.user as any)?.id as string | undefined;
 
@@ -275,10 +231,7 @@ export default function ServicePageClient({
     onReviewCreated,
     onReviewUpdated,
     onReviewDeleted,
-  } = useListingReviews({
-    listingId: id,
-    listingType,
-  });
+  } = useListingReviews({ listingId: id, listingType });
 
   const [fetched, setFetched] = useState<Detail | null>((initialData as unknown as Detail) ?? null);
   const [fetching, setFetching] = useState(false);
@@ -298,7 +251,6 @@ export default function ServicePageClient({
 
   const fetchAbortRef = useRef<AbortController | null>(null);
 
-  // If we already have a strong cached row (e.g. after visiting once), avoid a redundant detail fetch.
   useEffect(() => {
     if (!id || gone || fetched) return;
     if (!service) return;
@@ -308,16 +260,12 @@ export default function ServicePageClient({
     const mediaOk = hasRealGallery(s);
     const notPartial = s?._partial !== true;
 
-    if (descOk && mediaOk && notPartial) {
-      setFetched(service as Detail);
-    }
+    if (descOk && mediaOk && notPartial) setFetched(service as Detail);
   }, [id, gone, fetched, service, hasRealGallery]);
 
   useEffect(() => {
     if (!id || gone || fetching || fetched) return;
 
-    // If we have a store row but it still looks incomplete, fetch detail.
-    // (We only skip if the prior effect already promoted it into `fetched`.)
     const ctrl = new AbortController();
     fetchAbortRef.current?.abort();
     fetchAbortRef.current = ctrl;
@@ -332,10 +280,7 @@ export default function ServicePageClient({
         const r = await fetch(`/api/services/${encodeURIComponent(id)}`, {
           cache: "no-store",
           credentials: "include",
-          headers: {
-            Accept: "application/json",
-            "cache-control": "no-store",
-          },
+          headers: { Accept: "application/json", "cache-control": "no-store" },
           signal: ctrl.signal,
         });
 
@@ -347,8 +292,7 @@ export default function ServicePageClient({
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
 
-        const maybe: Detail | null =
-          (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
+        const maybe: Detail | null = (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
 
         const status = (maybe as any)?.status;
         if (status && String(status).toUpperCase() !== "ACTIVE") {
@@ -358,9 +302,7 @@ export default function ServicePageClient({
 
         if (!ctrl.signal.aborted) setFetched(maybe);
       } catch (e: any) {
-        if (!ctrl.signal.aborted) {
-          setFetchErr(e?.message || "Failed to load service");
-        }
+        if (!ctrl.signal.aborted) setFetchErr(e?.message || "Failed to load service");
       } finally {
         clearTimeout(t);
         if (!ctrl.signal.aborted) setFetching(false);
@@ -373,123 +315,9 @@ export default function ServicePageClient({
     };
   }, [id, gone, fetching, fetched]);
 
-  const didRefetchEmpty = useRef(false);
-  const hasRealFromCurrent = useMemo(
-    () => hasRealGallery(fetched ?? service ?? {}),
-    [fetched, service, hasRealGallery],
-  );
-
-  useEffect(() => {
-    if (!id || gone || fetching) return;
-    if (!fetched) return;
-    if (hasRealFromCurrent) return;
-    if (didRefetchEmpty.current) return;
-
-    didRefetchEmpty.current = true;
-
-    const ctrl = new AbortController();
-    fetchAbortRef.current?.abort();
-    fetchAbortRef.current = ctrl;
-
-    const t = setTimeout(() => ctrl.abort(), DETAIL_FETCH_TIMEOUT_MS);
-
-    let backoffTimer: ReturnType<typeof setTimeout> | null = null;
-    const sleep = (ms: number) =>
-      new Promise<void>((resolve) => {
-        backoffTimer = setTimeout(() => resolve(), ms);
-      });
-
-    (async () => {
-      try {
-        setFetching(true);
-        setFetchErr(null);
-
-        const request = () =>
-          fetch(`/api/services/${encodeURIComponent(id)}`, {
-            cache: "no-store",
-            credentials: "include",
-            headers: {
-              Accept: "application/json",
-              "cache-control": "no-store",
-            },
-            signal: ctrl.signal,
-          });
-
-        const r = await request();
-
-        if (r.status === 404) {
-          if (!ctrl.signal.aborted) setGone(true);
-          return;
-        }
-
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j?.error || `Failed to load (${r.status})`);
-
-        const maybe: Detail | null =
-          (j && (("service" in j ? (j as any).service : j) as Detail)) || null;
-
-        const status = (maybe as any)?.status;
-        if (status && String(status).toUpperCase() !== "ACTIVE") {
-          if (!ctrl.signal.aborted) setGone(true);
-          return;
-        }
-
-        const timedFallback = r.headers.get("x-api-fallback") === "timed-out";
-        const stillEmpty = !hasRealGallery(maybe || {});
-
-        if (!ctrl.signal.aborted) setFetched(maybe);
-
-        // ✅ one backoff retry only when fallback timed out OR payload still placeholder-only
-        if ((timedFallback || stillEmpty) && !ctrl.signal.aborted) {
-          await sleep(1200);
-          if (ctrl.signal.aborted) return;
-
-          const r2 = await request();
-
-          if (r2.status === 404) {
-            if (!ctrl.signal.aborted) setGone(true);
-            return;
-          }
-
-          const j2 = await r2.json().catch(() => ({}));
-          if (r2.ok) {
-            const maybe2: Detail | null =
-              (j2 && (("service" in j2 ? (j2 as any).service : j2) as Detail)) || null;
-
-            const status2 = (maybe2 as any)?.status;
-            if (status2 && String(status2).toUpperCase() !== "ACTIVE") {
-              if (!ctrl.signal.aborted) setGone(true);
-              return;
-            }
-
-            if (!ctrl.signal.aborted && hasRealGallery(maybe2 || {})) {
-              setFetched(maybe2);
-            }
-          }
-        }
-      } catch (e: any) {
-        if (!ctrl.signal.aborted) {
-          setFetchErr(e?.message || "Failed to load service");
-        }
-      } finally {
-        clearTimeout(t);
-        if (backoffTimer) clearTimeout(backoffTimer);
-        if (!ctrl.signal.aborted) setFetching(false);
-      }
-    })();
-
-    return () => {
-      clearTimeout(t);
-      if (backoffTimer) clearTimeout(backoffTimer);
-      ctrl.abort();
-    };
-  }, [id, gone, fetching, fetched, hasRealFromCurrent, hasRealGallery]);
-
   useEffect(() => {
     const status = (service as any)?.status;
-    if (status && String(status).toUpperCase() !== "ACTIVE") {
-      setGone(true);
-    }
+    if (status && String(status).toUpperCase() !== "ACTIVE") setGone(true);
   }, [service]);
 
   if (gone) {
@@ -500,9 +328,7 @@ export default function ServicePageClient({
             404
           </div>
           <h1 className="text-lg font-semibold text-[var(--text)]">Service unavailable</h1>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">
-            This service was removed or isn’t available anymore.
-          </p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">This service was removed or isn’t available anymore.</p>
           <div className="mt-4 flex items-center justify-center gap-2">
             <Link href="/" prefetch={false} className="btn-gradient-primary">
               Home
@@ -517,8 +343,6 @@ export default function ServicePageClient({
   }
 
   const displayMaybe = (fetched || service) as Detail | undefined;
-
-  // ✅ seller verification from resolver + explicit API derived fields
   const sellerBadgeFields = resolveSellerBadgeFieldsFromAny(displayMaybe);
 
   const display: Detail = {
@@ -540,17 +364,11 @@ export default function ServicePageClient({
     sellerPhone: displayMaybe?.sellerPhone ?? null,
     sellerLocation: displayMaybe?.sellerLocation ?? null,
     sellerMemberSince: displayMaybe?.sellerMemberSince ?? null,
-    sellerRating:
-      typeof displayMaybe?.sellerRating === "number" ? displayMaybe.sellerRating : null,
+    sellerRating: typeof displayMaybe?.sellerRating === "number" ? displayMaybe.sellerRating : null,
     sellerSales: typeof displayMaybe?.sellerSales === "number" ? displayMaybe.sellerSales : null,
     seller: displayMaybe?.seller ?? null,
-    ...(displayMaybe && "status" in displayMaybe && displayMaybe.status != null
-      ? { status: displayMaybe.status as any }
-      : {}),
-    sellerStoreLocationUrl:
-      displayMaybe?.sellerStoreLocationUrl ?? (displayMaybe as any)?.storeLocationUrl ?? null,
-
-    // ✅ stable consolidated badges + alias fields
+    ...(displayMaybe && "status" in displayMaybe && displayMaybe.status != null ? { status: displayMaybe.status as any } : {}),
+    sellerStoreLocationUrl: displayMaybe?.sellerStoreLocationUrl ?? (displayMaybe as any)?.storeLocationUrl ?? null,
     ...sellerBadgeFields,
   };
 
@@ -559,20 +377,14 @@ export default function ServicePageClient({
     const pruned = stripPlaceholderIfOthers(urls, PLACEHOLDER);
 
     if (!pruned || pruned.length === 0) {
-      if (displayMaybe?.image && !isPlaceholder(displayMaybe.image)) {
-        return [displayMaybe.image];
-      }
+      if (displayMaybe?.image && !isPlaceholder(displayMaybe.image)) return [displayMaybe.image];
       return [PLACEHOLDER];
     }
     return pruned;
   }, [displayMaybe]);
 
-  const enableLightbox = useMemo(
-    () => galleryToRender.some((u) => u && u !== PLACEHOLDER),
-    [galleryToRender],
-  );
+  const enableLightbox = useMemo(() => galleryToRender.some((u) => u && u !== PLACEHOLDER), [galleryToRender]);
 
-  // ✅ Ensure we ALWAYS render at least one visible <img> inside [data-gallery-wrap]
   const staticHeroSrc = useMemo(() => {
     const src = galleryToRender?.[0] || PLACEHOLDER;
     return src || PLACEHOLDER;
@@ -591,9 +403,7 @@ export default function ServicePageClient({
             ? (display as any).storeLocationUrl
             : null;
 
-    const uiVerified =
-      typeof (display as any)?.sellerVerified === "boolean" ? (display as any).sellerVerified : null;
-
+    const uiVerified = typeof (display as any)?.sellerVerified === "boolean" ? (display as any).sellerVerified : null;
     const uiTier = normalizeTier((display as any)?.sellerFeaturedTier);
 
     return {
@@ -604,20 +414,9 @@ export default function ServicePageClient({
       phone: nested?.phone ?? display?.sellerPhone ?? null,
       location: nested?.location ?? display?.sellerLocation ?? null,
       memberSince: nested?.memberSince ?? display?.sellerMemberSince ?? null,
-      rating:
-        typeof nested?.rating === "number"
-          ? nested.rating
-          : typeof display?.sellerRating === "number"
-            ? display?.sellerRating
-            : null,
-      sales:
-        typeof nested?.sales === "number"
-          ? nested.sales
-          : typeof display?.sellerSales === "number"
-            ? display?.sellerSales
-            : null,
+      rating: typeof nested?.rating === "number" ? nested.rating : typeof display?.sellerRating === "number" ? display?.sellerRating : null,
+      sales: typeof nested?.sales === "number" ? nested.sales : typeof display?.sellerSales === "number" ? display?.sellerSales : null,
       storeLocationUrl,
-
       verified: uiVerified,
       featuredTier: uiTier,
     };
@@ -650,15 +449,11 @@ export default function ServicePageClient({
     return uid ? `u-${uid}` : null;
   }, [seller.username, displaySellerUsername, displayUsername, sellerUserIdForStore]);
 
-  const storeHref = useMemo(() => {
-    if (!storeSlug) return null;
-    return `/store/${encodeURIComponent(storeSlug)}`;
-  }, [storeSlug]);
+  const storeHref = useMemo(() => (storeSlug ? `/store/${encodeURIComponent(storeSlug)}` : null), [storeSlug]);
 
   const sellerIdForDonate: string | null = sellerUserIdForStore;
 
-  const listingTier: FeaturedTier | null =
-    seller.featuredTier ?? (display.featured ? "basic" : null);
+  const listingTier: FeaturedTier | null = seller.featuredTier ?? (display.featured ? "basic" : null);
 
   const overlayTier: FeaturedTier | null = listingTier;
   const overlayTestId = overlayTier ? `featured-tier-${overlayTier}` : null;
@@ -700,17 +495,13 @@ export default function ServicePageClient({
     if (!display?.id) return;
     try {
       const shareUrl =
-        typeof window !== "undefined" && window.location
-          ? `${window.location.origin}/service/${display.id}`
-          : `/service/${display.id}`;
+        typeof window !== "undefined" && window.location ? `${window.location.origin}/service/${display.id}` : `/service/${display.id}`;
       await navigator.clipboard.writeText(shareUrl);
       toast.success("Link copied");
     } catch {
       toast.error("Couldn't copy link");
     }
   }, [display?.id]);
-
-  /* ------------------------------ Reviews ------------------------------- */
 
   const listingId = display.id!;
 
@@ -729,33 +520,24 @@ export default function ServicePageClient({
       summary
         ? {
             average: typeof summary.average === "number" ? summary.average : avgRating ?? null,
-            count:
-              typeof summary.count === "number"
-                ? summary.count
-                : reviewCount ?? (reviews as any[]).length,
-            viewerRating:
-              viewerReview && typeof (viewerReview as any).rating === "number"
-                ? (viewerReview as any).rating
-                : null,
+            count: typeof summary.count === "number" ? summary.count : reviewCount ?? (reviews as any[]).length,
+            viewerRating: viewerReview && typeof (viewerReview as any).rating === "number" ? (viewerReview as any).rating : null,
           }
         : (reviews as any[]).length
           ? {
               average:
                 typeof avgRating === "number"
                   ? avgRating
-                  : (reviews as any[]).reduce((acc, r: any) => acc + (r.rating || 0), 0) /
-                    (reviews as any[]).length,
+                  : (reviews as any[]).reduce((acc, r: any) => acc + (r.rating || 0), 0) / (reviews as any[]).length,
               count: (reviews as any[]).length,
-              viewerRating:
-                viewerReview && typeof (viewerReview as any).rating === "number"
-                  ? (viewerReview as any).rating
-                  : null,
+              viewerRating: viewerReview && typeof (viewerReview as any).rating === "number" ? (viewerReview as any).rating : null,
             }
           : null,
     [summary, avgRating, reviewCount, reviews, viewerReview],
   );
 
-  /* -------------------------------- UI --------------------------------- */
+  const reviewCountEffective = (reviewSummary?.count ?? reviewCount ?? (reviews as any[]).length) || 0;
+  const hasAnyReviews = reviewCountEffective > 0;
 
   return (
     <>
@@ -763,35 +545,17 @@ export default function ServicePageClient({
         <script
           type="application/ld+json"
           suppressHydrationWarning
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(seo.jsonLd),
-          }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(seo.jsonLd) }}
         />
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-5">
-        {/* Media */}
         <div className="lg:col-span-3">
           <div
             className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-soft"
             data-gallery-wrap
           >
             <div className="relative" style={{ aspectRatio: "16 / 10" }}>
-              {overlayTier && overlayTestId && (
-                <span
-                  data-testid={overlayTestId}
-                  aria-label={overlayLabel}
-                  title={overlayLabel}
-                  className={[
-                    "pointer-events-none absolute left-2 top-2 z-20 inline-flex items-center justify-center rounded-xl px-2 py-1 text-[11px] shadow-sm backdrop-blur-sm sm:left-3 sm:top-3 sm:text-xs",
-                    featuredOverlayClass,
-                    featuredOverlayRing,
-                  ].join(" ")}
-                >
-                  <span aria-hidden>{overlayIcon}</span>
-                </span>
-              )}
-
               {!enableLightbox ? (
                 <img
                   src={staticHeroSrc}
@@ -808,8 +572,26 @@ export default function ServicePageClient({
               <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-[var(--border-subtle)]" />
             </div>
 
-            {/* Overlay controls */}
-            <div className="absolute right-2 top-2 z-[80] flex gap-2 sm:right-3 sm:top-3">
+            <div className="absolute right-2 top-2 z-[80] flex flex-wrap items-center gap-2 sm:right-3 sm:top-3">
+              {overlayTier && overlayTestId ? (
+                <span
+                  data-testid={overlayTestId}
+                  aria-label={overlayLabel}
+                  title={overlayLabel}
+                  className={[
+                    "pointer-events-none inline-flex items-center justify-center rounded-xl px-2 py-1 text-[11px] shadow-sm backdrop-blur-sm",
+                    "sm:text-xs",
+                    featuredOverlayClass,
+                    featuredOverlayRing,
+                  ].join(" ")}
+                >
+                  <span aria-hidden className="mr-1">
+                    {overlayIcon}
+                  </span>
+                  <span className="whitespace-nowrap">{toneTier.toUpperCase()}</span>
+                </span>
+              ) : null}
+
               <button
                 type="button"
                 onClick={copyLink}
@@ -822,7 +604,7 @@ export default function ServicePageClient({
 
               <FavoriteButton serviceId={display.id!} />
 
-              {isOwner && (
+              {isOwner ? (
                 <>
                   <Link
                     href={`/service/${display.id}/edit`}
@@ -843,25 +625,21 @@ export default function ServicePageClient({
                     redirectHref="/dashboard?deleted=1"
                   />
                 </>
-              )}
+              ) : null}
             </div>
 
-            {(fetching || fetchErr) && (
+            {(fetching || fetchErr) ? (
               <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[75] border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-center text-[11px] text-[var(--text)] shadow-sm sm:text-xs">
                 {fetching ? "Loading…" : fetchErr || "Showing limited info"}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
 
-        {/* Details */}
         <div className="space-y-3 sm:space-y-4 lg:col-span-2">
-          {/* Header / title */}
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                Service
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Service</p>
               <h1 className="mt-1 text-xl font-bold text-[var(--text)] sm:text-2xl">
                 <span className="sr-only">Service </span>
                 {display.name || "Service"}
@@ -872,24 +650,18 @@ export default function ServicePageClient({
             </div>
           </div>
 
-          {/* Rate / meta */}
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:p-4">
             <p className="text-xl font-bold text-[var(--text)] sm:text-2xl">
               {fmtKES(display.price)} {rateSuffix(display.rateType ?? null)}
             </p>
-            {display.serviceArea && (
-              <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">
-                Service Area: {display.serviceArea}
-              </p>
-            )}
-            {display.location && (
-              <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">
-                Base Location: {display.location}
-              </p>
-            )}
+            {display.serviceArea ? (
+              <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">Service Area: {display.serviceArea}</p>
+            ) : null}
+            {display.location ? (
+              <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">Base Location: {display.location}</p>
+            ) : null}
           </div>
 
-          {/* Description */}
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:p-4">
             <h2 className="mb-1 font-semibold text-[var(--text)] sm:mb-2">Description</h2>
             <p className="whitespace-pre-line text-sm text-[var(--text)] sm:text-base">
@@ -897,7 +669,6 @@ export default function ServicePageClient({
             </p>
           </div>
 
-          {/* Provider / Contact */}
           <SellerInfo
             label="Provider"
             sellerId={sellerUserIdForStore}
@@ -925,16 +696,10 @@ export default function ServicePageClient({
             }
           />
 
-          {/* Reviews */}
           <div
             className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-[var(--text)] shadow-soft sm:p-4"
             data-section="reviews"
-            {...(reviewSummary
-              ? {
-                  "data-review-avg": reviewSummary.average ?? undefined,
-                  "data-review-count": reviewSummary.count,
-                }
-              : {})}
+            {...(reviewSummary ? { "data-review-avg": reviewSummary.average ?? undefined, "data-review-count": reviewSummary.count } : {})}
           >
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold text-[var(--text)]">Reviews</h3>
@@ -946,7 +711,7 @@ export default function ServicePageClient({
               />
             </div>
 
-            {reviewsError && <p className="mt-2 text-xs text-destructive">{reviewsError}</p>}
+            {reviewsError ? <p className="mt-2 text-xs text-destructive">{reviewsError}</p> : null}
 
             <div className="mt-3 space-y-4">
               <AddReviewForm
@@ -959,11 +724,15 @@ export default function ServicePageClient({
                 }}
               />
 
-              <ReviewList
-                reviews={reviews as any[]}
-                onReviewEditAction={onReviewUpdated}
-                onReviewDeleteAction={onReviewDeleted}
-              />
+              {!reviewsLoading && !reviewsError && !hasAnyReviews ? (
+                <p className="text-xs text-[var(--text-muted)]">
+                  No reviews yet. Be the first to share your experience.
+                </p>
+              ) : null}
+
+              {hasAnyReviews ? (
+                <ReviewList reviews={reviews as any[]} onReviewEditAction={onReviewUpdated} onReviewDeleteAction={onReviewDeleted} />
+              ) : null}
             </div>
           </div>
         </div>

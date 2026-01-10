@@ -23,6 +23,7 @@ export default function RequestFilters({
   showCta?: boolean;
 }) {
   const sp = useSearchParams();
+  const uid = React.useId();
 
   const q = getParam(sp, "q");
   const kind = safeKind(getParam(sp, "kind"));
@@ -31,11 +32,23 @@ export default function RequestFilters({
 
   const hasFilters = Boolean(q || kind || category || location);
 
+  const qId = `req-q-${uid}`;
+  const kindId = `req-kind-${uid}`;
+  const categoryId = `req-category-${uid}`;
+  const locationId = `req-location-${uid}`;
+
   const fieldLabel = "block text-xs font-semibold text-[var(--text-muted)]";
   const inputBase =
     "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
   const selectBase =
     "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+  const ctaParams = new URLSearchParams({
+    ...(kind ? { kind } : {}),
+    ...(q ? { title: q } : {}),
+  }).toString();
+
+  const ctaHref = ctaParams ? `/requests/new?${ctaParams}` : "/requests/new";
 
   return (
     <form
@@ -46,11 +59,15 @@ export default function RequestFilters({
         "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4",
         className,
       ].join(" ")}
+      aria-label="Request filters"
     >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
         <div className="md:col-span-5">
-          <label className={fieldLabel}>Search</label>
+          <label className={fieldLabel} htmlFor={qId}>
+            Search
+          </label>
           <input
+            id={qId}
             name="q"
             defaultValue={q}
             placeholder="e.g. iPhone 13, plumber…"
@@ -59,8 +76,10 @@ export default function RequestFilters({
         </div>
 
         <div className="md:col-span-3">
-          <label className={fieldLabel}>Kind</label>
-          <select name="kind" defaultValue={kind} className={selectBase}>
+          <label className={fieldLabel} htmlFor={kindId}>
+            Kind
+          </label>
+          <select id={kindId} name="kind" defaultValue={kind} className={selectBase}>
             <option value="">All</option>
             <option value="product">Product</option>
             <option value="service">Service</option>
@@ -68,8 +87,11 @@ export default function RequestFilters({
         </div>
 
         <div className="md:col-span-2">
-          <label className={fieldLabel}>Category</label>
+          <label className={fieldLabel} htmlFor={categoryId}>
+            Category
+          </label>
           <input
+            id={categoryId}
             name="category"
             defaultValue={category}
             placeholder="Any"
@@ -78,8 +100,11 @@ export default function RequestFilters({
         </div>
 
         <div className="md:col-span-2">
-          <label className={fieldLabel}>Location</label>
+          <label className={fieldLabel} htmlFor={locationId}>
+            Location
+          </label>
           <input
+            id={locationId}
             name="location"
             defaultValue={location}
             placeholder="Any"
@@ -104,14 +129,12 @@ export default function RequestFilters({
           Reset
         </Link>
 
-        {showCta && hasFilters ? (
+        {showCta ? (
           <Link
-            href={`/requests/new?${new URLSearchParams({
-              ...(kind ? { kind } : {}),
-              ...(q ? { title: q } : {}),
-            }).toString()}`}
+            href={ctaHref}
             prefetch={false}
             className="ml-auto text-xs text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text)]"
+            aria-label={hasFilters ? "Post a request with your filters" : "Post a request"}
           >
             Didn’t find it? Post a request
           </Link>

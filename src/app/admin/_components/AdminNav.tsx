@@ -46,7 +46,6 @@ function Icon({
 function isActive(pathname: string | null, href: string) {
   if (!pathname || !href) return false;
   if (pathname === href) return true;
-  // Treat section root as active for nested pages, e.g. /admin/users/*
   return pathname.startsWith(href + "/");
 }
 
@@ -76,6 +75,11 @@ const REQUIRED_ITEMS: NavItem[] = [
     icon: "grid",
   },
   {
+    href: "/admin/carriers",
+    label: "Carriers",
+    icon: "shield",
+  },
+  {
     href: "/admin/requests",
     label: "Requests",
     icon: "eye",
@@ -97,8 +101,6 @@ type Props = {
 export function AdminNav({ items, className = "" }: Props) {
   const pathname = usePathname();
 
-  // Start from caller-provided items (if any),
-  // but only keep safe /admin/... hrefs.
   const initial = Array.isArray(items) ? [...items] : [];
   const byHref = new Map<string, NavItem>();
 
@@ -110,14 +112,12 @@ export function AdminNav({ items, className = "" }: Props) {
     }
   }
 
-  // Ensure required links exist.
   for (const required of REQUIRED_ITEMS) {
     if (!byHref.has(required.href)) {
       byHref.set(required.href, required);
     }
   }
 
-  // Stable order: required first (in REQUIRED_ITEMS order), then extras.
   const mergedItems = Array.from(byHref.values()).sort((a, b) => {
     const ia = REQUIRED_ITEMS.findIndex((r) => r.href === a.href);
     const ib = REQUIRED_ITEMS.findIndex((r) => r.href === b.href);

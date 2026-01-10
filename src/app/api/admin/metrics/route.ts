@@ -27,6 +27,82 @@ async function safeServiceCount(where?: any): Promise<number> {
   return 0;
 }
 
+async function safeCarrierCount(where?: any): Promise<number> {
+  const anyPrisma = prisma as any;
+  const cp = anyPrisma?.carrierProfile;
+  if (cp && typeof cp.count === "function") {
+    return cp.count(where ? { where } : undefined);
+  }
+  return 0;
+}
+
+function carrierModelAvailable(): boolean {
+  const anyPrisma = prisma as any;
+  const cp = anyPrisma?.carrierProfile;
+  return Boolean(cp && typeof cp.count === "function");
+}
+
+async function loadCarrierOverview(): Promise<null | {
+  total: number;
+  activeOnline: number;
+  suspended: number;
+  banned: number;
+  byTier: { BASIC: number; GOLD: number; PLATINUM: number };
+  byVerification: { UNVERIFIED: number; PENDING: number; VERIFIED: number; REJECTED: number };
+  liveCutoffSeconds: number;
+}> {
+  if (!carrierModelAvailable()) return null;
+
+  const now = new Date();
+  const liveCutoffSeconds = 90;
+  const liveCutoff = new Date(now.getTime() - liveCutoffSeconds * 1000);
+
+  try {
+    const [total, banned, suspended, activeOnline] = await Promise.all([
+      safeCarrierCount(),
+      safeCarrierCount({ bannedAt: { not: null } }),
+      safeCarrierCount({ suspendedUntil: { gt: now } }),
+      safeCarrierCount({
+        status: "AVAILABLE",
+        bannedAt: null,
+        OR: [{ suspendedUntil: null }, { suspendedUntil: { lte: now } }],
+        lastSeenAt: { gte: liveCutoff },
+      }),
+    ]);
+
+    const [basic, gold, platinum] = await Promise.all([
+      safeCarrierCount({ planTier: "BASIC" }),
+      safeCarrierCount({ planTier: "GOLD" }),
+      safeCarrierCount({ planTier: "PLATINUM" }),
+    ]);
+
+    const [unverified, pending, verified, rejected] = await Promise.all([
+      safeCarrierCount({ verificationStatus: "UNVERIFIED" }),
+      safeCarrierCount({ verificationStatus: "PENDING" }),
+      safeCarrierCount({ verificationStatus: "VERIFIED" }),
+      safeCarrierCount({ verificationStatus: "REJECTED" }),
+    ]);
+
+    return {
+      total,
+      activeOnline,
+      suspended,
+      banned,
+      byTier: { BASIC: basic, GOLD: gold, PLATINUM: platinum },
+      byVerification: {
+        UNVERIFIED: unverified,
+        PENDING: pending,
+        VERIFIED: verified,
+        REJECTED: rejected,
+      },
+      liveCutoffSeconds,
+    };
+  } catch (e) {
+    console.error("[admin-metrics-overview] carrier metrics failed:", e);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const denied = await assertAdmin();
   if (denied) return denied;
@@ -40,10 +116,11 @@ export async function GET(req: NextRequest) {
       return d;
     });
 
-    const [usersTotal, productsTotal, servicesTotal] = await Promise.all([
+    const [usersTotal, productsTotal, servicesTotal, carriers] = await Promise.all([
       prisma.user.count(),
       prisma.product.count(),
       safeServiceCount(),
+      loadCarrierOverview(),
     ]);
 
     const last7d = await Promise.all(
@@ -63,10 +140,13 @@ export async function GET(req: NextRequest) {
           products: p,
           services: s,
         };
-      })
+      }),
     );
 
-    log.info({ totals: { usersTotal, productsTotal, servicesTotal } }, "admin_metrics_ok");
+    log.info(
+      { totals: { usersTotal, productsTotal, servicesTotal, carriers: carriers ? carriers.total : null } },
+      "admin_metrics_ok",
+    );
 
     return jsonNoStore({
       totals: {
@@ -74,6 +154,7 @@ export async function GET(req: NextRequest) {
         products: productsTotal,
         services: servicesTotal,
         reveals: null,
+        carriers: carriers ?? null,
       },
       last7d,
     });

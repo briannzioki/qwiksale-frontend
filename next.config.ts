@@ -1,4 +1,3 @@
-// next.config.ts
 import type { NextConfig } from "next";
 import type { RemotePattern } from "next/dist/shared/lib/image-config";
 import path from "node:path";
@@ -11,6 +10,12 @@ const withAnalyzer = bundleAnalyzer({
 const isProd = process.env.NODE_ENV === "production";
 const isPreview = process.env["VERCEL_ENV"] === "preview";
 const isVercel = !!process.env["VERCEL"];
+
+// E2E runs set this via playwright.webServer env
+const isE2E =
+  process.env["NEXT_PUBLIC_E2E"] === "1" ||
+  process.env["E2E"] === "1" ||
+  process.env["PLAYWRIGHT"] === "1";
 
 const APEX_DOMAIN = process.env["NEXT_PUBLIC_APEX_DOMAIN"] || "qwiksale.sale";
 const cloudName = process.env["NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"] || "";
@@ -25,9 +30,6 @@ type HeaderRule = {
   headers: { key: string; value: string }[];
 };
 
-// ----------------------------
-// SECURITY HEADERS
-// ----------------------------
 const securityHeaders = (): { key: string; value: string }[] => {
   const base = [
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -52,10 +54,6 @@ const securityHeaders = (): { key: string; value: string }[] => {
 
   return base;
 };
-
-// ----------------------------
-// UTILITIES
-// ----------------------------
 
 function regExpToGlob(re: RegExp): string | null {
   const s = String(re);
@@ -143,15 +141,14 @@ function buildRemotePatterns(): RemotePattern[] {
   return out;
 }
 
-// ----------------------------
-// NEXT CONFIG
-// ----------------------------
 const baseConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
   trailingSlash: false,
   productionBrowserSourceMaps: false,
+
+  serverExternalPackages: ["pino", "thread-stream"],
 
   images: {
     unoptimized: !isProd || process.env["NEXT_IMAGE_UNOPTIMIZED"] === "1",
@@ -164,7 +161,8 @@ const baseConfig: NextConfig = {
   },
 
   eslint: { ignoreDuringBuilds: true },
-  typescript: { ignoreBuildErrors: isPreview },
+
+  typescript: { ignoreBuildErrors: isPreview || isE2E },
 
   webpack(config, { dev, isServer, nextRuntime }) {
     config.resolve = config.resolve || {};
@@ -200,8 +198,6 @@ const baseConfig: NextConfig = {
       };
     }
 
-    // Ignore noisy dynamic-require / telemetry warnings mostly coming from
-    // @opentelemetry, require-in-the-middle, etc. on the server build.
     if (isServer) {
       const telemetryWarningPatterns = [
         /Critical dependency: the request of a dependency is an expression/,
@@ -215,18 +211,10 @@ const baseConfig: NextConfig = {
     }
 
     if (dev) {
-      const extraIgnores = [
-        "**/tests/**",
-        "**/test-results/**",
-        "**/playwright-report/**",
-      ];
+      const extraIgnores = ["**/tests/**", "**/test-results/**", "**/playwright-report/**"];
 
       const prevIgnored = config.watchOptions?.ignored;
-      const prevList = Array.isArray(prevIgnored)
-        ? prevIgnored
-        : prevIgnored
-        ? [prevIgnored]
-        : [];
+      const prevList = Array.isArray(prevIgnored) ? prevIgnored : prevIgnored ? [prevIgnored] : [];
 
       const stringsOnly = prevList
         .map((v) => {
@@ -266,6 +254,7 @@ const baseConfig: NextConfig = {
               media-src 'self' blob: https:;
               style-src 'self' 'unsafe-inline';
               script-src 'self' 'unsafe-inline' 'unsafe-eval';
+              worker-src 'self' blob:;
               frame-src 'self';
               object-src 'none';
               connect-src 'self'

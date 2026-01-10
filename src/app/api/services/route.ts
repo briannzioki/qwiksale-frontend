@@ -1,4 +1,3 @@
-// src/app/api/services/route.ts
 import "server-only";
 
 export const runtime = "nodejs";
@@ -16,12 +15,10 @@ import {
   resolveSellerBadgeFieldsFromUserLike,
 } from "@/app/lib/sellerVerification";
 
-/* ----------------------------- debug ----------------------------- */
 const SERVICES_VER = "vDEBUG-SERVICES-012";
 const DB_TIMEOUT_MS = 1800;
 const VARIANT_COUNT_TIMEOUT_MS = 240;
 
-// Debug is OFF by default. Enable explicitly in dev via QS_DEBUG_SERVICES=1
 const DEBUG =
   process.env.NODE_ENV !== "production" &&
   (process.env["QS_DEBUG_SERVICES"] || "") === "1";
@@ -29,6 +26,7 @@ const DEBUG =
 function attachVersion(h: Headers) {
   h.set("X-Services-Version", SERVICES_VER);
 }
+
 function safe(obj: unknown) {
   try {
     return JSON.stringify(obj);
@@ -37,13 +35,13 @@ function safe(obj: unknown) {
   }
 }
 
-/* ----------------------------- helpers ----------------------------- */
 function toInt(v: string | null | undefined, def: number, min: number, max: number) {
   if (v == null || v.trim() === "") return def;
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
+
 function toBool(v: string | null): boolean | undefined {
   if (v == null) return undefined;
   const t = v.trim().toLowerCase();
@@ -51,6 +49,7 @@ function toBool(v: string | null): boolean | undefined {
   if (["0", "false", "no", "off"].includes(t)) return false;
   return undefined;
 }
+
 function optStr(v: string | null): string | undefined {
   const t = (v ?? "").trim();
   if (!t) return undefined;
@@ -59,10 +58,6 @@ function optStr(v: string | null): string | undefined {
   return t;
 }
 
-/**
- * Supports: ?ids=a,b,c  OR  ?ids=a&ids=b  OR  ?id=a
- * (Used by /service/[id]/page.tsx fallback: /api/services?ids=<id>)
- */
 function parseIdsParam(sp: URLSearchParams): string[] {
   const parts = [...sp.getAll("ids"), ...sp.getAll("ids[]"), ...sp.getAll("id")]
     .map((s) => (s ?? "").trim())
@@ -84,6 +79,7 @@ function parseIdsParam(sp: URLSearchParams): string[] {
 function rejectingTimeout<T = never>(ms: number): Promise<T> {
   return new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms));
 }
+
 async function softTimeout<T>(
   work: () => Promise<T>,
   ms: number,
@@ -94,6 +90,7 @@ async function softTimeout<T>(
     new Promise<T>((resolve) => setTimeout(async () => resolve(await fallback()), ms)),
   ]);
 }
+
 type SortKey = "newest" | "price_asc" | "price_desc" | "featured";
 function toSort(v: string | null): SortKey {
   const t = (v || "").trim().toLowerCase();
@@ -103,7 +100,6 @@ function toSort(v: string | null): SortKey {
   return "newest";
 }
 
-/** Access a Service-model compat layer that may not exist in this schema */
 function getServiceModel() {
   const anyPrisma = prisma as any;
   const svc =
@@ -115,7 +111,6 @@ function getServiceModel() {
   return typeof svc?.findMany === "function" ? svc : null;
 }
 
-/* ---------------- seller/account badge helpers ---------------- */
 type SellerBadgesObj = { verified: boolean | null; tier: FeaturedTier | null };
 
 type SellerBadgePayload = {
@@ -140,11 +135,6 @@ function toNullableTier(v: unknown): FeaturedTier | null {
   return null;
 }
 
-/**
- * Canonical badge shaper (single source of truth):
- * - aligns aliases with sellerBadges (no dropping tier into nested-only shape)
- * - never forces defaults when unknown (nulls stay null)
- */
 function canonicalizeSellerBadges(raw: any): SellerBadgePayload {
   const rawBadges =
     raw?.sellerBadges && typeof raw.sellerBadges === "object" && !Array.isArray(raw.sellerBadges)
@@ -194,13 +184,12 @@ async function fetchSellerBadgeMap(ids: string[]) {
       out.set(id, canonicalizeSellerBadges(resolved));
     }
   } catch {
-    // ignore: caller will emit canonical nulls (no forced defaults)
+    // ignore
   }
 
   return out;
 }
 
-/* ------------------------------ caps ----------------------------------- */
 const MAX_PAGE_SIZE = 48;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_RESULT_WINDOW = 10_000;
@@ -220,10 +209,8 @@ function attachPagingHeaders(
   }
 }
 
-/* ------------------------- search variants ------------------------- */
 type SearchField = "name" | "description" | "category" | "subcategory";
 
-/** Try richer → safer. */
 const SEARCH_FIELD_VARIANTS: SearchField[][] = [
   ["name", "description", "category", "subcategory"],
   ["name", "category", "subcategory"],
@@ -248,12 +235,35 @@ function buildSearchAND(tokens: string[], rawQ: string, fields: SearchField[]) {
   return AND;
 }
 
-/* -------------------------- GET /api/services -------------------------- */
+const SESSION_COOKIE_MARKERS = [
+  "authjs.session-token=",
+  "__Secure-authjs.session-token=",
+  "__Host-authjs.session-token=",
+  "next-auth.session-token=",
+  "__Secure-next-auth.session-token=",
+  "__Host-next-auth.session-token=",
+] as const;
+
+function looksAuthenticated(req: NextRequest): boolean {
+  const authz = req.headers.get("authorization");
+  if (authz && authz.trim()) return true;
+
+  const cookie = req.headers.get("cookie") || "";
+  if (!cookie) return false;
+
+  return SESSION_COOKIE_MARKERS.some((m) => cookie.includes(m));
+}
+
+function normalizeStatusParam(v: string | undefined): string | undefined {
+  const s = (v ?? "").trim();
+  if (!s) return undefined;
+  return s.toUpperCase();
+}
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
 
-    // Parse page/pageSize early so we can attach explicit cap headers on all responses.
     const page = toInt(url.searchParams.get("page"), 1, 1, 100000);
 
     const limitStr = url.searchParams.get("limit");
@@ -299,7 +309,6 @@ export async function GET(req: NextRequest) {
     }
 
     if (DEBUG) {
-      // eslint-disable-next-line no-console
       console.log("[/api/services GET]", SERVICES_VER, url.toString());
     }
 
@@ -313,45 +322,13 @@ export async function GET(req: NextRequest) {
     const category = optStr(url.searchParams.get("category"));
     const subcategory = optStr(url.searchParams.get("subcategory"));
 
-    // ✅ id lookup helper (used by /service/[id]/page.tsx fallback)
     const ids = parseIdsParam(url.searchParams);
 
-    // Ownership filters
     const mine = toBool(url.searchParams.get("mine")) === true;
+
     let sellerId =
       optStr(url.searchParams.get("sellerId")) || optStr(url.searchParams.get("userId"));
     const sellerUsername = optStr(url.searchParams.get("seller")) || optStr(url.searchParams.get("user"));
-
-    if (mine) {
-      const session = await auth().catch(() => null);
-      const uid = (session as any)?.user?.id as string | undefined;
-      if (!uid) {
-        const res = jsonPrivate({ error: "Unauthorized" }, { status: 401 });
-        attachVersion(res.headers);
-        attachPagingHeaders(res.headers, page, pageSize, rawRequestedPageSize);
-        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-        return res;
-      }
-      sellerId = uid;
-    }
-
-    // Resolve username → id
-    if (!sellerId && sellerUsername) {
-      try {
-        const u = await prisma.user.findFirst({
-          where: {
-            username: {
-              equals: sellerUsername,
-              mode: "insensitive",
-            },
-          },
-          select: { id: true },
-        });
-        sellerId = u?.id ?? sellerId;
-      } catch {
-        // ignore
-      }
-    }
 
     const featured = toBool(url.searchParams.get("featured"));
     const verifiedOnly = toBool(url.searchParams.get("verifiedOnly")) === true;
@@ -364,32 +341,87 @@ export async function GET(req: NextRequest) {
 
     const cursor = optStr(url.searchParams.get("cursor"));
 
-    // -------------------- non-search filters --------------------
-    const statusParam = optStr(url.searchParams.get("status"));
+    const statusParamRaw = optStr(url.searchParams.get("status"));
+    const statusParam = normalizeStatusParam(statusParamRaw);
+
+    const reqLooksAuthed = looksAuthenticated(req);
+
+    // Decide whether non-public statuses are allowed.
+    // Allowed only for:
+    // - mine=true (seller viewing their own listings)
+    // - sellerId explicitly equals the authenticated user id
+    // - admin
+    const wantsNonPublic =
+      Boolean(statusParam && statusParam !== "ACTIVE") || statusParam === "ALL";
+
+    let viewer: { id: string; isAdmin: boolean } | null = null;
+
+    if (mine || (reqLooksAuthed && (wantsNonPublic || Boolean(sellerId) || Boolean(sellerUsername)))) {
+      const session = await auth().catch(() => null);
+      const u = (session as any)?.user ?? null;
+      const uid = typeof u?.id === "string" ? u.id.trim() : "";
+      const roleRaw = typeof u?.role === "string" ? u.role : "";
+      const isAdmin = roleRaw.toUpperCase() === "ADMIN" || u?.isAdmin === true;
+
+      if (mine && !uid) {
+        const res = jsonPrivate({ error: "Unauthorized" }, { status: 401 });
+        attachVersion(res.headers);
+        attachPagingHeaders(res.headers, page, pageSize, rawRequestedPageSize);
+        res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
+        return res;
+      }
+
+      if (uid) viewer = { id: uid, isAdmin };
+      else if (isAdmin) viewer = { id: "admin", isAdmin: true };
+    }
+
+    if (mine && viewer?.id && viewer.id !== "admin") {
+      sellerId = viewer.id;
+    }
+
+    if (!sellerId && sellerUsername) {
+      try {
+        const u = await prisma.user.findFirst({
+          where: { username: { equals: sellerUsername, mode: "insensitive" } },
+          select: { id: true },
+        });
+        sellerId = u?.id ?? sellerId;
+      } catch {
+        // ignore
+      }
+    }
+
+    const allowNonPublic =
+      Boolean(viewer?.isAdmin) ||
+      (Boolean(viewer?.id) && viewer!.id !== "admin" && Boolean(sellerId) && String(sellerId) === String(viewer!.id)) ||
+      mine === true;
+
     const whereBase: Record<string, any> = {};
-    if (!statusParam || statusParam.toUpperCase() === "ACTIVE") whereBase["status"] = "ACTIVE";
-    else if (statusParam.toUpperCase() !== "ALL") whereBase["status"] = statusParam.toUpperCase();
+
+    // Enforce public-only results unless explicitly allowed.
+    if (!statusParam || statusParam === "ACTIVE") {
+      whereBase["status"] = "ACTIVE";
+    } else if (statusParam === "ALL") {
+      if (!allowNonPublic) whereBase["status"] = "ACTIVE";
+    } else {
+      if (allowNonPublic) whereBase["status"] = statusParam;
+      else whereBase["status"] = "ACTIVE";
+    }
 
     const ANDExtra: any[] = [];
     if (category)
-      ANDExtra.push({
-        category: { equals: category, mode: "insensitive" },
-      });
+      ANDExtra.push({ category: { equals: category, mode: "insensitive" } });
     if (subcategory)
-      ANDExtra.push({
-        subcategory: { equals: subcategory, mode: "insensitive" },
-      });
+      ANDExtra.push({ subcategory: { equals: subcategory, mode: "insensitive" } });
     if (sellerId) ANDExtra.push({ sellerId });
     if (verifiedOnly) ANDExtra.push({ seller: { is: { emailVerified: { not: null } } } });
 
-    // ✅ ids filter (string IDs; supports /api/services?ids=<id>)
     if (ids.length) ANDExtra.push({ id: { in: ids } });
 
     if (typeof featured === "boolean") {
       ANDExtra.push({ featured });
     }
 
-    // Price filter
     if (minPriceStr !== null || maxPriceStr !== null) {
       const minPrice =
         minPriceStr !== null ? toInt(minPriceStr, 0, 0, 9_999_999) : undefined;
@@ -411,7 +443,6 @@ export async function GET(req: NextRequest) {
       ANDExtra.push({ price: { not: null } });
     }
 
-    // -------------------- search WHERE selection --------------------
     const isSearchRequested = !!rawQ;
     let chosenWhere: Record<string, any> | null = null;
     let chosenFields: SearchField[] = [];
@@ -449,7 +480,6 @@ export async function GET(req: NextRequest) {
 
     const isSearchLike = !!rawQ || !!category || !!subcategory || ids.length > 0;
 
-    // Primary orderBy
     let primaryOrder: any;
     if (sort === "price_asc")
       primaryOrder = [{ price: "asc" as const }, { createdAt: "desc" as const }, { id: "desc" as const }];
@@ -470,22 +500,12 @@ export async function GET(req: NextRequest) {
     ];
 
     if (DEBUG) {
-      // eslint-disable-next-line no-console
       console.log("[/api/services WHERE]", safe(chosenWhere));
-      // eslint-disable-next-line no-console
       console.log("[/api/services ORDER primary]", safe(primaryOrder));
-      // eslint-disable-next-line no-console
       console.log("[/api/services page/pageSize]", page, pageSize, "cursor:", cursor ?? null);
-      if (chosenFields.length) {
-        // eslint-disable-next-line no-console
-        console.log("[/api/services SEARCH FIELDS]", chosenFields.join(", "));
-      }
-      if (ids.length) {
-        // eslint-disable-next-line no-console
-        console.log("[/api/services IDS]", ids.join(","));
-      }
+      if (chosenFields.length) console.log("[/api/services SEARCH FIELDS]", chosenFields.join(", "));
+      if (ids.length) console.log("[/api/services IDS]", ids.join(","));
       if (rawRequestedPageSize != null && rawRequestedPageSize > MAX_PAGE_SIZE) {
-        // eslint-disable-next-line no-console
         console.log("[/api/services cap]", rawRequestedPageSize, "->", pageSize);
       }
     }
@@ -493,20 +513,36 @@ export async function GET(req: NextRequest) {
     if (!cursor) {
       const skipEst = (page - 1) * pageSize;
       if (skipEst > MAX_RESULT_WINDOW) {
-        const res = jsonPublic(
-          {
-            page,
-            pageSize,
-            total: 0,
-            totalPages: 1,
-            sort,
-            items: [],
-            facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
-            nextCursor: null,
-            hasMore: false,
-          },
-          60,
-        );
+        const res = (reqLooksAuthed || allowNonPublic)
+          ? jsonPrivate(
+              {
+                page,
+                pageSize,
+                total: 0,
+                totalPages: 1,
+                sort,
+                items: [],
+                facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
+                nextCursor: null,
+                hasMore: false,
+              },
+              { status: 200 },
+            )
+          : jsonPublic(
+              {
+                page,
+                pageSize,
+                total: 0,
+                totalPages: 1,
+                sort,
+                items: [],
+                facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
+                nextCursor: null,
+                hasMore: false,
+              },
+              60,
+            );
+
         attachVersion(res.headers);
         res.headers.set("X-Total-Count", "0");
         attachPagingHeaders(res.headers, page, pageSize, rawRequestedPageSize);
@@ -515,9 +551,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Select candidates (schema-tolerant)
     const selectCandidates: any[] = [
-      // richest seller flags (schema-tolerant via outer try loops)
       {
         id: true,
         name: true,
@@ -554,8 +588,6 @@ export async function GET(req: NextRequest) {
           select: { username: true, subscription: true, isVerified: true },
         },
       },
-
-      // existing fallbacks
       {
         id: true,
         name: true,
@@ -570,9 +602,7 @@ export async function GET(req: NextRequest) {
         featured: true,
         createdAt: true,
         sellerId: true,
-        seller: {
-          select: { username: true },
-        },
+        seller: { select: { username: true } },
       },
       {
         id: true,
@@ -586,9 +616,7 @@ export async function GET(req: NextRequest) {
         featured: true,
         createdAt: true,
         sellerId: true,
-        seller: {
-          select: { username: true },
-        },
+        seller: { select: { username: true } },
       },
       {
         id: true,
@@ -627,41 +655,46 @@ export async function GET(req: NextRequest) {
 
     const cursorVariants: any[] = [];
     if (cursor) {
-      cursorVariants.push({
-        ...baseListArgsCommon,
-        cursor: { id: cursor },
-        skip: 1,
-      });
+      cursorVariants.push({ ...baseListArgsCommon, cursor: { id: cursor }, skip: 1 });
       const asNum = Number(cursor);
       if (Number.isFinite(asNum)) {
-        cursorVariants.push({
-          ...baseListArgsCommon,
-          cursor: { id: asNum },
-          skip: 1,
-        });
+        cursorVariants.push({ ...baseListArgsCommon, cursor: { id: asNum }, skip: 1 });
       }
     } else {
-      cursorVariants.push({
-        ...baseListArgsCommon,
-        skip: (page - 1) * pageSize,
-      });
+      cursorVariants.push({ ...baseListArgsCommon, skip: (page - 1) * pageSize });
     }
 
     const fastEmpty = () => {
-      const r = jsonPublic(
-        {
-          page,
-          pageSize,
-          total: 0,
-          totalPages: 1,
-          sort,
-          items: [] as any[],
-          facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
-          nextCursor: null,
-          hasMore: false,
-        },
-        30,
-      );
+      const r = (reqLooksAuthed || allowNonPublic)
+        ? jsonPrivate(
+            {
+              page,
+              pageSize,
+              total: 0,
+              totalPages: 1,
+              sort,
+              items: [],
+              facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
+              nextCursor: null,
+              hasMore: false,
+            },
+            { status: 200 },
+          )
+        : jsonPublic(
+            {
+              page,
+              pageSize,
+              total: 0,
+              totalPages: 1,
+              sort,
+              items: [],
+              facets: wantFacets ? { categories: [], subcategories: [] } : undefined,
+              nextCursor: null,
+              hasMore: false,
+            },
+            30,
+          );
+
       attachVersion(r.headers);
       r.headers.set("X-Total-Count", "0");
       attachPagingHeaders(r.headers, page, pageSize, rawRequestedPageSize);
@@ -679,11 +712,7 @@ export async function GET(req: NextRequest) {
           for (const orderBy of orderByCandidates) {
             for (const listArgs of cursorVariants) {
               try {
-                rowsRaw = await Service.findMany({
-                  ...listArgs,
-                  select,
-                  orderBy,
-                });
+                rowsRaw = await Service.findMany({ ...listArgs, select, orderBy });
                 break outer;
               } catch {
                 // try next combo
@@ -712,7 +741,6 @@ export async function GET(req: NextRequest) {
           const sid = s?.sellerId ? String(s.sellerId) : "";
           const resolvedBadges = sid ? badgeMap.get(sid) : undefined;
 
-          // ✅ canonical badge shape; no forced defaults when unknown
           const badges = resolvedBadges ?? canonicalizeSellerBadges(null);
 
           return {
@@ -747,16 +775,8 @@ export async function GET(req: NextRequest) {
           try {
             const tuple = await Promise.race<[any[], any[]]>([
               Promise.all([
-                Service.groupBy({
-                  by: ["category"],
-                  where: chosenWhere,
-                  _count: { _all: true },
-                }),
-                Service.groupBy({
-                  by: ["subcategory"],
-                  where: chosenWhere,
-                  _count: { _all: true },
-                }),
+                Service.groupBy({ by: ["category"], where: chosenWhere, _count: { _all: true } }),
+                Service.groupBy({ by: ["subcategory"], where: chosenWhere, _count: { _all: true } }),
               ]) as Promise<[any[], any[]]>,
               rejectingTimeout<[any[], any[]]>(500),
             ]);
@@ -766,45 +786,55 @@ export async function GET(req: NextRequest) {
               .filter((x) => !!x.category)
               .sort((a, b) => b._count._all - a._count._all)
               .slice(0, 6)
-              .map((x) => ({
-                value: String(x.category),
-                count: x._count._all,
-              }));
+              .map((x) => ({ value: String(x.category), count: x._count._all }));
             const subcategories = (subsRaw as any[])
               .filter((x) => !!x.subcategory)
               .sort((a, b) => b._count._all - a._count._all)
               .slice(0, 6)
-              .map((x) => ({
-                value: String(x.subcategory),
-                count: x._count._all,
-              }));
+              .map((x) => ({ value: String(x.subcategory), count: x._count._all }));
             facets = { categories, subcategories };
           } catch {
             facets = undefined;
           }
         }
 
-        const res = jsonPublic(
-          {
-            page,
-            pageSize,
-            total,
-            totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
-            sort,
-            items,
-            facets,
-            nextCursor,
-            hasMore,
-          },
-          60,
-        );
+        const usePrivate = reqLooksAuthed || allowNonPublic;
+
+        const res = usePrivate
+          ? jsonPrivate(
+              {
+                page,
+                pageSize,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
+                sort,
+                items,
+                facets,
+                nextCursor,
+                hasMore,
+              },
+              { status: 200 },
+            )
+          : jsonPublic(
+              {
+                page,
+                pageSize,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / Math.max(1, pageSize))),
+                sort,
+                items,
+                facets,
+                nextCursor,
+                hasMore,
+              },
+              60,
+            );
+
         attachVersion(res.headers);
         res.headers.set("X-Total-Count", String(total));
         attachPagingHeaders(res.headers, page, pageSize, rawRequestedPageSize);
         res.headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
-        if (DEBUG && chosenFields.length) {
-          res.headers.set("X-Search-Fields", chosenFields.join(","));
-        }
+        if (DEBUG && chosenFields.length) res.headers.set("X-Search-Fields", chosenFields.join(","));
         return res;
       },
       DB_TIMEOUT_MS,
@@ -813,7 +843,6 @@ export async function GET(req: NextRequest) {
 
     return response;
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn("[/api/services GET] error:", e);
     const res = jsonPrivate({ error: "Server error" }, { status: 500 });
     attachVersion(res.headers);
@@ -822,7 +851,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/* ----------------------------- misc verbs ----------------------------- */
 export async function HEAD(_req: Request) {
   const h = new Headers();
   h.set("X-Services-Version", SERVICES_VER);

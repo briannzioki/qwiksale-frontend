@@ -1,21 +1,16 @@
-﻿// src/app/dashboard/page.tsx
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
+
 import UserAvatar from "@/app/components/UserAvatar";
 import ListingCard from "@/app/components/ListingCard";
 import { getSessionUser } from "@/app/lib/authz";
-import {
-  getSellerDashboardSummary,
-  fmtInt,
-  type DashboardListing,
-} from "@/app/lib/dashboard";
+import { getSellerDashboardSummary, fmtInt, type DashboardListing } from "@/app/lib/dashboard";
+
 import DashboardCharts from "./_components/DashboardCharts";
 import DashboardMetrics from "./_components/DashboardMetrics";
 import DashboardMessagesPreview from "./_components/DashboardMessagesPreview";
-import ProfileCompletionCard, {
-  type ProfileCompletion,
-} from "./_components/ProfileCompletionCard";
+import ProfileCompletionCard, { type ProfileCompletion } from "./_components/ProfileCompletionCard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,8 +40,29 @@ type DashboardChartPoint = {
   messages: number;
 };
 
+type CarrierDashboardBlock = {
+  hasProfile: boolean;
+  status: string | null;
+  planTier: string | null;
+  isSuspended: boolean;
+  isBanned: boolean;
+  suspendedUntil: Date | string | null;
+  bannedAt: Date | string | null;
+  bannedReason: string | null;
+};
+
 const DASHBOARD_CHART_DAYS = 7;
 const FALLBACK_IMG = "/placeholder/default.jpg";
+
+const BTN_BASE_CLASS =
+  "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] " +
+  "bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition " +
+  "hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm";
+
+const CARD_BTN_CLASS =
+  "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] " +
+  "px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] " +
+  "active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm";
 
 function toDateOrNull(value: unknown): Date | null {
   if (!value) return null;
@@ -74,10 +90,27 @@ function isVerifiedEmail(value: unknown): boolean {
   return false;
 }
 
-function computeProfileCompletion(input: {
-  username?: string | null;
-  emailVerified?: unknown;
-}): ProfileCompletion {
+function normalizeUsername(input: unknown): string {
+  if (typeof input !== "string") return "";
+  const s = input.trim().replace(/^@+/, "");
+  if (!s) return "";
+  return /^[a-z0-9._-]{2,64}$/i.test(s) ? s : "";
+}
+
+function displayUsernameFirst(me: { username?: unknown; name?: unknown; email?: unknown } | null): string {
+  const u = normalizeUsername(me?.username);
+  if (u) return `@${u}`;
+
+  const name = typeof me?.name === "string" ? me.name.trim() : "";
+  if (name) return name;
+
+  const email = typeof me?.email === "string" ? me.email.trim() : "";
+  if (email) return email;
+
+  return "there";
+}
+
+function computeProfileCompletion(input: { username?: string | null; emailVerified?: unknown }): ProfileCompletion {
   const missingFields: Array<"username" | "emailVerified"> = [];
 
   const u = typeof input.username === "string" ? input.username.trim() : "";
@@ -92,6 +125,28 @@ function computeProfileCompletion(input: {
   return { percent, missingFields };
 }
 
+function isFuture(value: unknown, now = new Date()): boolean {
+  const d = toDateOrNull(value);
+  if (!d) return false;
+  return d.getTime() > now.getTime();
+}
+
+function fmtDateTimeKE(value: unknown): string | null {
+  const d = toDateOrNull(value);
+  if (!d) return null;
+  try {
+    return d.toLocaleString("en-KE", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return d.toISOString();
+  }
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -101,29 +156,23 @@ export default async function DashboardPage({
     const rawSp = (await searchParams) ?? {};
     const sp = rawSp as Record<string, string | string[] | undefined>;
 
-    // E2E flag detection - be generous about how the flag is passed
     const directFlag =
       (Array.isArray(sp["__e2e"]) ? sp["__e2e"][0] : sp["__e2e"]) ??
-      (Array.isArray(sp["e2e_dashboard_error"])
-        ? sp["e2e_dashboard_error"][0]
-        : sp["e2e_dashboard_error"]) ??
+      (Array.isArray(sp["e2e_dashboard_error"]) ? sp["e2e_dashboard_error"][0] : sp["e2e_dashboard_error"]) ??
       (Array.isArray(sp["e2e"]) ? sp["e2e"][0] : sp["e2e"]) ??
       null;
 
     const allValues: string[] = [];
     for (const val of Object.values(sp)) {
       if (Array.isArray(val)) {
-        for (const v of val) {
-          if (typeof v === "string") allValues.push(v);
-        }
+        for (const v of val) if (typeof v === "string") allValues.push(v);
       } else if (typeof val === "string") {
         allValues.push(val);
       }
     }
 
     const lowerValues = allValues.map((v) => v.toLowerCase());
-    const directLower =
-      typeof directFlag === "string" ? directFlag.toLowerCase() : "";
+    const directLower = typeof directFlag === "string" ? directFlag.toLowerCase() : "";
 
     const e2eFlag =
       directLower === "dashboard_error" ||
@@ -131,11 +180,7 @@ export default async function DashboardPage({
       lowerValues.includes("dashboard_error") ||
       lowerValues.includes("dashboard-error");
 
-    const btnBase =
-      "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm";
-
     if (e2eFlag) {
-      // Explicit soft-error surface for guardrail tests
       return (
         <main
           id="main"
@@ -148,17 +193,16 @@ export default async function DashboardPage({
               We hit a dashboard error
             </h1>
             <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
-              This is a simulated soft error for guardrail testing. You can
-              refresh or navigate away.
+              This is a simulated soft error for guardrail testing. You can refresh or navigate away.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Link href="/dashboard" prefetch={false} className={btnBase}>
+              <Link href="/dashboard" prefetch={false} className={BTN_BASE_CLASS}>
                 Retry
               </Link>
-              <Link href="/" prefetch={false} className={btnBase}>
+              <Link href="/" prefetch={false} className={BTN_BASE_CLASS}>
                 Home
               </Link>
-              <Link href="/help" prefetch={false} className={btnBase}>
+              <Link href="/help" prefetch={false} className={BTN_BASE_CLASS}>
                 Help Center
               </Link>
             </div>
@@ -167,7 +211,6 @@ export default async function DashboardPage({
       );
     }
 
-    // Cookie heuristics - detect presence of any NextAuth session cookie.
     const cookieStore = await cookies();
     const hasAuthCookie = cookieStore.getAll().some((c: { name?: string }) => {
       const name = (c.name ?? "").toLowerCase();
@@ -179,21 +222,15 @@ export default async function DashboardPage({
       );
     });
 
-    // Canonical auth check - rely on the session.
     const viewer = await getSessionUser();
     const viewerAny = (viewer ?? {}) as any;
 
-    const sessionId =
-      viewerAny && viewerAny.id != null ? String(viewerAny.id) : null;
-    const sessionEmail =
-      typeof viewerAny?.email === "string" ? viewerAny.email : null;
+    const sessionId = viewerAny && viewerAny.id != null ? String(viewerAny.id) : null;
+    const sessionEmail = typeof viewerAny?.email === "string" ? viewerAny.email : null;
 
     const hasSessionIdentity = Boolean(sessionId || sessionEmail);
 
-    // No session identity - distinguish between *true guest* and *limbo*.
     if (!hasSessionIdentity) {
-      // Limbo: we see an auth cookie but no session identity.
-      // For guardrail / "no auto-logout" semantics, do NOT show a Sign in CTA here.
       if (hasAuthCookie) {
         return (
           <main
@@ -211,10 +248,8 @@ export default async function DashboardPage({
                   We couldn&apos;t load your dashboard
                 </h2>
                 <p className="mt-2 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
-                  Your session appears to be active, but we couldn&apos;t load
-                  your dashboard right now. Please refresh this page or navigate
-                  to another section. Your account menu in the header should
-                  remain available.
+                  Your session appears to be active, but we couldn&apos;t load your dashboard right now. Please refresh
+                  this page or navigate to another section. Your account menu in the header should remain available.
                 </p>
               </div>
             </div>
@@ -222,16 +257,12 @@ export default async function DashboardPage({
         );
       }
 
-      // True guest / unauthenticated: soft CTA with non-ambiguous button label.
       return (
         <main
           id="main"
           className="min-h-[calc(100vh-4rem)] bg-[var(--bg)] px-4 py-4 text-[var(--text)] sm:py-6 md:px-8 lg:px-12 xl:px-16"
         >
-          <div
-            className="mx-auto flex max-w-6xl flex-col gap-4"
-            data-e2e="dashboard-guest"
-          >
+          <div className="mx-auto flex max-w-6xl flex-col gap-4" data-e2e="dashboard-guest">
             <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
               Dashboard
             </h1>
@@ -261,15 +292,10 @@ export default async function DashboardPage({
       email: sessionEmail,
       image: typeof viewerAny?.image === "string" ? viewerAny.image : null,
       subscription: null,
-      username:
-        typeof viewerAny?.username === "string" ? viewerAny.username : null,
-      emailVerified:
-        typeof viewerAny?.emailVerified === "string"
-          ? viewerAny.emailVerified
-          : null,
+      username: typeof viewerAny?.username === "string" ? viewerAny.username : null,
+      emailVerified: typeof viewerAny?.emailVerified === "string" ? viewerAny.emailVerified : null,
     };
 
-    // User row fetch with timeout + safe fallback. Try by id first, then email.
     const me = await withTimeout<Me>(
       (async () => {
         if (sessionId) {
@@ -312,7 +338,6 @@ export default async function DashboardPage({
 
     const dashboardUserId = me.id ?? sessionId ?? null;
 
-    // ---- Seller dashboard summary (metrics + inbox + recent listings) ----
     const emptySummary: Awaited<ReturnType<typeof getSellerDashboardSummary>> = {
       metrics: {
         myListingsCount: 0,
@@ -347,28 +372,87 @@ export default async function DashboardPage({
 
     const metrics = summary?.metrics ?? emptySummary.metrics;
     const inboxSummary = summary?.inbox ?? emptySummary.inbox;
-    const recentListings =
-      summary?.recentListings ?? emptySummary.recentListings;
+    const recentListings = summary?.recentListings ?? emptySummary.recentListings;
 
     const myListingsCount = metrics.myListingsCount ?? 0;
     const favoritesCount = metrics.favoritesCount ?? 0;
     const newLast7Days = metrics.newLast7Days ?? 0;
     const likesOnMyListings = metrics.likesOnMyListings ?? 0;
 
-    // ---- Profile completion payload (single server-side source of truth) ----
+    const emptyCarrier: CarrierDashboardBlock = {
+      hasProfile: false,
+      status: null,
+      planTier: null,
+      isSuspended: false,
+      isBanned: false,
+      suspendedUntil: null,
+      bannedAt: null,
+      bannedReason: null,
+    };
+
+    const carrier: CarrierDashboardBlock = dashboardUserId
+      ? await withTimeout<CarrierDashboardBlock>(
+          (async () => {
+            try {
+              const now = new Date();
+              const profile = await (prisma as any).carrierProfile.findUnique({
+                where: { userId: dashboardUserId },
+                select: {
+                  id: true,
+                  status: true,
+                  planTier: true,
+                  suspendedUntil: true,
+                  bannedAt: true,
+                  bannedReason: true,
+                },
+              });
+
+              if (!profile?.id) return emptyCarrier;
+
+              const isBanned = !!profile?.bannedAt;
+              const isSuspended = isFuture(profile?.suspendedUntil, now);
+
+              return {
+                hasProfile: true,
+                status: typeof profile?.status === "string" ? profile.status : null,
+                planTier: typeof profile?.planTier === "string" ? profile.planTier : null,
+                isSuspended,
+                isBanned,
+                suspendedUntil: profile?.suspendedUntil ?? null,
+                bannedAt: profile?.bannedAt ?? null,
+                bannedReason: typeof profile?.bannedReason === "string" ? profile.bannedReason : null,
+              };
+            } catch {
+              // Schema not migrated or model unavailable -> treat as no profile
+              return emptyCarrier;
+            }
+          })(),
+          650,
+          emptyCarrier,
+        )
+      : emptyCarrier;
+
+    const carrierCtaHref = carrier.hasProfile ? "/carrier" : "/carrier/onboarding";
+    const carrierCtaLabel = carrier.hasProfile ? "Go to carrier dashboard" : "Create carrier account";
+
+    let carrierNote: string | null = null;
+    if (carrier.hasProfile && carrier.isBanned) {
+      carrierNote = carrier.bannedReason
+        ? `Your carrier account is banned: ${carrier.bannedReason}`
+        : "Your carrier account is banned.";
+    } else if (carrier.hasProfile && carrier.isSuspended) {
+      const until = fmtDateTimeKE(carrier.suspendedUntil);
+      carrierNote = until ? `Your carrier account is suspended until ${until}.` : "Your carrier account is currently suspended.";
+    }
+
     const profileCompletion = computeProfileCompletion({
       username: me.username,
       emailVerified: me.emailVerified,
     });
 
-    const completeProfileHref = `/account/complete-profile?next=${encodeURIComponent(
-      "/dashboard",
-    )}`;
+    const completeProfileHref = `/account/complete-profile?next=${encodeURIComponent("/dashboard")}`;
 
-    // ---- Build 7-day chart data (listings per day + messages per day) ----
-    const now = new Date();
     const listingCountsByDay: Record<string, number> = {};
-
     for (const item of recentListings) {
       const d = toDateOrNull(item.createdAt);
       if (!d) continue;
@@ -386,19 +470,13 @@ export default async function DashboardPage({
     }
 
     const chartPoints: DashboardChartPoint[] = [];
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const today = new Date();
+    const dayBase = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     for (let offset = DASHBOARD_CHART_DAYS - 1; offset >= 0; offset--) {
-      const d = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate() - offset,
-      );
+      const d = new Date(dayBase.getFullYear(), dayBase.getMonth(), dayBase.getDate() - offset);
       const key = d.toISOString().slice(0, 10);
-      const label = d.toLocaleDateString("en-KE", {
-        month: "short",
-        day: "numeric",
-      });
+      const label = d.toLocaleDateString("en-KE", { month: "short", day: "numeric" });
 
       chartPoints.push({
         date: key,
@@ -409,18 +487,14 @@ export default async function DashboardPage({
     }
 
     const subLabel = (me.subscription ?? "FREE").toUpperCase();
-    const displayName = me.name || me.email || "there";
+    const displayName = displayUsernameFirst(me);
 
     return (
       <main
         id="main"
         className="min-h-[calc(100vh-4rem)] bg-[var(--bg)] px-4 py-4 text-[var(--text)] sm:py-6 md:px-8 lg:px-12 xl:px-16"
       >
-        <section
-          className="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-6"
-          data-e2e="dashboard-auth"
-        >
-          {/* Page title + hero */}
+        <section className="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-6" data-e2e="dashboard-auth">
           <header className="flex flex-col gap-3 sm:gap-4">
             <div className="flex items-center justify-between gap-2">
               <h1 className="text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl md:text-3xl">
@@ -439,29 +513,23 @@ export default async function DashboardPage({
                 <div className="flex items-center gap-3 sm:gap-4">
                   <UserAvatar
                     src={me.image ?? undefined}
-                    alt={me.name || me.email || "You"}
+                    alt={normalizeUsername(me.username) ? `@${normalizeUsername(me.username)}` : me.name || me.email || "You"}
                     size={56}
                   />
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/75">
-                      Welcome back
-                    </p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/75">Welcome back</p>
                     <p className="mt-1 text-lg font-extrabold tracking-tight sm:text-xl md:text-2xl">
                       Hey, <span className="text-white">{displayName}</span>.
                     </p>
                     <p className="mt-1 text-[11px] leading-relaxed text-white/85 sm:text-sm">
-                      Quick snapshot of your listings, favorites, and messages
-                      on QwikSale.
+                      Quick snapshot of your listings, favorites, and messages on QwikSale.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-col items-start gap-1.5 md:items-end md:gap-2">
                   <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-                    <span
-                      className="h-2 w-2 rounded-full bg-white/80"
-                      aria-hidden="true"
-                    />
+                    <span className="h-2 w-2 rounded-full bg-white/80" aria-hidden="true" />
                     <span>Plan:</span>
                     <span className="font-extrabold">{subLabel}</span>
                   </span>
@@ -489,39 +557,21 @@ export default async function DashboardPage({
                 </div>
               </div>
 
-              {/* Hero primary actions */}
               <div className="relative mt-3 flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pb-1 [-webkit-overflow-scrolling:touch] sm:mt-5 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:pb-0">
-                <Link
-                  href="/sell"
-                  prefetch={false}
-                  className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
-                >
+                <Link href="/sell" prefetch={false} className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm">
                   + Post a Listing
                 </Link>
-                <Link
-                  href="/saved"
-                  prefetch={false}
-                  className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
-                >
+                <Link href="/saved" prefetch={false} className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm">
                   View Saved
                 </Link>
-                <Link
-                  href="/settings/billing"
-                  prefetch={false}
-                  className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
-                >
+                <Link href="/settings/billing" prefetch={false} className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm">
                   Billing &amp; Subscription
                 </Link>
-                <a
-                  href="/api/auth/signout"
-                  className="sm:ml-auto inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
-                  rel="nofollow"
-                >
+                <a href="/api/auth/signout" className="sm:ml-auto inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm" rel="nofollow">
                   Sign out
                 </a>
               </div>
 
-              {/* High-level snapshot chips */}
               <div className="relative mt-3 flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pb-1 text-[11px] text-white/85 [-webkit-overflow-scrolling:touch] sm:mt-4 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:pb-0 sm:text-xs">
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-white/75" />
@@ -537,14 +587,11 @@ export default async function DashboardPage({
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-white/75" />
-                  <span>
-                    {fmtInt(likesOnMyListings)} like(s) on your listings
-                  </span>
+                  <span>{fmtInt(likesOnMyListings)} like(s) on your listings</span>
                 </div>
               </div>
             </section>
 
-            {/* Required UX: banner when profile is incomplete (username/email verification) */}
             {profileCompletion.missingFields.length > 0 && (
               <div
                 role="alert"
@@ -557,24 +604,14 @@ export default async function DashboardPage({
                       Complete profile
                     </div>
                     <div className="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)] sm:text-sm">
-                      Finish setting up your account to get the best experience
-                      on QwikSale.
+                      Finish setting up your account to get the best experience on QwikSale.
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={completeProfileHref}
-                      prefetch={false}
-                      className="inline-flex items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-elevated)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus md:text-sm"
-                      data-testid="dashboard-complete-profile-cta"
-                    >
+                    <Link href={completeProfileHref} prefetch={false} className={CARD_BTN_CLASS} data-testid="dashboard-complete-profile-cta">
                       Complete profile
                     </Link>
-                    <Link
-                      href="/account/profile"
-                      prefetch={false}
-                      className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus md:text-sm"
-                    >
+                    <Link href="/account/profile" prefetch={false} className={CARD_BTN_CLASS}>
                       Edit Account
                     </Link>
                   </div>
@@ -582,51 +619,68 @@ export default async function DashboardPage({
               </div>
             )}
 
-            {/* Required UX: profile completion progress card */}
-            <ProfileCompletionCard
-              completion={profileCompletion}
-              href={completeProfileHref}
-            />
+            <ProfileCompletionCard completion={profileCompletion} href={completeProfileHref} />
           </header>
 
-          {/* Main dashboard content */}
           <div className="flex flex-col gap-4 sm:gap-5">
-            {/* Dashboard summary / metrics */}
             <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6">
-              {/* The only ARIA region named "Dashboard summary" is inside DashboardMetrics */}
-              <DashboardMetrics metrics={metrics} />
+              <DashboardMetrics metrics={metrics} carrier={carrier} />
             </section>
 
-            {/* Messages + charts split */}
+            <section aria-label="Delivery and carrier" role="region" className="grid gap-3 sm:gap-4 lg:grid-cols-2" data-testid="dashboard-carrier-delivery">
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-5">
+                <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">Delivery</h2>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
+                  Find carriers near you and request delivery for your items.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link href="/delivery" prefetch={false} className={CARD_BTN_CLASS} data-testid="dashboard-delivery-link">
+                    Go to delivery
+                  </Link>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-5" data-testid="dashboard-carrier-card">
+                <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">Carrier</h2>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
+                  Earn by delivering orders. Manage your availability, requests, and verification status.
+                </p>
+
+                {!carrier.hasProfile ? (
+                  <p className="mt-2 text-xs leading-relaxed text-[var(--text-muted)]">
+                    You don&apos;t have a carrier account yet. Create one to start receiving delivery requests.
+                  </p>
+                ) : carrierNote ? (
+                  <p className="mt-2 text-xs leading-relaxed text-[var(--text-muted)]">{carrierNote}</p>
+                ) : null}
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link href={carrierCtaHref} prefetch={false} className={CARD_BTN_CLASS} data-testid="dashboard-carrier-cta">
+                    {carrierCtaLabel}
+                  </Link>
+                  {carrier.hasProfile ? (
+                    <Link href="/carrier/requests" prefetch={false} className={CARD_BTN_CLASS} data-testid="dashboard-carrier-requests-link">
+                      View requests
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+
             <div className="grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,2.6fr)]">
-              <section
-                aria-label="Messages snapshot"
-                role="region"
-                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6"
-              >
+              <section aria-label="Messages snapshot" role="region" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6">
                 <DashboardMessagesPreview inbox={inboxSummary} />
               </section>
 
-              <section
-                aria-label="Activity charts"
-                role="region"
-                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6"
-              >
+              <section aria-label="Activity charts" role="region" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6">
                 <DashboardCharts data={chartPoints} />
               </section>
             </div>
 
-            {/* Recent listings */}
-            <section
-              className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6"
-              aria-label="Your recent listings"
-              role="region"
-            >
+            <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:p-4 md:p-6" aria-label="Your recent listings" role="region">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">
-                    Your Recent Listings
-                  </h2>
+                  <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">Your Recent Listings</h2>
                   <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
                     Quick access to what you&apos;ve posted most recently.
                   </p>
@@ -643,14 +697,10 @@ export default async function DashboardPage({
               {recentListings.length === 0 ? (
                 <div className="mt-4 rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-6 text-center sm:mt-6 sm:p-8">
                   <EmptyBoxIllustration className="mx-auto h-20 w-20 text-[var(--text-muted)] opacity-90 sm:h-24 sm:w-24" />
-                  <p className="mt-3 text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">
-                    No listings yet
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
-                    Post your first item to get started.
-                  </p>
+                  <p className="mt-3 text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">No listings yet</p>
+                  <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">Post your first item to get started.</p>
                   <div className="mt-4">
-                    <Link href="/sell" prefetch={false} className={btnBase}>
+                    <Link href="/sell" prefetch={false} className={BTN_BASE_CLASS}>
                       Post a Listing
                     </Link>
                   </div>
@@ -658,10 +708,7 @@ export default async function DashboardPage({
               ) : (
                 <div className="mt-4 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:mt-5 sm:gap-4 lg:grid-cols-3">
                   {recentListings.map((item) => (
-                    <RecentListingCard
-                      key={`${item.type}-${item.id}`}
-                      item={item}
-                    />
+                    <RecentListingCard key={`${item.type}-${item.id}`} item={item} />
                   ))}
                 </div>
               )}
@@ -671,9 +718,9 @@ export default async function DashboardPage({
       </main>
     );
   } catch (err: unknown) {
-    // Fatal SSR error → soft error UI instead of bubbling a 500
     // eslint-disable-next-line no-console
     console.error("[dashboard SSR fatal]", err);
+
     return (
       <main
         id="main"
@@ -686,15 +733,10 @@ export default async function DashboardPage({
             We hit a dashboard error
           </h1>
           <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
-            Something went wrong loading your dashboard. Please refresh. If this
-            continues, contact support - the error has been logged.
+            Something went wrong loading your dashboard. Please refresh. If this continues, contact support.
           </p>
           <div className="mt-3">
-            <Link
-              href="/dashboard"
-              prefetch={false}
-              className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm"
-            >
+            <Link href="/dashboard" prefetch={false} className={BTN_BASE_CLASS}>
               Retry
             </Link>
           </div>
@@ -705,15 +747,8 @@ export default async function DashboardPage({
 }
 
 function RecentListingCard({ item }: { item: DashboardListing }) {
-  const href =
-    item.type === "service"
-      ? `/service/${encodeURIComponent(item.id)}`
-      : `/product/${encodeURIComponent(item.id)}`;
-
-  const editHref =
-    item.type === "service"
-      ? `/service/${encodeURIComponent(item.id)}/edit`
-      : `/product/${encodeURIComponent(item.id)}/edit`;
+  const href = item.type === "service" ? `/service/${encodeURIComponent(item.id)}` : `/product/${encodeURIComponent(item.id)}`;
+  const editHref = item.type === "service" ? `/service/${encodeURIComponent(item.id)}/edit` : `/product/${encodeURIComponent(item.id)}/edit`;
 
   return (
     <ListingCard
@@ -751,33 +786,13 @@ function EmptyBoxIllustration({ className }: { className?: string }) {
         </linearGradient>
       </defs>
 
-      {/* subtle sparkle */}
-      <path
-        d="M92 18l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6Z"
-        fill="currentColor"
-        fillOpacity="0.22"
-      />
-      <path
-        d="M32 22l1.6 4.6L38 28l-4.4 1.4L32 34l-1.6-4.6L26 28l4.4-1.4L32 22Z"
-        fill="currentColor"
-        fillOpacity="0.18"
-      />
+      <path d="M92 18l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6Z" fill="currentColor" fillOpacity="0.22" />
+      <path d="M32 22l1.6 4.6L38 28l-4.4 1.4L32 34l-1.6-4.6L26 28l4.4-1.4L32 22Z" fill="currentColor" fillOpacity="0.18" />
 
-      {/* box */}
-      <path
-        d="M24 46l40-16 40 16-40 16-40-16Z"
-        fill="url(#qsEmptyBoxTop)"
-      />
-      <path
-        d="M24 46v46c0 4 2.4 7.6 6.1 9.1L64 116V62L24 46Z"
-        fill="url(#qsEmptyBoxSide)"
-      />
-      <path
-        d="M104 46v46c0 4-2.4 7.6-6.1 9.1L64 116V62l40-16Z"
-        fill="url(#qsEmptyBoxSide)"
-      />
+      <path d="M24 46l40-16 40 16-40 16-40-16Z" fill="url(#qsEmptyBoxTop)" />
+      <path d="M24 46v46c0 4 2.4 7.6 6.1 9.1L64 116V62L24 46Z" fill="url(#qsEmptyBoxSide)" />
+      <path d="M104 46v46c0 4-2.4 7.6-6.1 9.1L64 116V62l40-16Z" fill="url(#qsEmptyBoxSide)" />
 
-      {/* outlines */}
       <path
         d="M24 46l40-16 40 16-40 16-40-16Z"
         stroke="currentColor"
@@ -792,15 +807,7 @@ function EmptyBoxIllustration({ className }: { className?: string }) {
         strokeWidth="2"
         strokeLinejoin="round"
       />
-      <path
-        d="M64 62v54"
-        stroke="currentColor"
-        strokeOpacity="0.28"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-
-      {/* lid seam */}
+      <path d="M64 62v54" stroke="currentColor" strokeOpacity="0.28" strokeWidth="2" strokeLinecap="round" />
       <path
         d="M44 38l20 8 20-8"
         stroke="currentColor"

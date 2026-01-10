@@ -1,4 +1,4 @@
-// src/app/api/auth/otp/start/route.ts
+// src/app/api/otp/start/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

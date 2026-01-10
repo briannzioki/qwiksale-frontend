@@ -7,9 +7,7 @@ test.describe.configure({ mode: "serial" });
 
 const prisma = e2ePrisma;
 
-const RUN_ID = `e2e-reqdrawer-${Date.now()}-${Math.random()
-  .toString(36)
-  .slice(2, 8)}`;
+const RUN_ID = `e2e-reqdrawer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let OWNER_ID = "e2e-admin";
 
 type RequestModel = {
@@ -33,36 +31,23 @@ function mustEnv(name: string): string {
   return v;
 }
 
-async function ensureE2EAdminUser() {
+async function ensureE2EAdminUserExists() {
   const email = mustEnv("E2E_ADMIN_EMAIL").toLowerCase();
 
-  // Global E2E setup typically ensures this user already exists. Reuse by email to avoid unique(email) collisions.
-  const existing = await prisma.user.findUnique({
+  // Cast to avoid TS widening issues / index-signature restrictions in strict configs.
+  const existing = (await (prisma as any).user.findUnique({
     where: { email },
     select: { id: true },
-  });
+  })) as { id: string } | null;
 
-  if (existing?.id) {
-    OWNER_ID = existing.id;
-    return;
+  if (!existing?.id) {
+    throw new Error(
+      `[e2e] Admin user not found for ${email}. ` +
+        `Your E2E seed/setup must create it (with the password matching E2E_ADMIN_PASSWORD).`,
+    );
   }
 
-  // Fallback: create if missing (do NOT force a fixed id).
-  const created = await prisma.user.create({
-    data: {
-      email,
-      role: "ADMIN",
-      subscription: "BASIC",
-      suspended: false,
-      banned: false,
-      verified: true,
-      username: "e2e-admin",
-      name: "E2E Admin",
-    },
-    select: { id: true },
-  });
-
-  OWNER_ID = created.id;
+  OWNER_ID = existing.id;
 }
 
 async function cleanupRunData() {
@@ -88,7 +73,6 @@ async function seedRequest(title: string) {
     createdAt: now,
     expiresAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
     boostUntil: new Date(now.getTime() + 60 * 60 * 1000), // 1h boost so it stays at the top
-    // Intentionally omit contact fields (avoid enum/name drift).
   };
 
   try {
@@ -99,7 +83,6 @@ async function seedRequest(title: string) {
 
     return r as { id: string; title: string };
   } catch (e: any) {
-    // Fallback for schema drift (if boostUntil doesn't exist)
     const msg = String(e?.message || "");
     if (/PrismaClientValidationError|Unknown argument|Invalid value/i.test(msg)) {
       const { boostUntil, ...fallback } = baseData;
@@ -113,37 +96,6 @@ async function seedRequest(title: string) {
   }
 }
 
-async function signInAsE2EAdmin(page: Page, callbackUrl = "/") {
-  const email = mustEnv("E2E_ADMIN_EMAIL");
-  const password = mustEnv("E2E_ADMIN_PASSWORD");
-
-  await page.goto(`/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
-
-  const emailInput =
-    (await page.getByLabel(/email/i).count()) > 0
-      ? page.getByLabel(/email/i)
-      : page.locator('input[type="email"]');
-
-  const passInput =
-    (await page.getByLabel(/^password$/i).count()) > 0
-      ? page.getByLabel(/^password$/i)
-      : page.locator('input[type="password"]');
-
-  await expect(emailInput).toBeVisible();
-  await expect(passInput).toBeVisible();
-
-  await emailInput.fill(email);
-  await passInput.fill(password);
-
-  const btn =
-    (await page.getByRole("button", { name: /sign in/i }).count()) > 0
-      ? page.getByRole("button", { name: /sign in/i })
-      : page.getByRole("button", { name: /log in/i });
-
-  await btn.click();
-  await expect(page).not.toHaveURL(/\/signin(\?|$)/);
-}
-
 async function findRequestsTrigger(page: Page): Promise<Locator> {
   const btn = page.getByRole("button", { name: /requests/i });
   if ((await btn.count()) > 0) return btn.first();
@@ -151,7 +103,6 @@ async function findRequestsTrigger(page: Page): Promise<Locator> {
   const link = page.getByRole("link", { name: /requests/i });
   if ((await link.count()) > 0) return link.first();
 
-  // Fallback: any element with aria-label/title "Requests"
   return page.locator('[aria-label="Requests"], [title="Requests"]').first();
 }
 
@@ -165,7 +116,6 @@ async function findDrawer(page: Page): Promise<Locator> {
   const aside = page.locator("aside").filter({ hasText: /requests/i });
   if ((await aside.count()) > 0) return aside.first();
 
-  // Last resort: any panel containing at least one /requests/... link.
   return page
     .locator('div:has-text("Requests")')
     .filter({ has: page.locator("a[href^='/requests/']") })
@@ -183,7 +133,7 @@ async function openDrawer(page: Page) {
 }
 
 test.beforeAll(async () => {
-  await ensureE2EAdminUser();
+  await ensureE2EAdminUserExists();
   await cleanupRunData();
 });
 
@@ -229,20 +179,27 @@ test("guest click redirects to signin", async ({ page }) => {
   expect(decodeURIComponent(cb)).toContain(`/requests/${seeded.id}`);
 });
 
-test("signed-in click opens detail", async ({ page }) => {
+test("signed-in click opens detail", async ({ browser }) => {
   await cleanupRunData();
   const seeded = await seedRequest(`[${RUN_ID}] Signed-in click item`);
 
-  await signInAsE2EAdmin(page, "/");
-  await page.goto("/");
+  const adminCtx = await browser.newContext({
+    storageState: "tests/e2e/.auth/admin.json",
+  });
+  const adminPage = await adminCtx.newPage();
 
-  const drawer = await openDrawer(page);
+  try {
+    await adminPage.goto("/");
+    const drawer = await openDrawer(adminPage);
 
-  const safeTitle = seeded.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const itemLink = drawer.getByRole("link", { name: new RegExp(safeTitle) });
-  await expect(itemLink).toBeVisible();
-  await itemLink.click();
+    const safeTitle = seeded.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const itemLink = drawer.getByRole("link", { name: new RegExp(safeTitle) });
+    await expect(itemLink).toBeVisible();
+    await itemLink.click();
 
-  await expect(page).toHaveURL(new RegExp(`/requests/${seeded.id}$`));
-  await expect(page.getByText(seeded.title, { exact: false })).toBeVisible();
+    await expect(adminPage).toHaveURL(new RegExp(`/requests/${seeded.id}$`));
+    await expect(adminPage.getByText(seeded.title, { exact: false })).toBeVisible();
+  } finally {
+    await adminCtx.close();
+  }
 });

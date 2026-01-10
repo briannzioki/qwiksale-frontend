@@ -1,5 +1,5 @@
-// src/app/search/SearchClient.tsx
 "use client";
+
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
@@ -7,18 +7,14 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import InfiniteLoader from "@/app/components/InfiniteLoader";
 import VerifiedBadge from "@/app/components/VerifiedBadge";
 
-/** 🔒 Unified sort enum for search across product/service */
 export type Sort = "newest" | "featured" | "price_asc" | "price_desc";
 
-/** Labels shown in the sort <select> (keep in sync with backend if needed) */
 export const SORT_OPTIONS = [
   { value: "newest", label: "Newest" },
   { value: "featured", label: "Featured first" },
   { value: "price_asc", label: "Price ↑" },
   { value: "price_desc", label: "Price ↓" },
 ] as const satisfies ReadonlyArray<{ value: Sort; label: string }>;
-
-/* ------------------------------ Types ------------------------------ */
 
 type FeaturedTier = "basic" | "gold" | "diamond";
 
@@ -46,12 +42,10 @@ type ProductHit = {
   category: string;
   subcategory: string | null;
 
-  /** Common seller snapshot fields (if API includes them) */
   sellerId?: string | null;
   sellerUsername?: string | null;
   sellerName?: string | null;
 
-  /** Optional seller/account flags (if API includes them) */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
   sellerBadges?: SellerBadges | null;
@@ -81,7 +75,6 @@ type ProductHit = {
 
 type ServiceHit = {
   id: string;
-  /** Prefer `name`, but support legacy `title`. */
   name?: string | null;
   title?: string | null;
   image?: string | null;
@@ -91,12 +84,10 @@ type ServiceHit = {
   availability?: string | null;
   featured?: boolean;
 
-  /** Common seller snapshot fields (if API includes them) */
   sellerId?: string | null;
   sellerUsername?: string | null;
   sellerName?: string | null;
 
-  /** Optional seller/account flags (if API includes them) */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
   sellerBadges?: SellerBadges | null;
@@ -139,12 +130,10 @@ type BaseParams = {
 };
 
 type Props = {
-  endpoint: string; // "/api/products" or "/api/services"
+  endpoint: string;
   initial: Envelope<ProductHit> | Envelope<ServiceHit>;
   params: BaseParams;
 };
-
-/* ------------------------------ Util ------------------------------ */
 
 function buildQS(params: Record<string, unknown>) {
   const q = new URLSearchParams();
@@ -200,7 +189,6 @@ function pickSellerVerified(raw: any): boolean | null {
   const hasOwn = (o: any, k: string) =>
     !!o && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k);
 
-  // ✅ 1) sellerBadges.verified is authoritative IF sellerBadges key exists (even if null)
   if (hasOwn(raw, "sellerBadges")) {
     const sb = raw.sellerBadges;
     if (sb && typeof sb === "object" && !Array.isArray(sb)) {
@@ -213,7 +201,6 @@ function pickSellerVerified(raw: any): boolean | null {
     return null;
   }
 
-  // ✅ 2) sellerVerified alias is authoritative IF key exists (even if null)
   if (hasOwn(raw, "sellerVerified")) {
     const v = (raw as any).sellerVerified;
     return typeof v === "boolean" ? v : null;
@@ -223,7 +210,6 @@ function pickSellerVerified(raw: any): boolean | null {
   const sellerObj =
     seller && typeof seller === "object" && !Array.isArray(seller) ? seller : null;
 
-  // Fallback: conservative emailVerified-like resolver (only when canonical fields are absent)
   const normalizeEmailVerified = (v: unknown): boolean | null => {
     if (v === null) return false;
     if (typeof v === "boolean") return v;
@@ -292,7 +278,6 @@ function pickSellerFeaturedTier(raw: any): FeaturedTier | null {
 
   const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
 
-  // ✅ 1) sellerBadges.tier is authoritative IF sellerBadges key exists (even if null)
   if (hasOwn(raw, "sellerBadges")) {
     const sb = raw.sellerBadges;
     if (sb && typeof sb === "object" && !Array.isArray(sb)) {
@@ -302,7 +287,6 @@ function pickSellerFeaturedTier(raw: any): FeaturedTier | null {
     return null;
   }
 
-  // ✅ 2) sellerFeaturedTier alias is authoritative IF key exists (even if null)
   if (hasOwn(raw, "sellerFeaturedTier")) {
     return coerceFeaturedTier((raw as any).sellerFeaturedTier);
   }
@@ -418,8 +402,6 @@ function storeHrefFrom(raw: any): string | null {
   return `/store/${safeEncodeSegment(trimmed)}`;
 }
 
-/* ------------------------ Seller badge UI (single canonical component) ------------------------ */
-
 function SellerBadgesRow({
   verified,
   tier,
@@ -436,7 +418,6 @@ function SellerBadgesRow({
       <VerifiedBadge
         {...(hasVerified ? { verified } : {})}
         {...(hasTier ? { featuredTier: tier } : {})}
-        // Never derive tier from `featured` boolean in this UI.
         featured={false}
       />
     </div>
@@ -472,8 +453,6 @@ function coerceEnvelope<T>(json: any): Envelope<T> {
 
   return { page, pageSize, total, totalPages, items };
 }
-
-/* ---------------------------- InfiniteClient (kept intact) ---------------------------- */
 
 function InfiniteClient({ endpoint, initial, params }: Props) {
   const isProduct = params.type === "product";
@@ -582,7 +561,7 @@ function InfiniteClient({ endpoint, initial, params }: Props) {
         if (done || loading || !!error) return;
         for (const e of entries) {
           if (e.isIntersecting) {
-            if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+            if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
             timeoutRef.current = window.setTimeout(() => {
               fetchNext();
               timeoutRef.current = null;
@@ -596,7 +575,7 @@ function InfiniteClient({ endpoint, initial, params }: Props) {
 
     ioRef.current.observe(el);
     return () => {
-      if (timeoutRef.current) {
+      if (timeoutRef.current !== null) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
@@ -608,7 +587,7 @@ function InfiniteClient({ endpoint, initial, params }: Props) {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
-      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+      if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
     };
   }, []);
 
@@ -650,11 +629,7 @@ function InfiniteClient({ endpoint, initial, params }: Props) {
 
               return (
                 <div key={p.id} className={cardClass}>
-                  <Link
-                    href={href}
-                    aria-label={`Product: ${p.name}`}
-                    className={linkClass}
-                  >
+                  <Link href={href} aria-label={`Product: ${p.name}`} className={linkClass}>
                     <div className="h-36 w-full bg-[var(--bg-subtle)] sm:h-44">
                       <div
                         className="h-full w-full"
@@ -715,11 +690,7 @@ function InfiniteClient({ endpoint, initial, params }: Props) {
 
             return (
               <div key={s.id} className={cardClass}>
-                <Link
-                  href={href}
-                  aria-label={`Service: ${name}`}
-                  className={linkClass}
-                >
+                <Link href={href} aria-label={`Service: ${name}`} className={linkClass}>
                   <div className="h-36 w-full bg-[var(--bg-subtle)] sm:h-44">
                     <div
                       className="h-full w-full"
@@ -796,8 +767,6 @@ function InfiniteClient({ endpoint, initial, params }: Props) {
 }
 
 void InfiniteClient;
-
-/* ---------------------------- SearchCombobox (listbox-safe) --------------------------- */
 
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debounced, setDebounced] = useState<T>(value);
@@ -918,7 +887,7 @@ function SearchCombobox({
   );
 
   const onBlur = useCallback(() => {
-    if (blurTimerRef.current) window.clearTimeout(blurTimerRef.current);
+    if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
     blurTimerRef.current = window.setTimeout(() => {
       close();
       blurTimerRef.current = null;
@@ -927,7 +896,7 @@ function SearchCombobox({
 
   useEffect(() => {
     return () => {
-      if (blurTimerRef.current) window.clearTimeout(blurTimerRef.current);
+      if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
     };
   }, []);
 
@@ -973,9 +942,7 @@ function SearchCombobox({
           ].join(" ")}
         >
           {!hasSuggestions && (
-            <li className="px-2 py-2 text-sm text-[var(--text-muted)]">
-              No suggestions
-            </li>
+            <li className="px-2 py-2 text-sm text-[var(--text-muted)]">No suggestions</li>
           )}
 
           {suggestions.map((s, idx) => {
@@ -1004,9 +971,7 @@ function SearchCombobox({
   );
 }
 
-/* ---------------------------- The actual /search UI --------------------------- */
-
-const FIRST_PAGE_TIMEOUT_MS = 4000;
+const FIRST_PAGE_TIMEOUT_MS = 10000;
 
 function SearchPageInternal() {
   const sp = useSearchParams();
@@ -1058,37 +1023,96 @@ function SearchPageInternal() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    const ctrl = new AbortController();
-    const t = window.setTimeout(() => ctrl.abort(), FIRST_PAGE_TIMEOUT_MS);
+    let active = true;
+
+    let controller: AbortController | null = null;
+    let timeoutId: number | null = null;
+
+    const clearTimeoutSafe = () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const abortSafe = () => {
+      if (controller) {
+        controller.abort();
+        controller = null;
+      }
+    };
+
+    const armTimeout = () => {
+      clearTimeoutSafe();
+      timeoutId = window.setTimeout(() => {
+        if (controller) controller.abort();
+      }, FIRST_PAGE_TIMEOUT_MS);
+    };
+
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+    const attemptFetch = async () => {
+      abortSafe();
+      controller = new AbortController();
+      armTimeout();
+
+      const qs = buildQS(fetchParams as any);
+      const res = await fetch(`${endpoint}?${qs}`, {
+        cache: "no-store",
+        signal: controller.signal,
+        headers: { Accept: "application/json" },
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || `Failed to load (${res.status})`);
+      return coerceEnvelope<ProductHit | ServiceHit>(json);
+    };
 
     (async () => {
       try {
         setLoading(true);
         setErr(null);
+        setData(null);
 
-        const qs = buildQS(fetchParams as any);
-        const res = await fetch(`${endpoint}?${qs}`, {
-          cache: "no-store",
-          signal: ctrl.signal,
-          headers: { Accept: "application/json" },
-        });
+        let env: Envelope<ProductHit | ServiceHit> | null = null;
 
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.error || `Failed to load (${res.status})`);
+        try {
+          env = await attemptFetch();
+        } catch (e: any) {
+          const isAbort = e?.name === "AbortError";
+          const msg = typeof e?.message === "string" ? e.message : "";
+          const isNetwork = /failed to fetch|networkerror/i.test(msg);
 
-        const env = coerceEnvelope<ProductHit | ServiceHit>(json);
+          if (isAbort || isNetwork) {
+            await sleep(250);
+            env = await attemptFetch();
+          } else {
+            throw e;
+          }
+        }
+
+        if (!active) return;
         setData(env);
       } catch (e: any) {
-        if (e?.name !== "AbortError") setErr(e?.message || "Failed to load search results");
+        if (!active) return;
+
+        if (e?.name === "AbortError") {
+          setErr("Search is taking too long. Please try again.");
+        } else {
+          setErr(e?.message || "Failed to load search results");
+        }
       } finally {
-        window.clearTimeout(t);
-        if (!ctrl.signal.aborted) setLoading(false);
+        clearTimeoutSafe();
+        abortSafe();
+        if (active) setLoading(false);
       }
     })();
 
     return () => {
-      window.clearTimeout(t);
-      ctrl.abort();
+      active = false;
+      clearTimeoutSafe();
+      abortSafe();
     };
   }, [endpoint, fetchParams]);
 
@@ -1114,7 +1138,7 @@ function SearchPageInternal() {
             "relative overflow-hidden rounded-2xl border shadow-soft",
             "border-[var(--border-subtle)]",
             "text-white",
-            "bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]",
+            "bg-gradient-to-r from-[var(--brand-navy)] via-[var(--brand-green)] to-[var(--brand-blue)]",
           ].join(" ")}
           aria-label="Search header"
         >
@@ -1314,9 +1338,7 @@ function SearchPageInternal() {
 
                       <div className="mt-1.5 flex items-center justify-between text-[11px] text-[var(--text-muted)] sm:mt-2 sm:text-xs">
                         <span className="line-clamp-1">{price}</span>
-                        <span className="opacity-80">
-                          {isProduct ? "Product" : "Service"}
-                        </span>
+                        <span className="opacity-80">{isProduct ? "Product" : "Service"}</span>
                       </div>
                     </div>
                   </Link>

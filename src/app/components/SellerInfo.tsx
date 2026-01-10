@@ -30,21 +30,9 @@ type SellerInfoProps = {
   rating?: number | null;
   salesCount?: number | null;
 
-  /**
-   * Canonical preferred: boolean | null.
-   * Back-compat: callers may pass emailVerified-like values here (Date / ISO string / etc).
-   */
   verified?: boolean | null | string | number | Date;
-
-  /**
-   * Canonical preferred: "basic" | "gold" | "diamond" | null.
-   */
   featuredTier?: FeaturedTier | null | string;
 
-  /**
-   * Preferred consolidated badges from API/callers.
-   * If provided, treated as authoritative (even if null fields).
-   */
   sellerBadges?: SellerBadgesWire;
 
   storeHref?: string | null;
@@ -93,12 +81,10 @@ function cleanSellerId(raw?: string | null): string | null {
   const v = normalizeSlug(raw);
   if (!v) return null;
 
-  // Accept either "<id>" or "u-<id>" but reject junk even if prefixed.
   const tail = stripLeadingUPrefixes(v);
   if (!tail || isJunkToken(tail)) return null;
   if (tail.length > 80) return null;
 
-  // Return the original normalized input (could be prefixed), caller will normalize further.
   return v;
 }
 
@@ -108,7 +94,6 @@ const STORE_TOKEN_RE = /^[a-z0-9._-]{2,80}$/i;
 function isStoreCodeToken(raw: string): boolean {
   const s = normalizeSlug(raw);
   if (!s || isJunkToken(s)) return false;
-  // e.g. Sto-83535 / sto_83535 / store-83535 / 83535
   if (/^(?:sto|store)[-_]?\d{1,18}$/i.test(s)) return true;
   if (/^\d{1,18}$/.test(s)) return true;
   return false;
@@ -121,9 +106,7 @@ function sellerIdTailFromAny(raw?: string | null): string | null {
   if (!tail || isJunkToken(tail)) return null;
   if (tail.length > 80) return null;
 
-  // ✅ critical: never treat store-codes as a real sellerId
   if (isStoreCodeToken(tail)) return null;
-
   return tail;
 }
 
@@ -154,33 +137,25 @@ function buildStoreHref({
 }): string | null {
   const sidTail = sellerIdTailFromAny(sellerId);
 
-  // Prefer a normal username *only if it isn't a store-code-ish token*.
   const unameRaw = cleanUsername(username ?? null);
   const preferredUsername = unameRaw && !isStoreCodeToken(unameRaw) ? unameRaw : "";
 
   const directRaw = typeof storeHref === "string" ? storeHref.trim() : "";
   const hasDirect = !!directRaw && !isJunkToken(directRaw);
 
-  // 1) If a real username exists, use it (pretty + stable).
-  if (preferredUsername) {
-    return `/store/${encodeURIComponent(preferredUsername)}`;
-  }
+  // 1) Prefer username when valid (pretty slug).
+  if (preferredUsername) return `/store/${encodeURIComponent(preferredUsername)}`;
 
-  // 2) Next most reliable: sellerId (works even when username/store-codes are messy).
-  if (sidTail) {
-    return `/store/${encodeURIComponent(`u-${sidTail}`)}`;
-  }
+  // 2) Fall back to u-<id> when we have a real seller id tail.
+  if (sidTail) return `/store/${encodeURIComponent(`u-${sidTail}`)}`;
 
-  // 3) If storeHref is an absolute URL, keep it (rare, but don't break).
+  // 3) Absolute URL passthrough.
   if (hasDirect && /^https?:\/\//i.test(directRaw)) return directRaw;
 
-  // 4) If storeHref is app-relative but not a store link, keep it.
-  if (hasDirect && directRaw.startsWith("/") && !directRaw.startsWith("/store/")) {
-    return directRaw;
-  }
+  // 4) App-relative passthrough if it's not already a store path.
+  if (hasDirect && directRaw.startsWith("/") && !directRaw.startsWith("/store/")) return directRaw;
 
-  // 5) Otherwise, interpret whatever token we can get from storeHref,
-  //    BUT never use store-code-ish tokens as the final slug.
+  // 5) Try to interpret storeHref as /store/<token>, but reject store-code-ish tokens.
   if (hasDirect) {
     const isStorePath = directRaw.startsWith("/store/") || directRaw.startsWith("store/");
     const token = isStorePath ? tokenFromStorePath(directRaw) : normalizeSlug(directRaw);
@@ -188,12 +163,7 @@ function buildStoreHref({
     if (token && !isJunkToken(token)) {
       const { suffix } = isStorePath ? splitPathSuffix(directRaw) : { suffix: "" };
 
-      // ✅ if storeHref token is a store-code, don't use it as slug
-      if (isStoreCodeToken(token)) {
-        // if we somehow had a real sellerId tail, we'd have returned earlier.
-        // Without it, better to hide the bad link than navigate to an empty store.
-        return null;
-      }
+      if (isStoreCodeToken(token)) return null;
 
       const tail = stripLeadingUPrefixes(token);
       const isUPath = /^u-/i.test(token);
@@ -209,24 +179,20 @@ function buildStoreHref({
     }
   }
 
-  // 6) Final attempt: accept username only if it isn't store-code-ish.
-  if (
-    unameRaw &&
-    STORE_TOKEN_RE.test(unameRaw) &&
-    !isJunkToken(unameRaw) &&
-    !isStoreCodeToken(unameRaw)
-  ) {
+  // 6) Final: accept username again only if it's not store-code-ish.
+  if (unameRaw && STORE_TOKEN_RE.test(unameRaw) && !isJunkToken(unameRaw) && !isStoreCodeToken(unameRaw)) {
     return `/store/${encodeURIComponent(unameRaw)}`;
   }
 
   return null;
 }
 
-function fallbackAvatarLetter(name?: string | null) {
-  if (!name) return "S";
-  const t = name.trim();
+function fallbackAvatarLetter(v?: string | null) {
+  if (!v) return "S";
+  const t = v.trim();
   if (!t) return "S";
-  return t[0]!.toUpperCase();
+  const first = t.replace(/^@+/, "")[0];
+  return (first ? first : "S").toUpperCase();
 }
 
 export default function SellerInfo({
@@ -252,7 +218,17 @@ export default function SellerInfo({
   const safeSellerId = React.useMemo(() => cleanSellerId(sellerId ?? null), [sellerId]);
   const safeDonateId = React.useMemo(() => cleanSellerId(donateSellerId ?? null), [donateSellerId]);
 
-  const safeName = (name?.trim() || safeUsername || "Seller").trim();
+  const safeName = React.useMemo(() => {
+    const n = typeof name === "string" ? name.trim() : "";
+    return n ? n : "Seller";
+  }, [name]);
+
+  // UI: show @username first (primary), but keep the human name visible (secondary) when it differs.
+  const primaryLabel = safeUsername ? `@${safeUsername}` : safeName;
+  const secondaryName =
+    safeUsername && safeName && safeName.toLowerCase() !== safeUsername.toLowerCase()
+      ? safeName
+      : null;
 
   const { verifiedCanon, tierCanon } = React.useMemo(() => {
     const wire =
@@ -264,24 +240,19 @@ export default function SellerInfo({
     const hasWireTier = !!wire && "tier" in (wire as object);
 
     const resolvedTier: FeaturedTier | null = (() => {
-      // If wire exists (even null), treat it as authoritative.
       if (hasWireTier) return normalizeFeaturedTier((wire as any)?.tier);
-
       return normalizeFeaturedTier(featuredTier);
     })();
 
     const resolvedVerified: boolean | null = (() => {
-      // If wire exists (even null), treat it as authoritative.
       if (hasWireVerified) {
         const v = (wire as any)?.verified;
         return typeof v === "boolean" ? v : null;
       }
 
-      // Canonical: boolean/null means already resolved.
       if (typeof verified === "boolean") return verified;
       if (verified === null) return null;
 
-      // Back-compat: emailVerified-like value -> resolve via canonical helper.
       if (verified !== undefined) return sellerVerifiedFromEmailVerified(verified);
 
       return null;
@@ -289,6 +260,12 @@ export default function SellerInfo({
 
     return { verifiedCanon: resolvedVerified, tierCanon: resolvedTier };
   }, [verified, featuredTier, sellerBadges]);
+
+  const verifiedLabel = React.useMemo(() => {
+    if (verifiedCanon === true) return "Verified";
+    if (verifiedCanon === false) return "Unverified";
+    return null;
+  }, [verifiedCanon]);
 
   const showMetaRow =
     (typeof rating === "number" && rating > 0) ||
@@ -309,7 +286,6 @@ export default function SellerInfo({
   );
 
   const hasDonate = typeof safeDonateId === "string" && safeDonateId.length > 0;
-
   const AnyDonateButton = DonateButton as unknown as React.ComponentType<any>;
 
   return (
@@ -338,25 +314,34 @@ export default function SellerInfo({
             <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
-              {fallbackAvatarLetter(safeName)}
+              {fallbackAvatarLetter(primaryLabel)}
             </div>
           )}
         </div>
 
         <div className="flex-1 space-y-1.5 text-sm text-[var(--text)] sm:space-y-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-semibold text-[var(--text)]">{safeName}</span>
+            <span className="font-semibold text-[var(--text)]">{primaryLabel}</span>
 
-            {safeUsername ? (
-              <span className="text-[11px] text-[var(--text-muted)] sm:text-xs">@{safeUsername}</span>
+            {secondaryName ? (
+              <span className="text-[11px] text-[var(--text-muted)] sm:text-xs">{secondaryName}</span>
             ) : null}
 
-            {/* ✅ single canonical badge model passed down (no re-resolve in child) */}
-            <VerifiedBadge
-              className="inline-flex"
-              verified={verifiedCanon}
-              featuredTier={tierCanon}
-            />
+            <VerifiedBadge className="inline-flex" verified={verifiedCanon} featuredTier={tierCanon} />
+
+            {verifiedLabel ? (
+              <span
+                data-testid="seller-verified-label"
+                className={cn(
+                  "inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold leading-none sm:px-2.5 sm:py-1.5 sm:text-xs",
+                  "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
+                )}
+                aria-label={verifiedLabel}
+                title={verifiedLabel}
+              >
+                {verifiedLabel}
+              </span>
+            ) : null}
           </div>
 
           {locationLabel ? (
@@ -438,8 +423,7 @@ export default function SellerInfo({
           </div>
 
           <p className="mt-2 text-[0.7rem] leading-relaxed text-[var(--text-muted)] sm:mt-3">
-            Stay safe: meet in public places, verify details before paying, and report suspicious
-            activity.
+            Stay safe: meet in public places, verify details before paying, and report suspicious activity.
           </p>
         </div>
       </div>

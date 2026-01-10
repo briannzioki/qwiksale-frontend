@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Destination = "home" | "search"; // deprecated / ignored
 
@@ -31,7 +32,13 @@ function classNames(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
 }
 
+function normalizeQuery(raw: string): string {
+  return (raw || "").replace(/^\/+/, "").trim();
+}
+
 export default function SearchBox(props: Props) {
+  const router = useRouter();
+
   const {
     className = "",
     placeholder = "Search phones, cars, services…",
@@ -76,6 +83,20 @@ export default function SearchBox(props: Props) {
 
   const formAction = "/search";
 
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const normalized = normalizeQuery(q);
+    if (normalized !== q) setQ(normalized);
+
+    const href = normalized
+      ? `/search?q=${encodeURIComponent(normalized)}`
+      : "/search";
+
+    if (isInline) (props as InlineVariantProps).onCloseAction?.();
+    router.push(href);
+  };
+
   // Default variant → full search bar
   if (!isInline) {
     return (
@@ -86,6 +107,7 @@ export default function SearchBox(props: Props) {
         <form
           method="GET"
           action={formAction}
+          onSubmit={handleSubmit}
           aria-label="Search products, brands, categories or services"
           className={[
             "flex items-center gap-2 rounded-2xl border px-3 py-2 shadow-sm transition",
@@ -173,6 +195,7 @@ export default function SearchBox(props: Props) {
         <form
           method="GET"
           action={formAction}
+          onSubmit={handleSubmit}
           aria-label="Quick search"
           className="flex items-center gap-1.5"
         >

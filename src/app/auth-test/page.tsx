@@ -9,8 +9,8 @@ import toast from "react-hot-toast";
 
 /**
  * Debug page to quickly verify NextAuth session and /api/me.
- * - Uses next-auth/react (client-safe)
- * - Emits tiny analytics events for local debugging
+ * Uses next-auth/react (client-safe)
+ * Emits tiny analytics events for local debugging
  */
 
 type Tier = "FREE" | "GOLD" | "PLATINUM";
@@ -26,7 +26,34 @@ type MeResponse =
       };
     };
 
-/* --------------------------- tiny analytics utils --------------------------- */
+function safeInternalCallbackUrl(input: unknown, fallback: string) {
+  const raw = String(input ?? "").trim();
+  if (!raw) return fallback;
+
+  if (raw.startsWith("//")) return fallback;
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const u = new URL(raw);
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      if (origin && u.origin === origin) {
+        const next = `${u.pathname}${u.search}${u.hash}`;
+        return safeInternalCallbackUrl(next, fallback);
+      }
+    } catch {
+      // ignore
+    }
+    return fallback;
+  }
+
+  if (!raw.startsWith("/")) return fallback;
+  if (raw.startsWith("/signin")) return fallback;
+  if (raw.startsWith("/api/auth")) return fallback;
+
+  return raw;
+}
+
 function emit(name: string, detail?: unknown) {
   // eslint-disable-next-line no-console
   console.log(`[qs:event] ${name}`, detail);
@@ -197,8 +224,9 @@ export default function AuthTest() {
               <button
                 onClick={() => {
                   track("auth_debug_signin_click");
-                  // next-auth/react: signIn still accepts callbackUrl
-                  signIn(undefined, { callbackUrl: "/auth-test" });
+                  signIn(undefined, {
+                    callbackUrl: safeInternalCallbackUrl("/auth-test", "/auth-test"),
+                  });
                 }}
                 className="btn-gradient-primary focus-visible:outline-none focus-visible:ring-2 ring-focus"
               >
@@ -208,8 +236,9 @@ export default function AuthTest() {
               <button
                 onClick={() => {
                   track("auth_debug_signout_click");
-                  // next-auth/react: use callbackUrl to land back here
-                  signOut({ callbackUrl: "/auth-test" });
+                  signOut({
+                    callbackUrl: safeInternalCallbackUrl("/auth-test", "/auth-test"),
+                  });
                 }}
                 className="btn-outline focus-visible:outline-none focus-visible:ring-2 ring-focus"
               >

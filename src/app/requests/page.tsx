@@ -6,6 +6,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { auth } from "@/auth";
 import RequestCard from "@/app/requests/_components/RequestCard";
+import RequestFilters from "@/app/requests/_components/RequestFilters";
 
 type SP = Record<string, string | string[] | undefined>;
 type HeadersLike = { get(name: string): string | null };
@@ -43,14 +44,12 @@ function isLocalHost(host: string) {
 }
 
 function baseUrlFromHeaders(h: HeadersLike): string {
-  // Prefer request headers so SSR always talks to the *current* host (critical for e2e/local).
   const host = h.get("x-forwarded-host") || h.get("host");
 
   const xfProtoRaw = h.get("x-forwarded-proto") || "";
   const xfProto = xfProtoRaw ? xfProtoRaw.split(",")[0]?.trim().toLowerCase() : "";
 
   if (host) {
-    // If we're on localhost and x-forwarded-proto is missing, do NOT assume https.
     const proto =
       xfProto ||
       (isLocalHost(host)
@@ -62,7 +61,6 @@ function baseUrlFromHeaders(h: HeadersLike): string {
     return `${proto}://${host}`.replace(/\/+$/, "");
   }
 
-  // Fallback only if headers are missing (rare).
   const env =
     process.env["NEXT_PUBLIC_APP_URL"] ||
     process.env["APP_URL"] ||
@@ -98,19 +96,18 @@ export default async function RequestsIndex({
   const kindRaw = getParam(sp, "kind").trim().toLowerCase();
   const kind = kindRaw === "product" || kindRaw === "service" ? kindRaw : "";
   const category = getParam(sp, "category").trim();
+  const location = getParam(sp, "location").trim();
   const status = getParam(sp, "status").trim();
 
   const qp = new URLSearchParams();
   if (q) qp.set("q", q);
   if (kind) qp.set("kind", kind);
   if (category) qp.set("category", category);
+  if (location) qp.set("location", location);
   if (status) qp.set("status", status);
 
-  // ✅ your Next typing expects this to be awaited
   const h = await headers();
-  const url = `${makeApiUrl("/api/requests", h)}${
-    qp.toString() ? `?${qp.toString()}` : ""
-  }`;
+  const url = `${makeApiUrl("/api/requests", h)}${qp.toString() ? `?${qp.toString()}` : ""}`;
 
   let items: RequestListItem[] = [];
   try {
@@ -122,12 +119,13 @@ export default async function RequestsIndex({
   }
 
   const session = await auth();
-  const isAuthed = !!((session as any)?.user?.id as string | undefined);
+  const userAny = (session as any)?.user ?? null;
+
+  const isAuthed = Boolean(userAny && (userAny.id || userAny.email));
+  const isAuthedForUi = isAuthed;
 
   function hrefFor(id: string) {
-    const target = `/requests/${encodeURIComponent(id)}`;
-    if (isAuthed) return target;
-    return `/signin?callbackUrl=${encodeURIComponent(target)}`;
+    return `/requests/${encodeURIComponent(id)}`;
   }
 
   const heroBtnPrimary =
@@ -135,15 +133,15 @@ export default async function RequestsIndex({
   const heroBtnSecondary =
     "inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-elevated)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-4 sm:text-sm";
 
-  const fieldLabel = "block text-xs font-semibold text-[var(--text-muted)]";
-  const inputBase =
-    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 ring-focus";
-  const selectBase =
-    "mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus";
-
   return (
-    <main className="container-page py-4 text-[var(--text)] sm:py-6">
-      <div className="rounded-2xl bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca] text-white shadow-soft">
+    <main className="container-page py-4 text-[var(--text)] sm:py-6" aria-label="Requests">
+      <div
+        className={[
+          "rounded-2xl bg-gradient-to-r",
+          "from-[var(--brand-navy)] via-[var(--brand-green)] to-[var(--brand-blue)]",
+          "text-white shadow-soft",
+        ].join(" ")}
+      >
         <div className="container-page py-6 text-white sm:py-8">
           <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-3xl">
             Requests
@@ -152,7 +150,6 @@ export default async function RequestsIndex({
             Browse what people are looking for. Guests can view summaries.
           </p>
 
-          {/* IMPORTANT: keep /requests/new out of the top area so selectors don't click it first */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Link href="/search" prefetch={false} className={heroBtnSecondary}>
               Browse listings
@@ -161,86 +158,11 @@ export default async function RequestsIndex({
         </div>
       </div>
 
-      <form
-        method="GET"
+      <RequestFilters
         action="/requests"
-        className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-6 sm:p-4"
-      >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-5">
-            <label className={fieldLabel}>Search</label>
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="e.g. iPhone 13, plumber in Nairobi..."
-              className={inputBase}
-            />
-          </div>
-
-          <div className="md:col-span-3">
-            <label className={fieldLabel}>Kind</label>
-            <select name="kind" defaultValue={kind || ""} className={selectBase}>
-              <option value="">All</option>
-              <option value="product">Product</option>
-              <option value="service">Service</option>
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className={fieldLabel}>Category</label>
-            <input
-              name="category"
-              defaultValue={category}
-              placeholder="Any"
-              className={inputBase}
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className={fieldLabel}>Status</label>
-            <input
-              name="status"
-              defaultValue={status}
-              placeholder="Any"
-              className={inputBase}
-            />
-          </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-xs font-semibold text-[var(--text)] shadow-sm transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:px-4 sm:text-sm"
-          >
-            Apply filters
-          </button>
-
-          <Link
-            href="/requests"
-            prefetch={false}
-            className="text-xs text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text)]"
-          >
-            Reset
-          </Link>
-
-          {items.length === 0 ? (
-            <Link
-              href={`/requests/new${
-                kind || q
-                  ? `?${new URLSearchParams({
-                      ...(kind ? { kind } : {}),
-                      ...(q ? { title: q } : {}),
-                    }).toString()}`
-                  : ""
-              }`}
-              prefetch={false}
-              className="ml-auto text-xs text-[var(--text-muted)] underline underline-offset-4 hover:text-[var(--text)]"
-            >
-              Didn’t find it? Post a request
-            </Link>
-          ) : null}
-        </div>
-      </form>
+        className="mt-4 sm:mt-6"
+        showCta={items.length === 0}
+      />
 
       <section className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft sm:mt-6 sm:p-4">
         <div className="mb-2 flex items-center justify-between gap-3">
@@ -266,13 +188,12 @@ export default async function RequestsIndex({
                 const id = String(r.id || "");
                 return (
                   <li key={id}>
-                    <RequestCard item={r} href={hrefFor(id)} isAuthed={isAuthed} />
+                    <RequestCard item={r} href={hrefFor(id)} isAuthed={isAuthedForUi} />
                   </li>
                 );
               })}
             </ul>
 
-            {/* CTA AFTER items so request links appear first in DOM */}
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Link href="/requests/new" prefetch={false} className={heroBtnPrimary}>
                 Post a request

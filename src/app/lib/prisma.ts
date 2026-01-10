@@ -20,7 +20,9 @@ if (process.env.NODE_ENV !== "production") {
   globalThis.__qwiksale_app_prisma = prisma;
 }
 
+// Named + default exports so both import styles stay stable across the repo.
 export { prisma };
+export default prisma;
 
 /* ------------------------------ Health helpers --------------------------- */
 export async function prismaHealthcheck(): Promise<boolean> {

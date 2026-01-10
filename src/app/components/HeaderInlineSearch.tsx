@@ -1,4 +1,3 @@
-// src/app/components/HeaderInlineSearch.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -7,12 +6,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/app/components/Icon";
 
+function isEditableTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el) return false;
+
+  const tag = (el.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+
+  if ((el as any).isContentEditable) return true;
+
+  return false;
+}
+
 /**
  * Inline header search with a toggle + explicit navigation.
  * - Desktop (md+): toggle opens a dropdown form.
  * - Mobile (xs/sm): simple link to /search (no dropdown UI).
  * - On submit (Enter / button), router.push("/search?q=…").
- * - We treat a leading "/" as the hotkey (not part of the query).
+ * - "/" hotkey opens the search (desktop dropdown; mobile navigates to /search).
  */
 export default function HeaderInlineSearch() {
   const router = useRouter();
@@ -30,6 +41,36 @@ export default function HeaderInlineSearch() {
     }, 0);
     return () => window.clearTimeout(t);
   }, [open]);
+
+  // "/" hotkey
+  useEffect(() => {
+    const onSlash = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.key !== "/") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditableTarget(e.target)) return;
+
+      e.preventDefault();
+
+      const mq = window.matchMedia?.("(min-width: 768px)");
+      const isDesktop = mq ? mq.matches : true;
+
+      if (!isDesktop) {
+        router.push("/search");
+        return;
+      }
+
+      setOpen(true);
+      queueMicrotask(() => inputRef.current?.focus());
+      window.setTimeout(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select?.();
+      }, 0);
+    };
+
+    window.addEventListener("keydown", onSlash, true);
+    return () => window.removeEventListener("keydown", onSlash, true);
+  }, [router]);
 
   // Close on Escape when open
   useEffect(() => {
@@ -89,7 +130,6 @@ export default function HeaderInlineSearch() {
       className="relative inline-flex items-center"
       data-open={open ? "true" : "false"}
     >
-      {/* Mobile: no dropdown, just go to /search */}
       <Link
         href="/search"
         prefetch={false}
@@ -109,7 +149,6 @@ export default function HeaderInlineSearch() {
         <Icon name="search" />
       </Link>
 
-      {/* Desktop: toggle + dropdown */}
       <button
         type="button"
         aria-label="Open search"
@@ -130,7 +169,6 @@ export default function HeaderInlineSearch() {
         <Icon name="search" />
       </button>
 
-      {/* Form is ALWAYS in the DOM; visibility only is toggled. */}
       <form
         action="/search"
         method="GET"
@@ -146,8 +184,8 @@ export default function HeaderInlineSearch() {
           "rounded-xl border px-2 py-1.5 shadow-soft backdrop-blur",
           "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]",
           open
-            ? "opacity-100 translate-y-0 pointer-events-auto"
-            : "opacity-0 -translate-y-1 pointer-events-none",
+            ? "opacity-100 translate-y-0 pointer-events-auto visible"
+            : "opacity-0 -translate-y-1 pointer-events-none invisible",
           "transition duration-150 ease-out will-change-transform",
         ].join(" ")}
         aria-hidden={open ? "false" : "true"}
