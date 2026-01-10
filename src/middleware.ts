@@ -1,7 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { auth } from "@/auth";
-
-type NextAuthAuthedRequest = NextRequest & { auth?: any };
 
 function envStr(name: string): string | undefined {
   const v = process.env[name];
@@ -264,24 +261,11 @@ function isAdminDataPath(p: string): boolean {
   return /^\/_next\/data\/[^/]+\/admin(?:\/.*)?\.json$/.test(p);
 }
 
-function parseAllow(env?: string | null) {
-  return new Set(
-    (env ?? "")
-      .split(/[,\s]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-// Compute allowlists once (env won’t change at runtime in Next.js deployments)
-const ADMIN_ALLOW = parseAllow(process.env["ADMIN_EMAILS"]);
-const SUPERADMIN_ALLOW = parseAllow(process.env["SUPERADMIN_EMAILS"]);
-
 function callbackFromRequestUrl(nextUrl: URL, fallback: string): string {
   try {
     const u = new URL(nextUrl.toString());
 
-    // Prevent nested callbackUrl recursion and avoid leaking test creds into callbackUrl.
+    // Prevent nested callbackUrl recursion and avoid leaking creds into callbackUrl.
     u.searchParams.delete("callbackUrl");
     u.searchParams.delete("redirectTo");
     u.searchParams.delete("email");
@@ -314,7 +298,38 @@ function applyNoStore(headers: Headers) {
   headers.set("Vary", "Authorization, Cookie, Accept-Encoding");
 }
 
-export default auth(async function middleware(req: NextRequest) {
+/**
+ * Edge-safe auth presence check.
+ * We intentionally avoid importing NextAuth/Auth.js helpers here because they bloat the Edge bundle
+ * (and can pull Node-only deps like Prisma/bcrypt into middleware).
+ */
+function hasSessionCookie(req: NextRequest): boolean {
+  try {
+    const all = req.cookies.getAll();
+    for (const c of all) {
+      const n = (c?.name ?? "").toLowerCase();
+      if (!n) continue;
+
+      // Auth.js (v5) cookie names
+      if (n === "authjs.session-token" || n === "__secure-authjs.session-token") return true;
+      if (n.startsWith("authjs.session-token.")) return true;
+      if (n.startsWith("__secure-authjs.session-token.")) return true;
+
+      // NextAuth legacy cookie names (keep for back-compat)
+      if (n === "next-auth.session-token" || n === "__secure-next-auth.session-token") return true;
+      if (n.startsWith("next-auth.session-token.")) return true;
+      if (n.startsWith("__secure-next-auth.session-token.")) return true;
+
+      // Defensive fallback (some environments rename cookies)
+      if (n.includes("session-token") && (n.includes("authjs") || n.includes("next-auth"))) return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+export async function middleware(req: NextRequest) {
   const p = req.nextUrl.pathname;
   const adminData = isAdminDataPath(p);
   const isApi = p.startsWith("/api/");
@@ -403,25 +418,10 @@ export default auth(async function middleware(req: NextRequest) {
     SUGGEST_STORE.set(key, arr);
   }
 
-  // NextAuth v5 wrapper provides req.auth (no getToken, no secureCookie drift)
-  const session = (req as NextAuthAuthedRequest).auth ?? null;
-  const user: any = session?.user ?? null;
+  // Edge-safe auth check (cookie presence only)
+  const isLoggedIn = hasSessionCookie(req);
 
-  const isLoggedIn = !!user;
-  const role = String(user?.role ?? "").toUpperCase();
-  const email = typeof user?.email === "string" ? user.email.toLowerCase() : null;
-
-  const allowSuper = !!email && SUPERADMIN_ALLOW.has(email);
-  const allowAdmin = !!email && (ADMIN_ALLOW.has(email) || allowSuper);
-
-  const isAdmin =
-    user?.isAdmin === true ||
-    user?.isSuperAdmin === true ||
-    role === "ADMIN" ||
-    role === "SUPERADMIN" ||
-    allowAdmin;
-
-  // Coarse auth gate for carrier/delivery APIs (Phase 5 will add server-side guards too)
+  // Coarse auth gate for carrier/delivery APIs
   if (isApi && isCarrierDeliveryApiPath(p)) {
     if (!isLoggedIn) {
       return new NextResponse(JSON.stringify({ error: "Unauthorized" }), {
@@ -431,17 +431,12 @@ export default auth(async function middleware(req: NextRequest) {
     }
   }
 
-  // Protect /_next/data/.../admin*.json
+  // Protect /_next/data/.../admin*.json: must be logged in.
+  // Role checks are enforced in the server layer (admin pages + /api/admin guards).
   if (adminData) {
     if (!isLoggedIn) {
       return new NextResponse(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-      });
-    }
-    if (!isAdmin) {
-      return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
@@ -455,22 +450,15 @@ export default auth(async function middleware(req: NextRequest) {
       signin.searchParams.set("callbackUrl", cb);
       return NextResponse.redirect(signin, 302);
     }
-    if (!isAdmin) {
-      return NextResponse.redirect(new URL("/dashboard", req.url), 302);
-    }
+    // If logged in but not admin, server-side guards will redirect/403.
+    // We intentionally avoid decoding sessions in Edge middleware (size + Node deps risk).
   }
 
-  // Admin APIs
+  // Admin APIs: require login only here; server route guards enforce admin.
   if (isApi && p.startsWith("/api/admin")) {
     if (!isLoggedIn) {
       return new NextResponse(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-      });
-    }
-    if (!isAdmin) {
-      return new NextResponse(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
     }
@@ -487,43 +475,12 @@ export default auth(async function middleware(req: NextRequest) {
       if (p === "/signup" && wantsSignupGoogleFlow(req)) {
         // ✅ Allow /signup?from=google for authenticated users so they can set a password.
         // Do not redirect; let the page render.
+      } else if (p === "/signin") {
+        // For logged-in users, avoid /signin loops. Default destination is dashboard.
+        return NextResponse.redirect(new URL("/dashboard", req.url), 302);
       } else {
-        const cbRaw = req.nextUrl.searchParams.get("callbackUrl") || "";
-        let target = isAdmin ? "/admin" : "/dashboard";
-
-        if (cbRaw) {
-          try {
-            const cb = new URL(cbRaw, req.nextUrl);
-            if (cb.origin === req.nextUrl.origin) {
-              const path = cb.pathname;
-              if (path === "/signup" || path === "/signin") {
-                target = isAdmin ? "/admin" : "/dashboard";
-              } else if (path.startsWith("/admin")) {
-                target = isAdmin ? normalize(cb) : "/dashboard";
-              } else if (!path.startsWith("/api/auth")) {
-                target = normalize(cb);
-              }
-            }
-          } catch {
-            if (isSafeInternalPath(cbRaw)) {
-              const lower = cbRaw.toLowerCase();
-              if (
-                lower === "/signup" ||
-                lower.startsWith("/signup?") ||
-                lower === "/signin" ||
-                lower.startsWith("/signin?")
-              ) {
-                target = isAdmin ? "/admin" : "/dashboard";
-              } else if (cbRaw.startsWith("/admin")) {
-                target = isAdmin ? cbRaw : "/dashboard";
-              } else if (!cbRaw.startsWith("/api/auth")) {
-                target = cbRaw;
-              }
-            }
-          }
-        }
-
-        return NextResponse.redirect(new URL(target, req.url), 302);
+        // Any other auth page while logged-in -> dashboard by default.
+        return NextResponse.redirect(new URL("/dashboard", req.url), 302);
       }
     }
   }
@@ -592,7 +549,7 @@ export default auth(async function middleware(req: NextRequest) {
   }
 
   return res;
-});
+}
 
 export const config = {
   matcher: [
