@@ -123,7 +123,7 @@ export default function Navbar({
                 ariaLabel="Delivery"
                 title="Delivery"
               >
-                <Icon name="search" />
+                <Icon name="pin" />
                 <span className="hidden sm:inline">Delivery</span>
               </NavLink>
 

@@ -79,6 +79,31 @@ function normalizeKeyInput(raw: string) {
   return raw.trim().replace(/\s+/g, " ");
 }
 
+const inputBase =
+  "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 " +
+  "text-sm text-[var(--text)] shadow-sm transition placeholder:text-[var(--text-muted)] " +
+  "focus-visible:outline-none focus-visible:ring-2 ring-focus";
+
+const buttonOutline =
+  "rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 " +
+  "text-sm font-semibold text-[var(--text)] shadow-sm transition " +
+  "hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus " +
+  "disabled:opacity-60 disabled:cursor-not-allowed";
+
+function SelectChevron() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden="true">
+      <path
+        d="M6 8l4 4 4-4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function CarrierOnboardingClient({ user }: Props) {
   const router = useRouter();
 
@@ -168,9 +193,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
       const res = await tryUpload(file);
       if (!res.ok) {
         if (res.status === 404) {
-          toast.error(
-            "Upload endpoint is not enabled. Paste an existing asset key instead.",
-          );
+          toast.error("Upload endpoint is not enabled. Paste an existing asset key instead.");
         } else if (res.status === 401) {
           toast.error("You must be signed in to upload.");
         } else {
@@ -184,9 +207,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
         return;
       }
 
-      setVehiclePhotoKeys((prev) =>
-        [res.key!, ...prev.filter((x) => x !== res.key)].slice(0, 12),
-      );
+      setVehiclePhotoKeys((prev) => [res.key!, ...prev.filter((x) => x !== res.key)].slice(0, 12));
       toast.success("Photo added");
     } catch (e: any) {
       toast.error(e?.message || "Upload failed.");
@@ -204,9 +225,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
       const res = await tryUpload(file);
       if (!res.ok) {
         if (res.status === 404) {
-          toast.error(
-            "Upload endpoint is not enabled. Paste an existing asset key instead.",
-          );
+          toast.error("Upload endpoint is not enabled. Paste an existing asset key instead.");
         } else if (res.status === 401) {
           toast.error("You must be signed in to upload.");
         } else {
@@ -336,12 +355,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+2547… or 07…"
-                  className={[
-                    "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-                    "text-sm text-[var(--text)] shadow-sm transition",
-                    "placeholder:text-[var(--text-muted)]",
-                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                  ].join(" ")}
+                  className={inputBase}
                   inputMode="tel"
                   autoComplete="tel"
                 />
@@ -353,25 +367,39 @@ export default function CarrierOnboardingClient({ user }: Props) {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="carrier-vehicle" className="text-sm font-semibold text-[var(--text)]">
+                <label
+                  htmlFor="carrier-vehicle"
+                  className="text-sm font-semibold text-[var(--text)]"
+                >
                   Vehicle type <span className="text-[var(--text-muted)]">(required)</span>
                 </label>
-                <select
-                  id="carrier-vehicle"
-                  value={vehicleType}
-                  onChange={(e) => setVehicleType(e.target.value as VehicleTypeOption)}
-                  className={[
-                    "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-                    "text-sm text-[var(--text)] shadow-sm transition",
-                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                  ].join(" ")}
-                >
-                  <option value="BIKE">Bike</option>
-                  <option value="MOTORBIKE">Motorbike</option>
-                  <option value="CAR">Car</option>
-                  <option value="VAN">Van</option>
-                  <option value="TRUCK">Truck</option>
-                </select>
+
+                <div className="relative">
+                  <select
+                    id="carrier-vehicle"
+                    value={vehicleType}
+                    onChange={(e) => setVehicleType(e.target.value as VehicleTypeOption)}
+                    className={[
+                      inputBase,
+                      "appearance-none pr-10",
+                      "bg-[var(--bg)] text-[var(--text)]",
+                    ].join(" ")}
+                  >
+                    <option value="BIKE">Bike</option>
+                    <option value="MOTORBIKE">Motorbike</option>
+                    <option value="CAR">Car</option>
+                    <option value="VAN">Van</option>
+                    <option value="TRUCK">Truck</option>
+                  </select>
+
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                    <SelectChevron />
+                  </span>
+                </div>
+
+                <p className="text-xs text-[var(--text-muted)]">
+                  Choose what you mainly use for deliveries.
+                </p>
               </div>
 
               <div className="space-y-2 sm:col-span-2">
@@ -383,12 +411,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
                   value={plate}
                   onChange={(e) => setPlate(e.target.value)}
                   placeholder="Example: KDA 123A"
-                  className={[
-                    "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-                    "text-sm text-[var(--text)] shadow-sm transition",
-                    "placeholder:text-[var(--text-muted)]",
-                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                  ].join(" ")}
+                  className={inputBase}
                   autoComplete="off"
                 />
               </div>
@@ -409,6 +432,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
                   type="button"
                   className="btn-gradient-primary"
                   onClick={() => void onPickStation()}
+                  disabled={uploadBusy || busy}
                 >
                   Use my current location
                 </button>
@@ -461,26 +485,42 @@ export default function CarrierOnboardingClient({ user }: Props) {
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-5">
             <h2 className="text-sm font-semibold text-[var(--text)]">Evidence</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Store only lightweight keys. Upload flow is reused if your app already exposes an
-              upload endpoint.
+              Add at least one vehicle photo key. Uploading uses <span className="font-semibold text-[var(--text)]">/api/upload</span>{" "}
+              when available.
             </p>
 
             <div className="mt-4 space-y-4">
               <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-4 shadow-sm">
-                <h3 className="text-sm font-semibold text-[var(--text)]">
-                  Vehicle photos <span className="text-[var(--text-muted)]">(required)</span>
-                </h3>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">
-                  Add at least one photo. You can upload, or paste existing asset keys.
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-[var(--text)]">
+                      Vehicle photos <span className="text-[var(--text-muted)]">(required)</span>
+                    </h3>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Upload a photo or paste an existing asset key. Keys are stored, not the raw file.
+                    </p>
+                  </div>
+                  <span
+                    className={[
+                      "shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold",
+                      vehiclePhotoKeys.length
+                        ? "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]"
+                        : "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-muted)]",
+                    ].join(" ")}
+                    aria-label="Vehicle photos count"
+                    title="Vehicle photos count"
+                  >
+                    {vehiclePhotoKeys.length}/12
+                  </span>
+                </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                   <label
                     className={[
-                      "cursor-pointer rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-                      "text-sm font-semibold text-[var(--text)] shadow-sm transition",
-                      "hover:bg-[var(--bg-subtle)] active:scale-[.99]",
-                      "focus-within:outline-none focus-within:ring-2 ring-focus",
+                      "cursor-pointer",
+                      buttonOutline,
+                      "inline-flex items-center justify-center",
+                      "sm:w-auto",
                     ].join(" ")}
                   >
                     <input
@@ -492,43 +532,36 @@ export default function CarrierOnboardingClient({ user }: Props) {
                         const f = e.currentTarget.files?.[0];
                         if (f) void uploadVehiclePhoto(f);
                       }}
-                      disabled={uploadBusy}
+                      disabled={uploadBusy || busy}
                     />
                     {uploadBusy ? "Uploading…" : "Upload photo"}
                   </label>
 
-                  <input
-                    value={manualVehicleKey}
-                    onChange={(e) => setManualVehicleKey(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addVehicleKeyManual();
-                      }
-                    }}
-                    placeholder="Paste asset key"
-                    className={[
-                      "flex-1 min-w-[160px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-                      "text-sm text-[var(--text)] shadow-sm transition",
-                      "placeholder:text-[var(--text-muted)]",
-                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                    ].join(" ")}
-                  />
+                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
+                    <input
+                      value={manualVehicleKey}
+                      onChange={(e) => setManualVehicleKey(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addVehicleKeyManual();
+                        }
+                      }}
+                      placeholder="Paste asset key"
+                      className={inputBase}
+                      aria-label="Vehicle photo asset key"
+                    />
 
-                  <button
-                    type="button"
-                    className={[
-                      "rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-                      "text-sm font-semibold text-[var(--text)] shadow-sm transition",
-                      "hover:bg-[var(--bg-subtle)] active:scale-[.99]",
-                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                    ].join(" ")}
-                    onClick={addVehicleKeyManual}
-                    disabled={!manualVehicleKey.trim()}
-                    aria-disabled={!manualVehicleKey.trim()}
-                  >
-                    Add key
-                  </button>
+                    <button
+                      type="button"
+                      className={buttonOutline}
+                      onClick={addVehicleKeyManual}
+                      disabled={!manualVehicleKey.trim() || busy || uploadBusy}
+                      aria-disabled={!manualVehicleKey.trim() || busy || uploadBusy}
+                    >
+                      Add key
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-3 space-y-2" aria-label="Vehicle photo keys">
@@ -552,6 +585,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
                             ].join(" ")}
                             onClick={() => removeVehicleKey(k)}
                             aria-label="Remove vehicle photo key"
+                            disabled={busy || uploadBusy}
                           >
                             Remove
                           </button>
@@ -560,7 +594,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
                     </ul>
                   ) : (
                     <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-muted)]">
-                      No vehicle photos yet.
+                      No vehicle photos yet. Add at least one to continue.
                     </div>
                   )}
                 </div>
@@ -569,17 +603,16 @@ export default function CarrierOnboardingClient({ user }: Props) {
               <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-4 shadow-sm">
                 <h3 className="text-sm font-semibold text-[var(--text)]">Optional document photo</h3>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
-                  If you have a rider’s license or business permit, add the key. Admin verification
-                  may be faster.
+                  If you have a rider’s license or business permit, add a doc photo key. This can speed up verification.
                 </p>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                   <label
                     className={[
-                      "cursor-pointer rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-                      "text-sm font-semibold text-[var(--text)] shadow-sm transition",
-                      "hover:bg-[var(--bg-subtle)] active:scale-[.99]",
-                      "focus-within:outline-none focus-within:ring-2 ring-focus",
+                      "cursor-pointer",
+                      buttonOutline,
+                      "inline-flex items-center justify-center",
+                      "sm:w-auto",
                     ].join(" ")}
                   >
                     <input
@@ -591,7 +624,7 @@ export default function CarrierOnboardingClient({ user }: Props) {
                         const f = e.currentTarget.files?.[0];
                         if (f) void uploadDocPhoto(f);
                       }}
-                      disabled={uploadBusy}
+                      disabled={uploadBusy || busy}
                     />
                     {uploadBusy ? "Uploading…" : "Upload doc"}
                   </label>
@@ -600,12 +633,8 @@ export default function CarrierOnboardingClient({ user }: Props) {
                     value={docPhotoKey}
                     onChange={(e) => setDocPhotoKey(e.target.value)}
                     placeholder="Paste doc asset key"
-                    className={[
-                      "flex-1 min-w-[160px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-                      "text-sm text-[var(--text)] shadow-sm transition",
-                      "placeholder:text-[var(--text-muted)]",
-                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                    ].join(" ")}
+                    className={inputBase}
+                    aria-label="Document photo asset key"
                   />
                 </div>
 
@@ -617,11 +646,9 @@ export default function CarrierOnboardingClient({ user }: Props) {
                 </div>
               </div>
 
-              <div className="text-xs text-[var(--text-muted)]">
-                If uploads fail, paste keys from your existing media pipeline. This UI will
-                automatically use <span className="font-semibold text-[var(--text)]">/api/upload</span>{" "}
-                when available.
-              </div>
+              <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+                Stay safe: only upload what’s necessary, and avoid sharing sensitive documents publicly.
+              </p>
             </div>
           </div>
         </div>
