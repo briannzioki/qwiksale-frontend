@@ -83,7 +83,8 @@ export default function Navbar({
                     priority
                   />
                 </span>
-                <span className="text-sm font-extrabold tracking-tight text-[var(--text)] drop-shadow-sm md:text-base">
+
+                <span className="hidden md:inline text-sm font-extrabold tracking-tight text-[var(--text)] drop-shadow-sm md:text-base">
                   QwikSale
                 </span>
               </Link>

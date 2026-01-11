@@ -212,15 +212,15 @@ export default function CarrierDashboardClient({
 
   const heroBtn = [
     "inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold sm:text-sm",
-    "border-white/20 bg-white/10 text-white shadow-sm transition",
-    "hover:bg-white/15 active:scale-[.99]",
+    "border-white/20 bg-white/15 text-white shadow-sm transition backdrop-blur-sm",
+    "hover:bg-white/20 active:scale-[.99]",
     "focus-visible:outline-none focus-visible:ring-2 ring-focus",
     "disabled:opacity-60 disabled:cursor-not-allowed",
   ].join(" ");
 
   const heroChip = [
     "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-    "border-white/20 bg-white/10 text-white",
+    "border-white/20 bg-white/15 text-white backdrop-blur-sm",
   ].join(" ");
 
   const statusChipText =
@@ -248,10 +248,10 @@ export default function CarrierDashboardClient({
             <p className="text-xs font-semibold uppercase tracking-wide text-white/80">
               Carrier dashboard
             </p>
-            <h1 className="mt-1 text-xl font-extrabold tracking-tight text-white sm:text-2xl">
+            <h1 className="mt-1 text-xl font-extrabold tracking-tight text-white drop-shadow-sm sm:text-2xl">
               {carrier.vehicleType ? `${carrier.vehicleType} carrier` : "Carrier"}
             </h1>
-            <p className="mt-2 text-sm text-white/85">
+            <p className="mt-2 text-sm text-white/90">
               Manage your availability, location sharing, and requests.
             </p>
           </div>
@@ -287,7 +287,7 @@ export default function CarrierDashboardClient({
 
         {bannedNow || suspendedNow ? (
           <div
-            className="relative mt-4 rounded-2xl border border-white/20 bg-white/10 p-4 shadow-sm"
+            className="relative mt-4 rounded-2xl border border-white/20 bg-white/15 p-4 shadow-sm backdrop-blur-sm"
             role="status"
             aria-live="polite"
           >
@@ -296,7 +296,7 @@ export default function CarrierDashboardClient({
                 ? "Your carrier profile is banned."
                 : "Your carrier profile is suspended."}
             </div>
-            <div className="mt-1 text-sm text-white/85">
+            <div className="mt-1 text-sm text-white/90">
               {bannedNow ? (
                 <>
                   Reason:{" "}
