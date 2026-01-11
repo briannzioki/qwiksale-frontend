@@ -90,6 +90,14 @@ const buttonOutline =
   "hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus " +
   "disabled:opacity-60 disabled:cursor-not-allowed";
 
+const heroBtn = [
+  "inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold sm:text-sm",
+  "border-white/20 bg-white/15 text-white shadow-sm transition backdrop-blur-sm",
+  "hover:bg-white/20 active:scale-[.99]",
+  "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+  "disabled:opacity-60 disabled:cursor-not-allowed",
+].join(" ");
+
 function SelectChevron() {
   return (
     <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden="true">
@@ -302,38 +310,46 @@ export default function CarrierOnboardingClient({ user }: Props) {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6" aria-label="Carrier onboarding">
-      <header className="hero-surface rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-          Carrier onboarding
-        </p>
-        <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[var(--text)] sm:text-2xl">
-          Register as a carrier
-        </h1>
-        <p className="mt-2 text-sm text-[var(--text-muted)]">
-          This profile is owned by your user account. After approval, you can go online and receive
-          delivery requests.
-        </p>
+      <header
+        className={[
+          "relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] shadow-soft",
+          "bg-gradient-to-r from-[var(--brand-navy)] via-[var(--brand-green)] to-[var(--brand-blue)]",
+          "p-4 text-white sm:p-6",
+        ].join(" ")}
+      >
+        <div
+          className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl"
+          aria-hidden
+        />
+        <div
+          className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-white/10 blur-3xl"
+          aria-hidden
+        />
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Link
-            href="/dashboard"
-            prefetch={false}
-            className={[
-              "rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2",
-              "text-sm font-semibold text-[var(--text)] shadow-sm transition",
-              "hover:bg-[var(--bg-subtle)] active:scale-[.99]",
-              "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-            ].join(" ")}
-          >
-            Back to dashboard
-          </Link>
+        <div className="relative">
+          <p className="text-xs font-semibold uppercase tracking-wide text-white/80">
+            Carrier onboarding
+          </p>
+          <h1 className="mt-1 text-xl font-extrabold tracking-tight text-white drop-shadow-sm sm:text-2xl">
+            Register as a carrier
+          </h1>
+          <p className="mt-2 text-sm text-white/90">
+            This profile is owned by your user account. After approval, you can go online and receive
+            delivery requests.
+          </p>
 
-          <span className="text-xs text-[var(--text-muted)]">
-            Signed in as{" "}
-            <span className="font-semibold text-[var(--text)]">
-              {user.name || user.email || "user"}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Link href="/dashboard" prefetch={false} className={heroBtn}>
+              Back to dashboard
+            </Link>
+
+            <span className="text-xs text-white/85">
+              Signed in as{" "}
+              <span className="font-semibold text-white">
+                {user.name || user.email || "user"}
+              </span>
             </span>
-          </span>
+          </div>
         </div>
       </header>
 

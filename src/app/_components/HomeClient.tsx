@@ -76,6 +76,16 @@ const FALLBACK_IMG = "/placeholder/default.jpg";
  */
 const HOME_FEED_TIMEOUT_MS = 4000;
 
+/**
+ * Native <select> dropdown menus can ignore Tailwind classes in some browsers.
+ * Styling <option> explicitly prevents “invisible option text” when the OS/theme
+ * chooses a different dropdown background than the select control.
+ */
+const OPTION_STYLE: React.CSSProperties = {
+  backgroundColor: "var(--bg-elevated)",
+  color: "var(--text)",
+};
+
 /* --------------------------- helpers --------------------------- */
 
 const fmtKES = (n?: number | null) =>
@@ -813,9 +823,15 @@ export default function HomeClient(seed?: HomeSeedProps) {
                   }}
                   className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 >
-                  <option value="">Any</option>
-                  <option value="brand new">Brand New</option>
-                  <option value="pre-owned">Pre-Owned</option>
+                  <option value="" style={OPTION_STYLE}>
+                    Any
+                  </option>
+                  <option value="brand new" style={OPTION_STYLE}>
+                    Brand New
+                  </option>
+                  <option value="pre-owned" style={OPTION_STYLE}>
+                    Pre-Owned
+                  </option>
                 </select>
               </div>
             </>
@@ -879,10 +895,18 @@ export default function HomeClient(seed?: HomeSeedProps) {
               }}
               className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             >
-              <option value="newest">Newest</option>
-              <option value="featured">Featured first</option>
-              <option value="price_asc">Price ↑</option>
-              <option value="price_desc">Price ↓</option>
+              <option value="newest" style={OPTION_STYLE}>
+                Newest
+              </option>
+              <option value="featured" style={OPTION_STYLE}>
+                Featured first
+              </option>
+              <option value="price_asc" style={OPTION_STYLE}>
+                Price ↑
+              </option>
+              <option value="price_desc" style={OPTION_STYLE}>
+                Price ↓
+              </option>
             </select>
           </div>
         </div>
