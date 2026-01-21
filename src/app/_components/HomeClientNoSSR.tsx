@@ -25,6 +25,10 @@ export type HomeSeedProps = {
   initialServices?: HomeServiceSeed[] | undefined;
 };
 
+function cx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
+
 /**
  * Loading state used when the real HomeClient is still being loaded.
  * We purposely accept `props: any` here so we can read `initialTab`
@@ -53,8 +57,7 @@ const LoadingHomeFeed = (props: any) => {
         aria-busy="true"
       >
         {services.map((svc, idx) => {
-          const title =
-            (typeof svc.name === "string" && svc.name) || "Service";
+          const title = (typeof svc.name === "string" && svc.name) || "Service";
           const href = `/service/${encodeURIComponent(svc.id)}`;
           const categoryText =
             svc.category && svc.subcategory
@@ -74,20 +77,23 @@ const LoadingHomeFeed = (props: any) => {
               className="group relative block"
               aria-label={`Service: ${title}`}
               data-service-id={svc.id}
+              prefetch={false}
             >
-              <div className="card-surface relative overflow-hidden rounded-xl border border-border shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-                <div className="h-36 w-full animate-pulse bg-muted sm:h-44" />
+              <div
+                className={cx(
+                  "relative overflow-hidden rounded-xl border shadow-sm transition",
+                  "border-[var(--border-subtle)] bg-[var(--bg-elevated)]",
+                  "hover:-translate-y-0.5 hover:shadow-soft",
+                )}
+              >
+                <div className="h-36 w-full animate-pulse bg-[var(--skeleton)] sm:h-44" />
                 <div className="p-2.5 sm:p-3">
-                  {/* Skeleton-ish rows for title/info */}
-                  <div className="mb-2 h-3.5 w-3/4 rounded bg-muted/70" />
-                  <div className="mb-2 h-3 w-1/2 rounded bg-muted/60" />
-                  <div className="mb-3 h-3.5 w-1/3 rounded bg-muted/50" />
-                  <p className="line-clamp-1 text-xs text-muted-foreground">
-                    {categoryText}
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-foreground">
-                    {priceLabel}
-                  </p>
+                  <div className="mb-2 h-3.5 w-3/4 rounded bg-[var(--skeleton)]/70" />
+                  <div className="mb-2 h-3 w-1/2 rounded bg-[var(--skeleton)]/60" />
+                  <div className="mb-3 h-3.5 w-1/3 rounded bg-[var(--skeleton)]/50" />
+
+                  <p className="line-clamp-1 text-xs text-[var(--text-muted)]">{categoryText}</p>
+                  <p className="mt-1 text-sm font-extrabold text-[var(--text)]">{priceLabel}</p>
                 </div>
               </div>
             </Link>
@@ -100,7 +106,7 @@ const LoadingHomeFeed = (props: any) => {
   return (
     <div
       aria-label="Loading home feed"
-      className="mx-auto max-w-6xl px-4 py-6 text-xs text-muted-foreground sm:py-8 sm:text-sm"
+      className="mx-auto max-w-6xl px-4 py-6 text-xs text-[var(--text-muted)] sm:py-8 sm:text-sm"
     >
       Loading…
     </div>

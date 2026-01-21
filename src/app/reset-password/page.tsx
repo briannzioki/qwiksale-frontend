@@ -49,12 +49,7 @@ function EyeIcon(props: React.SVGProps<SVGSVGElement>) {
 function EyeOffIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      <path
-        d="M3 3l18 18"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
+      <path d="M3 3l18 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path
         d="M10.6 10.6a2.5 2.5 0 0 0 2.8 2.8"
         stroke="currentColor"
@@ -137,10 +132,15 @@ function ResetPasswordPageInner() {
 
     try {
       setRequesting(true);
-      const res = await fetch("/api/auth/request-password-reset", {
+      const res = await fetch("/api/account/request-password-reset", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: em }),
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "cache-control": "no-store",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ email: em, returnTo }),
       });
       const j = await res.json().catch(() => ({} as any));
       if (!res.ok || (j as any)?.error) {
@@ -174,9 +174,14 @@ function ResetPasswordPageInner() {
 
     try {
       setResetting(true);
-      const res = await fetch("/api/auth/reset-password", {
+      const res = await fetch("/api/account/reset-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "cache-control": "no-store",
+          Accept: "application/json",
+        },
         body: JSON.stringify({ token, password }),
       });
       const j = await res.json().catch(() => ({} as any));
@@ -232,10 +237,7 @@ function ResetPasswordPageInner() {
             className="mt-6 space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-soft"
           >
             <div>
-              <label
-                htmlFor="email"
-                className="label font-semibold text-[var(--text)]"
-              >
+              <label htmlFor="email" className="label font-semibold text-[var(--text)]">
                 Email
               </label>
               <input
@@ -276,10 +278,7 @@ function ResetPasswordPageInner() {
             className="mt-6 space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-soft"
           >
             <div>
-              <label
-                htmlFor="password"
-                className="label font-semibold text-[var(--text)]"
-              >
+              <label htmlFor="password" className="label font-semibold text-[var(--text)]">
                 New password
               </label>
               <div className="relative">
@@ -328,10 +327,7 @@ function ResetPasswordPageInner() {
             </div>
 
             <div>
-              <label
-                htmlFor="confirm"
-                className="label font-semibold text-[var(--text)]"
-              >
+              <label htmlFor="confirm" className="label font-semibold text-[var(--text)]">
                 Confirm new password
               </label>
               <input

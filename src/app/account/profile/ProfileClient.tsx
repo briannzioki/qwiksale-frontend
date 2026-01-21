@@ -447,6 +447,27 @@ export default function ProfileClient() {
           </Link>
           .
         </p>
+
+        <div className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 shadow-sm sm:p-4" aria-label="Ecosystem shortcuts">
+          <div className="text-sm font-semibold text-[var(--text)]">Earn or get help faster</div>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+            QwikSale supports requests and delivery. You can post what you need, or create a carrier profile tied to this account to earn from deliveries.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/carrier" prefetch={false} className="btn-outline" data-testid="profile-carrier-entry">
+              Carrier
+            </Link>
+            <Link href="/requests/new" prefetch={false} className="btn-outline" data-testid="profile-post-request-entry">
+              Post a request
+            </Link>
+            <Link href="/delivery" prefetch={false} className="btn-outline" data-testid="profile-delivery-entry">
+              Delivery
+            </Link>
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-muted)] sm:text-xs">
+            If you haven’t created a carrier profile yet, the Carrier link will guide you through onboarding.
+          </p>
+        </div>
       </div>
 
       <div className={cardClass}>

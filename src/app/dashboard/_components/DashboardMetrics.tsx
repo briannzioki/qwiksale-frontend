@@ -24,6 +24,18 @@ export default function DashboardMetrics({ metrics, carrier }: Props) {
       hint: "Products & services you’re selling",
     },
     {
+      key: "products" as const,
+      label: "Products",
+      value: metrics.productsCount,
+      hint: "Items you’ve listed for sale",
+    },
+    {
+      key: "services" as const,
+      label: "Services",
+      value: metrics.servicesCount,
+      hint: "Services you’ve posted",
+    },
+    {
       key: "favorites" as const,
       label: "My Favorites",
       value: metrics.favoritesCount,
@@ -84,10 +96,7 @@ export default function DashboardMetrics({ metrics, carrier }: Props) {
     <section
       aria-label="Dashboard summary"
       data-e2e="dashboard-summary"
-      className={[
-        "grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4",
-        showCarrierCard ? "lg:grid-cols-5" : "lg:grid-cols-4",
-      ].join(" ")}
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4"
     >
       {items.map((item) => (
         <article key={item.key} data-e2e={`dashboard-metric-${item.key}`} className={cardClass}>

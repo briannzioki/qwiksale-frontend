@@ -121,7 +121,7 @@ function tokenFromStorePath(hrefPath: string): string | null {
   const { path } = splitPathSuffix(hrefPath);
   const p = path.startsWith("/") ? path : `/${path}`;
   const parts = p.split("/").filter(Boolean);
-  const i = parts.findIndex((x) => x.toLowerCase() === "store");
+  const i = parts.findIndex((x: string) => x.toLowerCase() === "store");
   const token = i >= 0 ? parts[i + 1] : undefined;
   return token ? normalizeSlug(token) : null;
 }
@@ -326,15 +326,7 @@ export default function SellerInfo({
               <span className="text-[11px] text-[var(--text-muted)] sm:text-xs">{secondaryName}</span>
             ) : null}
 
-            <VerifiedBadge
-              className={cn(
-                "inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold leading-none shadow-sm",
-                "sm:px-2.5 sm:py-1.5 sm:text-xs",
-                "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]",
-              )}
-              verified={verifiedCanon}
-              featuredTier={tierCanon}
-            />
+            <VerifiedBadge className="inline-flex" verified={verifiedCanon} featuredTier={tierCanon} />
           </div>
 
           {locationLabel ? (

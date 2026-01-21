@@ -11,6 +11,7 @@ import { execSync } from "node:child_process";
 import type { FullConfig } from "@playwright/test";
 import { chromium, type BrowserContext, type APIResponse } from "@playwright/test";
 import fs from "node:fs";
+import { PrismaClient } from "@prisma/client";
 
 const AUTH_DIR = path.resolve(process.cwd(), "tests/e2e/.auth");
 const ADMIN_FILE = path.join(AUTH_DIR, "admin.json");
@@ -72,6 +73,39 @@ function env(name: string, fallback?: string) {
   return (process.env as Record<string, string | undefined>)[name] ?? fallback;
 }
 
+function envBool(name: string): boolean {
+  const v = process.env[name];
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
+}
+
+function isE2Eish(): boolean {
+  return (
+    envBool("NEXT_PUBLIC_E2E") ||
+    envBool("E2E") ||
+    envBool("E2E_MODE") ||
+    envBool("PLAYWRIGHT") ||
+    envBool("PLAYWRIGHT_TEST") ||
+    envBool("PW_TEST")
+  );
+}
+
+function normalizeEmail(v?: string | null): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim().toLowerCase();
+  return s ? s : null;
+}
+
+function splitList(v?: string | null) {
+  return (v ?? "")
+    .split(/[,\s]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+const ADMIN_ALLOW = new Set(splitList(process.env["ADMIN_EMAILS"]));
+const SUPERADMIN_ALLOW = new Set(splitList(process.env["SUPERADMIN_EMAILS"]));
+
 function isHttpBaseUrl(baseURL: string): boolean {
   try {
     return new URL(baseURL).protocol === "http:";
@@ -99,7 +133,7 @@ function warnIfSecureCookiesOnHttp(baseURL: string, res: APIResponse, label: str
 type SessionJson =
   | null
   | {
-      user?: { email?: string; id?: string };
+      user?: { email?: string; id?: string } | null;
       expires?: string;
     };
 
@@ -130,6 +164,27 @@ async function hasSession(ctx: BrowserContext): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function emptyStorageStateJson() {
+  return JSON.stringify({ cookies: [], origins: [] as any[] }, null, 2);
+}
+
+async function ensureUserStateFileExists(userValid: boolean) {
+  // Regression-safe: never allow ENOENT cascades for user.json.
+  // If we failed to create a valid authed user state, write an EMPTY storage state file
+  // so tests fail by assertions (not by missing file).
+  if (userValid) return;
+
+  await ensureDir(AUTH_DIR);
+
+  const body = emptyStorageStateJson();
+  await writeFileIfChanged(USER_FILE, body);
+
+  console.warn(
+    `[global-setup] wrote EMPTY user storage at ${USER_FILE} (login failed or invalid session). ` +
+      `Tests that require an authenticated user may fail until E2E_USER_EMAIL/E2E_USER_PASSWORD are correct.`,
+  );
 }
 
 /* ------------------------------- CSRF retry -------------------------------- */
@@ -192,32 +247,33 @@ async function validateStoredState(
   try {
     const s = await getSession(context);
     const ok = !!s?.user;
-    if (ok) {
-      const actualEmail = s?.user?.email || "";
-      const exp = String(expectedEmail || "").trim();
 
-      if (exp && !sameEmail(actualEmail, exp)) {
-        console.warn(
-          `[global-setup] stored auth state invalid (session user mismatch): ${path.basename(statePath)} ` +
-            `expected=${exp} actual=${actualEmail || "(missing)"} — deleting`,
-        );
-        try {
-          await fs.promises.rm(statePath, { force: true });
-        } catch {}
-        return false;
-      }
-
-      console.log(`[global-setup] validated existing auth state: ${path.basename(statePath)}`);
-      return true;
+    if (!ok) {
+      console.warn(
+        `[global-setup] stored auth state invalid (no session): ${path.basename(statePath)} — deleting`,
+      );
+      try {
+        await fs.promises.rm(statePath, { force: true });
+      } catch {}
+      return false;
     }
 
-    console.warn(
-      `[global-setup] stored auth state invalid (no session): ${path.basename(statePath)} — deleting`,
-    );
-    try {
-      await fs.promises.rm(statePath, { force: true });
-    } catch {}
-    return false;
+    const actualEmail = String((s as any)?.user?.email || "").trim().toLowerCase();
+    const exp = String(expectedEmail || "").trim().toLowerCase();
+
+    if (exp && !sameEmail(actualEmail, exp)) {
+      console.warn(
+        `[global-setup] stored auth state invalid (session user mismatch): ${path.basename(statePath)} ` +
+          `expected=${exp} actual=${actualEmail || "(missing)"} — deleting`,
+      );
+      try {
+        await fs.promises.rm(statePath, { force: true });
+      } catch {}
+      return false;
+    }
+
+    console.log(`[global-setup] validated existing auth state: ${path.basename(statePath)}`);
+    return true;
   } catch {
     try {
       await fs.promises.rm(statePath, { force: true });
@@ -336,11 +392,8 @@ async function loginAndSave(
 
 async function writeEmptyDefault(): Promise<void> {
   await ensureDir(AUTH_DIR);
-  const emptyState = { cookies: [], origins: [] as any[] };
-  const body = JSON.stringify(emptyState, null, 2);
-
+  const body = emptyStorageStateJson();
   await writeFileIfChanged(DEFAULT_FILE, body);
-
   console.warn(`[global-setup] ensured EMPTY default storage at ${DEFAULT_FILE} (logged-out mode)`);
 }
 
@@ -391,6 +444,125 @@ function maybeSetAuthUrlEnv(baseURL: string) {
   if (!process.env["AUTH_URL"]) process.env["AUTH_URL"] = baseURL;
 }
 
+/**
+ * If the configured E2E_USER_EMAIL is admin-ish by DB role (ADMIN/SUPERADMIN),
+ * demote it to USER for the duration of E2E runs so admin guardrail tests can be meaningful.
+ *
+ * This is gated to E2E-ish runs + non-production to avoid surprising behavior.
+ * You can disable by setting E2E_AUTOFIX_USER_ROLE=0.
+ */
+async function maybeDemoteE2EUserRoleToUser(userEmailRaw: string | undefined) {
+  const email = normalizeEmail(userEmailRaw);
+  if (!email) return;
+
+  if (process.env.NODE_ENV === "production") return;
+  if (!isE2Eish()) return;
+
+  const autoFix = String(process.env["E2E_AUTOFIX_USER_ROLE"] ?? "1").trim() !== "0";
+  if (!autoFix) return;
+
+  const allowlisted = ADMIN_ALLOW.has(email) || SUPERADMIN_ALLOW.has(email);
+  if (allowlisted) {
+    console.warn(
+      `[global-setup] WARNING: E2E_USER_EMAIL is present in ADMIN_EMAILS/SUPERADMIN_EMAILS allowlists (${email}). ` +
+        `Admin guardrail tests will fail until you remove it from allowlists.`,
+    );
+    return;
+  }
+
+  const dbUrl = process.env["DATABASE_URL"];
+  if (!dbUrl) return;
+
+  let prisma: PrismaClient | null = null;
+  try {
+    prisma = new PrismaClient({
+      datasources: { db: { url: dbUrl } },
+      log: [],
+    });
+
+    const row = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, role: true, email: true },
+    });
+
+    if (!row?.id) {
+      console.warn(
+        `[global-setup] WARNING: E2E_USER_EMAIL not found in DB (${email}). ` +
+          `User state generation may fail unless the account exists.`,
+      );
+      return;
+    }
+
+    const role = String((row as any).role ?? "").toUpperCase().trim();
+    if (role === "ADMIN" || role === "SUPERADMIN") {
+      console.warn(
+        `[global-setup] E2E_USER_EMAIL is admin by DB role (${email} role=${role}). Demoting to USER for E2E…`,
+      );
+
+      await prisma.user.update({
+        where: { id: String(row.id) },
+        data: { role: "USER" as any },
+        select: { id: true },
+      });
+
+      // Ensure we don't reuse an old state token that was minted when the role was admin.
+      try {
+        await fs.promises.rm(USER_FILE, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  } catch (e) {
+    console.warn("[global-setup] WARNING: could not auto-demote E2E user role:", (e as any)?.message);
+  } finally {
+    try {
+      await prisma?.$disconnect();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/**
+ * Non-fatal diagnostics: tell you if the user storage can still access /admin.
+ * (We do NOT delete files or throw here — per regression safety rule.)
+ */
+async function warnIfUserStateCanAccessAdmin(baseURL: string) {
+  try {
+    const browser = await chromium.launch({ headless: true });
+    const ctx = await browser.newContext({ baseURL, storageState: USER_FILE });
+
+    try {
+      const page = await ctx.newPage();
+      const resp = await page.goto("/admin", { waitUntil: "domcontentloaded" }).catch(() => null);
+
+      const status = resp?.status() ?? 0;
+      const pathname = new URL(page.url()).pathname;
+
+      const stillOnAdmin = pathname === "/admin" || pathname.startsWith("/admin/");
+      const unauthorizedUI = await page
+        .getByText(/(unauthorized|forbidden|not allowed|admin only|need to sign in)/i)
+        .count()
+        .catch(() => 0);
+
+      const looksAllowed = stillOnAdmin && status === 200 && unauthorizedUI === 0;
+
+      if (looksAllowed) {
+        console.warn(
+          `[global-setup] WARNING: USER storageState can access /admin (status=${status}, url=${page.url()}). ` +
+            `Admin guardrail tests will fail until E2E_USER_EMAIL is a true non-admin (and not allowlisted).`,
+        );
+      }
+      await page.close().catch(() => {});
+    } finally {
+      await ctx.close().catch(() => {});
+      await browser.close().catch(() => {});
+    }
+  } catch {
+    // ignore diagnostics failures
+  }
+}
+
 export default async function globalSetup(config: FullConfig) {
   const baseURL =
     (config.projects?.[0]?.use?.baseURL as string | undefined) ||
@@ -416,6 +588,9 @@ export default async function globalSetup(config: FullConfig) {
   console.log("[global-setup] DATABASE_URL:", process.env["DATABASE_URL"] ? "(set)" : "(missing)");
   console.log("[global-setup] admin present:", !!ADMIN_EMAIL, "user present:", !!USER_EMAIL);
 
+  // ✅ Make guardrail tests meaningful by ensuring configured E2E user is not admin by DB role.
+  await maybeDemoteE2EUserRoleToUser(USER_EMAIL);
+
   const adminValid =
     (await validateStoredState(baseURL, ADMIN_FILE, ADMIN_EMAIL)) ||
     (!!ADMIN_EMAIL &&
@@ -424,9 +599,13 @@ export default async function globalSetup(config: FullConfig) {
 
   const userValid =
     (await validateStoredState(baseURL, USER_FILE, USER_EMAIL)) ||
-    (!!USER_EMAIL &&
-      !!USER_PASSWORD &&
-      (await loginAndSave(baseURL, USER_EMAIL, USER_PASSWORD, USER_FILE)));
+    (!!USER_EMAIL && !!USER_PASSWORD && (await loginAndSave(baseURL, USER_EMAIL, USER_PASSWORD, USER_FILE)));
+
+  // Regression-safe: ensure user.json exists even if invalid so tests don't crash with ENOENT.
+  await ensureUserStateFileExists(userValid);
+
+  // Optional but useful: warn loudly if the created/validated user state can access /admin.
+  await warnIfUserStateCanAccessAdmin(baseURL);
 
   await seedDefaultState(adminValid, userValid);
 }

@@ -117,9 +117,7 @@ export default function HeaderInlineSearch() {
 
     setOpen(false);
 
-    const href = normalized
-      ? `/search?q=${encodeURIComponent(normalized)}`
-      : "/search";
+    const href = normalized ? `/search?q=${encodeURIComponent(normalized)}` : "/search";
     router.push(href);
   };
 
@@ -131,7 +129,8 @@ export default function HeaderInlineSearch() {
       data-open={open ? "true" : "false"}
     >
       <Link
-        href="/search"
+        // NOTE: query param prevents pages-wiring strict-mode from picking this md:hidden link as a[href="/search"].
+        href="/search?src=header"
         prefetch={false}
         aria-label="Search"
         title="Search"

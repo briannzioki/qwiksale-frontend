@@ -561,6 +561,15 @@ export default async function DashboardPage({
                 <Link href="/sell" prefetch={false} className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/15 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/20 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm">
                   + Post a Listing
                 </Link>
+                <Link href="/requests/new" prefetch={false} className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm">
+                  + Post a Request
+                </Link>
+                <Link href="/delivery" prefetch={false} className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm">
+                  Delivery
+                </Link>
+                <Link href="/carrier" prefetch={false} className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm">
+                  Carrier
+                </Link>
                 <Link href="/saved" prefetch={false} className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-white/15 active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus sm:text-sm">
                   View Saved
                 </Link>
@@ -627,7 +636,27 @@ export default async function DashboardPage({
               <DashboardMetrics metrics={metrics} carrier={carrier} />
             </section>
 
-            <section aria-label="Delivery and carrier" role="region" className="grid gap-3 sm:gap-4 lg:grid-cols-2" data-testid="dashboard-carrier-delivery">
+            <section
+              aria-label="Delivery and carrier"
+              role="region"
+              className="grid gap-3 sm:gap-4 lg:grid-cols-3"
+              data-testid="dashboard-carrier-delivery"
+            >
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-5">
+                <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">Requests</h2>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">
+                  Post what you need and let sellers or service providers respond.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link href="/requests" prefetch={false} className={CARD_BTN_CLASS} data-testid="dashboard-requests-link">
+                    View requests
+                  </Link>
+                  <Link href="/requests/new" prefetch={false} className={CARD_BTN_CLASS} data-testid="dashboard-requests-new-link">
+                    Post a request
+                  </Link>
+                </div>
+              </div>
+
               <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-5">
                 <h2 className="text-base font-extrabold tracking-tight text-[var(--text)] sm:text-lg">Delivery</h2>
                 <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)] sm:text-sm">

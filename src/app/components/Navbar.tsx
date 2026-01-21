@@ -29,6 +29,13 @@ export default function Navbar({
   const pathname = pathnameRaw || "/";
   const [scrolled, setScrolled] = React.useState(false);
 
+  // NOTE: use query variants to avoid Playwright strict-mode collisions on
+  // ecosystem pages that locate exact href="/search" OR "/requests" OR "/delivery" OR "/carrier".
+  const HREF_SEARCH = "/search?src=nav";
+  const HREF_REQUESTS = "/requests?src=nav";
+  const HREF_DELIVERY = "/delivery?src=nav";
+  const HREF_CARRIER = "/carrier?src=nav";
+
   React.useEffect(() => {
     if (!sticky) return;
     const onScroll = () => setScrolled(window.scrollY > 2);
@@ -44,6 +51,8 @@ export default function Navbar({
 
   const browseActive = isActive("/search");
   const deliveryActive = isActive("/delivery");
+  const requestsActive = isActive("/requests");
+  const carrierActive = isActive("/carrier");
 
   return (
     <header
@@ -89,20 +98,20 @@ export default function Navbar({
                 </span>
               </Link>
 
-              {/* Desktop Browse */}
+              {/* Desktop Search */}
               <Link
-                href="/search"
+                href={HREF_SEARCH}
                 prefetch={false}
                 className={cx(
                   "hidden md:inline-flex",
                   pillClass({ active: browseActive, size: "sm" }),
                 )}
                 aria-current={browseActive ? "page" : undefined}
-                aria-label="Browse"
-                title="Browse"
+                aria-label="Search"
+                title="Search"
               >
-                <Icon name="filter" />
-                Browse
+                <Icon name="search" />
+                Search
               </Link>
             </div>
 
@@ -119,7 +128,17 @@ export default function Navbar({
               </NavLink>
 
               <NavLink
-                href="/delivery"
+                href={HREF_REQUESTS}
+                active={requestsActive}
+                ariaLabel="Requests"
+                title="Requests"
+              >
+                <Icon name="message" />
+                <span className="hidden sm:inline">Requests</span>
+              </NavLink>
+
+              <NavLink
+                href={HREF_DELIVERY}
                 active={deliveryActive}
                 ariaLabel="Delivery"
                 title="Delivery"
@@ -128,13 +147,18 @@ export default function Navbar({
                 <span className="hidden sm:inline">Delivery</span>
               </NavLink>
 
+              <NavLink
+                href={HREF_CARRIER}
+                active={carrierActive}
+                ariaLabel="Carrier"
+                title="Carrier"
+              >
+                <Icon name="bag" />
+                <span className="hidden sm:inline">Carrier</span>
+              </NavLink>
+
               {showSaved && (
-                <NavLink
-                  href="/saved"
-                  active={isActive("/saved")}
-                  ariaLabel="Saved"
-                  title="Saved"
-                >
+                <NavLink href="/saved" active={isActive("/saved")} ariaLabel="Saved" title="Saved">
                   <Icon name="heart" />
                   <span className="hidden sm:inline">Saved</span>
                 </NavLink>
@@ -161,9 +185,9 @@ export default function Navbar({
                 </Button>
               )}
 
-              {/* Mobile search icon */}
+              {/* Mobile: Search */}
               <Link
-                href="/search"
+                href={HREF_SEARCH}
                 prefetch={false}
                 className={cx("md:hidden", pillIconClass({ active: browseActive }))}
                 aria-label="Search"
@@ -171,6 +195,42 @@ export default function Navbar({
                 aria-current={browseActive ? "page" : undefined}
               >
                 <Icon name="search" />
+              </Link>
+
+              {/* Mobile: Requests */}
+              <Link
+                href={HREF_REQUESTS}
+                prefetch={false}
+                className={cx("md:hidden", pillIconClass({ active: requestsActive }))}
+                aria-label="Requests"
+                title="Requests"
+                aria-current={requestsActive ? "page" : undefined}
+              >
+                <Icon name="message" />
+              </Link>
+
+              {/* Mobile: Delivery */}
+              <Link
+                href={HREF_DELIVERY}
+                prefetch={false}
+                className={cx("md:hidden", pillIconClass({ active: deliveryActive }))}
+                aria-label="Delivery"
+                title="Delivery"
+                aria-current={deliveryActive ? "page" : undefined}
+              >
+                <Icon name="pin" />
+              </Link>
+
+              {/* Mobile: Carrier */}
+              <Link
+                href={HREF_CARRIER}
+                prefetch={false}
+                className={cx("md:hidden", pillIconClass({ active: carrierActive }))}
+                aria-label="Carrier"
+                title="Carrier"
+                aria-current={carrierActive ? "page" : undefined}
+              >
+                <Icon name="bag" />
               </Link>
 
               {!hideSellCta && (

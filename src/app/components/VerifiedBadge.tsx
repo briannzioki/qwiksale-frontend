@@ -1,4 +1,3 @@
-// src/app/components/VerifiedBadge.tsx
 "use client";
 
 import * as React from "react";
@@ -51,6 +50,12 @@ function normalizeTier(v: unknown): FeaturedTier | null {
   const t = v.trim().toLowerCase();
   if (t === "basic" || t === "gold" || t === "diamond") return t as FeaturedTier;
   return null;
+}
+
+function titleCaseTier(t: FeaturedTier): string {
+  if (t === "gold") return "Gold";
+  if (t === "diamond") return "Diamond";
+  return "Basic";
 }
 
 function TierIcon({ tier }: { tier: FeaturedTier }) {
@@ -153,13 +158,15 @@ export default function VerifiedBadge({
   })();
 
   const showVerified = typeof resolvedVerified === "boolean";
-  const showTier =
-    resolvedTier === "basic" || resolvedTier === "gold" || resolvedTier === "diamond";
+  const showTier = resolvedTier === "basic" || resolvedTier === "gold" || resolvedTier === "diamond";
 
   if (!showVerified && !showTier) return null;
 
+  // Keep tones subtle; the Badge component should map these to your existing theme.
   const tierTone =
     resolvedTier === "gold" ? "amber" : resolvedTier === "diamond" ? "indigo" : "slate";
+
+  const tierLabel = resolvedTier ? titleCaseTier(resolvedTier) : "";
 
   return (
     <span className={cn("inline-flex flex-wrap items-center gap-1 sm:gap-1.5", className)}>
@@ -189,8 +196,14 @@ export default function VerifiedBadge({
           title={`Featured ${resolvedTier}`}
           className="inline-flex"
         >
-          <Badge tone={tierTone} variant="soft" size="xs" glow={resolvedTier !== "basic"} icon={<TierIcon tier={resolvedTier} />}>
-            <span className="sr-only">{`Featured ${resolvedTier}`}</span>
+          <Badge
+            tone={tierTone}
+            variant="soft"
+            size="xs"
+            glow={resolvedTier !== "basic"}
+            icon={<TierIcon tier={resolvedTier} />}
+          >
+            <span className="uppercase tracking-wide">{tierLabel}</span>
           </Badge>
         </span>
       ) : null}

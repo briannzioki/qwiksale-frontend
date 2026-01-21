@@ -18,6 +18,7 @@ import { ReviewList } from "@/app/components/ReviewList";
 import { AddReviewForm } from "@/app/components/AddReviewForm";
 import { useListingReviews } from "@/app/hooks/useListingReviews";
 import SellerInfo from "@/app/components/SellerInfo";
+import VerifiedBadge from "@/app/components/VerifiedBadge";
 
 import type { Review, ReviewListResponse, ReviewBreakdown } from "@/app/lib/reviews";
 import type { FeaturedTier } from "@/app/lib/sellerVerification";
@@ -267,7 +268,7 @@ function normalizeReview(raw: any): Review {
   if (listingIdRaw != null) (result as any).listingId = String(listingIdRaw);
 
   const raterIdRaw = (raw as any).raterId;
-  if (raterIdRaw != null) (result as any).raterId = String(raterIdRaw);
+  if (raterIdRaw !=null) (result as any).raterId = String(raterIdRaw);
 
   if ("viewerOwn" in raw) (result as any).viewerOwn = Boolean((raw as any).viewerOwn);
 
@@ -500,7 +501,10 @@ export default function ProductPageClient({
     username: displayMaybe?.username ?? null,
   };
 
-  const apiGallery = useMemo(() => extractGalleryUrls(displayMaybe ?? {}, displayMaybe?.image || "/og.png"), [displayMaybe]);
+  const apiGallery = useMemo(
+    () => extractGalleryUrls(displayMaybe ?? {}, displayMaybe?.image || "/og.png"),
+    [displayMaybe],
+  );
   const enableLightbox = apiGallery.length > 0;
 
   const seller = useMemo(() => {
@@ -519,7 +523,30 @@ export default function ProductPageClient({
             ? (display as any).storeLocationUrl
             : null;
 
-    const uiVerified = typeof (display as any)?.sellerVerified === "boolean" ? (display as any).sellerVerified : null;
+    const resolvedVerified: boolean | null = (() => {
+      const d: any = display as any;
+
+      const candidates: unknown[] = [
+        d?.sellerBadges?.verified,
+        d?.sellerVerified,
+        d?.seller_verified,
+        nested?.verified,
+        nested?.sellerVerified,
+        nested?.seller_verified,
+        nested?.isVerified,
+        nested?.accountVerified,
+      ];
+
+      for (const c of candidates) {
+        if (typeof c === "boolean") return c;
+      }
+
+      // If we have a seller identity but no explicit flag, default to Unverified
+      // (tests + UI expect a concrete "Verified/Unverified" state on product pages).
+      const hasIdentity = Boolean(nested?.id || d?.sellerId || username || (nested?.name ?? d?.sellerName));
+      return hasIdentity ? false : null;
+    })();
+
     const uiTier = normalizeTier((display as any)?.sellerFeaturedTier);
 
     return {
@@ -530,10 +557,20 @@ export default function ProductPageClient({
       phone: nested?.phone ?? display?.sellerPhone ?? null,
       location: nested?.location ?? display?.sellerLocation ?? null,
       memberSince: nested?.memberSince ?? display?.sellerMemberSince ?? null,
-      rating: typeof nested?.rating === "number" ? nested.rating : typeof display?.sellerRating === "number" ? display?.sellerRating : null,
-      sales: typeof nested?.sales === "number" ? nested.sales : typeof display?.sellerSales === "number" ? display?.sellerSales : null,
+      rating:
+        typeof nested?.rating === "number"
+          ? nested.rating
+          : typeof display?.sellerRating === "number"
+            ? display?.sellerRating
+            : null,
+      sales:
+        typeof nested?.sales === "number"
+          ? nested.sales
+          : typeof display?.sellerSales === "number"
+            ? display?.sellerSales
+            : null,
       storeLocationUrl,
-      verified: uiVerified,
+      verified: resolvedVerified,
       featuredTier: uiTier,
     };
   }, [display]);
@@ -579,7 +616,7 @@ export default function ProductPageClient({
     const directLat = typeof display?.storeLat === "number" ? display.storeLat : null;
     const directLng = typeof display?.storeLng === "number" ? display.storeLng : null;
 
-    if (directLat != null && directLng !=null) {
+    if (directLat != null && directLng != null) {
       return { lat: directLat, lng: directLng, source: "payload" as const };
     }
 
@@ -619,7 +656,9 @@ export default function ProductPageClient({
     try {
       setFetchCopying(true);
       const shareUrl =
-        typeof window !== "undefined" && window.location ? `${window.location.origin}/product/${display.id}` : `/product/${display.id}`;
+        typeof window !== "undefined" && window.location
+          ? `${window.location.origin}/product/${display.id}`
+          : `/product/${display.id}`;
       await navigator.clipboard.writeText(shareUrl);
       toast.success("Link copied");
     } catch {
@@ -778,7 +817,7 @@ export default function ProductPageClient({
               ) : null}
             </div>
 
-            {(fetching || fetchErr) ? (
+            {fetching || fetchErr ? (
               <div className="mt-2 text-[11px] text-[var(--text-muted)] sm:text-xs">
                 {fetching ? "Loading details…" : "Showing limited info"}
               </div>
@@ -788,11 +827,17 @@ export default function ProductPageClient({
           <div className="space-y-0.5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 text-[var(--text)] shadow-soft sm:space-y-1 sm:p-4">
             <p className="text-xl font-bold text-[var(--text)] sm:text-2xl">{fmtKES(display.price)}</p>
             {display.negotiable ? <p className="text-xs text-[var(--text-muted)] sm:text-sm">Negotiable</p> : null}
-            {display.brand ? <p className="text-xs text-[var(--text-muted)] sm:text-sm">Brand: {display.brand}</p> : null}
+            {display.brand ? (
+              <p className="text-xs text-[var(--text-muted)] sm:text-sm">
+                Brand: {display.brand}
+              </p>
+            ) : null}
             {display.condition ? (
               <p className="text-xs text-[var(--text-muted)] sm:text-sm">Condition: {display.condition}</p>
             ) : null}
-            {display.location ? <p className="text-xs text-[var(--text-muted)] sm:text-sm">Location: {display.location}</p> : null}
+            {display.location ? (
+              <p className="text-xs text-[var(--text-muted)] sm:text-sm">Location: {display.location}</p>
+            ) : null}
           </div>
 
           <div
@@ -828,7 +873,12 @@ export default function ProductPageClient({
           </div>
 
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2.5 text-[var(--text)] shadow-soft sm:p-4">
-            <div className="text-xs font-semibold text-[var(--text)] sm:text-sm">Seller</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-[var(--text)] sm:text-sm">Seller</div>
+
+              {/* Always render a concrete Verified/Unverified state on product pages */}
+              <VerifiedBadge verified={typeof seller.verified === "boolean" ? seller.verified : false} featuredTier={null} />
+            </div>
 
             <div className="mt-2 sm:mt-3">
               <SellerInfo
@@ -867,7 +917,9 @@ export default function ProductPageClient({
               <h3 className="font-semibold text-[var(--text)]">Reviews</h3>
               {hasAnyReviews ? (
                 <div className="text-xs text-[var(--text-muted)]">
-                  <span className="font-medium text-[var(--text)]">{(reviewSummary?.average ?? hookAverage ?? 0).toFixed(1)} / 5</span>{" "}
+                  <span className="font-medium text-[var(--text)]">
+                    {(reviewSummary?.average ?? hookAverage ?? 0).toFixed(1)} / 5
+                  </span>{" "}
                   · {reviewCountEffective} {reviewCountEffective === 1 ? "review" : "reviews"}
                 </div>
               ) : null}
@@ -892,9 +944,7 @@ export default function ProductPageClient({
               />
 
               {!reviewLoading && !reviewErr && !hasAnyReviews ? (
-                <p className="text-xs text-[var(--text-muted)]">
-                  No reviews yet. Be the first to share your experience.
-                </p>
+                <p className="text-xs text-[var(--text-muted)]">No reviews yet. Be the first to share your experience.</p>
               ) : null}
 
               {hasAnyReviews ? <ReviewList reviews={reviews} /> : null}

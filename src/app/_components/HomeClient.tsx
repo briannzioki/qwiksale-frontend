@@ -8,10 +8,7 @@ import HomeTabs from "@/app/components/HomeTabs";
 import FavoriteButton from "@/app/components/favorites/FavoriteButton";
 import type { HomeSeedProps } from "./HomeClientNoSSR";
 import type { FeaturedTier, SellerBadgeFields } from "@/app/lib/sellerVerification";
-import {
-  buildSellerBadgeFields,
-  resolveSellerBadgeFieldsFromUserLike,
-} from "@/app/lib/sellerVerification";
+import { buildSellerBadgeFields, resolveSellerBadgeFieldsFromUserLike } from "@/app/lib/sellerVerification";
 
 type Mode = "all" | "products" | "services";
 
@@ -29,7 +26,6 @@ type ProductItem = {
   location?: string | null;
   createdAt?: string | null;
 
-  /** Seller/account flags for public UI */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
   sellerBadges?: SellerBadgeFields["sellerBadges"] | null;
@@ -47,7 +43,6 @@ type ServiceItem = {
   location?: string | null;
   createdAt?: string | null;
 
-  /** Seller/account flags for public UI */
   sellerVerified?: boolean | null;
   sellerFeaturedTier?: FeaturedTier | null;
   sellerBadges?: SellerBadgeFields["sellerBadges"] | null;
@@ -69,18 +64,8 @@ const PAGE_SIZE = 24;
 const DEBOUNCE_MS = 300;
 const FALLBACK_IMG = "/placeholder/default.jpg";
 
-/**
- * Hard upper bound for the home-feed fetch on the client.
- * If the endpoint misbehaves under load, we abort the request so the
- * browser can still reach "network idle" instead of hanging the suite.
- */
 const HOME_FEED_TIMEOUT_MS = 4000;
 
-/**
- * Native <select> dropdown menus can ignore Tailwind classes in some browsers.
- * Styling <option> explicitly prevents “invisible option text” when the OS/theme
- * chooses a different dropdown background than the select control.
- */
 const OPTION_STYLE: React.CSSProperties = {
   backgroundColor: "var(--bg-elevated)",
   color: "var(--text)",
@@ -94,6 +79,10 @@ const fmtKES = (n?: number | null) =>
         maximumFractionDigits: 0,
       })}`
     : "Contact for price";
+
+function cx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
 
 function shimmer(width: number, height: number) {
   const svg = `
@@ -114,9 +103,7 @@ function shimmer(width: number, height: number) {
     if (typeof window === "undefined") {
       return Buffer.from(str, "utf8").toString("base64");
     }
-    return typeof btoa === "function"
-      ? btoa(str)
-      : Buffer.from(str, "utf8").toString("base64");
+    return typeof btoa === "function" ? btoa(str) : Buffer.from(str, "utf8").toString("base64");
   };
 
   return `data:image/svg+xml;base64,${encode(svg)}`;
@@ -140,10 +127,6 @@ function useDebounced<T>(value: T, delay = DEBOUNCE_MS): T {
   return debounced;
 }
 
-/**
- * Parse a tier only when it is actually present/meaningful.
- * Do NOT default to "basic" for missing/unknown values (prevents wrong-defaulting).
- */
 function parseFeaturedTier(v: unknown): FeaturedTier | null {
   if (v == null) return null;
 
@@ -153,33 +136,19 @@ function parseFeaturedTier(v: unknown): FeaturedTier | null {
   if (s.includes("diamond")) return "diamond";
   if (s.includes("gold")) return "gold";
 
-  // Only treat "basic" as real when explicitly indicated
   if (s === "basic" || s.includes(" basic") || s.includes("basic ")) return "basic";
 
   return null;
 }
 
-/**
- * Home feed items can come from multiple endpoints/shapes.
- * We prefer API-provided badges (sellerBadges first; otherwise sellerVerified/sellerFeaturedTier),
- * otherwise we resolve from a user-like object (emailVerified-only verification).
- *
- * IMPORTANT: If a flag is unknown, return null/undefined for that flag.
- * Do NOT coerce to false/"basic" (prevents wrong-defaulting + flicker).
- */
 function resolveBadgesFromAny(raw: any): SellerBadgeFields {
-  // Prefer sellerBadges as the source of truth when present.
   const rawBadges: any =
-    raw?.sellerBadges &&
-    typeof raw.sellerBadges === "object" &&
-    !Array.isArray(raw.sellerBadges)
+    raw?.sellerBadges && typeof raw.sellerBadges === "object" && !Array.isArray(raw.sellerBadges)
       ? raw.sellerBadges
       : null;
 
   const badgesVerified =
-    rawBadges && typeof rawBadges.verified === "boolean"
-      ? (rawBadges.verified as boolean)
-      : null;
+    rawBadges && typeof rawBadges.verified === "boolean" ? (rawBadges.verified as boolean) : null;
 
   const badgesTier = parseFeaturedTier(rawBadges?.tier);
 
@@ -202,13 +171,10 @@ function resolveBadgesFromAny(raw: any): SellerBadgeFields {
 
   const directTier = directTierRaw;
 
-  // If BOTH are known, use the shared builder so the shape stays consistent.
   if (directVerified !== null && directTier !== null) {
     return buildSellerBadgeFields(directVerified, directTier);
   }
 
-  // If only one is known, preserve ONLY what we know; don't default the other.
-  // IMPORTANT: SellerBadgeFields requires legacy alias keys too (verified/isVerified/seller_verified).
   if (directVerified !== null || directTier !== null) {
     return {
       sellerVerified: directVerified,
@@ -221,12 +187,10 @@ function resolveBadgesFromAny(raw: any): SellerBadgeFields {
   }
 
   const seller = raw?.seller ?? raw?.user ?? raw?.owner ?? null;
-  const sellerObj =
-    seller && typeof seller === "object" && !Array.isArray(seller) ? seller : null;
+  const sellerObj = seller && typeof seller === "object" && !Array.isArray(seller) ? seller : null;
 
   const base = sellerObj ?? (raw && typeof raw === "object" ? raw : {});
 
-  // allow tier hints on the object the resolver expects (but don't force defaults)
   const tierHint =
     raw?.featuredTier ??
     raw?.featured_tier ??
@@ -235,10 +199,7 @@ function resolveBadgesFromAny(raw: any): SellerBadgeFields {
     null;
 
   const parsedTierHint = parseFeaturedTier(tierHint);
-  const userLike =
-    parsedTierHint != null
-      ? { ...(base as any), featuredTier: parsedTierHint }
-      : (base as any);
+  const userLike = parsedTierHint != null ? { ...(base as any), featuredTier: parsedTierHint } : (base as any);
 
   return resolveSellerBadgeFieldsFromUserLike(userLike);
 }
@@ -319,13 +280,7 @@ function TierPill({ tier }: { tier: FeaturedTier }) {
   );
 }
 
-function SellerBadges({
-  verified,
-  tier,
-}: {
-  verified?: boolean | null;
-  tier?: FeaturedTier | null;
-}) {
+function SellerBadges({ verified, tier }: { verified?: boolean | null; tier?: FeaturedTier | null }) {
   const showVerified = typeof verified === "boolean";
   const showTier = !!tier;
 
@@ -361,19 +316,9 @@ function coerceItems(json: any): PageResponse<AnyItem> {
         name: String(x.name ?? x.title ?? "Untitled"),
         category: x.category ?? null,
         subcategory: x.subcategory ?? null,
-        price:
-          typeof x.price === "number"
-            ? x.price
-            : typeof x.amount === "number"
-              ? x.amount
-              : null,
+        price: typeof x.price === "number" ? x.price : typeof x.amount === "number" ? x.amount : null,
         image: x.image || x.thumbnail || (Array.isArray(x.images) ? x.images[0] : null) || null,
-        featured:
-          typeof x.featured === "boolean"
-            ? x.featured
-            : x.isFeatured === true
-              ? true
-              : null,
+        featured: typeof x.featured === "boolean" ? x.featured : x.isFeatured === true ? true : null,
         location: x.location ?? x.city ?? null,
         createdAt: x.createdAt ?? x.created_at ?? null,
 
@@ -399,11 +344,7 @@ function coerceItems(json: any): PageResponse<AnyItem> {
     .filter(Boolean) as AnyItem[];
 
   const total =
-    typeof base?.total === "number"
-      ? base.total
-      : typeof json?.total === "number"
-        ? json.total
-        : items.length;
+    typeof base?.total === "number" ? base.total : typeof json?.total === "number" ? json.total : items.length;
 
   const pageSize = typeof base?.pageSize === "number" ? base.pageSize : PAGE_SIZE;
 
@@ -414,13 +355,7 @@ function coerceItems(json: any): PageResponse<AnyItem> {
       ? base.totalPages
       : Math.max(1, Math.ceil(total / pageSize));
 
-  return {
-    page,
-    pageSize,
-    total,
-    totalPages,
-    items,
-  };
+  return { page, pageSize, total, totalPages, items };
 }
 
 /* --------------------------- component --------------------------- */
@@ -428,17 +363,14 @@ function coerceItems(json: any): PageResponse<AnyItem> {
 export default function HomeClient(seed?: HomeSeedProps) {
   const sp = useSearchParams();
 
-  // Mode from URL (?t= / ?tab=); strictly read-only.
   const mode: Mode = React.useMemo(() => {
     const raw = (sp.get("t") ?? sp.get("tab") ?? "").toLowerCase();
     return raw === "products" || raw === "services" ? (raw as Mode) : "all";
   }, [sp]);
 
   const initialServices = seed?.initialServices;
-  const hasSeedServices =
-    mode === "services" && Array.isArray(initialServices) && initialServices.length > 0;
+  const hasSeedServices = mode === "services" && Array.isArray(initialServices) && initialServices.length > 0;
 
-  // Local filters from URL (no client-driven URL mutations)
   const [q, setQ] = React.useState(sp.get("q") || "");
   const [category, setCategory] = React.useState(sp.get("category") || "");
   const [subcategory, setSubcategory] = React.useState(sp.get("subcategory") || "");
@@ -446,16 +378,13 @@ export default function HomeClient(seed?: HomeSeedProps) {
   const [condition, setCondition] = React.useState(sp.get("condition") || "");
   const [minPrice, setMinPrice] = React.useState(sp.get("minPrice") || "");
   const [maxPrice, setMaxPrice] = React.useState(sp.get("maxPrice") || "");
-  const [featuredOnly, setFeaturedOnly] = React.useState(
-    (sp.get("featured") || "").toLowerCase() === "true",
-  );
+  const [featuredOnly, setFeaturedOnly] = React.useState((sp.get("featured") || "").toLowerCase() === "true");
   const [sort, setSort] = React.useState(sp.get("sort") || "newest");
   const [page, setPage] = React.useState(() => {
     const n = Number(sp.get("page") || 1);
     return Number.isFinite(n) && n > 0 ? n : 1;
   });
 
-  // Reset product-only filters when mode changes away
   React.useEffect(() => {
     if (mode !== "products") {
       if (brand) setBrand("");
@@ -485,38 +414,19 @@ export default function HomeClient(seed?: HomeSeedProps) {
       return {
         type: "service",
         id: String(svc.id),
-        name:
-          typeof svc.name === "string"
-            ? svc.name
-            : typeof anySvc.title === "string"
-              ? anySvc.title
-              : "Service",
+        name: typeof svc.name === "string" ? svc.name : typeof anySvc.title === "string" ? anySvc.title : "Service",
         category: typeof svc.category === "string" ? svc.category : null,
         subcategory: typeof svc.subcategory === "string" ? svc.subcategory : null,
-        price:
-          typeof svc.price === "number"
-            ? svc.price
-            : typeof anySvc.amount === "number"
-              ? anySvc.amount
-              : null,
+        price: typeof svc.price === "number" ? svc.price : typeof anySvc.amount === "number" ? anySvc.amount : null,
         image:
           typeof svc.image === "string"
             ? svc.image
             : Array.isArray(anySvc.images) && anySvc.images.length > 0
               ? anySvc.images[0]
               : null,
-        featured:
-          typeof anySvc.featured === "boolean"
-            ? anySvc.featured
-            : anySvc.isFeatured === true
-              ? true
-              : null,
+        featured: typeof anySvc.featured === "boolean" ? anySvc.featured : anySvc.isFeatured === true ? true : null,
         location:
-          typeof svc.location === "string"
-            ? svc.location
-            : typeof anySvc.city === "string"
-              ? anySvc.city
-              : null,
+          typeof svc.location === "string" ? svc.location : typeof anySvc.city === "string" ? anySvc.city : null,
         createdAt: null,
 
         sellerVerified: badges.sellerVerified,
@@ -525,19 +435,12 @@ export default function HomeClient(seed?: HomeSeedProps) {
       } as ServiceItem;
     });
 
-    return {
-      page: 1,
-      pageSize: mapped.length,
-      total: mapped.length,
-      totalPages: 1,
-      items: mapped,
-    };
+    return { page: 1, pageSize: mapped.length, total: mapped.length, totalPages: 1, items: mapped };
   });
 
   const [loading, setLoading] = React.useState<boolean>(() => !hasSeedServices);
   const [err, setErr] = React.useState<string | null>(null);
 
-  // Build query for /api/home-feed
   const queryString = React.useMemo(() => {
     const params = new URLSearchParams();
     if (dq) params.set("q", dq);
@@ -552,21 +455,8 @@ export default function HomeClient(seed?: HomeSeedProps) {
     if (dpage && dpage !== 1) params.set("page", String(dpage));
     params.set("pageSize", String(PAGE_SIZE));
     return params.toString();
-  }, [
-    dq,
-    dcategory,
-    dsubcategory,
-    dbrand,
-    dcondition,
-    dminPrice,
-    dmaxPrice,
-    dfeaturedOnly,
-    dsort,
-    dpage,
-    dmode,
-  ]);
+  }, [dq, dcategory, dsubcategory, dbrand, dcondition, dminPrice, dmaxPrice, dfeaturedOnly, dsort, dpage, dmode]);
 
-  // Fetch from /api/home-feed; mode-aware; URL is read-only (no replace).
   React.useEffect(() => {
     const ac = new AbortController();
     let timeoutId: number | undefined;
@@ -581,9 +471,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
       }
 
       const tParam = fallbackMode ?? dmode;
-      const url =
-        `/api/home-feed?t=${encodeURIComponent(tParam)}` +
-        (queryString ? `&${queryString}` : "");
+      const url = `/api/home-feed?t=${encodeURIComponent(tParam)}` + (queryString ? `&${queryString}` : "");
 
       try {
         const r = await fetch(url, {
@@ -600,12 +488,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
           (typeof (jsonRaw as any).message === "string" && !Array.isArray((jsonRaw as any).items));
 
         if (hasError) {
-          if (
-            (dmode === "products" || dmode === "services") &&
-            !fallbackMode &&
-            active &&
-            !ac.signal.aborted
-          ) {
+          if ((dmode === "products" || dmode === "services") && !fallbackMode && active && !ac.signal.aborted) {
             return load(1, "all");
           }
 
@@ -613,8 +496,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
             return load(attempt + 1, fallbackMode);
           }
 
-          const msg =
-            (jsonRaw as any).error || (jsonRaw as any).message || `Request failed (${r.status})`;
+          const msg = (jsonRaw as any).error || (jsonRaw as any).message || `Request failed (${r.status})`;
 
           if (active) {
             setErr(msg);
@@ -625,7 +507,6 @@ export default function HomeClient(seed?: HomeSeedProps) {
 
         let pageJson = coerceItems(jsonRaw);
 
-        // If we fetched "all" as fallback, filter locally for tab visuals.
         if ((dmode === "products" || dmode === "services") && fallbackMode === "all") {
           const want = dmode === "products" ? "product" : "service";
           const filtered = (pageJson.items || []).filter((x) => x.type === want);
@@ -643,10 +524,8 @@ export default function HomeClient(seed?: HomeSeedProps) {
           setErr(null);
         }
       } catch (e: any) {
-        if (e?.name === "AbortError") {
-          // Hard timeout or unmount: silent
-          return;
-        }
+        if (e?.name === "AbortError") return;
+
         if (attempt < 2 && active && !ac.signal.aborted) {
           return load(attempt + 1, fallbackMode);
         }
@@ -655,9 +534,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
           setRes(null);
         }
       } finally {
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoading(false);
       }
     }
 
@@ -665,17 +542,13 @@ export default function HomeClient(seed?: HomeSeedProps) {
 
     if (typeof window !== "undefined") {
       timeoutId = window.setTimeout(() => {
-        if (!ac.signal.aborted) {
-          ac.abort();
-        }
+        if (!ac.signal.aborted) ac.abort();
       }, HOME_FEED_TIMEOUT_MS);
     }
 
     return () => {
       active = false;
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
       ac.abort();
     };
   }, [dmode, queryString]);
@@ -708,10 +581,9 @@ export default function HomeClient(seed?: HomeSeedProps) {
   if (minPrice) activeChips.push(`Min: ${minPrice}`);
   if (maxPrice) activeChips.push(`Max: ${maxPrice}`);
   if (featuredOnly) activeChips.push("Featured only");
-  if (sort && sort !== "newest")
-    activeChips.push(
-      sort === "price_asc" ? "Price ↑" : sort === "price_desc" ? "Price ↓" : "Featured first",
-    );
+  if (sort && sort !== "newest") {
+    activeChips.push(sort === "price_asc" ? "Price up" : sort === "price_desc" ? "Price down" : "Featured first");
+  }
 
   const makeChip = (label: string) => (
     <span
@@ -722,42 +594,32 @@ export default function HomeClient(seed?: HomeSeedProps) {
     </span>
   );
 
-  /* ------------------------ render ------------------------ */
-
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
-      {/* Tabs: All / Products / Services */}
-      <div
-        className="sticky top-[56px] z-30 card-surface p-1.5 sm:top-[64px] sm:p-2"
-        aria-label="Browse type tabs"
-      >
+      <div className="sticky top-[56px] z-30 card-surface p-1.5 sm:top-[64px] sm:p-2" aria-label="Browse type tabs">
         <HomeTabs />
       </div>
 
-      {/* Filters row */}
       <section
         className="card-surface z-20 p-3 backdrop-blur supports-[backdrop-filter]:bg-[var(--bg-elevated)] sm:p-4 md:sticky md:top-[112px]"
         aria-label="Filters"
       >
         <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12 md:gap-3">
           <div className="md:col-span-4">
-            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
-              Keywords
-            </label>
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">Keywords</label>
             <input
               value={q}
               onChange={(e) => {
                 setQ(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search products & services…"
+              placeholder="Search products and services"
               className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
+
           <div className="md:col-span-3">
-            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
-              Category
-            </label>
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">Category</label>
             <input
               value={category}
               onChange={(e) => {
@@ -768,10 +630,9 @@ export default function HomeClient(seed?: HomeSeedProps) {
               className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
+
           <div className="md:col-span-3">
-            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
-              Subcategory
-            </label>
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">Subcategory</label>
             <input
               value={subcategory}
               onChange={(e) => {
@@ -782,6 +643,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
               className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
+
           <div className="md:col-span-2 flex items-end">
             <button
               type="button"
@@ -793,14 +655,11 @@ export default function HomeClient(seed?: HomeSeedProps) {
           </div>
         </div>
 
-        {/* Advanced / mode-specific filters */}
         <div className="mt-3 grid grid-cols-1 gap-2.5 md:grid-cols-12 md:gap-3">
           {mode === "products" && (
             <>
               <div className="md:col-span-3">
-                <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
-                  Brand
-                </label>
+                <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">Brand</label>
                 <input
                   value={brand}
                   onChange={(e) => {
@@ -811,10 +670,9 @@ export default function HomeClient(seed?: HomeSeedProps) {
                   className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
                 />
               </div>
+
               <div className="md:col-span-3">
-                <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
-                  Condition
-                </label>
+                <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">Condition</label>
                 <select
                   value={condition}
                   onChange={(e) => {
@@ -852,6 +710,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
               className="mt-1 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-focus"
             />
           </div>
+
           <div className="md:col-span-3">
             <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
               Max price (KES)
@@ -884,9 +743,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
           </div>
 
           <div className="md:col-span-3">
-            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">
-              Sort
-            </label>
+            <label className="block text-[11px] font-semibold text-[var(--text-muted)] sm:text-xs">Sort</label>
             <select
               value={sort}
               onChange={(e) => {
@@ -902,27 +759,23 @@ export default function HomeClient(seed?: HomeSeedProps) {
                 Featured first
               </option>
               <option value="price_asc" style={OPTION_STYLE}>
-                Price ↑
+                Price up
               </option>
               <option value="price_desc" style={OPTION_STYLE}>
-                Price ↓
+                Price down
               </option>
             </select>
           </div>
         </div>
 
-        {/* Active filter chips */}
         {activeChips.length > 0 && (
           <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible sm:pb-0">
-            <span className="shrink-0 text-xs font-semibold text-[var(--text-muted)]">
-              Active:
-            </span>
+            <span className="shrink-0 text-xs font-semibold text-[var(--text-muted)]">Active:</span>
             {activeChips.map(makeChip)}
           </div>
         )}
       </section>
 
-      {/* Results */}
       {err ? (
         <div
           className="card-surface border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-sm text-[var(--text)] sm:p-4"
@@ -934,7 +787,16 @@ export default function HomeClient(seed?: HomeSeedProps) {
         <SkeletonGrid />
       ) : !hasItems ? (
         <div className="card-surface p-4 text-sm leading-relaxed text-[var(--text-muted)] sm:p-6">
-          No {mode === "all" ? "items" : mode} found. Try adjusting your filters.
+          No {mode === "all" ? "items" : mode} found. You can also post a request if you’re looking for something
+          specific.
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/requests" prefetch={false} className="btn-outline">
+              View requests
+            </Link>
+            <Link href="/search" prefetch={false} className="btn-gradient-primary">
+              Browse again
+            </Link>
+          </div>
         </div>
       ) : (
         <section
@@ -954,15 +816,11 @@ export default function HomeClient(seed?: HomeSeedProps) {
             const c2 = it.subcategory || "";
             const categoryText = c1 && c2 ? `${c1} • ${c2}` : c1 || c2 || "General";
 
-            const href = isProduct
-              ? `/product/${encodeURIComponent(it.id)}`
-              : `/service/${encodeURIComponent(it.id)}`;
+            const href = isProduct ? `/product/${encodeURIComponent(it.id)}` : `/service/${encodeURIComponent(it.id)}`;
 
             const ariaLabelBase = `${isProduct ? "Product" : "Service"}: ${title}`;
             const pricePart =
-              typeof price === "number" && price > 0
-                ? `, priced at KES ${price.toLocaleString("en-KE")}`
-                : "";
+              typeof price === "number" && price > 0 ? `, priced at KES ${price.toLocaleString("en-KE")}` : "";
             const ariaLabel = ariaLabelBase + pricePart;
 
             const blur = shimmer(800, 440);
@@ -996,28 +854,16 @@ export default function HomeClient(seed?: HomeSeedProps) {
                       onError={makeOnImgError(FALLBACK_IMG)}
                     />
 
-                    {/* ✅ show favorites for BOTH products and services */}
                     <div className="absolute right-2 top-2 z-10">
-                      {isProduct ? (
-                        <FavoriteButton productId={it.id} />
-                      ) : (
-                        <FavoriteButton serviceId={it.id} />
-                      )}
+                      {isProduct ? <FavoriteButton productId={it.id} /> : <FavoriteButton serviceId={it.id} />}
                     </div>
                   </div>
 
                   <div className="p-2.5 sm:p-3">
-                    <h3 className="line-clamp-1 font-semibold tracking-tight text-[var(--text)]">
-                      {title}
-                    </h3>
-                    <p className="line-clamp-1 text-xs text-[var(--text-muted)]">
-                      {categoryText}
-                    </p>
+                    <h3 className="line-clamp-1 font-semibold tracking-tight text-[var(--text)]">{title}</h3>
+                    <p className="line-clamp-1 text-xs text-[var(--text-muted)]">{categoryText}</p>
 
-                    <SellerBadges
-                      verified={it.sellerVerified ?? null}
-                      tier={it.sellerFeaturedTier ?? null}
-                    />
+                    <SellerBadges verified={it.sellerVerified ?? null} tier={it.sellerFeaturedTier ?? null} />
 
                     <p className="mt-1 text-sm font-extrabold tabular-nums tracking-tight text-[var(--text)]">
                       {fmtKES(price)}
@@ -1030,14 +876,9 @@ export default function HomeClient(seed?: HomeSeedProps) {
         </section>
       )}
 
-      {/* Local pagination (does not touch URL) */}
       <section className="flex items-center justify-between" aria-live="polite">
         <p className="text-xs text-[var(--text-muted)]">
-          {loading
-            ? "Loading…"
-            : err
-              ? "Error loading listings."
-              : `${total} items • Page ${pageNum} of ${totalPages}`}
+          {loading ? "Loading…" : err ? "Error loading listings." : `${total} items • Page ${pageNum} of ${totalPages}`}
         </p>
 
         <div className="flex items-center gap-2">
@@ -1054,7 +895,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
             ].join(" ")}
             aria-label="Previous page"
           >
-            ← Prev
+            Prev
           </button>
 
           <button
@@ -1070,7 +911,7 @@ export default function HomeClient(seed?: HomeSeedProps) {
             ].join(" ")}
             aria-label="Next page"
           >
-            Next →
+            Next
           </button>
         </div>
       </section>
