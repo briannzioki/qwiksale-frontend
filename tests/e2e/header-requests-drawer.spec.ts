@@ -197,7 +197,7 @@ test("signed-in click opens detail", async ({ browser }) => {
     await expect(itemLink).toBeVisible();
     await itemLink.click();
 
-    await expect(adminPage).toHaveURL(new RegExp(`/requests/${seeded.id}$`));
+    await expect(adminPage).toHaveURL(new RegExp(`/requests/${seeded.id}(?:\\?.*)?$`));
     await expect(adminPage.getByText(seeded.title, { exact: false })).toBeVisible();
   } finally {
     await adminCtx.close();

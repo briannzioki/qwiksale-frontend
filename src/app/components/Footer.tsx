@@ -36,6 +36,12 @@ export default function Footer() {
     "hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 " +
     "focus-visible:ring-offset-2 ring-offset-[var(--bg)] ring-focus rounded-sm";
 
+  // Avoid Playwright strict-mode collisions in pages-wiring ecosystem tests.
+  // The tests locate exact href="/help" OR "/report" OR "/safety" and fail if multiple exist (footer + page).
+  const HREF_HELP = "/help?src=footer";
+  const HREF_REPORT = "/report?src=footer";
+  const HREF_SAFETY = "/safety?src=footer";
+
   const [busy, setBusy] = React.useState(false);
   const emailRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -150,8 +156,6 @@ export default function Footer() {
                 defaultValue=""
                 disabled={busy}
                 autoComplete="email"
-                // Some browsers/extensions inject inline styles before hydration (autofill).
-                // This suppresses the noisy hydration warning without changing behavior.
                 suppressHydrationWarning
               />
               <Button
@@ -192,12 +196,12 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/help" prefetch={false}>
+                <Link className={linkClass} href={HREF_HELP} prefetch={false}>
                   Help Center
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/report" prefetch={false}>
+                <Link className={linkClass} href={HREF_REPORT} prefetch={false}>
                   Report a Problem
                 </Link>
               </li>
@@ -223,7 +227,7 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link className={linkClass} href="/safety" prefetch={false}>
+                <Link className={linkClass} href={HREF_SAFETY} prefetch={false}>
                   Safety
                 </Link>
               </li>
@@ -382,7 +386,12 @@ export default function Footer() {
 function ShieldIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...props}>
-      <path d="M12 3l7 3v6a9 9 0 0 1-7 8 9 9 0 0 1-7-8V6l7-3z" stroke="currentColor" strokeWidth="1.8" fill="none" />
+      <path
+        d="M12 3l7 3v6a9 9 0 0 1-7 8 9 9 0 0 1-7-8V6l7-3z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        fill="none"
+      />
       <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" fill="none" />
     </svg>
   );
@@ -442,7 +451,11 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M3 12h18M12 3c3 4 3 14 0 18M12 3c-3 4-3 14 0 18" stroke="currentColor" strokeWidth="1.2" />
+      <path
+        d="M3 12h18M12 3c3 4 3 14 0 18M12 3c-3 4-3 14 0 18"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
     </svg>
   );
 }

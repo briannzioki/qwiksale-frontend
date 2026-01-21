@@ -126,7 +126,9 @@ function computeEnforcement(carrier: CarrierSerialized): CarrierEnforcement {
   const now = Date.now();
   const banned = Boolean(carrier.bannedAt);
 
-  const suspendedUntilMs = carrier.suspendedUntil ? new Date(carrier.suspendedUntil).getTime() : NaN;
+  const suspendedUntilMs = carrier.suspendedUntil
+    ? new Date(carrier.suspendedUntil).getTime()
+    : NaN;
   const suspended = Number.isFinite(suspendedUntilMs) ? suspendedUntilMs > now : false;
 
   return {
@@ -155,15 +157,22 @@ function fmtDateTimeKE(iso: string | null): string | null {
   }
 }
 
-function StatusChip({ label, tone }: { label: string; tone?: "neutral" | "warn" | "danger" }) {
+function StatusChip({
+  label,
+  tone,
+}: {
+  label: string;
+  tone?: "neutral" | "warn" | "danger";
+}) {
   const base =
     "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-sm";
+
   const cls =
     tone === "danger"
-      ? "border-[var(--border)] bg-[var(--bg)] text-[var(--text)]"
+      ? "border-white/25 bg-white/15 text-white"
       : tone === "warn"
-        ? "border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text)]"
-        : "border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text-muted)]";
+        ? "border-white/20 bg-white/12 text-white"
+        : "border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)]";
 
   return (
     <span className={[base, cls].join(" ")} aria-label={label}>
@@ -182,17 +191,28 @@ function EnforcementScreen({ enforcement }: { enforcement: CarrierEnforcement })
   const suspendedUntil = fmtDateTimeKE(enforcement.suspendedUntil);
 
   return (
-    <main className="container-page py-4 text-[var(--text)] sm:py-6" aria-label="Carrier enforcement">
+    <main
+      className="container-page py-4 text-[var(--text)] sm:py-6"
+      aria-label="Carrier enforcement"
+    >
       <header className="hero-surface rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Carrier</p>
-            <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[var(--text)] sm:text-2xl">{title}</h1>
+          <div className="text-white">
+            <p className="text-xs font-semibold uppercase tracking-wide text-white/75">
+              Carrier
+            </p>
+            <h1 className="mt-1 text-xl font-extrabold tracking-tight text-white sm:text-2xl">
+              {title}
+            </h1>
           </div>
-          {isBanned ? <StatusChip label="BANNED" tone="danger" /> : <StatusChip label="SUSPENDED" tone="warn" />}
+          {isBanned ? (
+            <StatusChip label="BANNED" tone="danger" />
+          ) : (
+            <StatusChip label="SUSPENDED" tone="warn" />
+          )}
         </div>
 
-        <p className="mt-2 text-sm text-[var(--text-muted)]">
+        <p className="mt-2 text-sm text-white/90">
           {isBanned
             ? "Your carrier profile has been banned and carrier actions are disabled."
             : "Your carrier profile is temporarily suspended and carrier actions are disabled until your suspension ends."}
@@ -200,30 +220,47 @@ function EnforcementScreen({ enforcement }: { enforcement: CarrierEnforcement })
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {isBanned ? (
-            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-4 shadow-sm">
-              <div className="text-xs font-semibold text-[var(--text-muted)]">Banned at</div>
-              <div className="mt-1 text-sm font-semibold text-[var(--text)]">{bannedAt ?? "Unknown"}</div>
-              <div className="mt-3 text-xs font-semibold text-[var(--text-muted)]">Reason</div>
+            <div className="card p-4">
+              <div className="text-xs font-semibold text-[var(--text-muted)]">
+                Banned at
+              </div>
+              <div className="mt-1 text-sm font-semibold text-[var(--text)]">
+                {bannedAt ?? "Unknown"}
+              </div>
+              <div className="mt-3 text-xs font-semibold text-[var(--text-muted)]">
+                Reason
+              </div>
               <div className="mt-1 text-sm text-[var(--text)]">
-                {enforcement.bannedReason?.trim() ? enforcement.bannedReason : "No reason was provided."}
+                {enforcement.bannedReason?.trim()
+                  ? enforcement.bannedReason
+                  : "No reason was provided."}
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-4 shadow-sm">
-              <div className="text-xs font-semibold text-[var(--text-muted)]">Suspended until</div>
-              <div className="mt-1 text-sm font-semibold text-[var(--text)]">{suspendedUntil ?? "Unknown"}</div>
+            <div className="card p-4">
+              <div className="text-xs font-semibold text-[var(--text-muted)]">
+                Suspended until
+              </div>
+              <div className="mt-1 text-sm font-semibold text-[var(--text)]">
+                {suspendedUntil ?? "Unknown"}
+              </div>
               <div className="mt-2 text-xs text-[var(--text-muted)]">
                 When the suspension expires, you can access the carrier dashboard again.
               </div>
             </div>
           )}
 
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-4 shadow-sm">
-            <div className="text-xs font-semibold text-[var(--text-muted)]">What you can do now</div>
+          <div className="card p-4">
+            <div className="text-xs font-semibold text-[var(--text-muted)]">
+              What you can do now
+            </div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--text)]">
               <li>Go back to your main dashboard.</li>
               <li>Check the Help Center for support options.</li>
-              <li>If you believe this is a mistake, contact support with your account email.</li>
+              <li>
+                If you believe this is a mistake, contact support with your account
+                email.
+              </li>
             </ul>
 
             <div className="mt-4 flex flex-wrap gap-2">
@@ -282,13 +319,14 @@ export default async function CarrierPage() {
   const enforcement = computeEnforcement(carrier);
 
   if (enforcement.banned || enforcement.suspended) {
-    // IMPORTANT: do NOT wrap in AppShell here; RootLayout already renders the site header/footer.
     return <EnforcementScreen enforcement={enforcement} />;
   }
 
-  // IMPORTANT: do NOT wrap in AppShell here; RootLayout already renders the site header/footer.
   return (
-    <main className="container-page py-4 text-[var(--text)] sm:py-6" aria-label="Carrier dashboard">
+    <main
+      className="container-page py-4 text-[var(--text)] sm:py-6"
+      aria-label="Carrier dashboard"
+    >
       <CarrierDashboardClient
         initialCarrier={carrier}
         enforcement={enforcement}

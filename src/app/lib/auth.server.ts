@@ -91,16 +91,12 @@ export function computeAdminFlags(input: {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : null;
   const role = roleUpper(input.role);
 
+  // IMPORTANT: ignore session-provided booleans (untrusted); derive only from role + allowlists.
   const allowSuper = !!email && SUPERADMIN_ALLOW.has(email);
   const allowAdmin = !!email && (ADMIN_ALLOW.has(email) || allowSuper);
 
-  const isSuperAdmin = input.isSuperAdmin === true || role === "SUPERADMIN" || allowSuper;
-  const isAdmin =
-    input.isAdmin === true ||
-    isSuperAdmin ||
-    role === "ADMIN" ||
-    role === "SUPERADMIN" ||
-    allowAdmin;
+  const isSuperAdmin = role === "SUPERADMIN" || allowSuper;
+  const isAdmin = isSuperAdmin || role === "ADMIN" || role === "SUPERADMIN" || allowAdmin;
 
   return { isAdmin, isSuperAdmin };
 }
@@ -120,7 +116,6 @@ export async function getAuthedUser(prisma?: any): Promise<AuthedUser | null> {
   const userAny: any = session?.user ?? null;
   if (!userAny) return null;
 
-  // --- requested base lines ---
   const idFromSession = asStringOrNull(userAny?.id);
   const email = asStringOrNull(userAny?.email)?.toLowerCase() ?? null;
 
@@ -143,7 +138,6 @@ export async function getAuthedUser(prisma?: any): Promise<AuthedUser | null> {
     try {
       const u = await (prisma as any).user.findUnique({
         where: { email },
-        // ✅ do NOT select fields that don't exist on your Prisma User model
         select: { id: true, email: true, name: true, role: true, username: true },
       });
 
@@ -162,9 +156,6 @@ export async function getAuthedUser(prisma?: any): Promise<AuthedUser | null> {
       const flags = computeAdminFlags({
         email: resolvedEmail,
         role: resolvedRole,
-        // session can still carry these booleans; keep honoring them if present
-        isAdmin: userAny?.isAdmin === true,
-        isSuperAdmin: userAny?.isSuperAdmin === true,
       });
 
       if (!userId) return null;
@@ -186,8 +177,6 @@ export async function getAuthedUser(prisma?: any): Promise<AuthedUser | null> {
   const flags = computeAdminFlags({
     email,
     role: roleFromSession,
-    isAdmin: userAny?.isAdmin === true,
-    isSuperAdmin: userAny?.isSuperAdmin === true,
   });
 
   return {
@@ -237,11 +226,12 @@ export function carrierEnforcementFromRow(row: any, now = new Date()): CarrierEn
     bannedAt: isBanned && bannedAt ? bannedAt.toISOString() : null,
     bannedReason: asStringOrNull(row?.bannedReason),
     isSuspended,
-    suspendedUntil: isSuspended && suspendedUntil
-      ? suspendedUntil.toISOString()
-      : suspendedUntil && Number.isFinite(suspendedMs)
+    suspendedUntil:
+      isSuspended && suspendedUntil
         ? suspendedUntil.toISOString()
-        : null,
+        : suspendedUntil && Number.isFinite(suspendedMs)
+          ? suspendedUntil.toISOString()
+          : null,
   };
 }
 
@@ -287,10 +277,7 @@ export async function getCarrierProfileByUserId(prisma: any, userId: string) {
   return null;
 }
 
-export async function getCarrierOwnerUserIdByCarrierId(
-  prisma: any,
-  carrierId: string,
-): Promise<string | null> {
+export async function getCarrierOwnerUserIdByCarrierId(prisma: any, carrierId: string): Promise<string | null> {
   const anyPrisma = prisma as any;
   const model = anyPrisma?.carrierProfile;
 

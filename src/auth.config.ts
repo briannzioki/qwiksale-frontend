@@ -97,9 +97,7 @@ function getAuthSecret(): string | string[] {
   if (isE2Eish()) return "e2e-auth-secret";
   if (process.env.NODE_ENV !== "production") return "dev-auth-secret";
 
-  throw new Error(
-    "Missing AUTH_SECRET (or NEXTAUTH_SECRET). Set it in production to enable stable sessions.",
-  );
+  throw new Error("Missing AUTH_SECRET (or NEXTAUTH_SECRET). Set it in production to enable stable sessions.");
 }
 
 function getGoogleClientId(): string | undefined {
@@ -126,8 +124,7 @@ function googleProviderOrNull() {
   }
 
   const fallbackId = id || (isE2Eish() ? "e2e-google-client-id" : "dev-google-client-id");
-  const fallbackSecret =
-    secret || (isE2Eish() ? "e2e-google-client-secret" : "dev-google-client-secret");
+  const fallbackSecret = secret || (isE2Eish() ? "e2e-google-client-secret" : "dev-google-client-secret");
 
   return Google({ clientId: fallbackId, clientSecret: fallbackSecret });
 }
@@ -144,7 +141,6 @@ export const authConfig: NextAuthConfig = {
 
   pages: {
     signIn: "/signin",
-    // OAuth new-user flow lands on signup (password linking UX lives there).
     newUser: "/signup?from=google",
   },
 
@@ -158,7 +154,6 @@ export const authConfig: NextAuthConfig = {
     Credentials({
       name: "Credentials",
       credentials: {
-        // Must match E2E + UI keys exactly
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
@@ -198,14 +193,9 @@ export const authConfig: NextAuthConfig = {
         const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : undefined;
         const username = cleanUsername(user.username ?? null) ?? undefined;
 
+        // IMPORTANT: do not emit isAdmin/isSuperAdmin from authorize().
+        // Session claims are untrusted; admin is derived from DB role + allowlists in callbacks.
         const role = safeRole(user.role);
-
-        const viaAllowlistAdmin = isAdminEmail(email);
-        const viaAllowlistSuper = isSuperAdminEmail(email);
-
-        const isSuperAdmin = role === "SUPERADMIN" || viaAllowlistSuper;
-        const isAdmin = isSuperAdmin || role === "ADMIN" || viaAllowlistAdmin;
-
         const emailVerified = toIsoOrNull(user.emailVerified);
 
         return {
@@ -215,8 +205,6 @@ export const authConfig: NextAuthConfig = {
           name: user.name ?? user.username ?? undefined,
           image: user.image ?? undefined,
           role,
-          isAdmin,
-          isSuperAdmin,
           verified: typeof user.verified === "boolean" ? user.verified : undefined,
           ...(emailVerified ? { emailVerified } : {}),
         } as any;
@@ -228,47 +216,51 @@ export const authConfig: NextAuthConfig = {
     async jwt({ token, user }) {
       if (typeof token.email === "string") token.email = token.email.trim().toLowerCase();
 
+      // Normalize id early
+      const sub = (token as any)?.sub;
+      if (!(token as any)["id"] && sub) (token as any)["id"] = String(sub);
+
+      // On sign-in, copy only non-privileged fields from `user`.
       if (user) {
         const u: any = user;
 
         const uid = typeof u.id === "string" ? u.id : String(u.id ?? "");
-        if (uid) token["id"] = uid;
+        if (uid) (token as any)["id"] = uid;
 
         if (typeof u.email === "string" && u.email.trim()) {
           token.email = u.email.trim().toLowerCase();
         }
 
         const uname = cleanUsername(u.username);
-        if (uname) token["username"] = uname;
+        if (uname) (token as any)["username"] = uname;
 
-        if (typeof u.verified === "boolean") token["verified"] = u.verified;
+        if (typeof u.verified === "boolean") (token as any)["verified"] = u.verified;
 
         const ev = toIsoOrNull(u.emailVerified);
-        if (ev) token["emailVerified"] = ev;
+        if (ev) (token as any)["emailVerified"] = ev;
 
         token.name = typeof u.name === "string" ? u.name : token.name;
-        token.picture = typeof u.image === "string" ? u.image : (token.picture as any);
+        (token as any).picture = typeof u.image === "string" ? u.image : (token as any).picture;
 
-        const role = safeRole(u.role);
-        token["role"] = role;
-
-        const email = typeof token.email === "string" ? token.email : undefined;
-        const viaAllowlistAdmin = isAdminEmail(email);
-        const viaAllowlistSuper = isSuperAdminEmail(email);
-
-        const isSuperAdmin = u.isSuperAdmin === true || role === "SUPERADMIN" || viaAllowlistSuper;
-        const isAdmin = u.isAdmin === true || isSuperAdmin || role === "ADMIN" || viaAllowlistAdmin;
-
-        token["isAdmin"] = isAdmin;
-        token["isSuperAdmin"] = isSuperAdmin;
+        // Role defaults to USER unless explicitly provided
+        (token as any)["role"] = safeRole(u.role);
       }
 
-      const sub = (token as any)?.sub;
-      if (!token["id"] && sub) token["id"] = String(sub);
-
-      const doReconcile = isE2Eish() || process.env.NODE_ENV !== "production";
+      // Always compute admin flags from role + allowlists (never trust prior token booleans).
       const email = typeof token.email === "string" ? token.email.trim().toLowerCase() : null;
+      const role = safeRole((token as any)?.role);
 
+      const viaAllowlistAdmin = isAdminEmail(email);
+      const viaAllowlistSuper = isSuperAdminEmail(email);
+
+      const computedIsSuperAdmin = role === "SUPERADMIN" || viaAllowlistSuper;
+      const computedIsAdmin = computedIsSuperAdmin || role === "ADMIN" || viaAllowlistAdmin;
+
+      (token as any)["isAdmin"] = computedIsAdmin;
+      (token as any)["isSuperAdmin"] = computedIsSuperAdmin;
+
+      // In E2E/dev, reconcile from DB to prevent privilege drift / stale tokens.
+      const doReconcile = isE2Eish() || process.env.NODE_ENV !== "production";
       if (doReconcile && email) {
         try {
           const row = await prisma.user.findUnique({
@@ -292,46 +284,48 @@ export const authConfig: NextAuthConfig = {
                 ? String((row as any).id).trim()
                 : "";
 
-          if (dbId && String(token["id"] || "").trim() !== dbId) {
-            token["id"] = dbId;
+          if (dbId && String((token as any)["id"] || "").trim() !== dbId) {
+            (token as any)["id"] = dbId;
           }
 
           if (typeof row?.email === "string") token.email = row.email.trim().toLowerCase();
 
           const uname = cleanUsername((row as any)?.username);
-          if (uname) token["username"] = uname;
+          if (uname) (token as any)["username"] = uname;
 
-          if (typeof (row as any)?.verified === "boolean") token["verified"] = (row as any).verified;
+          if (typeof (row as any)?.verified === "boolean") (token as any)["verified"] = (row as any).verified;
 
           const ev = toIsoOrNull((row as any)?.emailVerified);
-          if (ev) token["emailVerified"] = ev;
+          if (ev) (token as any)["emailVerified"] = ev;
 
           if (typeof row?.name === "string" && !token.name) token.name = row.name;
 
-          if (typeof (row as any)?.image === "string" && !token.picture) {
-            token.picture = (row as any).image;
+          if (typeof (row as any)?.image === "string" && !(token as any).picture) {
+            (token as any).picture = (row as any).image;
           }
 
-          if (!token["role"]) token["role"] = safeRole((row as any)?.role);
+          // DB role becomes the source of truth (fall back to token role if missing)
+          const dbRole = safeRole((row as any)?.role ?? (token as any)?.role);
+          (token as any)["role"] = dbRole;
 
-          const role = safeRole((token as any)?.role);
-          const viaAllowlistAdmin = isAdminEmail(token.email as any);
-          const viaAllowlistSuper = isSuperAdminEmail(token.email as any);
+          const dbEmail = typeof token.email === "string" ? token.email : null;
+          const dbViaAllowlistAdmin = isAdminEmail(dbEmail);
+          const dbViaAllowlistSuper = isSuperAdminEmail(dbEmail);
 
-          const isSuperAdmin = role === "SUPERADMIN" || viaAllowlistSuper;
-          const isAdmin = isSuperAdmin || role === "ADMIN" || viaAllowlistAdmin;
+          const dbIsSuperAdmin = dbRole === "SUPERADMIN" || dbViaAllowlistSuper;
+          const dbIsAdmin = dbIsSuperAdmin || dbRole === "ADMIN" || dbViaAllowlistAdmin;
 
-          token["isAdmin"] = isAdmin;
-          token["isSuperAdmin"] = isSuperAdmin;
+          (token as any)["isAdmin"] = dbIsAdmin;
+          (token as any)["isSuperAdmin"] = dbIsSuperAdmin;
         } catch {
           // ignore
         }
       }
 
-      if (!token["role"]) token["role"] = "USER";
-      if (typeof token["isAdmin"] !== "boolean") token["isAdmin"] = false;
-      if (typeof token["isSuperAdmin"] !== "boolean") token["isSuperAdmin"] = false;
-      if (typeof token["verified"] !== "boolean") token["verified"] = false;
+      if (!(token as any)["role"]) (token as any)["role"] = "USER";
+      if (typeof (token as any)["isAdmin"] !== "boolean") (token as any)["isAdmin"] = false;
+      if (typeof (token as any)["isSuperAdmin"] !== "boolean") (token as any)["isSuperAdmin"] = false;
+      if (typeof (token as any)["verified"] !== "boolean") (token as any)["verified"] = false;
 
       return token;
     },
@@ -340,12 +334,12 @@ export const authConfig: NextAuthConfig = {
       const s: any = session;
       const u: any = s.user ?? (s.user = {});
 
-      const id = token?.["id"] ?? (token as any)?.sub ?? (token as any)?.uid;
+      const id = (token as any)?.["id"] ?? (token as any)?.sub ?? (token as any)?.uid;
       if (id) u.id = String(id);
 
       if (typeof token?.email === "string") u.email = token.email;
       if (typeof token?.name === "string") u.name = token.name;
-      if (typeof token?.picture === "string") u.image = token.picture;
+      if (typeof (token as any)?.picture === "string") u.image = (token as any).picture;
 
       const uname = cleanUsername((token as any)?.username);
       if (uname) u.username = uname;
@@ -354,10 +348,12 @@ export const authConfig: NextAuthConfig = {
 
       if (typeof (token as any)?.emailVerified === "string") {
         u.emailVerified = (token as any).emailVerified;
-        u.email_verified = (token as any).emailVerified; // back-compat
+        u.email_verified = (token as any).emailVerified;
       }
 
       u.role = safeRole((token as any)?.role);
+
+      // Strict: only trust booleans computed in jwt callback (which reconciles from DB in E2E/dev)
       u.isAdmin = (token as any)?.isAdmin === true;
       u.isSuperAdmin = (token as any)?.isSuperAdmin === true;
 
@@ -367,10 +363,8 @@ export const authConfig: NextAuthConfig = {
     async redirect({ url, baseUrl }) {
       try {
         if (url.startsWith("/")) return `${baseUrl}${url}`;
-
         const u = new URL(url);
         const b = new URL(baseUrl);
-
         if (u.origin === b.origin) return u.toString();
       } catch {
         // ignore

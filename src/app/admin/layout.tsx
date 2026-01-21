@@ -33,9 +33,72 @@ const EXTRA_ADMIN_ITEMS: readonly NavItem[] = [
   },
 ] as const;
 
+function AccessDenied({
+  status,
+  callbackUrl,
+}: {
+  status: 401 | 403;
+  callbackUrl: string;
+}) {
+  const isForbidden = status === 403;
+
+  const title = isForbidden ? "Forbidden" : "Unauthorized";
+  const body = isForbidden
+    ? "You don’t have permission to access this area."
+    : "Please sign in to continue.";
+
+  const ctaHref = isForbidden ? "/dashboard" : `/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+  const ctaLabel = isForbidden ? "Go to dashboard" : "Sign in";
+
+  return (
+    <div className="min-h-dvh bg-[var(--bg)] text-[var(--text)]">
+      <main className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-10 sm:px-6">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5 shadow-soft">
+          <h1 className="text-xl font-extrabold tracking-tight text-[var(--text)]">{title}</h1>
+
+          {/* IMPORTANT: include keywords tests look for (Unauthorized/Forbidden) */}
+          <p className="mt-2 text-sm text-[var(--text-muted)]">{body}</p>
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <Link
+              href={ctaHref}
+              prefetch={false}
+              className="btn-gradient-primary inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
+            >
+              {ctaLabel}
+            </Link>
+
+            <Link
+              href="/"
+              prefetch={false}
+              className="btn-outline inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 ring-focus active:scale-[.99]"
+            >
+              Back home
+            </Link>
+          </div>
+        </div>
+
+        <div className="text-xs text-[var(--text-muted)]">
+          If you believe this is a mistake, contact a team member to request access.
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export default async function AdminLayout({ children }: Props) {
-  // Hard SSR gate – if this fails you go to /signin?callbackUrl=/admin
-  await requireAdmin();
+  // ✅ Use result-mode so non-admin does NOT trigger Next's __next-page-redirect meta refresh.
+  const gate = await requireAdmin({
+    mode: "result",
+    callbackUrl: "/admin",
+    adminFallbackHref: "/dashboard",
+  });
+
+  if (!gate.authorized) {
+    // 401 vs 403 are handled differently in middleware for document navigations,
+    // but rendering an immediate UI here prevents Playwright from seeing a 200 + meta-refresh.
+    return <AccessDenied status={gate.status} callbackUrl="/admin" />;
+  }
 
   return (
     <div className="min-h-dvh bg-[var(--bg)] text-[var(--text)]">
@@ -63,9 +126,7 @@ export default async function AdminLayout({ children }: Props) {
               <div className="text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 QwikSale
               </div>
-              <h1 className="text-lg font-bold text-[var(--text)]">
-                Admin console
-              </h1>
+              <h1 className="text-lg font-bold text-[var(--text)]">Admin console</h1>
               <p className="text-xs text-[var(--text-muted)]">
                 For moderators and trusted team members only.
               </p>
@@ -77,10 +138,7 @@ export default async function AdminLayout({ children }: Props) {
             <details className="group relative">
               <summary className="flex cursor-pointer list-none items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg)] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition hover:border-[var(--border)] hover:bg-[var(--bg-subtle)] focus-visible:outline-none focus-visible:ring-2 ring-focus">
                 <span>Admin menu</span>
-                <span
-                  aria-hidden
-                  className="transition-transform group-open:rotate-180"
-                >
+                <span aria-hidden className="transition-transform group-open:rotate-180">
                   ▾
                 </span>
               </summary>
@@ -99,9 +157,8 @@ export default async function AdminLayout({ children }: Props) {
           <div className="sticky top-20 space-y-4">
             <AdminNav items={EXTRA_ADMIN_ITEMS} />
             <p className="text-[11px] leading-snug text-[var(--text-muted)]">
-              Tip: bookmark{" "}
-              <span className="font-mono text-[var(--text)]">/admin</span> or
-              pin it for quick access to your tools.
+              Tip: bookmark <span className="font-mono text-[var(--text)]">/admin</span> or pin it
+              for quick access to your tools.
             </p>
           </div>
         </aside>

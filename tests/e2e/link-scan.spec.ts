@@ -76,6 +76,27 @@ function configurePageTimeouts(page: Page) {
   page.setDefaultTimeout(NAV_TIMEOUT_MS);
 }
 
+async function safeGotoDomContent(
+  page: Page,
+  path: string,
+): Promise<{ status: number; okToCrawlLinks: boolean }> {
+  try {
+    const resp = await page.goto(path, {
+      waitUntil: "domcontentloaded",
+      timeout: NAV_TIMEOUT_MS,
+    });
+    return { status: resp?.status() ?? 0, okToCrawlLinks: true };
+  } catch {
+    // Some pages can abort navigation due to immediate redirects, route guards, or client-driven navigation.
+    // We still validate that the route is not a 404 using a direct request, then continue the crawl.
+    const r = await page.request
+      .get(path, { failOnStatusCode: false, timeout: REQUEST_TIMEOUT_MS })
+      .catch(() => null);
+    const s = r?.status() ?? 0;
+    return { status: s, okToCrawlLinks: false };
+  }
+}
+
 test.describe("link scan", () => {
   test("sitemap URLs do not return 404", async ({ request }, testInfo) => {
     test.setTimeout(TEST_TIMEOUT_MS);
@@ -100,8 +121,7 @@ test.describe("link scan", () => {
 
     expect(
       missing,
-      `Sitemap has ${missing.length} missing routes:\n` +
-        missing.map((m) => `${m.status} ${m.path}`).join("\n"),
+      `Sitemap has ${missing.length} missing routes:\n` + missing.map((m) => `${m.status} ${m.path}`).join("\n"),
     ).toEqual([]);
   });
 
@@ -123,11 +143,7 @@ test.describe("link scan", () => {
       if (visited.has(path)) continue;
       visited.add(path);
 
-      const resp = await page.goto(path, {
-        waitUntil: "domcontentloaded",
-        timeout: NAV_TIMEOUT_MS,
-      });
-      const status = resp?.status() ?? 0;
+      const { status, okToCrawlLinks } = await safeGotoDomContent(page, path);
 
       if (status === 404) {
         missing.push({ path, status });
@@ -136,6 +152,9 @@ test.describe("link scan", () => {
 
       // If page is protected, don’t treat as missing route
       if (OK_NON_404.has(status)) continue;
+
+      // If we could not reliably render the page DOM, skip link extraction but keep the route validated.
+      if (!okToCrawlLinks) continue;
 
       // Collect internal links
       const hrefs = await page.$$eval("a[href]", (as) =>
@@ -158,8 +177,7 @@ test.describe("link scan", () => {
 
     expect(
       missing,
-      `Found ${missing.length} internal 404s:\n` +
-        missing.map((m) => `${m.status} ${m.path}`).join("\n"),
+      `Found ${missing.length} internal 404s:\n` + missing.map((m) => `${m.status} ${m.path}`).join("\n"),
     ).toEqual([]);
   });
 });

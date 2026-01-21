@@ -5,10 +5,10 @@ export const revalidate = 0;
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import SectionHeader from "@/app/components/SectionHeader";
 import { LineChart } from "@/app/components/charts/LineChart";
 import { BarChart } from "@/app/components/charts/BarChart";
-import type { ReactNode } from "react";
 import { prisma } from "@/app/lib/prisma";
 
 export const metadata: Metadata = {
@@ -78,14 +78,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
    Prisma-safe counting helpers
    (avoid hard crashes on schema drift)
    ========================= */
-async function safeCount(
-  fn: () => Promise<number>,
-  fallback = 0,
-): Promise<number> {
+async function safeCount(fn: () => Promise<number>, fallback = 0): Promise<number> {
   try {
     const n = await fn();
     return Number.isFinite(n) ? n : fallback;
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("[admin-dashboard] metrics count failed:", e);
     return fallback;
   }
@@ -186,18 +184,8 @@ async function loadMetrics(): Promise<Metrics | null> {
         next.setDate(d.getDate() + 1);
 
         const [u, p, s] = await Promise.all([
-          safeCount(
-            () =>
-              prisma.user.count({ where: { createdAt: { gte: d, lt: next } } }),
-            0,
-          ),
-          safeCount(
-            () =>
-              prisma.product.count({
-                where: { createdAt: { gte: d, lt: next } },
-              }),
-            0,
-          ),
+          safeCount(() => prisma.user.count({ where: { createdAt: { gte: d, lt: next } } }), 0),
+          safeCount(() => prisma.product.count({ where: { createdAt: { gte: d, lt: next } } }), 0),
           safeServiceCount({ createdAt: { gte: d, lt: next } }),
         ]);
 
@@ -224,6 +212,7 @@ async function loadMetrics(): Promise<Metrics | null> {
       last7d,
     };
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("[admin-dashboard] loadMetrics failed:", e);
     return null;
   }
@@ -250,20 +239,12 @@ function StatCard({
       <div className="mt-1 text-2xl font-extrabold tracking-tight text-[var(--text)]">
         {safe.toLocaleString("en-KE")}
       </div>
-      {sublabel ? (
-        <div className="mt-1 text-xs text-[var(--text-muted)]">{sublabel}</div>
-      ) : null}
+      {sublabel ? <div className="mt-1 text-xs text-[var(--text-muted)]">{sublabel}</div> : null}
     </div>
   );
 }
 
-function Th({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+function Th({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <th
       className={[
@@ -276,13 +257,7 @@ function Th({
   );
 }
 
-function Td({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+function Td({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <td
       className={[
@@ -307,37 +282,31 @@ export default async function Page() {
     "rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 shadow-soft";
 
   const actionBtnClass =
-    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold " +
+    "border border-[var(--border-subtle)] bg-[var(--bg)] text-[var(--text)] transition " +
+    "hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
 
   const actionBtnElevatedClass =
-    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-soft transition hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
+    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold " +
+    "border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text)] shadow-soft transition " +
+    "hover:bg-[var(--bg-subtle)] active:scale-[.99] focus-visible:outline-none focus-visible:ring-2 ring-focus";
 
   const SectionHeaderAny = SectionHeader as any;
 
   if (!metrics) {
     return (
       <div className="space-y-6 text-[var(--text)]">
-        <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text)]">
-          Admin Dashboard
-        </h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text)]">Admin Dashboard</h1>
 
         <SectionHeaderAny
           title="Admin · Dashboard"
           subtitle="Live stats for users, listings, and services."
           actions={
             <div className="flex gap-2">
-              <Link
-                href="/admin/listings"
-                prefetch={false}
-                className={actionBtnClass}
-              >
+              <Link href="/admin/listings" prefetch={false} className={actionBtnClass}>
                 Listings
               </Link>
-              <Link
-                href="/admin/moderation"
-                prefetch={false}
-                className={actionBtnElevatedClass}
-              >
+              <Link href="/admin/moderation" prefetch={false} className={actionBtnElevatedClass}>
                 Moderation
               </Link>
             </div>
@@ -349,20 +318,14 @@ export default async function Page() {
           role="status"
           aria-live="polite"
         >
-          <span className="font-semibold text-[var(--text)]">
-            Failed to load metrics.
-          </span>{" "}
-          <span className="text-[var(--text-muted)]">
-            Please refresh and try again.
-          </span>
+          <span className="font-semibold text-[var(--text)]">Failed to load metrics.</span>{" "}
+          <span className="text-[var(--text-muted)]">Please refresh and try again.</span>
         </div>
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className={card}>
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-[var(--text)]">
-                Messages
-              </h2>
+              <h2 className="text-sm font-semibold text-[var(--text)]">Messages</h2>
               <span className="text-xs text-[var(--text-muted)]">Inbox</span>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
@@ -377,41 +340,24 @@ export default async function Page() {
 
           <div className={`lg:col-span-2 ${card}`}>
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-[var(--text)]">
-                Quick actions
-              </h3>
-              <span className="text-xs text-[var(--text-muted)]">
-                Admin shortcuts
-              </span>
+              <h3 className="text-sm font-semibold text-[var(--text)]">Quick actions</h3>
+              <span className="text-xs text-[var(--text-muted)]">Admin shortcuts</span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Link
-                href="/admin/users"
-                prefetch={false}
-                className={actionBtnClass}
-              >
+              <Link href="/admin/users" prefetch={false} className={actionBtnClass}>
                 Users
               </Link>
-              <Link
-                href="/admin/listings"
-                prefetch={false}
-                className={actionBtnClass}
-              >
+              <Link href="/admin/listings" prefetch={false} className={actionBtnClass}>
                 Listings
               </Link>
-              <Link
-                href="/admin/carriers"
-                prefetch={false}
-                className={actionBtnClass}
-              >
+              <Link href="/admin/carriers" prefetch={false} className={actionBtnClass}>
                 Carriers
               </Link>
-              <Link
-                href="/admin/moderation"
-                prefetch={false}
-                className={actionBtnClass}
-              >
+              <Link href="/admin/moderation" prefetch={false} className={actionBtnClass}>
                 Moderation
+              </Link>
+              <Link href="/admin/requests" prefetch={false} className={actionBtnClass}>
+                Requests
               </Link>
             </div>
           </div>
@@ -421,22 +367,14 @@ export default async function Page() {
   }
 
   const last = metrics.last7d.at(-1);
-  const subToday = (n?: number) =>
-    typeof n === "number" ? `${n.toLocaleString("en-KE")} today` : undefined;
+  const subToday = (n?: number) => (typeof n === "number" ? `${n.toLocaleString("en-KE")} today` : undefined);
 
-  const listingsTotal =
-    (metrics.totals.products ?? 0) + (metrics.totals.services ?? 0);
+  const listingsTotal = (metrics.totals.products ?? 0) + (metrics.totals.services ?? 0);
 
-  const visits =
-    typeof metrics.totals.visits === "number" ? metrics.totals.visits : null;
-  const reveals =
-    typeof metrics.totals.reveals === "number" ? metrics.totals.reveals : null;
-  const reviews =
-    typeof metrics.totals.reviews === "number" ? metrics.totals.reviews : null;
-  const featured =
-    typeof metrics.totals.featured === "number"
-      ? metrics.totals.featured
-      : null;
+  const visits = typeof metrics.totals.visits === "number" ? metrics.totals.visits : null;
+  const reveals = typeof metrics.totals.reveals === "number" ? metrics.totals.reveals : null;
+  const reviews = typeof metrics.totals.reviews === "number" ? metrics.totals.reviews : null;
+  const featured = typeof metrics.totals.featured === "number" ? metrics.totals.featured : null;
 
   const carriers = metrics.totals.carriers ?? null;
 
@@ -447,8 +385,7 @@ export default async function Page() {
   ];
 
   if (visits != null) compositionData.push({ label: "Visits", value: visits });
-  if (reveals != null)
-    compositionData.push({ label: "Reveals", value: reveals });
+  if (reveals != null) compositionData.push({ label: "Reveals", value: reveals });
   if (reviews != null) compositionData.push({ label: "Reviews", value: reviews });
 
   const chip =
@@ -456,95 +393,57 @@ export default async function Page() {
 
   return (
     <div className="space-y-6 text-[var(--text)]">
-      <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text)]">
-        Admin Dashboard
-      </h1>
+      <h1 className="text-2xl font-extrabold tracking-tight text-[var(--text)]">Admin Dashboard</h1>
 
       <SectionHeaderAny
         title="Admin · Dashboard"
         subtitle="Overview of marketplace health: users, listings, and engagement over the last 7 days."
         actions={
           <div className="flex gap-2">
-            <Link
-              href="/admin/listings"
-              prefetch={false}
-              className={actionBtnClass}
-            >
+            <Link href="/admin/listings" prefetch={false} className={actionBtnClass}>
               Listings
             </Link>
-            <Link
-              href="/admin/moderation"
-              prefetch={false}
-              className={actionBtnElevatedClass}
-            >
+            <Link href="/admin/moderation" prefetch={false} className={actionBtnElevatedClass}>
               Moderation
             </Link>
           </div>
         }
       />
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Users"
-          value={metrics.totals.users}
-          sublabel={subToday(last?.users)}
-        />
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Core metrics">
+        <StatCard label="Users" value={metrics.totals.users} sublabel={subToday(last?.users)} />
         <StatCard
           label="Listings (all)"
           value={listingsTotal}
           sublabel={subToday((last?.products ?? 0) + (last?.services ?? 0))}
         />
-        <StatCard
-          label="Products"
-          value={metrics.totals.products}
-          sublabel={subToday(last?.products)}
-        />
-        <StatCard
-          label="Services"
-          value={metrics.totals.services}
-          sublabel={subToday(last?.services)}
-        />
+        <StatCard label="Products" value={metrics.totals.products} sublabel={subToday(last?.products)} />
+        <StatCard label="Services" value={metrics.totals.services} sublabel={subToday(last?.services)} />
 
-        {featured != null && (
-          <StatCard label="Featured listings" value={featured} />
-        )}
+        {featured != null ? <StatCard label="Featured listings" value={featured} /> : null}
 
         {visits != null ? (
           <StatCard label="Visits" value={visits} />
         ) : (
-          <div
-            className={`${card} flex items-center justify-center text-sm text-[var(--text-muted)]`}
-          >
-            Visits not tracked
-          </div>
+          <div className={`${card} flex items-center justify-center text-sm text-[var(--text-muted)]`}>Visits not tracked</div>
         )}
 
         {reveals != null ? (
           <StatCard label="Contact reveals" value={reveals} />
         ) : (
-          <div
-            className={`${card} flex items-center justify-center text-sm text-[var(--text-muted)]`}
-          >
-            No reveals tracked
-          </div>
+          <div className={`${card} flex items-center justify-center text-sm text-[var(--text-muted)]`}>No reveals tracked</div>
         )}
 
         {reviews != null ? (
           <StatCard label="Reviews" value={reviews} />
         ) : (
-          <div
-            className={`${card} flex items-center justify-center text-sm text-[var(--text-muted)]`}
-          >
-            Reviews not tracked
-          </div>
+          <div className={`${card} flex items-center justify-center text-sm text-[var(--text-muted)]`}>Reviews not tracked</div>
         )}
       </section>
 
-      <section className="space-y-3" aria-label="Carrier metrics">
+      <section className="space-y-3" aria-label="Trust & moderation metrics">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-extrabold tracking-tight text-[var(--text)]">
-            Carriers
-          </h2>
+          <h2 className="text-base font-extrabold tracking-tight text-[var(--text)]">Carriers</h2>
           <Link href="/admin/carriers" prefetch={false} className={actionBtnClass}>
             Manage carriers
           </Link>
@@ -562,21 +461,17 @@ export default async function Page() {
             <div className={card} aria-label="Carrier breakdown">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold text-[var(--text)]">
-                    Breakdown
-                  </h3>
+                  <h3 className="text-sm font-semibold text-[var(--text)]">Breakdown</h3>
                   <p className="text-xs text-[var(--text-muted)]">
-                    Active online means status is AVAILABLE and last seen within{" "}
-                    {carriers.liveCutoffSeconds}s, excluding banned or currently suspended.
+                    Active online means status is AVAILABLE and last seen within {carriers.liveCutoffSeconds}s, excluding
+                    banned or currently suspended.
                   </p>
                 </div>
               </div>
 
               <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                    Tier
-                  </div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Tier</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span className={chip}>
                       PLATINUM <span className="text-[var(--text-muted)]">·</span>{" "}
@@ -621,21 +516,16 @@ export default async function Page() {
           </>
         ) : (
           <div className={card} role="status" aria-live="polite">
-            <div className="text-sm font-semibold text-[var(--text)]">
-              Carriers metrics not enabled yet.
-            </div>
+            <div className="text-sm font-semibold text-[var(--text)]">Carriers metrics not enabled yet.</div>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Once the CarrierProfile model exists in Prisma and migrations are applied,
-              this section will auto-populate.
+              Once the CarrierProfile model exists in Prisma and migrations are applied, this section will auto-populate.
             </p>
           </div>
         )}
       </section>
 
-      <section className={card}>
-        <h2 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">
-          Last 7 days - users & listings
-        </h2>
+      <section className={card} aria-label="Last 7 days chart">
+        <h2 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">Last 7 days - users & listings</h2>
 
         <LineChart
           data={metrics.last7d}
@@ -662,10 +552,7 @@ export default async function Page() {
             </thead>
             <tbody className="divide-y divide-[var(--border-subtle)]">
               {metrics.last7d.map((d) => (
-                <tr
-                  key={d.date}
-                  className="transition hover:bg-[var(--bg-subtle)]"
-                >
+                <tr key={d.date} className="transition hover:bg-[var(--bg-subtle)]">
                   <Td className="text-[var(--text-muted)]">{d.date}</Td>
                   <Td>{d.users.toLocaleString("en-KE")}</Td>
                   <Td>{d.products.toLocaleString("en-KE")}</Td>
@@ -677,32 +564,23 @@ export default async function Page() {
         </div>
       </section>
 
-      <section className={card}>
-        <h2 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">
-          Totals breakdown
-        </h2>
+      <section className={card} aria-label="Totals breakdown chart">
+        <h2 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">Totals breakdown</h2>
 
         <BarChart
           data={compositionData}
           xKey="label"
-          series={[
-            {
-              dataKey: "value",
-              label: "Total",
-            },
-          ]}
+          series={[{ dataKey: "value", label: "Total" }]}
           height={260}
           showLegend={false}
           showGrid
         />
       </section>
 
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3" aria-label="Admin actions">
         <div className={card}>
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[var(--text)]">
-              Messages
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--text)]">Messages</h2>
             <span className="text-xs text-[var(--text-muted)]">Inbox</span>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
@@ -717,41 +595,24 @@ export default async function Page() {
 
         <div className={`lg:col-span-2 ${card}`}>
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-[var(--text)]">
-              Quick actions
-            </h3>
-            <span className="text-xs text-[var(--text-muted)]">
-              Admin shortcuts
-            </span>
+            <h3 className="text-sm font-semibold text-[var(--text)]">Quick actions</h3>
+            <span className="text-xs text-[var(--text-muted)]">Admin shortcuts</span>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              href="/admin/users"
-              prefetch={false}
-              className={actionBtnClass}
-            >
+            <Link href="/admin/users" prefetch={false} className={actionBtnClass}>
               Users
             </Link>
-            <Link
-              href="/admin/listings"
-              prefetch={false}
-              className={actionBtnClass}
-            >
+            <Link href="/admin/listings" prefetch={false} className={actionBtnClass}>
               Listings
             </Link>
-            <Link
-              href="/admin/carriers"
-              prefetch={false}
-              className={actionBtnClass}
-            >
+            <Link href="/admin/carriers" prefetch={false} className={actionBtnClass}>
               Carriers
             </Link>
-            <Link
-              href="/admin/moderation"
-              prefetch={false}
-              className={actionBtnClass}
-            >
+            <Link href="/admin/moderation" prefetch={false} className={actionBtnClass}>
               Moderation
+            </Link>
+            <Link href="/admin/requests" prefetch={false} className={actionBtnClass}>
+              Requests
             </Link>
           </div>
         </div>

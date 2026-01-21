@@ -374,11 +374,25 @@ export default function AuthButtons({
         </div>
 
         <nav className="py-1 text-sm">
-          <Link href={dashboardHref} prefetch={false} onClick={() => setOpen(false)} className={menuItemClasses} role="menuitem">
+          <Link
+            href={dashboardHref}
+            prefetch={false}
+            onClick={() => setOpen(false)}
+            className={menuItemClasses}
+            role="menuitem"
+            aria-label="Dashboard"
+            title="Dashboard"
+          >
             Dashboard
           </Link>
 
-          <Link href="/account/profile" prefetch={false} onClick={() => setOpen(false)} className={menuItemClasses} role="menuitem">
+          <Link
+            href="/account/profile"
+            prefetch={false}
+            onClick={() => setOpen(false)}
+            className={menuItemClasses}
+            role="menuitem"
+          >
             Edit profile
           </Link>
 
@@ -395,12 +409,39 @@ export default function AuthButtons({
             </Link>
           )}
 
-          <Link href="/saved" prefetch={false} onClick={() => setOpen(false)} className={menuItemClasses} role="menuitem">
+          <Link
+            href="/saved"
+            prefetch={false}
+            onClick={() => setOpen(false)}
+            className={menuItemClasses}
+            role="menuitem"
+          >
             Saved items
           </Link>
 
-          <Link href="/account/billing" prefetch={false} onClick={() => setOpen(false)} className={menuItemClasses} role="menuitem">
+          <Link
+            href="/account/billing"
+            prefetch={false}
+            onClick={() => setOpen(false)}
+            className={menuItemClasses}
+            role="menuitem"
+          >
             {isPaidTier(subscription) ? "Manage subscription" : "Upgrade subscription"}
+          </Link>
+
+          {/* IMPORTANT for Playwright strict-mode:
+              Do not include "dashboard" in the Carrier link accessible name.
+              Tests locate "Dashboard" and must not collide with "Carrier dashboard". */}
+          <Link
+            href="/carrier"
+            prefetch={false}
+            onClick={() => setOpen(false)}
+            className={menuItemClasses}
+            role="menuitem"
+            aria-label="Carrier"
+            title="Carrier"
+          >
+            Carrier
           </Link>
         </nav>
 

@@ -18,9 +18,7 @@ type RequestModel = {
 function getRequestModel(): RequestModel {
   const m = (prisma as any)?.request;
   if (!m) {
-    throw new Error(
-      "[e2e] Prisma client does not expose model `request`. Run: pnpm prisma generate (after migrating schema).",
-    );
+    throw new Error("[e2e] Prisma client does not expose model request. Run pnpm prisma generate after migrating schema.");
   }
   return m as RequestModel;
 }
@@ -41,8 +39,7 @@ async function ensureE2EAdminUserExists() {
 
   if (!existing?.id) {
     throw new Error(
-      `[e2e] Admin user not found for ${email}. ` +
-        `Your E2E seed/setup must create it (with the password matching E2E_ADMIN_PASSWORD).`,
+      `[e2e] Admin user not found for ${email}. Your E2E seed or setup must create it with the password matching E2E_ADMIN_PASSWORD.`,
     );
   }
 
@@ -186,13 +183,11 @@ test("cap enforced", async ({ browser }) => {
       }
     }
 
-    expect(firstFailure, "Expected request cap/ban/quota to block at least one create").not.toBeNull();
+    expect(firstFailure, "Expected request cap or quota to block at least one create").not.toBeNull();
 
     if (firstFailure) {
       expect([400, 401, 403, 409, 422, 429]).toContain(firstFailure.status);
-      expect(firstFailure.bodyText.toLowerCase()).toMatch(
-        /limit|cap|quota|ban|too many|blocked|not allowed|forbidden/,
-      );
+      expect(firstFailure.bodyText.toLowerCase()).toMatch(/limit|cap|quota|ban|too many|blocked|not allowed|forbidden/);
     }
   } finally {
     await adminCtx.close();
@@ -251,10 +246,14 @@ test("boost ordering respected", async ({ page }) => {
 
   const items: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : [];
 
-  expect(items.length).toBeGreaterThanOrEqual(2);
+  const ours = items.filter((x) => typeof x?.title === "string" && String(x.title).includes(`[${RUN_ID}]`));
 
-  expect(String(items[0]?.id || "")).toBe(olderBoosted.id);
+  // If the feed contains other data, only assert ordering within our seeded subset.
+  const boostedIndex = ours.findIndex((x) => String(x?.id || "") === olderBoosted.id);
+  const newerIndex = ours.findIndex((x) => String(x?.id || "") === newerNotBoosted.id);
 
-  const ids = items.map((x) => String(x?.id || ""));
-  expect(ids).toContain(newerNotBoosted.id);
+  expect(boostedIndex).toBeGreaterThanOrEqual(0);
+  expect(newerIndex).toBeGreaterThanOrEqual(0);
+
+  expect(boostedIndex).toBeLessThan(newerIndex);
 });

@@ -1,5 +1,4 @@
-﻿// src/app/(marketing)/about/page.tsx
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import SectionHeader from "@/app/components/SectionHeader";
@@ -8,12 +7,14 @@ import { Button } from "@/app/components/Button";
 
 export const metadata: Metadata = {
   title: "About QwikSale",
-  description: "Our mission, values, and the team behind QwikSale.",
+  description:
+    "QwikSale is Kenya’s ecosystem marketplace for products, services, requests, delivery and carriers, plus trust tools built for safer local trade.",
   robots: { index: true, follow: true },
   alternates: { canonical: "/about" },
   openGraph: {
     title: "About QwikSale",
-    description: "Our mission, values, and the team behind QwikSale.",
+    description:
+      "QwikSale is Kenya’s ecosystem marketplace for products, services, requests, delivery and carriers, plus trust tools built for safer local trade.",
     url: "/about",
     type: "website",
     images: [
@@ -23,7 +24,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "About QwikSale",
-    description: "Our mission, values, and the team behind QwikSale.",
+    description:
+      "QwikSale is Kenya’s ecosystem marketplace for products, services, requests, delivery and carriers, plus trust tools built for safer local trade.",
     images: ["/og/og-default.jpg"],
   },
 };
@@ -74,9 +76,7 @@ function Stat({
       <div className="text-xl sm:text-2xl font-extrabold tracking-tight text-[var(--text)]">
         {value}
       </div>
-      <div className="mt-1 text-xs sm:text-sm text-[var(--text-muted)]">
-        {label}
-      </div>
+      <div className="mt-1 text-xs sm:text-sm text-[var(--text-muted)]">{label}</div>
       {sublabel ? (
         <div className="mt-1 text-[11px] sm:text-xs text-[var(--text-muted)]">
           {sublabel}
@@ -171,14 +171,55 @@ function FAQItem({ q, a }: { q: string; a: React.ReactNode }) {
   );
 }
 
+function PillList({ items }: { items: string[] }) {
+  return (
+    <ul className="mt-2 flex flex-wrap gap-2">
+      {items.map((t) => (
+        <li
+          key={t}
+          className="chip border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px] font-semibold text-[var(--text)]"
+        >
+          {t}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function AboutPage() {
   const values = [
-    "Local-first",
-    "Trust & safety",
+    "Local first",
+    "Trust and safety",
     "Simple by default",
     "Performance",
     "Transparency",
     "Community",
+  ];
+
+  const ecosystemUser = [
+    "Browse listings",
+    "View requests",
+    "Save and share",
+    "Sign in when needed",
+  ];
+  const ecosystemSignedIn = [
+    "Post products and services",
+    "Post requests",
+    "Messages",
+    "Dashboard",
+  ];
+  const ecosystemCore = [
+    "Marketplace feed (products and services)",
+    "Search and filters (category, subcategory, sorting)",
+    "Requests feed",
+    "Auth and identity",
+    "Delivery layer (carrier profile plus delivery context)",
+  ];
+  const ecosystemOps = [
+    "Admin protections",
+    "Moderation and enforcement (ban and suspend carriers)",
+    "Metrics and visibility",
+    "Trust and safety controls",
   ];
 
   const jsonLd = {
@@ -196,17 +237,26 @@ export default function AboutPage() {
 
   return (
     <main className="min-h-dvh bg-[var(--bg)] text-[var(--text)]">
-      {/* Hero */}
       <SectionHeaderAny
         title="About QwikSale"
-        subtitle="A faster, safer way to buy & sell locally."
+        subtitle="QwikSale brings together products, services, requests, delivery, and trust tools so local trade feels faster and safer."
         gradient="brand"
         className=""
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild size="sm" variant="primary">
+              <Link href="/search" prefetch={false}>
+                Browse
+              </Link>
+            </Button>
             <Button asChild size="sm" variant="primary">
               <Link href="/sell" prefetch={false}>
                 + Post a listing
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/how-it-works" prefetch={false}>
+                How it works
               </Link>
             </Button>
             <Button asChild size="sm" variant="outline">
@@ -219,44 +269,70 @@ export default function AboutPage() {
       />
 
       <div className="container-page py-4 sm:py-6 md:py-10">
-        {/* Intro block */}
-        <section className="grid gap-3 sm:gap-4 md:grid-cols-3">
+        <section className="grid gap-3ounds-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 text-[var(--text)] shadow-soft sm:p-6">
+          <h2 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--text)]">
+            What QwikSale is
+          </h2>
+          <p className="mt-2 text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
+            QwikSale is built as a connected ecosystem. You can browse and post listings (products and services), post requests
+            when you need something, request delivery with nearby carriers, and use trust signals and reporting tools to make
+            safer decisions. Admin moderation supports platform integrity through enforcement and visibility controls.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/marketplace" prefetch={false} className="btn-outline">
+              Marketplace
+            </Link>
+            <Link href="/requests" prefetch={false} className="btn-outline">
+              Requests
+            </Link>
+            <Link href="/delivery" prefetch={false} className="btn-outline">
+              Delivery
+            </Link>
+            <Link href="/carrier" prefetch={false} className="btn-outline">
+              Carrier
+            </Link>
+            <Link href="/trust" prefetch={false} className="btn-outline">
+              Trust
+            </Link>
+            <Link href="/safety" prefetch={false} className="btn-outline">
+              Safety
+            </Link>
+          </div>
+        </section>
+
+        <section className="mt-6 sm:mt-8 grid gap-3 sm:gap-4 md:grid-cols-3">
           <Feature
-            title="Local-first"
+            title="Local first"
             icon={
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
                 <path d="M12 2C8.1 2 5 5.1 5 9c0 5.3 7 13 7 13s7-7.7 7-13c0-3.9-3.1-7-7-7zm0 9.5c-1.4 0-2.5-1.1-2.5-2.5S10.6 6.5 12 6.5s2.5 1.1 2.5 2.5S13.4 11.5 12 11.5z" />
               </svg>
             }
           >
-            Designed for your city with categories, filters, and trust features
-            that make meetups easy.
+            Designed for Kenyan cities and towns with categories, filters, and a marketplace that supports both products and services.
           </Feature>
           <Feature
-            title="Simple & fast"
+            title="Fast and clear journeys"
             icon={
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
                 <path d="M3 6h18v2H3V6zm4 5h14v2H7v-2zm-4 5h18v2H3v-2z" />
               </svg>
             }
           >
-            Post in minutes. Clear photos, smart defaults, and a clean
-            checkout-free flow.
+            Browse, request, deliver, and message without heavy checkout friction. URLs stay source of truth and pages stay stable.
           </Feature>
           <Feature
-            title="Community safety"
+            title="Trust and moderation"
             icon={
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
                 <path d="M12 2l7 4v6c0 5-3.4 9.7-7 10-3.6-.3-7-5-7-10V6l7-4z" />
               </svg>
             }
           >
-            Reporting tools and moderation keep the marketplace healthy for
-            everyone.
+            Reporting, verification signals, reviews, and admin enforcement help keep the platform safer for everyone.
           </Feature>
         </section>
 
-        {/* Values chips */}
         <section className="mt-6 sm:mt-8">
           <h2 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--text)]">
             Our values
@@ -274,56 +350,99 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* Stats */}
         <section
           className="mt-6 sm:mt-8 grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4"
           aria-label="High-level stats"
         >
-          <Stat label="Active categories" value="20+" />
-          <Stat label="Avg. time to post" value="≤ 3 min" />
-          <Stat label="Cities covered" value="30+" />
-          <Stat
-            label="Median response time"
-            value="&lt; 1 hr"
-            sublabel="for top listings"
-          />
+          <Stat label="Marketplace scope" value="Products + Services" sublabel="one search experience" />
+          <Stat label="Requests and delivery" value="Ecosystem" sublabel="buyers, sellers, carriers" />
+          <Stat label="Avg. time to post" value="≤ 3 min" sublabel="with photos and location" />
+          <Stat label="Trust tools" value="Verified + Report" sublabel="reviews + moderation signals" />
         </section>
 
-        {/* Story */}
+        <section className="mt-6 sm:mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 sm:p-6 text-[var(--text)] shadow-soft">
+          <h2 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--text)]">
+            Ecosystem overview
+          </h2>
+          <p className="mt-2 text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
+            The platform is designed as connected layers. Guests can browse and discover, signed in users can post and message,
+            delivery is powered by carrier profiles, and admin tools enforce safety and integrity.
+          </p>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                User experience
+              </div>
+              <div className="mt-2 text-sm font-semibold text-[var(--text)]">Guests</div>
+              <PillList items={ecosystemUser} />
+              <div className="mt-4 text-sm font-semibold text-[var(--text)]">Signed in</div>
+              <PillList items={ecosystemSignedIn} />
+            </div>
+
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Core platform
+              </div>
+              <PillList items={ecosystemCore} />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/search" prefetch={false} className="btn-outline text-sm">
+                  Search
+                </Link>
+                <Link href="/requests" prefetch={false} className="btn-outline text-sm">
+                  Requests
+                </Link>
+                <Link href="/delivery" prefetch={false} className="btn-outline text-sm">
+                  Delivery
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg)] p-3 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Operations & admin
+              </div>
+              <PillList items={ecosystemOps} />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/trust" prefetch={false} className="btn-outline text-sm">
+                  Trust
+                </Link>
+                <Link href="/safety" prefetch={false} className="btn-outline text-sm">
+                  Safety
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="mt-6 sm:mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 sm:p-6 text-[var(--text)] shadow-soft">
           <h2 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--text)]">
             Our story
           </h2>
           <p className="mt-2 text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
-            QwikSale started with a simple idea: local marketplaces should feel
-            modern, lightweight, and trustworthy. We’re building tools that help
-            real people find great deals nearby - without friction. From an
-            initial prototype shared with friends to a platform powering
-            thousands of listings, our focus hasn’t changed: speed, clarity, and
-            community safety.
+            QwikSale started as a simple local marketplace. Over time, we expanded into an ecosystem so buyers and sellers can
+            complete more of the journey in one place. Discover listings, post requests, coordinate delivery, and use trust signals
+            and reporting tools for safer outcomes. Speed, clarity, and community safety remain the focus.
           </p>
         </section>
 
-        {/* Timeline */}
         <section className="mt-6 sm:mt-8">
           <h2 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--text)]">
             Milestones
           </h2>
           <ol className="mt-3 space-y-3 border-l border-[var(--border-subtle)] pl-3">
-            <TimelineItem year="2023" title="Prototype & first listings">
-              We tested our ideas in one city and iterated quickly with seller
-              feedback.
+            <TimelineItem year="2023" title="Prototype & first marketplace loop">
+              We tested the core browse, open, and contact journey and improved speed and clarity.
             </TimelineItem>
-            <TimelineItem year="2024" title="Trust & safety features">
-              Added reporting, verified badges, and better moderation signals.
+            <TimelineItem year="2024" title="Requests + trust tools">
+              Added buyer requests, verification signals, and reporting flows to reduce scams and friction.
             </TimelineItem>
-            <TimelineItem year="2025" title="Scaling to more cities">
-              Performance upgrades, improved mobile UX, and smarter search.
+            <TimelineItem year="2025" title="Delivery ecosystem + enforcement">
+              Introduced carrier profiles, delivery routing, and stronger admin moderation and enforcement controls.
             </TimelineItem>
           </ol>
         </section>
 
-        {/* Team */}
         <section className="mt-6 sm:mt-8">
           <h2 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--text)]">
             Team
@@ -335,7 +454,6 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* FAQ */}
         <section className="mt-6 sm:mt-8">
           <h2 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--text)]">
             FAQs
@@ -343,63 +461,88 @@ export default function AboutPage() {
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <FAQItem
               q="Is QwikSale free to use?"
-              a="Yes. Browsing and posting basic listings are free. Optional boosts may be offered in the future."
+              a="Browsing and posting basic listings are free. Optional boosts or upgrades may exist in limited cases; details are always shown before you pay."
             />
             <FAQItem
-              q="How do you keep buyers and sellers safe?"
-              a="We provide reporting tools, verified badges, and guidance for safe meetups. Suspicious content is reviewed."
+              q="What’s the difference between listings and requests?"
+              a={
+                <>
+                  Listings are what sellers offer (products and services). Requests are what buyers need. You can browse both from{" "}
+                  <Link href="/search" prefetch={false} className="underline">
+                    Search
+                  </Link>{" "}
+                  and{" "}
+                  <Link href="/requests" prefetch={false} className="underline">
+                    Requests
+                  </Link>
+                  .
+                </>
+              }
             />
             <FAQItem
-              q="Which cities are supported?"
-              a="We’re expanding steadily. You can browse and post in most major towns, with more coming soon."
+              q="How does delivery work?"
+              a={
+                <>
+                  Delivery is powered by carrier profiles. Product and service pages can deep link into{" "}
+                  <Link href="/delivery" prefetch={false} className="underline">
+                    Delivery
+                  </Link>{" "}
+                  with store and product context. Carriers can be moderated (ban and suspend) to protect the ecosystem.
+                </>
+              }
             />
             <FAQItem
               q="How do I contact support?"
               a={
                 <>
-                  Reach us via the{" "}
-                  <Link href="/contact" className="underline">
-                    contact form
+                  Reach us via{" "}
+                  <Link href="/contact" prefetch={false} className="underline">
+                    /contact
                   </Link>{" "}
-                  or email{" "}
-                  <a href="mailto:support@qwiksale.app" className="underline">
-                    support@qwiksale.app
-                  </a>
-                  .
+                  or review{" "}
+                  <Link href="/help" prefetch={false} className="underline">
+                    Help Center
+                  </Link>{" "}
+                  for common flows.
                 </>
               }
             />
           </div>
         </section>
 
-        {/* CTA */}
         <section className="mt-8 sm:mt-10 flex flex-col items-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 sm:p-6 text-center text-[var(--text)] shadow-soft">
           <h2 className="text-lg sm:text-xl font-extrabold tracking-tight text-[var(--text)]">
-            Join the community
+            Join the ecosystem
           </h2>
           <p className="mt-1 text-xs sm:text-sm leading-relaxed text-[var(--text-muted)]">
-            Post your first listing in minutes, or find great deals near you.
+            Browse listings, post a request, or earn with delivery, all connected by trust signals.
           </p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Button asChild size="md" variant="primary">
+              <Link href="/search" prefetch={false}>
+                Browse marketplace
+              </Link>
+            </Button>
             <Button asChild size="md" variant="primary">
               <Link href="/sell" prefetch={false}>
                 + Post a listing
               </Link>
             </Button>
             <Button asChild size="md" variant="outline">
-              <Link href="/search" prefetch={false}>
-                Browse all
+              <Link href="/requests" prefetch={false}>
+                Post a request
+              </Link>
+            </Button>
+            <Button asChild size="md" variant="outline">
+              <Link href="/carrier" prefetch={false}>
+                Become a carrier
               </Link>
             </Button>
           </div>
         </section>
       </div>
 
-      {/* JSON-LD */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
     </main>
   );
 }

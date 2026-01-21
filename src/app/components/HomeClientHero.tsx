@@ -121,6 +121,11 @@ export default function HomeClientHero({
 
   const signInHref = `/signin?callbackUrl=${encodeURIComponent(getReturnTo())}`;
 
+  const menuPanelClass = [
+    "absolute left-0 top-[calc(100%+8px)] z-30 w-[min(360px,92vw)]",
+    "rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 shadow-soft",
+  ].join(" ");
+
   return (
     <section
       aria-label="Welcome hero"
@@ -132,12 +137,10 @@ export default function HomeClientHero({
         className,
       ].join(" ")}
     >
-      {/* Subtle brand strip (approved gradient only) */}
       <div
         aria-hidden
         className="pointer-events-none absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-[#161748] via-[#478559] to-[#39a0ca]"
       />
-      {/* Soft vignette for readability */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 bg-[var(--bg-elevated)] opacity-[0.65] dark:opacity-[0.75]"
@@ -178,66 +181,74 @@ export default function HomeClientHero({
 
             {isAppAuthed ? (
               <>
-                {/* Hide extra hero actions on xs to maximize feed space */}
-                <Link
-                  href="/saved"
-                  prefetch
-                  onClick={() => track("hero_saved_click")}
-                  aria-label="Favorites"
-                  className={[
-                    "hidden sm:inline-flex",
-                    "h-9 w-9 items-center justify-center rounded-xl",
-                    "border border-[var(--border-subtle)] bg-[var(--bg-subtle)]",
-                    "text-[var(--text)] transition",
-                    "hover:bg-[var(--bg-elevated)]",
-                    "active:scale-[.99]",
-                    "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                  ].join(" ")}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    fill="currentColor"
-                    aria-hidden="true"
+                <details className="group relative hidden sm:block">
+                  <summary
+                    className={[
+                      "btn-outline px-3 py-2 text-sm sm:px-4 sm:py-2",
+                      "cursor-pointer list-none",
+                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
+                    ].join(" ")}
+                    aria-label="Open account actions"
                   >
-                    <path d="M12 21s-7.5-4.35-10-8.5C-0.5 8 2 4 6 4c2.14 0 3.57 1.07 4.5 2.3C11.43 5.07 12.86 4 15 4c4 0 6.5 4 4 8.5C19.5 16.65 12 21 12 21z" />
-                  </svg>
-                </Link>
+                    More
+                  </summary>
+
+                  <div className={menuPanelClass} role="dialog" aria-label="Account actions">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Account actions
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Link
+                        href="/saved"
+                        prefetch
+                        onClick={() => track("hero_saved_click")}
+                        aria-label="Favorites"
+                        className="btn-outline"
+                      >
+                        Favorites
+                      </Link>
+
+                      <Link
+                        href="/dashboard"
+                        prefetch
+                        onClick={() => track("hero_dashboard_click")}
+                        aria-label="Dashboard"
+                        className="btn-outline"
+                      >
+                        Dashboard
+                      </Link>
+
+                      {!user?.username && (
+                        <Link
+                          href="/account/complete-profile"
+                          prefetch
+                          onClick={() => track("hero_complete_profile_click")}
+                          className="btn-outline"
+                          aria-label="Complete profile"
+                          title="Set your username and profile details"
+                        >
+                          Complete profile
+                        </Link>
+                      )}
+                    </div>
+
+                    <p className="mt-2 text-xs leading-relaxed text-[var(--text-muted)]">
+                      Kept compact here to maximize the feed area.
+                    </p>
+                  </div>
+                </details>
 
                 <Link
                   href="/dashboard"
                   prefetch
                   onClick={() => track("hero_dashboard_click")}
-                  className="hidden sm:contents"
+                  className="hidden"
+                  aria-hidden="true"
+                  tabIndex={-1}
                 >
-                  <IconButton
-                    icon="settings"
-                    variant="outline"
-                    labelText="Dashboard"
-                    srLabel="Dashboard"
-                  />
+                  <IconButton icon="settings" variant="outline" labelText="Dashboard" srLabel="Dashboard" />
                 </Link>
-
-                {!user?.username && (
-                  <Link
-                    href="/account/complete-profile"
-                    prefetch
-                    onClick={() => track("hero_complete_profile_click")}
-                    className={[
-                      "hidden sm:inline-flex",
-                      "items-center rounded-xl",
-                      "border border-[var(--border)] bg-[var(--bg-subtle)]",
-                      "px-3 py-2 text-sm font-semibold text-[var(--text)]",
-                      "transition hover:bg-[var(--bg-elevated)]",
-                      "active:scale-[.99]",
-                      "focus-visible:outline-none focus-visible:ring-2 ring-focus",
-                    ].join(" ")}
-                    title="Set your username & profile details"
-                  >
-                    Complete profile
-                  </Link>
-                )}
               </>
             ) : (
               <>
@@ -262,7 +273,6 @@ export default function HomeClientHero({
             )}
           </div>
 
-          {/* Hide on xs to maximize feed viewport; keep from sm+ */}
           <ul className="mt-3 hidden flex-wrap items-center gap-3 text-xs text-[var(--text-muted)] sm:flex">
             <li className="inline-flex items-center gap-1">
               <ShieldIcon /> Buyer safety
@@ -281,7 +291,6 @@ export default function HomeClientHero({
             Popular now
           </div>
 
-          {/* Phone: single-row horizontal scroll; Desktop: wraps normally */}
           <ul
             className={[
               "mt-2 flex gap-2",
