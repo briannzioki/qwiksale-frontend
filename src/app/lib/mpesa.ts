@@ -1,18 +1,51 @@
 // src/app/lib/mpesa.ts
 import "server-only";
-import { mpesa as ENV, isDev } from "./env";
+import { isDev } from "./env";
 
 /* ------------------------------------------------------------------ */
 /* --------------------------- Public Config ------------------------- */
 /* ------------------------------------------------------------------ */
 
+type MpesaEnv = "sandbox" | "production";
+
+function normEnv(v: string | undefined): MpesaEnv {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "production" ? "production" : "sandbox";
+}
+
+function baseUrlFor(env: MpesaEnv): string {
+  return env === "production"
+    ? "https://api.safaricom.co.ke"
+    : "https://sandbox.safaricom.co.ke";
+}
+
+function trimEnv(name: string): string {
+  return String(process.env[name] ?? "").trim();
+}
+
 export const MPESA = {
-  ENV: ENV.environment, // "sandbox" | "production"
-  BASE_URL: ENV.baseUrl, // https://sandbox.safaricom.co.ke | https://api.safaricom.co.ke
-  SHORTCODE: ENV.shortCode, // Paybill or Till number
-  PASSKEY: ENV.passkey, // LNMO passkey
-  CALLBACK_URL: ENV.callbackUrl,
-  MODE: ENV.mode, // "till" | "paybill"
+  // Matches your Vercel env var
+  ENV: normEnv(process.env["MPESA_ENV"]),
+
+  // Derived from ENV (no surprises)
+  BASE_URL: baseUrlFor(normEnv(process.env["MPESA_ENV"])),
+
+  // Credentials
+  CONSUMER_KEY: trimEnv("MPESA_CONSUMER_KEY"),
+  CONSUMER_SECRET: trimEnv("MPESA_CONSUMER_SECRET"),
+  PASSKEY: trimEnv("MPESA_PASSKEY"),
+
+  // Shortcodes
+  PAYBILL_SHORTCODE: trimEnv("MPESA_PAYBILL_SHORTCODE"), // 7122842
+  TILL_NUMBER: trimEnv("MPESA_TILL_NUMBER"), // 3193615
+
+  // Back-compat: keep SHORTCODE meaning “primary business shortcode”
+  SHORTCODE: trimEnv("MPESA_PAYBILL_SHORTCODE"),
+
+  CALLBACK_URL: trimEnv("MPESA_CALLBACK_URL"),
+
+  // Optional default mode; routes already pass mode explicitly
+  MODE: (trimEnv("MPESA_MODE") === "till" ? "till" : "paybill") as "till" | "paybill",
 } as const;
 
 export function logMpesaBootOnce() {
@@ -22,8 +55,9 @@ export function logMpesaBootOnce() {
   if (globalThis[FLAG]) return;
   // @ts-ignore
   globalThis[FLAG] = true;
+
   console.info(
-    `[mpesa] boot → env=${MPESA.ENV} base=${MPESA.BASE_URL} shortcode=${MPESA.SHORTCODE} callback=${MPESA.CALLBACK_URL} mode=${MPESA.MODE}`,
+    `[mpesa] boot → env=${MPESA.ENV} base=${MPESA.BASE_URL} paybill=${MPESA.PAYBILL_SHORTCODE} till=${MPESA.TILL_NUMBER} callback=${MPESA.CALLBACK_URL}`,
   );
 }
 
@@ -71,7 +105,6 @@ function maskMsisdn(msisdn: string) {
 }
 
 function isNetworkishError(e: unknown): boolean {
-  // fetch failures / timeouts often come as TypeError / AbortError
   const msg = String((e as any)?.message ?? "");
   const name = String((e as any)?.name ?? "");
   if (name === "AbortError") return true;
@@ -123,14 +156,10 @@ export class MpesaError extends Error {
   status?: number;
   data?: any;
 
-  constructor(
-    message: string,
-    opts: { code?: string | number; status?: number; data?: any } = {},
-  ) {
+  constructor(message: string, opts: { code?: string | number; status?: number; data?: any } = {}) {
     super(message);
     this.name = "MpesaError";
 
-    // With exactOptionalPropertyTypes, avoid assigning `undefined`.
     if (Object.prototype.hasOwnProperty.call(opts, "code") && opts.code !== undefined) {
       this.code = opts.code;
     }
@@ -166,11 +195,10 @@ async function fetchAccessToken(opts?: { timeoutMs?: number; signal?: AbortSigna
   token: string;
   expiresAt: number;
 }> {
-  const key = ENV.consumerKey;
-  const secret = ENV.consumerSecret;
+  const key = MPESA.CONSUMER_KEY;
+  const secret = MPESA.CONSUMER_SECRET;
 
   if (!key || !secret) throw new MpesaError("Missing MPESA_CONSUMER_KEY / MPESA_CONSUMER_SECRET");
-  if (!MPESA.BASE_URL) throw new MpesaError("Missing MPESA BASE_URL");
 
   const auth = Buffer.from(`${key}:${secret}`).toString("base64");
   const base = stripTrailingSlash(MPESA.BASE_URL);
@@ -254,7 +282,6 @@ export async function getAccessToken(opts?: {
   try {
     return await cache.inflight;
   } finally {
-    // exactOptionalPropertyTypes-safe: remove the optional prop instead of assigning undefined
     delete cache.inflight;
   }
 }
@@ -268,17 +295,11 @@ type StkPushInput = {
   phone: string; // can be raw; will be normalized
   accountReference?: string;
   description?: string;
-  mode?: "till" | "paybill"; // override txn mode if needed
+  mode?: "till" | "paybill";
   signal?: AbortSignal;
   timeoutMs?: number;
-
-  // Token retrieval retries are safe
   tokenRetries?: number;
-
-  // STK retries are NOT safe by default (not idempotent)
   requestRetries?: number;
-
-  // Optional correlation id for logs (won't be sent to Safaricom)
   requestId?: string;
 };
 
@@ -301,6 +322,33 @@ function mkReqId() {
   } catch {
     return `qs_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   }
+}
+
+/** Option B target selection:
+ * - BusinessShortCode always = PAYBILL (7122842)
+ * - PartyB = PAYBILL for paybill mode
+ * - PartyB = TILL for till mode
+ */
+function pickTarget(mode: "till" | "paybill") {
+  const paybill = MPESA.PAYBILL_SHORTCODE;
+  const till = MPESA.TILL_NUMBER;
+
+  if (!paybill) throw new MpesaError("Missing MPESA_PAYBILL_SHORTCODE");
+
+  if (mode === "till") {
+    if (!till) throw new MpesaError("Missing MPESA_TILL_NUMBER (required for mode=till)");
+    return {
+      businessShortCode: paybill,
+      partyB: till,
+      transactionType: "CustomerBuyGoodsOnline",
+    } as const;
+  }
+
+  return {
+    businessShortCode: paybill,
+    partyB: paybill,
+    transactionType: "CustomerPayBillOnline",
+  } as const;
 }
 
 /** Canonical STK Push helper (robust) */
@@ -327,17 +375,15 @@ export async function stkPush(input: StkPushInput): Promise<StkPushResponse> {
     throw new MpesaError("Invalid msisdn (use 2547XXXXXXXX or 2541XXXXXXXX)");
   }
 
-  if (!MPESA.SHORTCODE || !MPESA.PASSKEY || !MPESA.CALLBACK_URL) {
-    throw new MpesaError("M-Pesa config missing (SHORTCODE/PASSKEY/CALLBACK_URL)");
+  if (!MPESA.PASSKEY || !MPESA.CALLBACK_URL) {
+    throw new MpesaError("M-Pesa config missing (PASSKEY/CALLBACK_URL)");
   }
 
-  // normalized/definite values (no undefineds)
   const useMode = mode || MPESA.MODE || "paybill";
-  const transactionType = useMode === "till" ? "CustomerBuyGoodsOnline" : "CustomerPayBillOnline";
+  const tgt = pickTarget(useMode);
 
-  const shortcode = String(MPESA.SHORTCODE);
   const timestamp = yyyymmddhhmmss();
-  const password = stkPassword(shortcode, MPESA.PASSKEY, timestamp);
+  const password = stkPassword(tgt.businessShortCode, MPESA.PASSKEY, timestamp);
 
   const token = await getAccessToken({
     retries: tokenRetries,
@@ -347,32 +393,29 @@ export async function stkPush(input: StkPushInput): Promise<StkPushResponse> {
 
   const amt = Math.round(amount);
 
-  // dev-only masked log
   if (isDev) {
     console.info(
-      `[mpesa] STK(${requestId}) → env=${MPESA.ENV} type=${transactionType} shortcode=${shortcode} amount=${amt} msisdn=${maskMsisdn(
+      `[mpesa] STK(${requestId}) → env=${MPESA.ENV} mode=${useMode} type=${tgt.transactionType} biz=${tgt.businessShortCode} partyB=${tgt.partyB} amount=${amt} msisdn=${maskMsisdn(
         msisdn,
       )}`,
     );
   }
 
   const partyA = Number(msisdn);
-  const partyB = Number(shortcode);
   const phoneNum = Number(msisdn);
   const cbUrl = String(MPESA.CALLBACK_URL);
 
-  // Daraja limits:
   const acctRef = String(accountReference ?? "").trim().slice(0, 12) || "Qwiksale";
   const txnDesc = String(description ?? "").trim().slice(0, 32) || "Qwiksale payment";
 
   const body = {
-    BusinessShortCode: Number(shortcode),
+    BusinessShortCode: Number(tgt.businessShortCode),
     Password: String(password),
     Timestamp: String(timestamp),
-    TransactionType: String(transactionType),
+    TransactionType: String(tgt.transactionType),
     Amount: amt,
     PartyA: partyA,
-    PartyB: partyB,
+    PartyB: Number(tgt.partyB),
     PhoneNumber: phoneNum,
     CallBackURL: cbUrl,
     AccountReference: acctRef,
@@ -429,17 +472,15 @@ export async function stkPush(input: StkPushInput): Promise<StkPushResponse> {
         CustomerMessage: String((data as any).CustomerMessage),
       };
     } catch (e) {
-      // IMPORTANT:
-      // STK push is not idempotent. Only retry if user explicitly opted-in via requestRetries,
-      // and only for obvious network/timeout errors.
       const canRetry = attempt < maxAttempts && isNetworkishError(e);
       if (!canRetry) throw e;
 
       const delay = Math.min(1000 * Math.pow(2, attempt - 1), BACKOFF_CAP_MS);
-      if (isDev)
+      if (isDev) {
         console.warn(
           `[mpesa] STK(${requestId}) retrying after ${delay}ms (attempt ${attempt}/${maxAttempts})`,
         );
+      }
       await sleep(delay);
     } finally {
       t.done();
