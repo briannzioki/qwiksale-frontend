@@ -35,7 +35,8 @@ export default defineConfig({
     environment: "happy-dom",
     environmentOptions: { url: "http://localhost/" },
 
-    setupFiles: ["./tests/e2e/.setup/vitest.setup.tsx"],
+    // Use the setup file you provided
+    setupFiles: ["./tests/vitest.setup.ts"],
     css: true,
 
     include: [
@@ -63,10 +64,9 @@ export default defineConfig({
 
     hookTimeout: 30_000,
 
-    server: {
-      deps: {
-        inline: [/^next\/image$/, /^next\/navigation$/],
-      },
+    // IMPORTANT: inline some Next modules that often break under Vite/Vitest transforms
+    deps: {
+      inline: [/^next\/image$/, /^next\/navigation$/, /^next\/server$/, /^next\/headers$/],
     },
   },
 });

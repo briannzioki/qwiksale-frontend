@@ -1,3 +1,4 @@
+// src/app/settings/billing/page.tsx
 "use client";
 // src/app/settings/billing/page.tsx
 
@@ -20,21 +21,26 @@ const TEST_MSISDN = !IS_PROD
   ? String(process.env["NEXT_PUBLIC_TEST_MSISDN"] || "").trim()
   : "";
 
+/** Normalize Kenyan MSISDN to 2547XXXXXXXX or 2541XXXXXXXX. */
 function normalizeMsisdn(input: string): string {
-  let s = String(input || "").trim();
-  s = s.replace(/\s+/g, "");
-  s = s.replace(/^\+/, "");
-  s = s.replace(/\D+/g, "");
+  const raw = String(input || "").trim();
+
+  if (/^\+254(7|1)\d{8}$/.test(raw)) return raw.replace(/^\+/, "");
+
+  let s = raw.replace(/\D+/g, "");
 
   if (/^07\d{8}$/.test(s)) s = "254" + s.slice(1);
+  if (/^01\d{8}$/.test(s)) s = "254" + s.slice(1);
+
   if (/^7\d{8}$/.test(s)) s = "254" + s;
+  if (/^1\d{8}$/.test(s)) s = "254" + s;
 
   if (s.startsWith("254") && s.length > 12) s = s.slice(0, 12);
   return s;
 }
 
 function validMsisdn(s: string) {
-  return /^2547\d{8}$/.test(s);
+  return /^254(7|1)\d{8}$/.test(s);
 }
 
 function safeInternalCallbackUrl(input: unknown, fallback: string) {
@@ -123,7 +129,7 @@ export default function BillingPage() {
     const msisdn = normalizeMsisdn(phone);
 
     if (!validMsisdn(msisdn)) {
-      setError("Please enter a valid number like 2547XXXXXXXX.");
+      setError("Please enter a valid number like 2547XXXXXXXX or 2541XXXXXXXX.");
       return;
     }
 
@@ -311,13 +317,13 @@ export default function BillingPage() {
           <div className="grid grid-cols-1 gap-3">
             <div className="flex flex-col gap-1">
               <label htmlFor="phone" className="label">
-                Phone (2547XXXXXXXX)
+                Phone (2547XXXXXXXX or 2541XXXXXXXX)
               </label>
               <input
                 id="phone"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="2547XXXXXXXX"
+                placeholder="2547XXXXXXXX or 2541XXXXXXXX"
                 inputMode="numeric"
                 autoComplete="tel"
                 className="input"
@@ -326,7 +332,9 @@ export default function BillingPage() {
               />
               <div className={helperText}>
                 We will send an STK push to this number. Use{" "}
-                <code className="font-mono text-[var(--text)]">2547XXXXXXXX</code>.
+                <code className="font-mono text-[var(--text)]">2547XXXXXXXX</code>{" "}
+                or{" "}
+                <code className="font-mono text-[var(--text)]">2541XXXXXXXX</code>.
               </div>
 
               {TEST_MSISDN ? (
