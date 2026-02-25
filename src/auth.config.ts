@@ -1,7 +1,5 @@
 // src/auth.config.ts
 import type { NextAuthConfig } from "next-auth";
-import Credentials from "next-auth/providers/credentials";
-import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 
 import { prisma } from "@/app/lib/prisma";
@@ -80,6 +78,10 @@ function isE2Eish(): boolean {
   });
 }
 
+function isTestEnv(): boolean {
+  return process.env.NODE_ENV === "test" || isE2Eish();
+}
+
 function parseSecretList(raw: string): string | string[] {
   const parts = raw
     .split(",")
@@ -94,7 +96,7 @@ function getAuthSecret(): string | string[] {
 
   if (v) return parseSecretList(v);
 
-  if (isE2Eish()) return "e2e-auth-secret";
+  if (isTestEnv()) return "e2e-auth-secret";
   if (process.env.NODE_ENV !== "production") return "dev-auth-secret";
 
   throw new Error("Missing AUTH_SECRET (or NEXTAUTH_SECRET). Set it in production to enable stable sessions.");
@@ -113,7 +115,42 @@ function getGoogleClientSecret(): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
 
+/**
+ * IMPORTANT:
+ * In Vitest/unit tests we do NOT want to import NextAuth provider modules
+ * (they often pull Next internals and break transforms).
+ *
+ * So we lazy-require providers only when not in test.
+ */
+function loadCredentialsProvider(): any {
+  if (isTestEnv()) {
+    return (opts: any) => ({
+      id: "credentials",
+      name: opts?.name ?? "Credentials",
+      type: "credentials",
+      credentials: opts?.credentials ?? {},
+      authorize: opts?.authorize,
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require("next-auth/providers/credentials");
+  return mod?.default ?? mod;
+}
+
+function loadGoogleProviderOrNull(): any | null {
+  if (isTestEnv()) return null;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require("next-auth/providers/google");
+  return mod?.default ?? mod;
+}
+
+const Credentials = loadCredentialsProvider();
+const Google = loadGoogleProviderOrNull();
+
 function googleProviderOrNull() {
+  if (!Google) return null;
+
   const isProd = process.env.NODE_ENV === "production";
   const id = getGoogleClientId();
   const secret = getGoogleClientSecret();
@@ -123,8 +160,9 @@ function googleProviderOrNull() {
     return Google({ clientId: id, clientSecret: secret });
   }
 
-  const fallbackId = id || (isE2Eish() ? "e2e-google-client-id" : "dev-google-client-id");
-  const fallbackSecret = secret || (isE2Eish() ? "e2e-google-client-secret" : "dev-google-client-secret");
+  // In dev, allow dummy values so local dev doesn’t crash if env is missing.
+  const fallbackId = id || (isTestEnv() ? "e2e-google-client-id" : "dev-google-client-id");
+  const fallbackSecret = secret || (isTestEnv() ? "e2e-google-client-secret" : "dev-google-client-secret");
 
   return Google({ clientId: fallbackId, clientSecret: fallbackSecret });
 }
@@ -157,7 +195,7 @@ export const authConfig: NextAuthConfig = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials: any) {
         const emailOrUsername = normalizeIdentifier(credentials?.email);
         const password = typeof credentials?.password === "string" ? credentials.password : "";
 
@@ -213,7 +251,7 @@ export const authConfig: NextAuthConfig = {
   ],
 
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user }: any) {
       if (typeof token.email === "string") token.email = token.email.trim().toLowerCase();
 
       // Normalize id early
@@ -260,7 +298,7 @@ export const authConfig: NextAuthConfig = {
       (token as any)["isSuperAdmin"] = computedIsSuperAdmin;
 
       // In E2E/dev, reconcile from DB to prevent privilege drift / stale tokens.
-      const doReconcile = isE2Eish() || process.env.NODE_ENV !== "production";
+      const doReconcile = isTestEnv() || process.env.NODE_ENV !== "production";
       if (doReconcile && email) {
         try {
           const row = await prisma.user.findUnique({
@@ -330,7 +368,7 @@ export const authConfig: NextAuthConfig = {
       return token;
     },
 
-    async session({ session, token }) {
+    async session({ session, token }: any) {
       const s: any = session;
       const u: any = s.user ?? (s.user = {});
 
@@ -360,7 +398,7 @@ export const authConfig: NextAuthConfig = {
       return session;
     },
 
-    async redirect({ url, baseUrl }) {
+    async redirect({ url, baseUrl }: any) {
       try {
         if (url.startsWith("/")) return `${baseUrl}${url}`;
         const u = new URL(url);
@@ -373,7 +411,7 @@ export const authConfig: NextAuthConfig = {
     },
   },
 
-  debug: process.env.NODE_ENV !== "production" || isE2Eish(),
+  debug: process.env.NODE_ENV !== "production" || isTestEnv(),
 };
 
 export default authConfig;

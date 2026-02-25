@@ -76,7 +76,7 @@ export async function register() {
       ...(useTunnel ? { tunnel: "/api/monitoring" } : {}),
       ...(wantTracing ? { tracesSampleRate } : {}),
       debug: process.env["SENTRY_DEBUG"] === "1" || process.env["NEXT_PUBLIC_SENTRY_DEBUG"] === "1",
-      ...( { telemetry: false } as any ),
+      ...({ telemetry: false } as any),
       integrations(defaults: any[]) {
         return wantTracing ? [...defaults, ...(extras as any[])] : defaults;
       },
@@ -106,6 +106,9 @@ export async function register() {
 }
 
 export async function onRequestError(error: unknown, reqMaybe?: Request) {
+  // ✅ Do not even import SDK when disabled/E2E.
+  if (shouldDisableEntirely()) return;
+
   const Sentry = await getSdk();
   const cre = (Sentry as any)?.captureRequestError as ((e: unknown, req?: Request) => void) | undefined;
   if (typeof cre === "function") {
@@ -128,6 +131,9 @@ export async function onRequestError(error: unknown, reqMaybe?: Request) {
 }
 
 export async function onUnhandledError(error: unknown) {
+  // ✅ Do not even import SDK when disabled/E2E.
+  if (shouldDisableEntirely()) return;
+
   const Sentry = await getSdk();
   try {
     Sentry.captureException(error, (scope: any) => {
@@ -139,7 +145,10 @@ export async function onUnhandledError(error: unknown) {
 }
 
 // Dev helper
-if (process.env.NODE_ENV !== "production" || process.env["NEXT_PUBLIC_SENTRY_DEBUG"] === "1") {
+if (
+  (process.env.NODE_ENV !== "production" || process.env["NEXT_PUBLIC_SENTRY_DEBUG"] === "1") &&
+  !shouldDisableEntirely()
+) {
   try {
     (globalThis as any).__testSentryServer = async (msg?: unknown) => {
       try {

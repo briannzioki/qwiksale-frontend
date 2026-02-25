@@ -22,3 +22,10 @@ node_modules
 # local logs
 .logs/
 
+# build / cache
+tsconfig.tsbuildinfo
+.next/
+
+# local scratch
+tmp_*.json
+tmp_*.sql

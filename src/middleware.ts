@@ -1,3 +1,4 @@
+// src/middleware.ts
 import { NextResponse, type NextRequest } from "next/server";
 
 function envStr(name: string): string | undefined {
@@ -553,6 +554,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|\\.well-known|_vercel|api/pay/mpesa/callback|api/mpesa/callback).*)",
+    // ✅ Do NOT exclude M-Pesa callback paths here; middleware must be able to apply no-store.
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|sitemaps|\\.well-known|_vercel).*)",
   ],
 };

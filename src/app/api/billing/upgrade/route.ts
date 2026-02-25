@@ -57,6 +57,94 @@ function mkReqId() {
   }
 }
 
+/** Best-effort create: tries with targetTier, then retries without if schema/client doesn't support it. */
+async function createPendingPaymentBestEffort(args: {
+  userId: string;
+  msisdn: string;
+  amount: number;
+  tier: Tier;
+}): Promise<{ id: string } | null> {
+  const Payment = (prisma as any).payment;
+  if (!Payment?.create) return null;
+
+  const baseData = {
+    userId: args.userId,
+    payerPhone: args.msisdn,
+    amount: args.amount,
+    status: "PENDING",
+    method: "MPESA",
+    currency: "KES",
+    accountRef: "QWIKSALE",
+  };
+
+  // Try with targetTier first
+  try {
+    return await Payment.create({
+      data: { ...baseData, targetTier: args.tier },
+      select: { id: true },
+    });
+  } catch {
+    // Fallback: no targetTier in Prisma schema/client
+    try {
+      return await Payment.create({
+        data: baseData,
+        select: { id: true },
+      });
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** Best-effort upsert: tries with targetTier, then retries without if schema/client doesn't support it. */
+async function upsertPaymentByCheckoutIdBestEffort(args: {
+  checkoutId: string;
+  merchantId: string | null;
+  userId: string;
+  msisdn: string;
+  amount: number;
+  tier: Tier;
+}): Promise<{ id: string }> {
+  const Payment = (prisma as any).payment;
+
+  const updateBase = {
+    merchantRequestId: args.merchantId,
+    payerPhone: args.msisdn,
+    amount: args.amount,
+    accountRef: "QWIKSALE",
+  };
+
+  const createBase = {
+    status: "PENDING",
+    method: "MPESA",
+    currency: "KES",
+    amount: args.amount,
+    payerPhone: args.msisdn,
+    accountRef: "QWIKSALE",
+    checkoutRequestId: args.checkoutId,
+    merchantRequestId: args.merchantId,
+    userId: args.userId,
+  };
+
+  // Try with targetTier first
+  try {
+    return await Payment.upsert({
+      where: { checkoutRequestId: args.checkoutId },
+      update: { ...updateBase, targetTier: args.tier },
+      create: { ...createBase, targetTier: args.tier },
+      select: { id: true },
+    });
+  } catch {
+    // Fallback: no targetTier in Prisma schema/client
+    return await Payment.upsert({
+      where: { checkoutRequestId: args.checkoutId },
+      update: updateBase,
+      create: createBase,
+      select: { id: true },
+    });
+  }
+}
+
 export async function POST(req: Request) {
   const reqId = mkReqId();
 
@@ -120,23 +208,19 @@ export async function POST(req: Request) {
     // --- pre-create Payment row (best effort) ---
     let pendingId: string | null = null;
     try {
-      const created = await (prisma as any).payment.create({
-        data: {
-          userId: user.id,
-          payerPhone: msisdn,
-          amount,
-          status: "PENDING",
-          method: "MPESA",
-          currency: "KES",
-          accountRef: "QWIKSALE",
-          // best-effort extras if present:
-          targetTier: tier,
-          mode,
-        },
-        select: { id: true },
+      const created = await createPendingPaymentBestEffort({
+        userId: user.id,
+        msisdn,
+        amount,
+        tier,
       });
       pendingId = created?.id ?? null;
-      track("billing_upgrade_payment_precreate", { reqId, userId: user.id, paymentId: pendingId });
+
+      if (pendingId) {
+        track("billing_upgrade_payment_precreate", { reqId, userId: user.id, paymentId: pendingId });
+      } else {
+        track("billing_upgrade_payment_precreate_skip", { reqId, reason: "not_created" });
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn("[billing/upgrade] Payment pre-create skipped:", e);
@@ -157,7 +241,7 @@ export async function POST(req: Request) {
       // mark FAILED best effort
       if (pendingId) {
         await (prisma as any).payment
-          .update({
+          ?.update?.({
             where: { id: pendingId },
             data: {
               status: "FAILED",
@@ -187,7 +271,7 @@ export async function POST(req: Request) {
     if (!checkoutId) {
       if (pendingId) {
         await (prisma as any).payment
-          .update({
+          ?.update?.({
             where: { id: pendingId },
             data: {
               status: "FAILED",
@@ -208,31 +292,13 @@ export async function POST(req: Request) {
     }
 
     // --- upsert by CheckoutRequestID (callback race-safe) ---
-    const saved = await (prisma as any).payment.upsert({
-      where: { checkoutRequestId: checkoutId },
-      update: {
-        merchantRequestId: merchantId || null,
-        payerPhone: msisdn,
-        amount,
-        accountRef: "QWIKSALE",
-        // keep tier/mode if columns exist:
-        targetTier: tier,
-        mode,
-      },
-      create: {
-        status: "PENDING",
-        method: "MPESA",
-        currency: "KES",
-        amount,
-        payerPhone: msisdn,
-        accountRef: "QWIKSALE",
-        checkoutRequestId: checkoutId,
-        merchantRequestId: merchantId || null,
-        userId: user.id,
-        targetTier: tier,
-        mode,
-      },
-      select: { id: true },
+    const saved = await upsertPaymentByCheckoutIdBestEffort({
+      checkoutId,
+      merchantId: merchantId || null,
+      userId: user.id,
+      msisdn,
+      amount,
+      tier,
     });
 
     track("billing_upgrade_upsert", {
@@ -246,7 +312,7 @@ export async function POST(req: Request) {
 
     // --- dedupe: if callback inserted first, remove the pre-created pending row ---
     if (pendingId && saved.id !== pendingId) {
-      await (prisma as any).payment.delete({ where: { id: pendingId } }).catch(() => {});
+      await (prisma as any).payment?.delete?.({ where: { id: pendingId } }).catch(() => {});
       track("billing_upgrade_dedupe_deleted", { reqId, userId: user.id, pendingId, savedId: saved.id });
     }
 

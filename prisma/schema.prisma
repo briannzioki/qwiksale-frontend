@@ -520,6 +520,9 @@ model Payment {
   amount     Int
   payerPhone String @db.VarChar(15)
 
+  // ✅ NEW: target subscription tier for upgrade payments
+  targetTier Subscription?
+
   paidAt DateTime? @map("transactionDate")
 
   mpesaReceipt      String? @unique
@@ -543,6 +546,7 @@ model Payment {
   @@index([userId, createdAt])
   @@index([productId, createdAt])
   @@index([accountRef])
+  @@index([targetTier])
 }
 
 model ContactReveal {
